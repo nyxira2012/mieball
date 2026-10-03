@@ -1,6 +1,7 @@
 <template>
   <!-- 现场页（2.1）· alpha.html:1531-1648 renderLive/renderAttend/renderCourts 的 Vue 化（P8a）；
-       记分 tab 本阶段为 P8b 占位。非 tab 页：无 TabBar，仍挂全部宿主（记分收局要弹 WinPopup/撒花）。
+       记分 tab = P8b（Scoreboard + 已完成列表，alpha:1651-1674）。非 tab 页：无 TabBar，仍挂全部
+       宿主（记分收局要弹 WinPopup/撒花，收局撒花在下方 watch ui.win → burst(56)，alpha:1726）。
        url query 的 id：onShow 时若现场未开则自动 startLive（alpha 里 startLive 由详情页「开始打球」
        调用，这里兜底直链/刷新场景；hasLive 已开则不重复，避免重置名册）。 -->
   <PageShell>
@@ -48,9 +49,28 @@
         <AppButton variant="pri" block class="nr-btn" @click="onNewRound">开下一轮 ▸</AppButton>
       </view>
 
-      <!-- alpha:1565-1568 记分 panel：renderScore/历史/收局由 P8b 实现，本阶段占位（非产品文案） -->
+      <!-- alpha:1565-1568 记分 panel：sbbox（记分板/空态）+ sec-t 已完成 N 场 + hbox（alpha:1653/1657-1673） -->
       <view class="panel" :class="{ on: tab === 'score' }">
-        <view class="ph">P8b 待实现</view>
+        <!-- alpha:1653 无进行中场次空态（逐字；<br><br> → 按钮上 20px，同无 live 空态约定；
+             点「开下一轮」= newRound + confetti(14)（alpha:1647，newRound 内联调用）→ 复用 onNewRound -->
+        <EmptyBox v-if="!L.cur">
+          <view>当前没有进行中的场次</view>
+          <AppButton variant="pri" size="sm" class="go-btn" @click="onNewRound">开下一轮 ▸</AppButton>
+        </EmptyBox>
+        <!-- alpha:1657-1672 记分板；point/undo → store（收局判定在 store.point 内部），
+             profile → 全产品共用档案弹层（alpha:1656 openProfileById） -->
+        <Scoreboard v-else :cur="L.cur" :target="L.g.score" @point="onPoint" @undo="onUndo" @profile="openProfile" />
+        <!-- alpha:1567 sec-t 已完成 · N 场 -->
+        <view class="sec-t"><text class="t">已完成</text><text class="more">{{ L.history.length }} 场</text></view>
+        <!-- alpha:1673 hbox：matchrow 列表（alpha:1675 histRow，胜者名黄色 +「 胜」+ mono 比分） -->
+        <template v-if="L.history.length">
+          <view v-for="(h, i) in L.history" :key="i" class="matchrow">
+            <view><text class="w">{{ h.names }}</text> 胜</view>
+            <text class="sc">{{ h.sa }}:{{ h.sb }}</text>
+          </view>
+        </template>
+        <!-- alpha:1673 空历史（sub + 内联 padding:6px 4px） -->
+        <view v-else class="sub h-empty">还没有完成的场次</view>
       </view>
     </template>
   </PageShell>
@@ -59,7 +79,7 @@
 <script setup lang="ts">
 /* 现场页（2.1）接线层：数据与动作全在 live store（alpha:1471-1530/1591-1648），
    页面只做 segtab 切换与三 panel 组装（alpha:1531-1571 renderLive）。 */
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { onLoad, onShow } from '@dcloudio/uni-app';
 import PageShell from '@/components/biz/PageShell.vue';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -67,6 +87,7 @@ import EmptyBox from '@/components/ui/EmptyBox.vue';
 import AttendRow from '@/components/biz/AttendRow.vue';
 import CourtCard from '@/components/biz/CourtCard.vue';
 import QueueList from '@/components/biz/QueueList.vue';
+import Scoreboard from '@/components/biz/Scoreboard.vue';
 import { useLiveStore } from '@/stores/live';
 import { useUiStore } from '@/stores/ui';
 import { pById } from '@/utils/rotate';
@@ -118,6 +139,22 @@ const courts = computed<CourtVm[]>(() => {
 
 /** AttendRow check 事件 → store setCheck（alpha:1591；副作用在 store：迟到排队尾/早退清场/中途加入队首） */
 const onCheck = (id: number, st: CheckStatus): void => liveStore.setCheck(id, st);
+
+/** alpha:1680-1687 point → store（先到 N 且净胜 2 的收局判定在 store 内部：point → shouldEnd → endMatch） */
+const onPoint = (side: 'a' | 'b'): void => liveStore.point(side);
+
+/** alpha:1676-1679 undoPoint → store（按最后得分方回退） */
+const onUndo = (): void => liveStore.undoPoint();
+
+/* alpha:1726 confetti(56)：撒花由页面层 Confetti 做（store 不管撒花，P8a 约定）——
+   store.endMatch 末尾已 showWin 落 ui.win（弹层不重复触发），这里 watch 到胜利即补撒花。
+   打完收下（closeWin）后记分/轮转面板数据随 store 响应式自动刷新（alpha:1729 renderLive 等价）。 */
+watch(
+  () => ui.win,
+  (w) => {
+    if (w) ui.burst(56);
+  },
+);
 
 /** alpha:1626 openProfileById → 全产品共用档案弹层 ProfileSheet */
 const openProfile = (id: number): void => ui.openSheet({ type: 'profile', userId: id });
@@ -254,11 +291,27 @@ const goOpenTonight = (): void => {
   margin-top: 6px; /* alpha:1562 内联 */
 }
 
-/* ---------- P8b 占位（非产品文案，同 detail 页 .ph） ---------- */
-.ph {
-  color: var(--dim);
-  font-family: var(--mono);
+/* ---------- 记分 panel：已完成场次行（alpha:319-322 matchrow 逐字） ---------- */
+.matchrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid rgba(245, 241, 232, 0.1);
+  border-radius: 12px;
+  background: var(--ink2);
+  margin-bottom: 8px;
   font-size: 12px;
-  letter-spacing: 0.1em;
+}
+.matchrow .w {
+  color: var(--lemon);
+  font-weight: 700;
+}
+.matchrow .sc {
+  font-family: var(--mono);
+}
+/* alpha:1673 内联 padding:6px 4px（空历史 sub） */
+.h-empty {
+  padding: 6px 4px;
 }
 </style>
