@@ -37,6 +37,8 @@ const isRole = computed(() => ROLE_KINDS.includes(props.kind))
   color: var(--dim);
   display: inline-block;
   line-height: 1.4;
+  /* 不设 nowrap/flex:none：alpha 的 chip 会随 foot 行收缩换成两行胶囊，
+     给右侧头像叠层留位（全局 uni-text 已 inherit 白空格，不会逐字竖排） */
 }
 .chip.hot {
   border-color: var(--coral);
@@ -59,6 +61,7 @@ const isRole = computed(() => ROLE_KINDS.includes(props.kind))
   padding: 2px 7px;
   border-radius: 6px;
   flex: none;
+  white-space: nowrap;
   display: inline-block;
   line-height: 1.5;
 }

@@ -23,10 +23,6 @@
     {
       "path": "pages/live/live",
       "style": { "navigationBarTitleText": "现场" }
-    },
-    {
-      "path": "pages/dev/style",
-      "style": { "navigationBarTitleText": "组件试衣间" }
     }
   ],
   "globalStyle": {

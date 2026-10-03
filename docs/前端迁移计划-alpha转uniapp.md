@@ -338,20 +338,24 @@ P0 → P2 ┤→ P3 → P4        (P4 ‖ P5a ‖ P9 ‖ P10)
 
 ## 8. 实施状态回写（P12 填写）
 
+> 2026-10-04 实施完成。P0–P11 由子代理分阶段实施（P1‖P2、P4‖P5a‖P9‖P10、P5b‖P6‖P7‖P8a 并行波次），每阶段独立提交（FE-P0…FE-P12）；P12 由主会话浏览器对照验收。
+
 | 阶段 | 状态 | 完成日期 | 偏差记录 |
 |------|------|----------|----------|
-| P0 | ⬜ | | |
-| P1 | ⬜ | | |
-| P2 | ⬜ | | |
-| P3 | ⬜ | | |
-| P4 | ⬜ | | |
-| P5a | ⬜ | | |
-| P5b | ⬜ | | |
-| P6 | ⬜ | | |
-| P7 | ⬜ | | |
-| P8a | ⬜ | | |
-| P8b | ⬜ | | |
-| P9 | ⬜ | | |
-| P10 | ⬜ | | |
-| P11 | ⬜ | | |
-| P12 | ⬜ | | |
+| P0 | ✅ | 2026-10-04 | 无（degit 模板一次成功；构建/dev/type-check 三验证通过） |
+| P1 | ✅ | 2026-10-04 | body reset 未搬 overflow:hidden/100dvh（单文件画布专用，uni 页面自滚动）；sw-capsule 落 base.scss 作通用类；AppSheet 用 fixed 替代 absolute；FilterChips 用 scroll-view |
+| P2 | ✅ | 2026-10-04 | MatchHistory/WinData 存纯文本而非 HTML 串（v-html 纪律）；gameTime 入参为 t 字符串便于单测；myIntent 以 store ref 为准；测试放 frontend/tests/ 避开 uni 编译扫描。77 单测全绿 |
+| P3 | ✅ | 2026-10-04 | 页签转场由 uni 路由自带，未搬 alpha 手动 translateX；grain 留 P11；ui store 纯增量补 confettiKey/confettiN |
+| P4 | ✅ | 2026-10-04 | brand/em 用 text+class 等价（uni 模板无 h1/em/br） |
+| P5a | ✅ | 2026-10-04 | plusn 由 GameCard 自绘（AvatarStack 只管头像）；gcard 壳样式组件内副本；直链无局兜底文案「该局不存在或已被撤下」 |
+| P5b | ✅ | 2026-10-04 | 动作后导航以 store 响应式替代 alpha 的 go()/openDetail 重渲染；invite 两形态沿用 SheetPayload 契约（to-game/to-slot） |
+| P6 | ✅ | 2026-10-04 | DOM 显隐切换改 v-if；自定义时间未输入即发布的 alpha 边界行为原样保留 |
+| P7 | ✅ | 2026-10-04 | 钉位/焦点切换**未降级**，用 onPageScroll+createSelectorQuery 缓存自然位实现（量前清 transform，布局变化重测） |
+| P8a | ✅ | 2026-10-04 | 开下一轮 confetti 由页面调 ui.burst(14)；onShow 自动 startLive 防重复 |
+| P8b | ✅ | 2026-10-04 | 得分弹跳用 CSS class 等价 Element.animate；endMatch 在 store 内自动触发，页面 watch ui.win 撒花 56 |
+| P9 | ✅ | 2026-10-04 | 分制切换绑在 option 上（点选中项 no-op，净行为同 alpha）；懒加载测高用 createSelectorQuery 折算；paddleSvg v-html 登记为第三例外 |
+| P10 | ✅ | 2026-10-04 | 我的球局复用完整 GameCard（alpha 为简化两行）；ledger 直读 api/mock（stores 未暴露，后续可收敛） |
+| P11 | ✅ | 2026-10-04 | PageShell onHide 关弹层；quit/cancel 后 switchTab meet（同页守卫）；宽屏 480 画布+deco 竖字+grain；toast 文案 28 处机械对照**零不一致**；删除 SheetStub |
+| P12 | ✅ | 2026-10-04 | 浏览器对照验收 + judge 两组合议 12 对：11 pass。修复三项：① uni-text 框架默认 pre-line 致跑马灯/chips 逐字竖排（base.scss 全局 !important inherit）；② 原生 tabBar 时序盖回（CSS 隐藏 uni-tabbar）；③ AppChip 误加 nowrap 破坏 alpha 收缩形态（已撤）。已知残留小偏差：满员卡「+8·含随行」在 foot 极限收缩下尾部两字被裁（alpha 为两行完整，量级 2×10px）；胜利弹层超长胜队名自然换行。试衣间页与 static/alpha-ref.html 已按计划删除。 |
+
+**P12 修复的横切根因（后续小程序化需复检）**：uni-h5 `uni-text{white-space:pre-line}` 与原生 tabBar 时序——见 frontend/src/styles/base.scss 顶部注释。

@@ -192,8 +192,10 @@ const plusn = computed(
 .stack-line {
   display: flex;
   align-items: center;
+  flex: none;
 }
-/* alpha:132 .plusn（AvatarStack 内部 plusn 只覆盖 >max 情形，这里的裸 '+' / ·含随行 为 alpha 逐字） */
+/* alpha:132 .plusn（AvatarStack 内部 plusn 只覆盖 >max 情形，这里的裸 '+' / ·含随行 为 alpha 逐字）。
+   不设 nowrap：alpha 的 plusn 在窄位会换成两行（+8 含 / 随行），全局 uni-text 已 inherit */
 .plusn {
   font-family: var(--mono);
   font-size: 10px;

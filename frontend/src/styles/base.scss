@@ -39,6 +39,18 @@ page {
 .hidden {
   display: none !important;
 }
+/* 原生 tabBar 一律隐藏（自绘 components/biz/TabBar.vue 替代）：
+   uni.hideTabBar 在 onLaunch 有时序竞争（刷新后原生条会盖回），CSS 兜底最稳 */
+uni-tabbar,
+.uni-tabbar {
+  display: none !important;
+}
+/* uni-h5 框架默认 uni-text{white-space:pre-line}：文本在 flex 收缩场景会被压到
+   逐字竖排（跑马灯/chips 实测），且其规则载入晚于本文件、同特异性会反超，
+   故用 !important 改回 alpha 的 normal 继承；需多行的文本块各自显式设置 */
+uni-text {
+  white-space: inherit !important;
+}
 
 /* ---------- 通用排版（alpha:84-91） ---------- */
 .kicker {

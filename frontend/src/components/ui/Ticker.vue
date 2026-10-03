@@ -57,9 +57,12 @@ const doubled = computed(() => [...props.items, ...props.items])
 }
 .tk-tag {
   color: var(--lemon);
+  /* uni-text 自带 white-space:pre-line，会压过继承的 nowrap 导致逐字竖排，需显式覆盖 */
+  white-space: nowrap;
 }
 .tk-dot {
   font-style: normal;
   color: var(--coral);
+  white-space: nowrap;
 }
 </style>
