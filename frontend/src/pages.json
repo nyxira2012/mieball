@@ -1,0 +1,49 @@
+{
+  "pages": [
+    {
+      "path": "pages/home/home",
+      "style": { "navigationBarTitleText": "夜球场" }
+    },
+    {
+      "path": "pages/meet/meet",
+      "style": { "navigationBarTitleText": "约球" }
+    },
+    {
+      "path": "pages/power/power",
+      "style": { "navigationBarTitleText": "战力" }
+    },
+    {
+      "path": "pages/mine/mine",
+      "style": { "navigationBarTitleText": "我的" }
+    },
+    {
+      "path": "pages/detail/detail",
+      "style": { "navigationBarTitleText": "球局详情" }
+    },
+    {
+      "path": "pages/live/live",
+      "style": { "navigationBarTitleText": "现场" }
+    },
+    {
+      "path": "pages/dev/style",
+      "style": { "navigationBarTitleText": "组件试衣间" }
+    }
+  ],
+  "globalStyle": {
+    "navigationStyle": "custom",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#08080b"
+  },
+  "tabBar": {
+    "color": "#9b96a6",
+    "selectedColor": "#FFD400",
+    "backgroundColor": "#0E0E12",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/home/home", "text": "首页" },
+      { "pagePath": "pages/meet/meet", "text": "约球" },
+      { "pagePath": "pages/power/power", "text": "战力" },
+      { "pagePath": "pages/mine/mine", "text": "我的" }
+    ]
+  }
+}

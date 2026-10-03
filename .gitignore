@@ -226,3 +226,8 @@ __marimo__/
 # Temporary directories
 temp/
 tmp/
+
+# Frontend (uni-app)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
