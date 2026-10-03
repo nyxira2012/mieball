@@ -1,0 +1,41 @@
+/* 球局基础工具（alpha:881-892 · 意向卡 slotBig alpha:1023-1024） */
+import type { Game, GameEntry, User } from '@/api/types';
+import { games, slots } from '@/mock/data';
+
+/** 带的人也占坑（alpha:882） */
+export const heads = (g: Game): number => g.joined.reduce((s, e) => s + 1 + (e.bring || 0), 0);
+
+/** 剩几坑（满员线口径，alpha:883） */
+export const needOf = (g: Game): number => Math.max(0, g.cap - heads(g));
+
+/** 3.2 人均摊法三口径（alpha:884 一字不差）：
+    不足最少按最少摊 / 够最少按当前人数摊 / 锁定必打(sure)后最少作废按当前人数摊 */
+export const perHead = (g: Game): number =>
+  Math.round(g.fee / Math.max(g.sure ? 0 : g.min || 1, heads(g)));
+
+/** 我的报名条目（alpha:885） */
+export const myEntry = (g: Game): GameEntry | undefined => g.joined.find((e) => e.u.id === 0);
+
+/** 是否组织者（alpha:886） */
+export const isOrg = (g: Game): boolean => !!(g.organizer && g.organizer.id === 0);
+
+/** 我的局：组织 / 已加入 / 被邀请（alpha:887） */
+export const isMine = (g: Game): boolean => isOrg(g) || !!myEntry(g) || !!g.invitedMe;
+
+/** 同局打过 = 熟人（alpha:888，启动时算一次的静态集合 —— alpha 原样，后续新建的局不并入） */
+const knownIds = new Set<number>(games.filter(isMine).flatMap((g) => g.joined.map((e) => e.u.id)));
+
+/** 喜欢过的 或 同局打过（alpha:889） */
+export const known = (u: User): boolean => !!(u.liked || knownIds.has(u.id));
+
+/** 时段名（alpha:890） */
+export const slotName = (k: string): string => (slots.find((s) => s.k === k)?.n) || k;
+
+/** 频率名（alpha:891） */
+export const freqName = (f: number): string => (f === 0 ? '随缘' : `每周 ${f} 打`);
+
+/** 意向卡大字时段（alpha:1023-1024）：'工作日晚间' → ['晚间','工作日']，其余 → [名,''] */
+export const slotBig = (k: string): [string, string] => {
+  const n = slotName(k);
+  return n.startsWith('工作日') ? [n.slice(3), '工作日'] : n.startsWith('周末') ? [n.slice(2), '周末'] : [n, ''];
+};
