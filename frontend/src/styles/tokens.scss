@@ -1,1 +1,58 @@
-/* P1 填充：alpha.html:16-32 CSS 变量 + @font-face */
+/* ==========================================================
+   夜球场 NIGHTCOURT — 设计 tokens
+   来源：alpha.html:16-32（CSS 变量全量）+ 字体自托管（@fontsource woff2 拷入 static/fonts）
+   艺术方向：夜光球馆 / 墨黑 × 电光黄 × 珊瑚橙 / 无绿色
+   ========================================================== */
+
+/* ---------- 字体自托管：禁外网加载（Google Fonts 国内不可达） ---------- */
+@font-face {
+  font-family: 'Anton';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/anton-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/space-grotesk-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/static/fonts/space-grotesk-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/space-grotesk-latin-700-normal.woff2') format('woff2');
+}
+
+/* ---------- CSS 变量（alpha.html:16-32 逐字） ---------- */
+/* :root 覆盖 H5；page 覆盖小程序端页面根（uni-app 惯例，避免堵死小程序路径） */
+:root,
+page {
+  --ink: #0e0e12;          /* 底·墨黑 */
+  --ink2: #16161d;         /* 层·碳黑 */
+  --ink3: #1e1e27;         /* 卡·暗紫黑 */
+  --line: rgba(255, 212, 0, 0.14);
+  --lemon: #ffd400;        /* 主·电光黄 */
+  --coral: #ff5a36;        /* 副·珊瑚橙红 */
+  --lilac: #b8a9ff;        /* 点缀·淡紫 */
+  --ice: #6fe7ff;          /* 点缀·电青 */
+  --cream: #f5f1e8;        /* 文·暖白 */
+  --dim: #9b96a6;          /* 文·灰紫 */
+  --mono: 'Space Grotesk', ui-monospace, monospace;
+  --disp: 'Anton', 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', sans-serif;
+  --sans: 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Source Han Sans SC', system-ui, sans-serif;
+  --nav-h: 64px;
+  --r-lg: 22px;
+  --r-md: 16px;
+  --r-sm: 10px;
+}

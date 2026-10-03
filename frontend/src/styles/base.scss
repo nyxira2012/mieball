@@ -1,1 +1,147 @@
-/* P1 填充：reset + 通用排版类（alpha.html:33-91） */
+/* ==========================================================
+   夜球场 NIGHTCOURT — reset + 非组件通用排版类
+   来源：alpha.html:33-42（reset）、84-91（排版）、591-596（.stag 入场）
+   注：只放「未组件化」的通用类；btn/chip/field/inp 等已组件化的样式
+       一律封装在 components/ui/ 对应组件内，此处不留重复副本。
+       sw-capsule（alpha:194-200，战力页分制切换胶囊）暂无对应 ui 组件，
+       按计划落在 base 作为通用类，P9 战力页直接消费。
+   ========================================================== */
+
+/* ---------- reset（alpha:33-42） ---------- */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+html {
+  font-size: 16px;
+}
+/* alpha 原 body 有 overflow:hidden;height:100dvh —— 那是单文件 #stage 手机画布
+   的页面级滚动控制；uni-app 各页由自身容器滚动，此处不搬（桌面画布在 P11 处理） */
+body,
+page {
+  background: #08080b;
+  color: var(--cream);
+  font-family: var(--sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+::selection {
+  background: var(--lemon);
+  color: var(--ink);
+}
+/* 滚动条隐藏（alpha:41） */
+::-webkit-scrollbar {
+  display: none;
+}
+.hidden {
+  display: none !important;
+}
+
+/* ---------- 通用排版（alpha:84-91） ---------- */
+.kicker {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--lemon);
+}
+.h-disp {
+  font-family: var(--disp);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+h1.brand {
+  font-family: var(--disp);
+  font-size: 34px;
+  line-height: 1.04;
+  margin: 6px 0 2px;
+}
+h1.brand em {
+  font-style: normal;
+  color: var(--lemon);
+}
+.sub {
+  color: var(--dim);
+  font-size: 13px;
+}
+.sec-t {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 26px 2px 12px;
+}
+.sec-t .t {
+  font-family: var(--disp);
+  font-size: 19px;
+  letter-spacing: 0.02em;
+}
+.sec-t .more {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 0.1em;
+}
+
+/* ---------- 右上角分制切换胶囊开关（alpha:194-200，未组件化，暂存 base） ---------- */
+.sw-capsule {
+  display: inline-flex;
+  align-items: center;
+  background: var(--ink2);
+  border: 1px solid rgba(245, 241, 232, 0.14);
+  border-radius: 99px;
+  padding: 3px;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.2s;
+  flex: none;
+}
+.sw-capsule:active {
+  border-color: rgba(255, 212, 0, 0.4);
+}
+.sw-capsule .sw-opt {
+  padding: 5px 12px;
+  font-family: var(--disp);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  border-radius: 99px;
+  transition: all 0.2s;
+  line-height: 1;
+}
+.sw-capsule .sw-opt.on {
+  background: var(--lemon);
+  color: var(--ink);
+  box-shadow: 0 0 10px rgba(255, 212, 0, 0.25);
+}
+
+/* ---------- 入场 stagger（alpha:591-596，fadeUp 定义在 animations.scss） ---------- */
+.stag > * {
+  animation: fadeUp 0.5s ease backwards;
+}
+.stag > *:nth-child(1) {
+  animation-delay: 0.02s;
+}
+.stag > *:nth-child(2) {
+  animation-delay: 0.07s;
+}
+.stag > *:nth-child(3) {
+  animation-delay: 0.12s;
+}
+.stag > *:nth-child(4) {
+  animation-delay: 0.17s;
+}
+.stag > *:nth-child(5) {
+  animation-delay: 0.22s;
+}
+.stag > *:nth-child(6) {
+  animation-delay: 0.27s;
+}
+.stag > *:nth-child(7) {
+  animation-delay: 0.32s;
+}
+.stag > *:nth-child(8) {
+  animation-delay: 0.37s;
+}
