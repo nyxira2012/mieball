@@ -1,7 +1,9 @@
 <template>
   <!-- 全局单例弹层宿主：订阅 ui store 的 sheet（api/types.ts 的 SheetPayload 9 种联合类型），
-       按 type 判别分发到 biz 弹层组件（P3 先挂 stub 占位，P5b/P6/P7/P9 逐个填充）。
-       遮罩点击关闭走 AppSheet 的 close 事件 → ui.closeSheet()（alpha:838 closeSheet）。
+       按 type 判别分发到 biz 弹层组件（9 种全部已实装：P5b join/confirm/invite、P6 launch、
+       P7 intent-form、P9 profile）。
+       遮罩点击关闭走 AppSheet 的 close 事件 → ui.closeSheet()（alpha:838 closeSheet）；
+       页面隐藏时由 PageShell 的 onHide 统一关弹层（alpha:869 go() 进页前 closeSheet 的等价）。
        直接组合 ui/AppSheet（抽屉壳）；ui/SheetHost 为 P1 的通用注册表版本，试衣间页在用。
        WinPopup 不在这里——层级最高、独立组件，由 PageShell 挂载（alpha:565 #winpop z-110）。 -->
   <AppSheet :visible="ui.sheet != null" @close="ui.closeSheet()">

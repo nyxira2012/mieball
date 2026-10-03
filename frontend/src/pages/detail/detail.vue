@@ -149,8 +149,8 @@
         · 满 {{ game.cap }} 人进候补，有人退出即刻递补 · 人均＝总价 ¥{{ game.fee }} ÷ {{ perBase }}（{{ perNote }}）。
       </NoteCard>
     </view>
-    <!-- alpha 无此态（openDetail 有 guard）；直链/局被撤下时的兜底占位，非产品文案 -->
-    <view v-else class="ph">GAME NOT FOUND</view>
+    <!-- alpha 无此态（openDetail 有 guard）；直链/局被取消后的兜底，文案中性、非产品文案 -->
+    <view v-else class="ph">该局不存在或已被撤下</view>
   </PageShell>
 </template>
 
@@ -243,7 +243,11 @@ const onShare = () => {
 };
 /** alpha:1419 hitDeadline（低于最少且未锁 → dead；否则 locked，两分支 toast 在 store） */
 const onDeadline = () => {
-  if (game.value) store.hitDeadline(game.value.id);
+  if (!game.value) return;
+  const id = game.value.id;
+  store.hitDeadline(id);
+  // alpha:1183 dead 分支 go('meet')：未成局自动终止后落回约球页（组织者可恢复）
+  if (store.games.find((g) => g.id === id)?.dead) uni.switchTab({ url: '/pages/meet/meet' });
 };
 /** alpha:1441/1452 joinSheet → JoinSheet 弹层 */
 const onJoin = () => {

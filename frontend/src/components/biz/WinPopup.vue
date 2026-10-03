@@ -71,6 +71,13 @@ const winners = computed<User[]>(() => {
   background: rgba(6, 6, 9, 0.86);
   backdrop-filter: blur(6px);
 }
+/* P11 桌面宽屏（§2.5）：>560px 时结算卡整体约束到 480px 画布居中（alpha #winpop 在 #phone 内） */
+@media (min-width: 561px) {
+  .winpop {
+    max-width: 480px;
+    margin: 0 auto;
+  }
+}
 /* alpha.html:568-570 .wincard；#23201a 为 alpha 原文渐变首色（无对应 token，逐字保留）；
    pop keyframes 在全局 animations.scss（alpha:571） */
 .wincard {

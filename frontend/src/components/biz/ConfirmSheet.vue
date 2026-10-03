@@ -1,7 +1,9 @@
 <template>
   <!-- 确认类弹层（三用一壳）：quit 退局（alpha:1141-1146）/ cancel 取消局（alpha:1158-1162）/
        add-court 加场（alpha:1192-1196）。确认钮分别调 game.quitGame / cancelGame / addCourt
-       （store 内含 toast）→ 关弹层；视图刷新靠 store 响应式（alpha:1152/1168/1205 的 render+go 等价物）。 -->
+       （store 内含 toast）→ 关弹层；视图刷新靠 store 响应式（alpha:1152/1168/1205 的 render+go 等价物）。
+       P11 导航语义对齐：quit/cancel 确认成功后按 alpha:1152/1168 的 go('meet') 切到约球页
+       （store 硬约束不做导航，由本组件层承担；add-court 同 alpha openDetail 原地不动）。 -->
   <view v-if="g" class="cs">
     <!-- ===== quit：alpha:1142-1146 ===== -->
     <template v-if="kind === 'quit'">
@@ -64,17 +66,28 @@ const g = computed(() => game.games.find((x) => x.id === props.gameId) ?? null);
 /** alpha:1159 已报名人数（heads 口径，带的人也算） */
 const hs = computed(() => (g.value ? heads(g.value) : 0));
 
+/** P11（alpha:1152/1168 doQuit/doCancel 末尾的 go('meet')）：确认成功后切到约球页。
+    已在约球页时跳过（uni.switchTab 到当前 tab 会重触发 onShow/重排，
+    alpha 同页 go() 只是原地重渲染，语义等价「不动」）。 */
+function goMeet(): void {
+  const pages = getCurrentPages();
+  const cur = pages[pages.length - 1];
+  if (!cur || cur.route !== 'pages/meet/meet') uni.switchTab({ url: '/pages/meet/meet' });
+}
+
 /** alpha:1148-1152 doQuit */
 function onQuit(): void {
   if (!g.value) return;
   game.quitGame(g.value.id);
   ui.closeSheet();
+  goMeet(); // alpha:1152 go('meet')
 }
 /** alpha:1164-1168 doCancel */
 function onCancel(): void {
   if (!g.value) return;
   game.cancelGame(g.value.id);
   ui.closeSheet();
+  goMeet(); // alpha:1168 go('meet')
 }
 /** alpha:1198-1205 doAddCourt */
 function onAddCourt(): void {

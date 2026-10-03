@@ -63,4 +63,11 @@ defineExpose({ burst })
   pointer-events: none;
   overflow: hidden;
 }
+/* P11 桌面宽屏（§2.5）：>560px 时撒花层约束到 480px 画布居中（alpha confetti 在 #phone 内） */
+@media (min-width: 561px) {
+  .cf-layer {
+    max-width: 480px;
+    margin: 0 auto;
+  }
+}
 </style>

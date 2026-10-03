@@ -216,7 +216,10 @@ function publish(): void {
     min: lf.min, cap: lf.cap, fee, note: lf.note.trim(), // alpha:1384 note trim
   };
   if (isEd.value) game.editGame(lf.gid, input);
-  else game.publishGame(input);
+  else {
+    game.publishGame(input);
+    uni.switchTab({ url: '/pages/meet/meet' }); // alpha:1397 发布成功 go('meet')
+  }
   ui.closeSheet(); // alpha:1393/1398 closeSheet
 }
 </script>
