@@ -1,7 +1,7 @@
 <template>
-  <!-- 球局详情（3.2）· alpha.html:1400-1467 openDetail() 模板逐字对齐（P5a 静态结构）。
-       数据按 url query 的 id 从 game store 取局；所有按钮本阶段为占位 handler（P5b 接 store/弹层、
-       P8 接现场页），不做路由跳转与 store 写操作。非 tab 页：无 TabBar，仍挂全部宿主。 -->
+  <!-- 球局详情（3.2）· alpha.html:1400-1467 openDetail() 模板逐字对齐（P5a 静态结构 + P5b 操作接线）。
+       数据按 url query 的 id 从 game store 取局；全部动作走 game/live store 与 SheetHost 弹层，
+       toast 文案由 store 逐字负责，视图刷新靠响应式。非 tab 页：无 TabBar，仍挂全部宿主。 -->
   <PageShell>
     <view v-if="game" class="stag">
       <!-- alpha:1403-1407 页头：kicker + 局名（首个 ' · ' 断行，其余保留） -->
@@ -70,7 +70,7 @@
       </SectionTitle>
       <view class="grid-p">
         <template v-for="e in game.joined" :key="e.u.id">
-          <view class="pcard" :class="{ me: e.u.id === 0 }">
+          <view class="pcard" :class="{ me: e.u.id === 0 }" @click="onPlayer(e.u.id)">
             <view v-if="e.u.shadow" class="tag">随行</view>
             <view v-else-if="e.bring" class="tag">带 {{ e.bring }} 人</view>
             <view class="avatar"><ChibiAvatar :chibi="e.u.chibi" :size="56" /></view>
@@ -155,7 +155,7 @@
 </template>
 
 <script setup lang="ts">
-/* alpha.html:1400-1467 openDetail 静态化（P5a）；
+/* alpha.html:1400-1467 openDetail（P5a 静态化 + P5b 操作接线）；
    摊法口径引用 utils/format 的 perHead（alpha:884，带注释口径）。 */
 import { computed, ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
@@ -166,6 +166,8 @@ import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
 import NoteCard from '@/components/ui/NoteCard.vue';
 import SectionTitle from '@/components/ui/SectionTitle.vue';
 import { useGameStore } from '@/stores/game';
+import { useUiStore } from '@/stores/ui';
+import { useLiveStore } from '@/stores/live';
 import { heads, needOf, perHead, myEntry, isOrg } from '@/utils/format';
 import type { CourtMode } from '@/api/types';
 
@@ -230,18 +232,63 @@ const perNote = computed(() => {
   return g.sure ? '必定开局后按实际人数摊' : hs.value < g.min ? '不足最少按最少摊' : '按当前人数摊';
 });
 
-/* ---- 操作占位（静态阶段不写 store / 不做路由）：P5b 接 game store 动作与 SheetHost 弹层 ---- */
-const onShare = () => {};    /* P5b: store.shareGame(game.id)（alpha:1418 shareGame） */
-const onDeadline = () => {}; /* P5b: store.hitDeadline(game.id)（alpha:1419 hitDeadline） */
-const onJoin = () => {};     /* P5b: ui.openSheet({type:'join',gameId})（alpha:1441/1452 joinSheet） */
-const onQuit = () => {};     /* P5b: ui.openSheet({type:'quit-confirm',gameId})（alpha:1453 quitSheet） */
-const onSure = () => {};     /* P5b: store.sureGame(game.id)（alpha:1459 sureGame） */
-const onEdit = () => {};     /* P5b: ui.openSheet({type:'launch',gameId})（alpha:1460 editSheet） */
-const onCancel = () => {};   /* P5b: ui.openSheet({type:'cancel-confirm',gameId})（alpha:1461 cancelSheet） */
-const onInvite = () => {};   /* P5b: ui.openSheet({type:'invite-to-game',gameId})（alpha:1449 inviteFromGame） */
-const onAddCourt = () => {}; /* P5b: ui.openSheet({type:'add-court',gameId})（alpha:1450 addCourtSheet） */
-const onStart = () => {};    /* P8: live store startLive（alpha:1468 startLive） */
-const onLive = () => {};     /* P8: uni.navigateTo → live 页（alpha:1465 go('live')） */
+/* ---- 操作接线（P5b）：toast 均由 game store 动作内逐字文案负责；视图刷新靠 store 响应式
+   （alpha:1136/1152/1168 等处的 renderHome/renderMeet/openDetail/go 由响应式 + 既有页面承担） ---- */
+const ui = useUiStore();
+const liveStore = useLiveStore();
+
+/** alpha:1418 shareGame（组织者首享 3 秒后模拟小张加入，store 内逐字） */
+const onShare = () => {
+  if (game.value) store.shareGame(game.value.id);
+};
+/** alpha:1419 hitDeadline（低于最少且未锁 → dead；否则 locked，两分支 toast 在 store） */
+const onDeadline = () => {
+  if (game.value) store.hitDeadline(game.value.id);
+};
+/** alpha:1441/1452 joinSheet → JoinSheet 弹层 */
+const onJoin = () => {
+  if (game.value) ui.openSheet({ type: 'join', gameId: game.value.id });
+};
+/** alpha:1453 quitSheet → ConfirmSheet(kind=quit) */
+const onQuit = () => {
+  if (game.value) ui.openSheet({ type: 'quit-confirm', gameId: game.value.id });
+};
+/** alpha:1459 sureGame */
+const onSure = () => {
+  if (game.value) store.sureGame(game.value.id);
+};
+/** alpha:1460 editSheet → openLaunch(id)：LaunchSheet 编辑态（P6 填充） */
+const onEdit = () => {
+  if (game.value) ui.openSheet({ type: 'launch', gameId: game.value.id });
+};
+/** alpha:1461 cancelSheet → ConfirmSheet(kind=cancel) */
+const onCancel = () => {
+  if (game.value) ui.openSheet({ type: 'cancel-confirm', gameId: game.value.id });
+};
+/** alpha:1449 inviteFromGame → InviteSheet(mode=to-game) */
+const onInvite = () => {
+  if (game.value) ui.openSheet({ type: 'invite-to-game', gameId: game.value.id });
+};
+/** alpha:1450 addCourtSheet → ConfirmSheet(kind=add-court) */
+const onAddCourt = () => {
+  if (game.value) ui.openSheet({ type: 'add-court', gameId: game.value.id });
+};
+/** alpha:1468 startLive：live store 初始化（status→live · 随行展开 · 发牌）→ 跳现场页 */
+const onStart = () => {
+  if (!game.value) return;
+  liveStore.startLive(game.value.id);
+  uni.navigateTo({ url: `/pages/live/live?id=${game.value.id}` });
+};
+/** alpha:1465 go('live')：已 live 的局回现场页 */
+const onLive = () => {
+  if (!game.value) return;
+  uni.navigateTo({ url: `/pages/live/live?id=${game.value.id}` });
+};
+/** 名单球员卡 → 球员档案弹层（ProfileSheet 全产品共用；alpha 详情卡未挂 onclick，
+   本迁移按 P9「现场队员/榜单都唤起」的共用口径在此接入） */
+const onPlayer = (uid: number) => {
+  ui.openSheet({ type: 'profile', userId: uid });
+};
 </script>
 
 <style lang="scss" scoped>
