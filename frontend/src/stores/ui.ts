@@ -31,5 +31,16 @@ export const useUiStore = defineStore('ui', () => {
   function showWin(w: WinData): void { win.value = w; }
   function closeWin(): void { win.value = null; } // alpha:1729 closeWin
 
-  return { scoreMode, sheet, win, toastMsg, toastKey, openSheet, closeSheet, toast, setScoreMode, showWin, closeWin };
+  /* —— P3 纯增量：全局撒花触发器（alpha:839-845 confetti(n) 的状态层入口）——
+     Confetti.vue（P1）是纯展示件，只接受 trigger 计数 + count 粒数两个 props，
+     因此除 confettiKey 计数器外需附带 confettiN 携带本波粒数（14=开下一轮 / 56=收局，P8a/P8b 用）。
+     不改动本文件 P2 既有字段与动作。 */
+  const confettiKey = ref(0);
+  const confettiN = ref(46);
+  function burst(n = 46): void {
+    confettiN.value = n;
+    confettiKey.value++;
+  }
+
+  return { scoreMode, sheet, win, toastMsg, toastKey, confettiKey, confettiN, openSheet, closeSheet, toast, setScoreMode, showWin, closeWin, burst };
 });
