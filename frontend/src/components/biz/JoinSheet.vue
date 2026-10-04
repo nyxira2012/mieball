@@ -36,6 +36,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppField from '@/components/ui/AppField.vue';
 import AppStepper from '@/components/ui/AppStepper.vue';
 import { useGameStore } from '@/stores/game';
+import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
 import { heads, needOf, perHead, myEntry, isForced } from '@/utils/format';
 
@@ -44,6 +45,7 @@ const props = defineProps({
 });
 
 const game = useGameStore();
+const session = useSessionStore();
 const ui = useUiStore();
 
 /** alpha:1109 games.find；局被撤下等场景的兜底（v-if 不渲染） */
@@ -65,9 +67,15 @@ const feeTxt = computed(() => (g.value && g.value.fee != null ? `人均约 ¥${p
 /** alpha:1107/1111 let jbring=0（带的人数，0-3，alpha:1124 jStep 的 min/max） */
 const jbring = ref(0);
 
-/** alpha:1127-1137 doJoin：store.joinGame（含 toast）→ closeSheet（已加入也只关弹层） */
+/** alpha:1127-1137 doJoin：store.joinGame（含 toast）→ closeSheet（已加入也只关弹层）。
+    1.1 先看后报：游客先弹名片建号卡，建号成功自动接着报名（D3 拆两步、用户看一步） */
 function onConfirm(): void {
   if (!g.value) return;
+  if (session.isGuest) {
+    ui.closeSheet();
+    ui.openSheet({ type: 'signup-card', pendingJoin: { gameId: g.value.id, bring: jbring.value } });
+    return;
+  }
   game.joinGame(g.value.id, jbring.value);
   ui.closeSheet();
 }

@@ -4,7 +4,7 @@
    reactive 对同一原始目标返回同一代理 —— 战力页自动联动。 */
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
-import { CURRENT_USER_ID, DEFAULT_MOCK_CHECKIN_COUNT } from '@/api';
+import { DEFAULT_MOCK_CHECKIN_COUNT, U } from '@/api';
 import type { CheckStatus, LiveState, User, WinChange } from '@/api/types';
 import { settleElo } from '@/utils/elo';
 import { DRESS_RANGES } from '@/utils/chibi';
@@ -81,17 +81,45 @@ export const useLiveStore = defineStore('live', () => {
     } else p.check = st;
   }
 
-  /** 歇一轮 / 连战（alpha:1629-1636 toggleMine）：互斥；连战排到队首 */
+  /** 歇一轮 / 连战（alpha:1629-1636 toggleMine）：互斥；连战排到队首。「我」id 运行时读 U.me
+      （真账号接管后非 0，快照常量 CURRENT_USER_ID 会认错人） */
   function toggleMine(k: 'skip' | 'fire'): void {
+    const myId = U.me.id;
     const L = live.value;
-    const m = L ? pById(L, CURRENT_USER_ID) : undefined;
+    const m = L ? pById(L, myId) : undefined;
     if (!L || !m) return;
     if (k === 'skip') { m.skip = !m.skip; if (m.skip) m.fire = false; }
     else {
       m.fire = !m.fire; if (m.fire) m.skip = false;
-      if (m.fire) { const i = L.queue.indexOf(CURRENT_USER_ID); if (i >= 0) { L.queue.splice(i, 1); L.queue.unshift(CURRENT_USER_ID); } }
+      if (m.fire) { const i = L.queue.indexOf(myId); if (i >= 0) { L.queue.splice(i, 1); L.queue.unshift(myId); } }
     }
     useUiStore().toast(k === 'skip' ? (m.skip ? '已标记歇一轮 · 下轮跳过你' : '取消歇一轮') : (m.fire ? '连战模式 · 排到队首' : '取消连战'));
+  }
+
+  /** 扫码自签到（2.1·选项A：到场一律是注册球友，无访客通道）。
+      名册没我（空降）→ 先报名进局再把人放进名册；然后标「中途加入」排进队首。
+      现场没开或开的是别局 → 先切到目标局（扫码直达场景）。 */
+  function arriveMe(gameId: number): string | null {
+    const g = useGameStore().games.find((x) => x.id === gameId);
+    if (!g) {
+      useUiStore().toast('球局不存在或已结束');
+      return null;
+    }
+    if (!live.value || live.value.g.id !== gameId) startLive(gameId);
+    const L = live.value!;
+    const myId = U.me.id;
+    let p = pById(L, myId);
+    if (!p) {
+      useGameStore().joinGame(gameId, 0); // 空降：先成为报名球友（名片建号已在前一步完成）
+      L.roster.push(U.me);                // 名册直接引用「我」对象：战力/档案全局联动（alpha:1474 同法）
+      p = U.me;
+    }
+    if (p.check === 'ok' || p.check === 'join') {
+      useUiStore().toast('你已经在场了');
+      return null;
+    }
+    setCheck(myId, 'join'); // setCheck 内置 toast「中途加入 · 排进队首」
+    return '已到场 · 进候场区';
   }
 
   /** 开下一轮（alpha:1637-1648 newRound）：未打完场次退回重排（人回队尾）。撒花由页面层 Confetti 做。 */
@@ -146,7 +174,7 @@ export const useLiveStore = defineStore('live', () => {
       p.month = (p.month || 0) + d;               // alpha:1705
       p.play++;                                   // alpha:1706
       if (up && !p.shadow) p.win++;
-      if (p.id === CURRENT_USER_ID && p.last5) p.last5 = [...p.last5.slice(1), up ? 'W' : 'L']; // alpha:1707 仅我滚动近5场（alpha 原样）
+      if (p.id === U.me.id && p.last5) p.last5 = [...p.last5.slice(1), up ? 'W' : 'L']; // alpha:1707 仅我滚动近5场（alpha 原样）
       chg.push({ name: p.name, up, d });
     });
     const wNm = winners.map((id) => byId(id).name).join(' & '); // alpha:1709
@@ -159,5 +187,5 @@ export const useLiveStore = defineStore('live', () => {
     useUiStore().showWin({ names: wNm, sa: c.sa, sb: c.sb, chg }); // WinPopup 消费（alpha:1716-1725）
   }
 
-  return { live, hasLive, startLive, setCheck, toggleMine, newRound, point, undoPoint, endMatch };
+  return { live, hasLive, startLive, setCheck, toggleMine, arriveMe, newRound, point, undoPoint, endMatch };
 });

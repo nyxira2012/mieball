@@ -3,7 +3,11 @@
        记分 tab = P8b（Scoreboard + 已完成列表，alpha:1651-1674）。非 tab 页：无 TabBar，仍挂全部
        宿主（记分收局要弹 WinPopup/撒花，收局撒花在下方 watch ui.win → burst(56)，alpha:1726）。
        url query 的 id：onShow 时若现场未开则自动 startLive（alpha 里 startLive 由详情页「开始打球」
-       调用，这里兜底直链/刷新场景；hasLive 已开则不重复，避免重置名册）。 -->
+       调用，这里兜底直链/刷新场景；hasLive 已开则不重复，避免重置名册）。
+       扫码签到深链（2.1·选项A）：签到二维码一律编码
+         {origin}/#/pages/live/live?id=<球局id>
+       uni-app H5 hash 路由原生承接：扫码 → 本页 onLoad 接 id → onShow 自动开现场；游客看得到
+       名册，点「我到了」先弹名片建号（SignupSheet），建号成功自动签到进候场区。 -->
   <PageShell>
     <!-- 无 live 空态（alpha:1532-1535 逐字：kicker margin-top:30px · 现场大字 · empty margin-top:20px） -->
     <template v-if="!liveStore.hasLive">
@@ -26,8 +30,11 @@
         <view v-for="t in TABS" :key="t.k" class="seg-btn" :class="{ on: tab === t.k }" @click="tab = t.k">{{ t.n }}</view>
       </view>
 
-      <!-- alpha:1548-1551 到场 panel：说明行 + 名册逐行 AttendRow（alpha:1549 说明逐字） -->
+      <!-- alpha:1548-1551 到场 panel：自签到行（2.1 扫码入场）+ 说明行 + 名册逐行 AttendRow -->
       <view class="panel" :class="{ on: tab === 'attend' }">
+        <!-- 2.1·选项A：到场一律注册球友——游客点「我到了」先弹名片建号，成功后自动签到进候场区 -->
+        <AppButton v-if="!arrived" variant="pri" block class="arrive-btn" @click="onSelfArrive">📍 我到了 · 签到进场</AppButton>
+        <view v-else class="sub arrived-row">✓ 你已在场 · {{ arrivedTxt }}</view>
         <view class="sub pn-sub">签到 / 迟到 / 早退 / 中途加入——来没来、几点走，清清楚楚。</view>
         <AttendRow v-for="p in L.roster" :key="p.id" :player="p" @check="(s) => onCheck(p.id, s)" />
       </view>
@@ -98,11 +105,14 @@ import CourtCard from '@/components/biz/CourtCard.vue';
 import QueueList from '@/components/biz/QueueList.vue';
 import Scoreboard from '@/components/biz/Scoreboard.vue';
 import { useLiveStore } from '@/stores/live';
+import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
+import { U } from '@/api';
 import { pById } from '@/utils/rotate';
 import type { CheckStatus, CourtMode, LiveCourt } from '@/api/types';
 
 const liveStore = useLiveStore();
+const session = useSessionStore();
 const ui = useUiStore();
 
 /** 从 url query 接 id（onLoad options），onShow 兜底 startLive 用 */
@@ -114,9 +124,26 @@ onLoad((options) => {
   liveId.value = Number.isFinite(n) ? n : null;
 });
 
-/** alpha:1573 me() = pById(0)：轮转面板歇/连战按钮读我的标记 */
+/** alpha:1573 me()：名册里「我」那一行——运行时读 U.me.id（真账号接管后非 0） */
 const L = computed(() => liveStore.live);
-const me = computed(() => (L.value ? pById(L.value, 0) : undefined));
+const me = computed(() => (L.value ? pById(L.value, U.me.id) : undefined));
+
+/** 自签到状态（2.1）：到场 = ok/late/join 三态任一；文案随状态给 */
+const arrived = computed(() => !!me.value && ['ok', 'late', 'join'].includes(me.value.check ?? ''));
+const arrivedTxt = computed(() => {
+  const st = me.value?.check;
+  return st === 'late' ? '迟到 · 排队尾' : st === 'join' ? '中途加入 · 候场中' : '正常到场';
+});
+
+/** 扫码/现场自签到：游客先弹名片建号（选项A），建号成功由 SignupSheet 接着 arriveMe */
+function onSelfArrive(): void {
+  if (!L.value) return;
+  if (session.isGuest) {
+    ui.openSheet({ type: 'signup-card', pendingCheckin: { gameId: L.value.g.id } });
+    return;
+  }
+  liveStore.arriveMe(L.value.g.id);
+}
 
 /** onShow：query 带 id 且现场未开 → 自动 startLive；hasLive 已开则跳过（避免重置名册） */
 onShow(() => {
@@ -254,6 +281,15 @@ const goOpenTonight = (): void => {
 
 /* ---------- 到场 panel 说明行（alpha:1549 内联 margin-bottom:10px） ---------- */
 .pn-sub {
+  margin-bottom: 10px;
+}
+
+/* 自签到行（2.1 扫码入场）：按钮与说明行间距 / 已在场提示行 */
+.arrive-btn {
+  margin-bottom: 12px;
+}
+.arrived-row {
+  color: var(--lemon);
   margin-bottom: 10px;
 }
 

@@ -104,6 +104,7 @@ import AppStepper from '@/components/ui/AppStepper.vue';
 import OptionChips from '@/components/ui/OptionChips.vue';
 import WheelPicker from '@/components/ui/WheelPicker.vue';
 import { useGameStore } from '@/stores/game';
+import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
 import type { CourtMode, PublishInput } from '@/api/types';
 import { dayToken, durTxt, gameTime } from '@/utils/time';
@@ -114,6 +115,7 @@ const props = defineProps({
 });
 
 const game = useGameStore();
+const session = useSessionStore();
 const ui = useUiStore();
 
 /* ---- 拨盘常量与网格 ---- */
@@ -339,6 +341,12 @@ function publish(): void {
   };
   if (isEd.value) game.editGame(lf.gid, input);
   else {
+    // 1.1 先看后报：游客建局先弹名片建号卡，建号成功由弹层接着发布（表单值随身带走不重填）
+    if (session.isGuest) {
+      ui.closeSheet();
+      ui.openSheet({ type: 'signup-card', pendingLaunch: input });
+      return;
+    }
     game.publishGame(input);
     uni.switchTab({ url: '/pages/meet/meet' }); // 发布成功回约球页（alpha:1397 go('meet')）
   }
