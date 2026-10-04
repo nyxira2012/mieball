@@ -2,18 +2,19 @@
   <!-- 页面布局壳：背景装饰圆环 + 统一 padding 容器 + 全局宿主（TabBar 仅 tab 页）。
        6 个页面统一组合本组件，页面自身只做内容接线（迁移计划 §1 组件库铁律）。
        层级：BizBackdrop z-0（底色+圆环，内容之下）→ .page 内容 z-1 →
-       sheet 遮罩/面板 80/90 → grain 99 → nav 100 → winpop 110 → confetti 115 → toast 120。 -->
+       sheet 遮罩/面板 80/90 → grain 99 → nav 100 → confetti 115 → toast 120。
+       （原 winpop 110 随 WinPopup 退役让位，2.1 打球页改版后终局结算为 live 页本地弹层，批2 接线。） -->
   <view class="shell">
     <BizBackdrop />
-    <!-- alpha.html:75-76 .page padding：safe-area 顶距 14px · 左右 18px · 底部 nav 高 + safe-area + 86px -->
-    <view class="page">
+    <!-- alpha.html:75-76 .page padding：safe-area 顶距 14px · 左右 18px · 底部 nav 高 + safe-area + 86px；
+         bare=true 时 padding 归零（live 打球页全屏三块自管布局：顶条/滚动区/置底条各自处理 safe-area） -->
+    <view class="page" :class="{ 'page-bare': bare }">
       <slot />
     </view>
     <TabBar v-if="tab" :current="tab" />
     <ToastHost />
     <ConfettiHost />
     <SheetHost />
-    <WinPopup />
     <!-- 噪点颗粒层（alpha:70-71 .grain）：fixed 全屏、z-99、pointer-events none -->
     <view class="grain" />
   </view>
@@ -27,18 +28,18 @@ import TabBar from './TabBar.vue';
 import ToastHost from './ToastHost.vue';
 import ConfettiHost from './ConfettiHost.vue';
 import SheetHost from './SheetHost.vue';
-import WinPopup from './WinPopup.vue';
 import { useUiStore } from '@/stores/ui';
 
 defineProps({
   /** 当前 tab 键；不传 = 非 tab 页（detail/live，无 TabBar） */
   tab: { type: String as PropType<'home' | 'meet' | 'power' | 'mine'>, default: undefined },
+  /** 裸页模式：壳层 padding 清零，页面自管边距（2.1 打球页三块全屏布局用；默认行为不变） */
+  bare: { type: Boolean, default: false },
 });
 
 /* P11 跨页弹层清理（P3 遗留）：alpha:869 go() 每次切页前必 closeSheet() 的等价——
    页面隐藏（TabBar 切换 / 进退 detail/live）时关闭全局单例弹层，避免弹层残留到别的页。
-   uni-app Vue3 组件内可注册页面生命周期（onHide 由 @dcloudio/uni-app 导出）。
-   WinPopup（ui.win）不随页隐 —— alpha 的 go() 同样只关 #sheet 不动 #winpop。 */
+   uni-app Vue3 组件内可注册页面生命周期（onHide 由 @dcloudio/uni-app 导出）。 */
 const ui = useUiStore();
 onHide(() => ui.closeSheet());
 </script>
@@ -57,6 +58,10 @@ onHide(() => ui.closeSheet());
   /* alpha.html:75-76（去掉 alpha SPA 页签的 opacity/transform 过渡，uni 路由自带转场） */
   padding: calc(env(safe-area-inset-top) + 14px) 18px
     calc(var(--nav-h) + env(safe-area-inset-bottom) + 86px);
+}
+/* bare：全屏自管布局页专用（其余样式/宿主/层级不动） */
+.page-bare {
+  padding: 0;
 }
 
 /* ---------- P11 桌面宽屏画布（迁移计划 §2.5 · alpha:44-56 #stage/#phone） ----------

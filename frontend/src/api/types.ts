@@ -37,7 +37,8 @@ export interface User {
   cardBg?: CardBg;
   recentStats?: RecentStats;
   check?: CheckStatus;
-  skip?: boolean;        // 歇一轮：消耗型徽章（alpha:1496）
+  skip?: number;         // 剩余歇轮数：歇两轮=2（2.1 文档+原型「候场区点人可设歇两轮」）。
+                        // 发牌时每次递减 1（rotate.ts avail），归 0 自动归队；0=不在歇
   fire?: boolean;        // 连战：排到队首，与歇互斥（alpha:1631-1633）
 }
 
@@ -158,11 +159,9 @@ export type SheetPayload =
   // 名片建号卡（1.1 A1）：游客点报名/建局/扫码签到时弹出；建号成功自动接着完成挂起的动作（D3 两步拆分）
   // pendingCheckin（2.1·选项A）：扫码到场一律走名片建号，建号成功后自动「我到了」进候场区
 
-/** 胜利结算卡每人涨跌 */
+/** 结算 ±积分一行（2.1 打球页改版：终局结算弹窗 EndSettleModal 的预览行复用本形状——
+    名字 / 涨或跌 / 数值；WinPopup 退役后 live store 不再落 ui.win，弹窗自调 settleElo 组装） */
 export interface WinChange { name: string; up: boolean; d: number }
-
-/** 胜利结算卡（alpha:1716-1724 WinPopup：胜者名/比分/每人涨跌；独立组件层级最高，不走 SheetHost） */
-export interface WinData { names: string; sa: number; sb: number; chg: WinChange[] }
 
 /** 组局表单提交值（publishGame/editGame 共用；2026-10-04 定：费用从表单去掉，改局不动原局的 fee；
     说明字段去掉，改选规则三件——分制/轮转/迟到规则，直接落 Game 的 score/mode/lateRule）

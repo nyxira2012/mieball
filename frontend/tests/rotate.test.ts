@@ -5,7 +5,7 @@ import { avail, fillCourts, nextMatch, pById } from '@/utils/rotate';
 let seq = 0;
 function mkP(elo: number, extra: Partial<User> = {}): User {
   seq += 1;
-  return { id: seq, name: `P${seq}`, elo, play: 1, win: 0, month: 0, chibi: {}, check: 'ok', skip: false, fire: false, ...extra };
+  return { id: seq, name: `P${seq}`, elo, play: 1, win: 0, month: 0, chibi: {}, check: 'ok', skip: 0, fire: false, ...extra };
 }
 function mkLive(mode: Game['mode'], players: User[], opts: Partial<LiveState> = {}): LiveState {
   return {
@@ -21,17 +21,21 @@ function mkLive(mode: Game['mode'], players: User[], opts: Partial<LiveState> = 
   };
 }
 
-describe('avail：skip 消耗型徽章、排除非 ok（alpha:1492-1500）', () => {
-  it('歇一轮本轮跳过且徽章被消耗；迟到/早退/未到不进池', () => {
-    const a = mkP(1500, { skip: true });
-    const b = mkP(1600, { check: 'late' });
+describe('avail：skip 歇两轮递减 · 只拦 absent/left（2.1 §3 放行裁决：到场者都发牌）', () => {
+  it('歇两轮=2：每次发牌消耗一轮（2→1→0），归 0 自动归队；late/join 进池、absent/left 不进', () => {
+    const a = mkP(1500, { skip: 2 });
+    const late = mkP(1600, { check: 'late' });
+    const join = mkP(1450, { check: 'join' });
+    const absent = mkP(1430, { check: 'absent' });
+    const left = mkP(1420, { check: 'left' });
     const c = mkP(1400);
     const d = mkP(1300);
-    const live = mkLive('rotate', [a, b, c, d]);
-    expect(avail(live)).toEqual([c.id, d.id]);
-    expect(a.skip).toBe(false); // 徽章消耗
-    // 再发一轮：a 恢复可上场
-    expect(avail(live)).toEqual([a.id, c.id, d.id]);
+    const live = mkLive('rotate', [a, late, join, absent, left, c, d]);
+    expect(avail(live)).toEqual([late.id, join.id, c.id, d.id]);
+    expect(a.skip).toBe(1); // 第一轮消耗
+    expect(avail(live)).toEqual([late.id, join.id, c.id, d.id]);
+    expect(a.skip).toBe(0); // 第二轮消耗，归 0
+    expect(avail(live)).toEqual([a.id, late.id, join.id, c.id, d.id]); // 归 0 后自动归队
   });
 });
 

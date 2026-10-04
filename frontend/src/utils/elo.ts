@@ -45,7 +45,8 @@ export interface EloOutcome { up: boolean; d: number; elo: number }
     - 双打按两队人均分算期望、落到个人（alpha:1692 唯一算得平的办法）；
     - delta = max(1, round(K*(1-exp)))，loss = max(1, round(delta*0.6))（败方只扣胜方涨分的六成）；
     - 随行访客半权重（涨取 ceil、跌取 floor，不进榜）；地板 400。
-    输入只需每人的 elo 与 shadow，不产生副作用（落账由 live store 的 endMatch 做）。 */
+    输入只需每人的 elo 与 shadow，不产生副作用（落账由 live store 的 confirmSettle 做，
+    终局弹窗的 ±积分预览也直接调它组 WinChange 行）。 */
 export function settleElo(winners: EloPlayer[], losers: EloPlayer[]): EloOutcome[] {
   const rat = (p: EloPlayer): number => (p.shadow ? SHADOW_RATING : p.elo); // alpha:1693
   const wAvg = winners.map(rat).reduce((a, b) => a + b, 0) / winners.length;   // alpha:1694

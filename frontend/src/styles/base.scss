@@ -165,3 +165,26 @@ h1.brand em,
 .stag > *:nth-child(8) {
   animation-delay: 0.37s;
 }
+
+/* ---------- 人员徽章（live 系组件共用：访客/歇/燃/随行——2.1 改版收源，原各组件 scoped 副本删） ----------
+   只管形与色；位置性 margin（头像下方 vs 名字右侧）由使用组件自带 scoped 规则补 */
+.badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 9px;
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+.badge.rest {
+  background: rgba(111, 231, 255, 0.15);
+  color: var(--ice);
+}
+.badge.fire {
+  background: rgba(255, 90, 54, 0.18);
+  color: var(--coral);
+}
+.badge.guest,
+.badge.shadow {
+  background: rgba(184, 169, 255, 0.16);
+  color: var(--lilac);
+}

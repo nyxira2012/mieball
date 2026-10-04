@@ -4,8 +4,8 @@
        P7 intent-form、P9 profile、5.1 logout-confirm/delete-confirm）。
        遮罩点击关闭走 AppSheet 的 close 事件 → ui.closeSheet()（alpha:838 closeSheet）；
        页面隐藏时由 PageShell 的 onHide 统一关弹层（alpha:869 go() 进页前 closeSheet 的等价）。
-       直接组合 ui/AppSheet（抽屉壳）；ui/SheetHost 为 P1 的通用注册表版本，试衣间页在用。
-       WinPopup 不在这里——层级最高、独立组件，由 PageShell 挂载（alpha:565 #winpop z-110）。 -->
+       直接组合 ui/AppSheet（抽屉壳）。（P1 时代的 ui/SheetHost 通用注册表版本已随试衣间页退役删除）
+       2.1 打球页的终局结算弹窗是 live 页本地弹层、不走本宿主（WinPopup 已退役）。 -->
   <AppSheet :visible="ui.sheet != null" @close="ui.closeSheet()">
     <ProfileSheet v-if="s?.type === 'profile'" :user-id="s.userId" />
     <JoinSheet v-else-if="s?.type === 'join'" :game-id="s.gameId" />

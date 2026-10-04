@@ -1,6 +1,6 @@
 /* 扫码自签到链路（2.1·选项A）+ 「我」id 运行时化回归：
    - arriveMe：空降（名册没我）→ 报名进名册 + 中途加入队首；在册未到 → 到场；已在场 → 幂等
-   - 真账号接管 U.me（id 非 0）后：isMe/myEntry 认得出、toggleMine 找得到人（快照常量回归） */
+   - 真账号接管 U.me（id 非 0）后：isMe/myEntry 认得出、togglePerson 找得到人（快照常量回归） */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
 import { U } from '@/api/mock';
@@ -91,7 +91,7 @@ describe('真账号接管「我」位后的识别回归', () => {
     Object.assign(U.me, demo);
   });
 
-  it('toggleMine 在真 id 下找得到「我」行（快照常量回归）', () => {
+  it('togglePerson 在真 id 下找得到「我」行（快照常量回归）', () => {
     takeoverAs(42, '海淀反手王');
     const game = useGameStore();
     const live = useLiveStore();
@@ -103,7 +103,7 @@ describe('真账号接管「我」位后的识别回归', () => {
     L.queue = L.queue.filter((x) => x !== 42);
     live.setCheck(42, 'join');
 
-    live.toggleMine('fire');
+    live.togglePerson(42, 'fire');
 
     const me = L.roster.find((p) => p.id === 42)!;
     expect(me.fire).toBe(true);

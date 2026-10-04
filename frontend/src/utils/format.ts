@@ -6,6 +6,17 @@ import { U, games, slots } from '@/mock/data';
     live store 的 setRuleMode toast、detail 规则牌、LaunchSheet 规则三件共用一份） */
 export const MODE_NAMES: Record<CourtMode, string> = { winner: '赢家留场', rotate: '纯粹轮转', balance: '均衡配对' };
 
+/** 场馆词（loc「望京 · 花家地球馆 · 2 片」取第二段，无则空串）——
+    打球页顶条 brand 高亮词与二维码浮层标题共用 */
+export const venueOf = (g: Game): string => g.loc.split(' · ')[1] ?? '';
+
+/** 场地显示名（booked 存量「3号」→「3号场」；无登记回退序号场）——
+    打球页对局卡/空闲卡与终局结算弹窗 kicker 共用 */
+export const courtLabel = (booked: string[] | undefined, idx: number): string => {
+  const n = booked?.[idx] ?? `${idx + 1}号`;
+  return n.endsWith('场') ? n : `${n}场`;
+};
+
 /** 是否当前登录用户（运行时读 U.me.id：真账号接管「我」位后 id 非 0，快照常量会认错人） */
 export const isMe = (id?: number): boolean => id === U.me.id;
 
