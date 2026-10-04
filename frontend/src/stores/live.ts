@@ -32,6 +32,7 @@ export const useLiveStore = defineStore('live', () => {
           id: 9000 + Math.floor(Math.random() * 999),
           name: `${e.u.name.slice(0, 2)}的球友`,
           elo: 1200, play: 0, win: 0, month: 0, shadow: true,
+          /* 随机值域 = user.ts DRESS_RANGES（skin4/hair6/hc6/shirt8/face4/acc3），同步改 —— 值域扩了这里会越界出图 */
           chibi: {
             skin: Math.floor(Math.random() * 4), hair: Math.floor(Math.random() * 6), hc: Math.floor(Math.random() * 6),
             shirt: Math.floor(Math.random() * 8), face: Math.floor(Math.random() * 4), acc: Math.floor(Math.random() * 3),

@@ -50,16 +50,10 @@ import PageShell from '@/components/biz/PageShell.vue';
 import BillSummaryCard from '@/components/biz/BillSummaryCard.vue';
 import FilterChips from '@/components/ui/FilterChips.vue';
 import EmptyBox from '@/components/ui/EmptyBox.vue';
-import { useBillStore, BILL_STATUS_NAMES, type BillPeriod } from '@/stores/bill';
+import { useBillStore, BILL_STATUS_NAMES, PERIOD_OPTS, type BillPeriod } from '@/stores/bill';
 import type { Bill, BillStatus } from '@/api/types';
 
 const bill = useBillStore();
-
-const PERIOD_OPTS = [
-  { value: 'all', label: '全部' },
-  { value: '7d', label: '近 7 天' },
-  { value: '30d', label: '近 30 天' },
-];
 
 /** FilterChips 的宽类型（string|number，meet.vue fTime 同法）与 BillPeriod 窄类型之间的桥 */
 const period = computed<string | number>({

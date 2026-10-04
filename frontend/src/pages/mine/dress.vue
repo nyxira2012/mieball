@@ -42,7 +42,7 @@
             v-for="b in CARD_BGS"
             :key="b.v"
             :kind="me.cardBg === b.v ? 'ok' : 'default'"
-            @click="me.cardBg = b.v"
+            @click="user.setCardBg(b.v)"
           >{{ b.n }}</AppChip>
         </view>
       </view>

@@ -13,8 +13,16 @@ export const BILL_STATUS_NAMES: Record<BillStatus, string> = { due: '待付', pa
 export type BillPeriod = '7d' | '30d' | 'all';
 
 /* 期间下界（M.DD，含当天）：今天=2026-10-04 → 近 7 天自 9.27、近 30 天自 9.04。
-   mock 无真实时钟，与 data.ts 的日期硬编码同源口径；'all' 不过滤。 */
-const PERIOD_FROM: Record<Exclude<BillPeriod, 'all'>, string> = { '7d': '9.27', '30d': '9.04' };
+   mock 无真实时钟，与 data.ts 的日期硬编码同源口径；'all' 不过滤。
+   导出供 logs 页共用 —— 原先与 logs.vue 各持一份，现同源单一处。 */
+export const PERIOD_FROM: Record<Exclude<BillPeriod, 'all'>, string> = { '7d': '9.27', '30d': '9.04' };
+
+/** 期间筛选项（bills/logs 两页 FilterChips 共用；label 与 PERIOD_FROM 的档位一一对应） */
+export const PERIOD_OPTS: { value: BillPeriod; label: string }[] = [
+  { value: 'all', label: '全部' },
+  { value: '7d', label: '近 7 天' },
+  { value: '30d', label: '近 30 天' },
+];
 
 export const useBillStore = defineStore('bill', () => {
   /* 数据源：mock 的同一份可变引用，与 game store 同法（reactive 包装 seed） */

@@ -31,6 +31,7 @@ import FilterChips from '@/components/ui/FilterChips.vue';
 import EmptyBox from '@/components/ui/EmptyBox.vue';
 import { useGameStore } from '@/stores/game';
 import { useUserStore } from '@/stores/user';
+import { PERIOD_FROM, PERIOD_OPTS, type BillPeriod } from '@/stores/bill';
 import { dayOrd } from '@/utils/time';
 import type { Game } from '@/api/types';
 
@@ -38,23 +39,13 @@ const game = useGameStore();
 const user = useUserStore();
 const me = computed(() => user.me);
 
-/* 期间下界（M.DD，含当天）：今天=2026-10-04 → 近 7 天自 9.27、近 30 天自 9.04。
-   mock 无真实时钟，与 stores/bill.ts PERIOD_FROM 及 mock 日期硬编码同源口径；'all' 不过滤 */
-type LogPeriod = '7d' | '30d' | 'all';
-const PERIOD_FROM: Record<Exclude<LogPeriod, 'all'>, string> = { '7d': '9.27', '30d': '9.04' };
-
-/* 期间单选（string|number 对齐 FilterChips v-model 联合类型，meet.vue fTime 同法） */
+/* 期间档位与下界同源 bill store（BillPeriod/PERIOD_FROM/PERIOD_OPTS），本页不再持副本 */
 const period = ref<string | number>('all');
-const PERIOD_OPTS = [
-  { value: 'all', label: '全部' },
-  { value: '7d', label: '近 7 天' },
-  { value: '30d', label: '近 30 天' },
-];
 
 /** 记录列表：done 局按期间过滤（dayOrd 月*100+日，月份不补零不能裸比较字符串）后 d 倒序 */
 const list = computed<Game[]>(() => {
   const done = game.games.filter((g) => g.status === 'done');
-  const from = period.value === 'all' ? null : PERIOD_FROM[String(period.value) as Exclude<LogPeriod, 'all'>];
+  const from = period.value === 'all' ? null : PERIOD_FROM[String(period.value) as Exclude<BillPeriod, 'all'>];
   const hit = from ? done.filter((g) => dayOrd(g.d) >= dayOrd(from)) : done;
   return hit.sort((a, b) => dayOrd(b.d) - dayOrd(a.d));
 });

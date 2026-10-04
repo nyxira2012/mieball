@@ -3,7 +3,7 @@
 import { computed, reactive } from 'vue';
 import { defineStore } from 'pinia';
 import { U } from '@/api';
-import type { User } from '@/api/types';
+import type { CardBg, User } from '@/api/types';
 import { useLiveStore } from './live';
 import { useUiStore } from './ui';
 
@@ -49,6 +49,11 @@ export const useUserStore = defineStore('user', () => {
   /** 装扮页选件即换（5.1）：直接落 me.chibi，不 toast —— 预览即反馈，页面安静 */
   function setVariant(part: DressPart, v: number): void {
     users.me.chibi[part] = v;
+  }
+
+  /** 卡背背景即点即换（5.1）：与 setVariant 同族 —— 落 me.cardBg 不 toast，即点即换全局同步（战力页卡背联动） */
+  function setCardBg(v: CardBg): void {
+    users.me.cardBg = v;
   }
 
   /** 保存资料（5.1 装扮页）：昵称非空才落；我是同一份对象引用，改名即全站同步 */
@@ -102,6 +107,6 @@ export const useUserStore = defineStore('user', () => {
 
   return {
     users, me, findUser, toggleLike,
-    setVariant, saveProfile, changePwd, wechatAuth, logout, deleteAccount,
+    setVariant, setCardBg, saveProfile, changePwd, wechatAuth, logout, deleteAccount,
   };
 });

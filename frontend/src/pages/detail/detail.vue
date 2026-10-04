@@ -14,32 +14,38 @@
       <!-- alpha:1408-1424 hero：大时间 · t·时长·loc · kv 行 · 说明/人均口径 · 分享行 -->
       <view class="hero">
         <view class="big">{{ tBig }}</view>
-        <view class="sub hero-sub">{{ tDay }} · 打 {{ game.dur }} 小时 · {{ game.loc }}</view>
+        <view class="sub hero-sub">{{ tDay }} · 打 {{ durText }} · {{ game.loc }}</view>
         <view class="row">
           <view class="kv">
             <view class="k">名单</view>
             <view class="v">{{ hs }}/{{ game.cap }}</view>
           </view>
-          <view class="kv">
+          <!-- 5.1 剩坑/截止是赛前口径：done 局收掉，换「战报」kv 保住 kv 网格（终局内容在下方终局牌） -->
+          <view v-if="game.status !== 'done'" class="kv">
             <view class="k">剩坑</view>
             <view class="v" :style="{ color: need ? 'var(--coral)' : 'var(--dim)' }">{{ need }}</view>
           </view>
           <view class="kv">
-            <view class="k">总价</view>
-            <view class="v">¥{{ game.fee }}</view>
+            <view class="k">{{ game.fee != null ? '总价' : '费用' }}</view>
+            <view class="v">{{ game.fee != null ? `¥${game.fee}` : '未定' }}</view>
           </view>
-          <view class="kv">
+          <view v-if="game.fee != null" class="kv">
             <view class="k">人均</view>
             <view class="v v-lemon">¥{{ ph }}</view>
           </view>
-          <view class="kv">
+          <view v-if="game.status !== 'done'" class="kv">
             <view class="k">截止</view>
             <view class="v v-dl">{{ game.deadline }}</view>
           </view>
+          <view v-if="reported && result" class="kv">
+            <view class="k">战报</view>
+            <view class="v" :class="result.myWin ? 'v-lemon' : 'v-coral'">{{ result.myWin ? '胜' : '负' }}</view>
+          </view>
         </view>
-        <!-- alpha:1421-1423：有说明或人未够最少时展示，人均口径三态（alpha:1406 splitNote 逐字） -->
-        <view v-if="game.note || hs < game.min" class="sub hero-note">
-          {{ game.note ? `说明：${game.note} · ` : '' }}{{ splitNote }}
+        <!-- alpha:1421-1423：有说明或人未够最少时展示，人均口径三态（alpha:1406 splitNote 逐字）；
+             3.3 费用未定局（fee=null）不显示人均口径 -->
+        <view v-if="game.note || (hs < game.min && game.fee != null)" class="sub hero-note">
+          {{ [game.note ? `说明：${game.note}` : '', game.fee != null ? splitNote : ''].filter(Boolean).join(' · ') }}
         </view>
         <view class="row act2">
           <!-- 5.1：done 局不渲染分享——shareGame 对组织者首享会模拟「小张加入」，终局名单不能被改写 -->
@@ -50,7 +56,8 @@
             size="sm"
             @click="onDeadline"
           >⏰ 到截止 · 判定</AppButton>
-          <AppChip v-if="game.locked" kind="full">已到截止 · 名单锁定</AppChip>
+          <!-- 与 actions 行「已到截止 · 不能退出」chip 同口径：done 局锁定态不再是有效信息 -->
+          <AppChip v-if="game.locked && game.status !== 'done'" kind="full">已到截止 · 名单锁定</AppChip>
         </view>
       </view>
 
@@ -64,6 +71,21 @@
         <text class="s" :class="{ on: played }">进行中</text>
         <view class="i" :class="{ on: reported }" />
         <text class="s" :class="{ on: reported }">战报</text>
+      </view>
+
+      <!-- 5.1 §3「点击进入后看的是打球页的最终内容」（验收故事 3）：done 局在 steps 下补终局牌，
+           否则「战报」段点亮却无内容、hero 还是赛前口径，点进来无终局可看。hero 简化版式（页内 scoped）；
+           无 result 的 done 局不渲染（类型上 result 可缺省，mock 全量有值） -->
+      <view v-if="reported && result" class="finale">
+        <view class="score">{{ result.sa }} · {{ result.sb }}</view>
+        <!-- 胜负小字：赢收着说（dim，大字比分已 lemon 庆祝）、输打出来（coral，与 GameCard res-l / 战报 kv 负色同口径） -->
+        <view class="wl" :style="{ color: result.myWin ? 'var(--dim)' : 'var(--coral)' }">
+          {{ result.myWin ? '你赢了这局' : '你输了这局' }}
+        </view>
+        <!-- 我的到场账（无 myLog 不渲染该行）：早退带出时刻，打满全场收尾 -->
+        <view v-if="game.myLog" class="log">
+          签到 {{ game.myLog.checkIn }}{{ game.myLog.checkOut ? ' · 早退 ' + game.myLog.checkOut : ' · 打满全场' }}
+        </view>
       </view>
 
       <!-- alpha:1429-1444 名单：组织者排头一个 · 随行/带 N 人角标 · 随行展开成独立 pcard -->
@@ -146,10 +168,11 @@
         @click="onStart"
       >▶ 开始打球</AppButton>
 
-      <!-- alpha:1466 规则牌（modeName/迟到规则/候补递补/人均摊法口径逐字） -->
+      <!-- alpha:1466 规则牌（modeName/迟到规则/候补递补/人均摊法口径逐字）；
+           3.3：费用未定局（fee=null）不显示人均摊法句 -->
       <NoteCard class="rules">
         <b>规则牌：</b>{{ game.score }} 分制（领先 2 分才算赢）· {{ modeName }}{{ game.lateRule ? ' · 迟到排队尾等一轮' : '' }}
-        · 满 {{ game.cap }} 人进候补，有人退出即刻递补 · 人均＝总价 ¥{{ game.fee }} ÷ {{ perBase }}（{{ perNote }}）。
+        · 满 {{ game.cap }} 人进候补，有人退出即刻递补<template v-if="game.fee != null"> · 人均＝总价 ¥{{ game.fee }} ÷ {{ perBase }}（{{ perNote }}）</template>。
       </NoteCard>
     </view>
     <!-- alpha 无此态（openDetail 有 guard）；直链/局被取消后的兜底，文案中性、非产品文案 -->
@@ -201,10 +224,16 @@ const played = computed(() => {
   return s === 'live' || s === 'done';
 });
 const reported = computed(() => game.value?.status === 'done');
+/* 5.1 终局内容（终局牌 + hero 战报 kv 的数据源） */
+const result = computed(() => game.value?.result);
 
-/* alpha:1410 大时间 = t 第二段（时刻）；1411 小字 = t 第一段（今晚/周六…） */
-const tBig = computed(() => (game.value ? (game.value.t.split(' ')[1] ?? '') : ''));
-const tDay = computed(() => (game.value ? (game.value.t.split(' ')[0] ?? '') : ''));
+/* alpha:1410 大时间 = t 末段（时刻）；1411 小字 = 前段拼接（今晚/周六…/10.06 周一）。
+   3.3 改版后 t 可能是三段式，按末段=时刻、前段拼接=日段拆。 */
+const tBig = computed(() => {
+  const p = game.value ? game.value.t.split(' ') : [];
+  return p[p.length - 1] ?? '';
+});
+const tDay = computed(() => (game.value ? game.value.t.split(' ').slice(0, -1).join(' ') : ''));
 
 /* alpha:1405 局名首个 ' · ' 断行（replace(' · ','<br>') 的等价拆分，其余 ' · ' 原样保留） */
 const brandA = computed(() => {
@@ -365,6 +394,9 @@ const onPlayer = (uid: number) => {
 .kv .v.v-lemon {
   color: var(--lemon); /* alpha:1415 人均黄色 */
 }
+.kv .v.v-coral {
+  color: var(--coral); /* 5.1 战报 kv 负色（胜=lemon 走 v-lemon） */
+}
 .kv .v.v-dl {
   font-size: 13px;
   line-height: 1.7; /* alpha:1416 截止小字 */
@@ -393,6 +425,32 @@ const onPlayer = (uid: number) => {
 }
 .steps .s.on {
   color: var(--lemon);
+}
+
+/* ---------- 终局牌（5.1 done 态）：hero 简化版式 —— 比分大字 + 胜负 + 我的到场账 ---------- */
+.finale {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: linear-gradient(165deg, var(--ink3) 30%, var(--ink2));
+  padding: 16px 20px;
+  margin-top: 14px; /* steps 条（margin-bottom 4px）与名单区之间的呼吸 */
+}
+.finale .score {
+  font-family: var(--disp);
+  font-size: 44px;
+  line-height: 1;
+  color: var(--lemon);
+}
+.finale .wl {
+  margin-top: 5px;
+  font-size: 12px;
+}
+.finale .log {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  margin-top: 8px;
+  letter-spacing: 0.08em;
 }
 
 /* ---------- 球员网格（alpha:231-243） ---------- */

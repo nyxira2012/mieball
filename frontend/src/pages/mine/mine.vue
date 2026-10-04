@@ -44,12 +44,11 @@
       @click="go('/pages/mine/bills')"
     />
 
-    <!-- 记录双卡（5.1 页面设计）：登记局数与签到次数同一口径（我组织/已报名的未终止局），
-         签到只数 done 局留了 checkIn 的 -->
+    <!-- 记录双卡（5.1 页面设计）：登记局数/签到次数统一走 game store 的 mySignups/myCheckins 单一口径 -->
     <view class="duo">
       <view class="d-card" @click="go('/pages/mine/signup')">
         <view class="d-t">参加登记</view>
-        <view class="d-s">共 {{ signupGames.length }} 局 · 签到 {{ checkins }} 次</view>
+        <view class="d-s">共 {{ gameStore.mySignups.length }} 局 · 签到 {{ gameStore.myCheckins.length }} 次</view>
       </view>
       <view class="d-card" @click="go('/pages/mine/logs')">
         <view class="d-t">打球记录</view>
@@ -85,7 +84,6 @@ import { useUserStore } from '@/stores/user';
 import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
 import { useBillStore } from '@/stores/bill';
-import { isOrg, myEntry } from '@/utils/format';
 import { tier } from '@/utils/elo';
 
 const user = useUserStore();
@@ -103,11 +101,6 @@ const record = computed(
 );
 /** alpha:1939 ELO chip 的段位（utils/elo.ts tier） */
 const meTier = computed(() => tier(me.value.elo));
-
-/** 登记页同口径：我组织/已报名的未终止局（含 done —— 已结束局在登记页看签到行） */
-const signupGames = computed(() => gameStore.games.filter((g) => !g.dead && (isOrg(g) || myEntry(g))));
-/** 其中留有签到底账的局数 */
-const checkins = computed(() => signupGames.value.filter((g) => g.status === 'done' && g.myLog?.checkIn).length);
 
 /* —— 导航（uni 路由集中在页面层，store 不碰 uni.*；路由在模板处直读） —— */
 function go(url: string): void {

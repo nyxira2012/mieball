@@ -5,6 +5,7 @@ import { defineStore } from 'pinia';
 import { U, delay, games as seedGames, intents as seedIntents, myIntent as seedMyIntent } from '@/api';
 import type { MyIntent, PublishInput, TimeBucket } from '@/api/types';
 import { heads, isOrg, myEntry } from '@/utils/format';
+import { gameTime } from '@/utils/time';
 import { useUiStore } from './ui';
 import { useUserStore } from './user';
 
@@ -18,6 +19,14 @@ export const useGameStore = defineStore('game', () => {
   /** 首页 wave 卡：人正和你在同一个波段（alpha:827 waveCount 逐字口径） */
   const waveCount = computed(() =>
     myIntent.value ? intents.filter((i) => i.slots.some((k) => myIntent.value!.slots.includes(k))).length : 0);
+
+  /* —— 5.1 我的页登记口径（单一源）：原先 mine.vue 双卡与 signup.vue 各持一份手写 filter，
+     两处互指「同口径」却各自维护，口径漂移风险下沉到 store（消费方只做排序/筛选/展示） —— */
+
+  /** 我的登记全集：我组织/已报名 且未终止（含 done —— 已结束局要在登记页看到签到行） */
+  const mySignups = computed(() => games.filter((g) => !g.dead && (isOrg(g) || myEntry(g))));
+  /** 签到口径：其中打完（done）且我的到场底账留了 checkIn 的局 */
+  const myCheckins = computed(() => mySignups.value.filter((g) => g.status === 'done' && g.myLog?.checkIn));
 
   /** 加入 · 可带人（alpha:1127-1138 doJoin）：满员进候补；带的人也占坑 */
   function joinGame(id: number, bring = 0): string | null {
@@ -59,21 +68,29 @@ export const useGameStore = defineStore('game', () => {
     return msg;
   }
 
-  /** 发布/改局共用的推导（alpha:1383-1387）：局名「时间 · 地点」自动起名、tb 时间桶、area 地区推断 */
+  /** 发布/改局共用的推导（alpha:1383-1387）：局名「日段 · 地点」自动起名、tb 时间桶（按真实日期算）、area 地区推断。
+      3.3 改版：time 可能是「10.06 周一 19:00」三段精确式，tb 由 gameTime 解析出的日期推导。 */
   function deriveGame(p: PublishInput): { name: string; day: string; tb: TimeBucket; area: string } {
     const name = p.name.trim() || `${p.time.split(' ')[0]} · ${p.venue.split(' · ').pop()}`;
     const day = p.time.split(' ')[0];
-    const tb: TimeBucket = /今晚/.test(p.time) ? 'tonight' : /明/.test(p.time) ? 'tomorrow' : /周六|周日/.test(p.time) ? 'weekend' : 'week';
+    const start = gameTime(p.time);
+    const z = new Date();
+    z.setHours(0, 0, 0, 0);
+    const off = Math.round(
+      (new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime() - z.getTime()) / 86400000,
+    );
+    const wd = start.getDay();
+    const tb: TimeBucket = off <= 0 ? 'tonight' : off === 1 ? 'tomorrow' : wd === 0 || wd === 6 ? 'weekend' : 'week';
     const area = ['工体', '望京', '五棵松', '亮马河'].find((a) => p.venue.includes(a)) || '其他';
     return { name, day, tb, area };
   }
 
-  /** 发布（alpha:1394-1397）：新局插到列表最前，我是名单头一个 */
+  /** 发布（alpha:1394-1397）：新局插到列表最前，我是名单头一个。费用表单已去 → 新局 fee=null（费用未定） */
   function publishGame(p: PublishInput): string | null {
     const d = deriveGame(p);
     games.unshift({
       id: Date.now(), organizer: U.me, t: p.time, d: d.day, dur: p.dur, deadline: p.deadline,
-      area: d.area, tb: d.tb, loc: p.venue, name: d.name, min: p.min, cap: p.cap, fee: p.fee,
+      area: d.area, tb: d.tb, loc: p.venue, name: d.name, min: p.min, cap: p.cap, fee: null,
       note: p.note.trim(), joined: [{ u: U.me }], wait: [], status: 'open', score: 11, mode: 'balance', lateRule: false,
     });
     const msg = '局已发布 · 名单头一个就是你，点局上的 ⤴ 分享到群里拉人';
@@ -81,14 +98,14 @@ export const useGameStore = defineStore('game', () => {
     return msg;
   }
 
-  /** 改信息（alpha:1388-1392）：名单不动，截止定死不改 */
+  /** 改信息（alpha:1388-1392）：名单不动，截止定死不改；费用不在表单里 → 原 fee 原样保留 */
   function editGame(id: number, p: PublishInput): string | null {
     const ed = games.find((x) => x.id === id);
     if (!ed) return null;
     const d = deriveGame(p);
     Object.assign(ed, {
       name: d.name, t: p.time, dur: p.dur, loc: p.venue, min: p.min, cap: p.cap,
-      fee: p.fee, note: p.note.trim(), d: d.day, area: d.area, tb: d.tb,
+      note: p.note.trim(), d: d.day, area: d.area, tb: d.tb,
     });
     const msg = '局已改好 · 名单里的人看到的就是新信息';
     useUiStore().toast(msg);
@@ -206,7 +223,7 @@ export const useGameStore = defineStore('game', () => {
   }
 
   return {
-    games, intents, myIntent, waveCount,
+    games, intents, myIntent, waveCount, mySignups, myCheckins,
     joinGame, quitGame, cancelGame, publishGame, editGame, sureGame, hitDeadline,
     addCourt, restoreGame, inviteUser, shareGame, saveIntent, delIntent,
   };

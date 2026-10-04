@@ -10,8 +10,8 @@
       <view class="brand">登<text class="bem">记</text></view>
     </view>
 
-    <!-- 头统计：共 N 局 = 下方全量条数（不随筛选变）；签到 = 其中 done 且留了 checkIn 的局数（mine.vue 双卡同口径） -->
-    <view class="stat">共 {{ mine.length }} 局 · 签到 {{ checkins }} 次</view>
+    <!-- 头统计：共 N 局 = 下方全量条数（不随筛选变）；签到次数 = store myCheckins（done 且留了 checkIn） -->
+    <view class="stat">共 {{ game.mySignups.length }} 局 · 签到 {{ game.myCheckins.length }} 次</view>
 
     <!-- 状态筛选（5.1 辅助功能：登记按状态） -->
     <FilterChips v-model="mode" :options="MODE_OPTS" />
@@ -36,16 +36,12 @@ import GameCard from '@/components/biz/GameCard.vue';
 import FilterChips from '@/components/ui/FilterChips.vue';
 import EmptyBox from '@/components/ui/EmptyBox.vue';
 import { useGameStore } from '@/stores/game';
-import { isOrg, myEntry } from '@/utils/format';
 import { dayOrd, gameTime } from '@/utils/time';
 import type { Game } from '@/api/types';
 
 const game = useGameStore();
-
-/** 我的登记全集：我组织 / 已报名 且未终止（含 done —— 已结束局要在登记页看到签到行）。mine.vue 头卡同口径 */
-const mine = computed(() => game.games.filter((g) => !g.dead && (isOrg(g) || myEntry(g))));
-/** 其中留有签到底账的局数 */
-const checkins = computed(() => mine.value.filter((g) => g.status === 'done' && g.myLog?.checkIn).length);
+/* 登记全集与签到计数 = game store 的 mySignups/myCheckins 单一源（mine.vue 双卡同消费）；
+   本页只在其上做状态筛选与排序 */
 
 /* 状态单选（string|number 对齐 FilterChips v-model 联合类型，meet.vue fTime 同法） */
 const mode = ref<string | number>('all');
@@ -58,10 +54,10 @@ const MODE_OPTS = [
 /* 未开场按 gameTime 升序；done 按 d 倒序 —— d 是 'M.DD' 且月份不补零，跨月时字符串比较
    会把 9.x 排到 10.x 之后，必须走 dayOrd（月*100+日）才与账单页同源单调 */
 const openGames = computed(() =>
-  mine.value.filter((g) => g.status !== 'done').sort((a, b) => gameTime(a.t).getTime() - gameTime(b.t).getTime()),
+  game.mySignups.filter((g) => g.status !== 'done').sort((a, b) => gameTime(a.t).getTime() - gameTime(b.t).getTime()),
 );
 const doneGames = computed(() =>
-  mine.value.filter((g) => g.status === 'done').sort((a, b) => dayOrd(b.d) - dayOrd(a.d)),
+  game.mySignups.filter((g) => g.status === 'done').sort((a, b) => dayOrd(b.d) - dayOrd(a.d)),
 );
 /** 全部档 = 未开场在前 + done 在后（5.1：登记页主看 upcoming） */
 const list = computed<Game[]>(() => {
