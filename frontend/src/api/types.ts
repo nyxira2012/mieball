@@ -67,17 +67,20 @@ export interface Game {
   name: string;
   min: number;          // 最少人数（截止时判成不成）
   cap: number;          // 最多人数（满员线，进度只讲剩几坑）
-  fee: number;          // 预计费用总价
+  fee: number | null;   // 预计费用总价；null=费用未定（2026-10-04 定：发局表单去掉费用，新局为 null，旧局保留数字）
   note?: string;
   joined: GameEntry[];
   wait: GameEntry[];    // 候补栏：满员加入进这里，有人退出即刻递补
   status: GameStatus;
   score: number;        // 分制 target（先到 N 且净胜 2，alpha:1686）
+  scoreRule?: 'rally' | 'serve'; // 得分规则：rally=每球得分 / serve=发球得分（3.3 表单直选；旧局无此字段不显示）
   mode: CourtMode;
-  lateRule: boolean;    // 迟到排队尾等一轮
+  lateRule: boolean;    // 迟到排队尾等一轮（3.3 起退出组局表单，仅存量局/现场逻辑保留）
   invitedMe?: boolean;  // 别人邀请我
   locked?: boolean;     // 已到截止锁定（参加者不能再退出）
-  sure?: boolean;       // 必定开局（最少人数要求作废）
+  sure?: boolean;       // 必打 · 手动锁（点「锁定必打」不带场地；锁上不撤，与订场锁并存于 isForced 口径）
+  booked?: string[];    // 订场登记的场地号（如 ['3号','5号']，片数=个数；订场发生在 app 外，这里只登记结果）。
+                        // 场上有号即必打（utils/format isForced），fee 随登记落定为总价；清空后 fee 回 null
   dead?: boolean;       // 未成局（自动终止 · 组织者可恢复）
   result?: { sa: number; sb: number; myWin: boolean }; // 已结束局的最终比分（5.1 局卡 done 分支 / 记录页看比分）
   myLog?: { checkIn: string; checkOut?: string };      // 我的到场底账：签到/早退时刻（5.1 登记页「签到 19:02 · 早退 21:30」）
@@ -135,7 +138,7 @@ export type SheetPayload =
   | { type: 'join'; gameId: number }
   | { type: 'quit-confirm'; gameId: number }
   | { type: 'cancel-confirm'; gameId: number }
-  | { type: 'add-court'; gameId: number }
+  | { type: 'booking'; gameId: number }          // 订场登记 / 锁定必打（3.2 三态锁：没锁→空锁→订场锁共用的面板）
   | { type: 'invite-to-game'; gameId: number }   // 局详情翻意向列表拉人（alpha:1213）
   | { type: 'invite-to-slot'; userId: number }   // 球员档案选局邀请（alpha:1239）
   | { type: 'intent-form' }                      // 留/改意向（alpha:1266）
@@ -149,15 +152,18 @@ export interface WinChange { name: string; up: boolean; d: number }
 /** 胜利结算卡（alpha:1716-1724 WinPopup：胜者名/比分/每人涨跌；独立组件层级最高，不走 SheetHost） */
 export interface WinData { names: string; sa: number; sb: number; chg: WinChange[] }
 
-/** 组局表单提交值（publishGame/editGame 共用；fee 已由表单层解析为最终数字） */
+/** 组局表单提交值（publishGame/editGame 共用；2026-10-04 定：费用从表单去掉，改局不动原局的 fee；
+    说明字段去掉，改选规则三件——分制/轮转/迟到规则，直接落 Game 的 score/mode/lateRule）
+    time/deadline 为组局拨盘产物：日段（今天/明天/后天/M.DD 周X）+ HH:mm，由 utils/time.ts gameTime 解析。 */
 export interface PublishInput {
-  name: string;       // 可为空串 → 自动起名「时间 · 地点」（alpha:1383）
-  time: string;       // '周六 10:00' 等（含自定义输入）
-  dur: number;
-  deadline: string;   // 编辑态定死不改（alpha:1388）
+  name: string;       // 可为空串 → 自动起名「日段 · 地点」
+  time: string;       // '后天 19:00' / '10.06 周一 19:00' 等
+  dur: number;        // 打多久（小时）——由拨盘起止时刻算出，不再单独选
+  deadline: string;   // '后天 17:00' 等绝对时刻；编辑态定死不改（alpha:1388）
   venue: string;
   min: number;
   cap: number;
-  fee: number;
-  note: string;
+  score: number;      // 分制 target（先到 N 且净胜 2）
+  mode: CourtMode;    // 轮转方式（赢家留场/纯粹轮转/均衡配对）
+  scoreRule: 'rally' | 'serve'; // 得分规则（每球得分制/发球得分制；2026-10-04 替代表单里的迟到规则）
 }

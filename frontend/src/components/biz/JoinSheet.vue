@@ -11,7 +11,8 @@
       {{ g.t }} · {{ g.loc }} · 名额满了——加入将进入<text class="bb">候补栏</text>，有人退出即刻递补
     </view>
     <view v-else class="hint">
-      {{ g.t }} · {{ g.loc }} · {{ hs }}/{{ g.cap }} · 剩 {{ need }} 坑 · 人均约 ¥{{ ph }}{{ hs < g.min ? `（不足最少 ${g.min} 人按最少摊）` : '' }}
+      {{ g.t }} · {{ g.loc }} · {{ hs }}/{{ g.cap }} · 剩 {{ need }} 坑 · {{ feeTxt
+      }}{{ g.fee != null && hs < g.min && !forced ? `（不足最少 ${g.min} 人按最少摊）` : '' }}
     </view>
 
     <!-- alpha:1116-1121 field「带几个人 · 带的人也占坑」+ stepper(0-3) + 共占坑数 hint -->
@@ -36,7 +37,7 @@ import AppField from '@/components/ui/AppField.vue';
 import AppStepper from '@/components/ui/AppStepper.vue';
 import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
-import { heads, needOf, perHead, myEntry } from '@/utils/format';
+import { heads, needOf, perHead, myEntry, isForced } from '@/utils/format';
 
 const props = defineProps({
   gameId: { type: Number, required: true },
@@ -57,6 +58,9 @@ const my = computed(() => (g.value ? myEntry(g.value) : undefined));
 const hs = computed(() => (g.value ? heads(g.value) : 0));
 const need = computed(() => (g.value ? needOf(g.value) : 0));
 const ph = computed(() => (g.value ? perHead(g.value) : 0));
+/** 费用尾注：有总价 → 人均约数（+不足最少括注，必打局最少已作废不带括注）；fee=null（3.3 后新发布的局）→ 费用未定 */
+const forced = computed(() => (g.value ? isForced(g.value) : false));
+const feeTxt = computed(() => (g.value && g.value.fee != null ? `人均约 ¥${ph.value}` : '费用未定'));
 
 /** alpha:1107/1111 let jbring=0（带的人数，0-3，alpha:1124 jStep 的 min/max） */
 const jbring = ref(0);

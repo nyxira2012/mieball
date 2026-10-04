@@ -22,13 +22,14 @@ export function avail(live: LiveState): number[] {
 
 /** 发牌（alpha:1501-1523 逐字对齐）：只补片不清场——已在场上待打的片永远保留；
     胜者留场只在头片空缺时生效；balance 蛇形按分降序（A=[首,末] B=[二,三]）；
-    cap≥12 三片否则两片；发完队列重排且 fire（连战）优先回队。 */
+    片数：订场登记优先（booked 片数是花钱定下的默认值，2026-10-04 订场改版），
+    未登记回退 cap≥12 三片否则两片；发完队列重排且 fire（连战）优先回队。 */
 export function fillCourts(live: LiveState): void {
   let pool = avail(live).slice();
   if (live.g.mode === 'balance') {
     pool.sort((a, b) => (pById(live, b)?.elo || 1100) - (pById(live, a)?.elo || 1100));
   }
-  const maxC = live.g.cap >= 12 ? 3 : 2;
+  const maxC = live.g.booked?.length || (live.g.cap >= 12 ? 3 : 2);
   while (live.courts.length < maxC && pool.length >= 4) {
     if (live.g.mode === 'winner' && live.courts.length === 0 && live.lastWinners && live.lastWinners.length === 2) {
       const ch = pool.splice(0, 2);

@@ -74,6 +74,9 @@ const onInput = (ev: Event) => {
   outline: none;
   transition: border-color 0.2s;
   box-sizing: border-box;
+  /* uni-input 内部 wrapper 高度恒为宿主内容区的 100%，宿主没显式高度时一有值
+     （占位符转 absolute）内部就塌成 0 高，输入的文字/带出的原值不可见 —— 必须给定高 */
+  height: 46px;
 }
 .is-focus .inp {
   border-color: var(--lemon);
@@ -81,6 +84,7 @@ const onInput = (ev: Event) => {
 /* alpha:179 textarea.inp */
 .inp-textarea {
   resize: none;
+  height: auto;
   min-height: 64px;
   width: 100%;
 }

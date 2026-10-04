@@ -39,9 +39,18 @@
           <view class="sb" :class="{ 'on-fire': me?.fire }" @click="liveStore.toggleMine('fire')">{{ me?.fire ? '🔥 连战模式' : '🔥 状态好·连着打' }}</view>
         </view>
         <view class="sub pn-sub2">歇一轮＝下轮跳过我 · 连战＝排到队首；组织者按 <text class="b-lemon">{{ modeName }}</text> 发牌。</view>
-        <!-- alpha:1608 cs = cur 打球中卡在最前 + 待打 courts；全空时「点「开下一轮」发牌」（alpha:1617） -->
+        <!-- alpha:1608 cs = cur 打球中卡在最前 + 待打 courts；全空时「点「开下一轮」发牌」（alpha:1617）；
+             3.2 订场改版：卡头带登记的场地号（booked 按位对齐：cur 是第 1 片） -->
         <template v-if="courts.length">
-          <CourtCard v-for="(c, i) in courts" :key="i" :court="c" :playing="!!c.playing" :index="i + 1" @profile="openProfile" />
+          <CourtCard
+            v-for="(c, i) in courts"
+            :key="i"
+            :court="c"
+            :playing="!!c.playing"
+            :index="i + 1"
+            :name="L.g.booked?.[i] ?? ''"
+            @profile="openProfile"
+          />
         </template>
         <EmptyBox v-else text="点「开下一轮」发牌" />
         <view class="sec-t"><text class="t">候场队列</text><text class="more">{{ L.queue.length }} 人</text></view>

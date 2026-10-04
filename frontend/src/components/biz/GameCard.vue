@@ -9,7 +9,7 @@
        静态阶段只 emit('tap')：openDetail 或 joinSheet 分支由父层决定（alpha:908，P4/P7 接线）。 -->
   <view class="gcard" :class="{ 'is-live': live, 'is-inv': inv }" @click="emit('tap')">
     <view class="gd">
-      <!-- alpha:909 时间位：大字 = t 第二段（时刻），小字 = t 第一段（今晚/周六…） -->
+      <!-- alpha:909 时间位：大字 = t 末段（时刻），小字 = 前段拼接（今晚/周六…/10.06 周一） -->
       <view class="time">
         {{ td }}
         <text class="tt">{{ tt }}</text>
@@ -39,6 +39,10 @@
           </template>
           <AppChip v-else-if="full" kind="full">满员 · 候补</AppChip>
           <AppChip v-else kind="ok">剩 {{ game.cap - hs }} 坑</AppChip>
+          <!-- 3.2 订场改版：已订场=必开（ok 档小标，卡面不放场地号和钱，保持干净）；仅手动锁 → 必开；
+               未开打的局才显示（live 有 LIVE 态、done 有终局态，必开不再是有效信息） -->
+          <AppChip v-if="booked && !done && !live" kind="ok">已订场 · 必开</AppChip>
+          <AppChip v-else-if="game.sure && !done && !live" kind="ok">必开</AppChip>
           <AppChip v-if="!done">{{ game.min }}-{{ game.cap }} 人</AppChip>
           <view class="sp" />
           <AppChip v-if="role" :kind="role">{{ roleTxt }}</AppChip>
@@ -68,6 +72,8 @@ const full = computed(() => hs.value >= props.game.cap) // alpha:899 full
 /* 5.1 done 形态：已结束局渲染「已结束 + 比分胜/负」，隐去满员/剩坑与人数 chip（人均 chip 已按用户要求移除） */
 const done = computed(() => props.game.status === 'done')
 const result = computed(() => props.game.result)
+/* 3.2 订场改版：场上有号 = 已订场 */
+const booked = computed(() => !!props.game.booked?.length)
 
 /* alpha:900-901 角色：org 优先 → 被邀请（未加入）→ 已加入 → 无标签 */
 const joined = computed(() => !!myEntry(props.game))
@@ -75,10 +81,11 @@ const inv = computed(() => !!props.game.invitedMe && !joined.value)
 const role = computed(() => (isOrg(props.game) ? 'org' : inv.value ? 'inv' : joined.value ? 'dim' : null))
 const roleTxt = computed(() => (role.value === 'org' ? '我发起' : role.value === 'inv' ? '被邀请' : '已加入'))
 
-/* alpha:905 const [tt,td]=g.t.split(' ')：大字 td=时刻、小字 tt=时段 */
+/* alpha:905 const [tt,td]=g.t.split(' ')：大字 td=末段时刻、小字 tt=其余段（今晚 / 10.06 周一）。
+   3.3 改版后 t 可能是「10.06 周一 19:00」三段式，按末段=时刻、前段拼接=日段拆。 */
 const parts = computed(() => props.game.t.split(' '))
-const tt = computed(() => parts.value[0] ?? '')
-const td = computed(() => parts.value[1] ?? '')
+const tt = computed(() => parts.value.slice(0, -1).join(' '))
+const td = computed(() => parts.value[parts.value.length - 1] ?? '')
 
 /* alpha:895-897 stackOf：头像取 joined 前 5；plusn = '+' + 超 5 的人数 + 含随行标记（alpha 原样：
    不足 5 人时也渲染裸 '+'，逐字保留） */

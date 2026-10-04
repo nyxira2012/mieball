@@ -4,7 +4,7 @@
        （alpha:1626-1628 tp()，pById 查不到兜底「—」）；点队员 emit('profile', id)
        → 页面唤起 ProfileSheet（alpha:1626 openProfileById）。 -->
   <view class="court">
-    <view class="cn">COURT {{ index }}{{ playing ? ' · 打球中' : '' }}</view>
+    <view class="cn">{{ name || `COURT ${index}` }}{{ playing ? ' · 打球中' : '' }}</view>
     <view class="team">
       <view v-for="id in court.A" :key="`a${id}`" class="tp a" @click="emit('profile', id)">
         <ChibiAvatar :chibi="byId(id).chibi" :size="46" />
@@ -44,6 +44,8 @@ const props = defineProps({
   playing: { type: Boolean, default: false },
   /** 场次序号（alpha:1611 COURT ${i+1}，页面传 1 起） */
   index: { type: Number, required: true },
+  /** 3.2 订场改版：已订场的局传登记的场地号（如「3号」），没登记回退 COURT N 序号 */
+  name: { type: String, default: '' },
 });
 const emit = defineEmits<{ (e: 'profile', id: number): void }>();
 

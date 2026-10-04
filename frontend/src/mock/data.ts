@@ -22,14 +22,15 @@ export const U: Record<string, User> = {
    tb=时间桶（tonight/tomorrow/weekend/week）· area=地区（找局打筛选用）· invitedMe=别人邀请我 */
 /* 3.2 球局：min=最少人数（截止时判成不成）· cap=最多人数（满员线，进度只讲剩几坑）
    fee=预计费用总价 · deadline=组局截止（到点锁名单，定死不改）· dur=打多久
-   dead=未成局（自动终止·组织者可恢复）· sure=必定开局 · locked=已到截止锁定 */
+   dead=未成局（自动终止·组织者可恢复）· sure=必打手动锁 · booked=订场登记的场地号（场上有号即必打，fee=订场总价）
+   locked=已到截止锁定 */
 export const games: Game[] = [
   { id: 101, organizer: U.wang, t: '今晚 19:00', d: '今天', tb: 'tonight', area: '工体', dur: 2, deadline: '今天 17:00',
     loc: '工体北路 · 京篮匹克球馆 · 3 片', name: '周四夜战', min: 8, cap: 12, fee: 720, note: '老搭子局 · 新朋友走候补',
     joined: [{ u: U.wang }, { u: U.hai, bring: 2 }, { u: U.wu }, { u: U.gu }, { u: U.li }, { u: U.me }, { u: U.shi }, { u: U.yang }, { u: U.bei }, { u: U.tong }, { u: U.zhao }], wait: [],
     status: 'ready', locked: true, score: 11, mode: 'winner', lateRule: true },
   { id: 102, organizer: U.me, t: '周六 14:00', d: '10.07', tb: 'weekend', area: '望京', dur: 2, deadline: '周五 20:00',
-    loc: '望京 · 花家地球馆 · 2 片', name: '周末午后局', min: 4, cap: 8, fee: 200, note: '新手友好 · 打完一起晚饭',
+    loc: '望京 · 花家地球馆 · 2 片', name: '周末午后局', min: 4, cap: 8, fee: 480, booked: ['3号', '5号'], note: '新手友好 · 打完一起晚饭',
     joined: [{ u: U.me }, { u: U.li, bring: 1 }, { u: U.bei }], wait: [], status: 'open', score: 11, mode: 'balance', lateRule: false },
   { id: 103, organizer: U.wu, t: '下周三 20:00', d: '10.09', tb: 'week', area: '五棵松', dur: 2, deadline: '周二 18:00',
     loc: '五棵松 · 万事达球馆 · 1 片', name: '夜光单挑夜', min: 4, cap: 6, fee: 180, note: '单挑为主 · 输了换人',

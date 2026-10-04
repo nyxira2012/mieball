@@ -8,10 +8,15 @@ export const heads = (g: Game): number => g.joined.reduce((s, e) => s + 1 + (e.b
 /** 剩几坑（满员线口径，alpha:883） */
 export const needOf = (g: Game): number => Math.max(0, g.cap - heads(g));
 
-/** 3.2 人均摊法三口径（alpha:884 一字不差）：
-    不足最少按最少摊 / 够最少按当前人数摊 / 锁定必打(sure)后最少作废按当前人数摊 */
+/** 必打判定（3.2 订场改版公共口径）：手动锁（sure）OR 场上有号（booked 非空）。
+    截止是否自动终止、人均是否作废最少保底、卡面/详情的必打标识，全走这一个判定。 */
+export const isForced = (g: Game): boolean => !!(g.sure || g.booked?.length);
+
+/** 3.2 人均摊法口径（alpha:884 延伸）：
+    不足最少按最少摊 / 够最少按当前人数摊 / 必打（手动锁或已订场）后最少作废按当前人数摊。
+    fee=null（费用未定局）→ 0，调用方按 fee 判断显隐 */
 export const perHead = (g: Game): number =>
-  Math.round(g.fee / Math.max(g.sure ? 0 : g.min || 1, heads(g)));
+  g.fee == null ? 0 : Math.round(g.fee / Math.max(isForced(g) ? 0 : g.min || 1, heads(g)));
 
 /** 我的报名条目（alpha:885） */
 export const myEntry = (g: Game): GameEntry | undefined => g.joined.find((e) => e.u.id === 0);

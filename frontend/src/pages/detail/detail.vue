@@ -33,6 +33,13 @@
             <view class="k">人均</view>
             <view class="v v-lemon">¥{{ ph }}</view>
           </view>
+          <!-- 3.2 订场改版：场地号 kv——已订场亮号（到场馆照号找场），未订显示待定 -->
+          <view v-if="game.status !== 'done'" class="kv">
+            <view class="k">场地</view>
+            <view class="v v-court" :style="{ color: game.booked?.length ? 'var(--cream)' : 'var(--dim)' }">
+              {{ game.booked?.length ? game.booked.join('、') : '待定' }}
+            </view>
+          </view>
           <view v-if="game.status !== 'done'" class="kv">
             <view class="k">截止</view>
             <view class="v v-dl">{{ game.deadline }}</view>
@@ -129,10 +136,9 @@
         </view>
       </template>
 
-      <!-- alpha:1448-1450 组织者按钮行（仅 open 态） -->
+      <!-- alpha:1448-1450 组织者按钮行（仅 open 态）；3.2 订场改版：加场按钮取消（上限放宽走改局，候补转正在 editGame 内接手） -->
       <view v-if="org && game.status === 'open'" class="org-row">
         <AppButton variant="ghost" size="sm" @click="onInvite">＋ 邀请 · 翻意向列表拉人</AppButton>
-        <AppButton variant="ghost" size="sm" @click="onAddCourt">＋ 加场 · 上限 {{ game.cap }}→{{ game.cap + 2 }}</AppButton>
       </view>
 
       <!-- alpha:1451-1464 底部动作区（joined/org/locked/sure/status 显隐逻辑逐字） -->
@@ -147,10 +153,17 @@
           @click="onQuit"
         >退出局</AppButton>
         <AppChip v-if="joined && !org && game.locked && game.status !== 'done'" class="mid">已到截止 · 不能退出</AppChip>
-        <!-- 5.1：org 动作收紧为 open/ready——done 局不再出现锁定/改信息/取消（原 gating 仅排除 live） -->
+        <!-- 5.1：org 动作收紧为 open/ready——done 局不再出现锁定/改信息/取消（原 gating 仅排除 live）。
+             3.2 订场改版：锁升级三态一入口——没锁（🔒 锁定必打 · 可登记订场）/ 空锁（手动锁，去登记场地）/
+             订场锁（已订场 · 场地号 · 总价），点开都是 BookingSheet；截止后（ready）仍可改登记（换号/退片） -->
         <template v-if="org && (game.status === 'open' || game.status === 'ready')">
-          <AppChip v-if="game.sure" class="mid sure-chip">🔒 已锁定必打 · 人数不足也照打</AppChip>
-          <AppButton v-else variant="ghost" class="grow sure-btn" @click="onSure">🔒 锁定必打</AppButton>
+          <AppButton variant="ghost" class="grow sure-btn" @click="onBooking">{{
+            game.booked?.length
+              ? `🔒 已订场 · ${game.booked.join('、')} · ¥${game.fee}`
+              : game.sure
+                ? '🔒 已锁定必打 · 去登记场地'
+                : '🔒 锁定必打 · 可登记订场'
+          }}</AppButton>
         </template>
         <template v-if="org && (game.status === 'open' || game.status === 'ready')">
           <AppButton variant="ghost" @click="onEdit">改信息</AppButton>
@@ -169,9 +182,9 @@
       >▶ 开始打球</AppButton>
 
       <!-- alpha:1466 规则牌（modeName/迟到规则/候补递补/人均摊法口径逐字）；
-           3.3：费用未定局（fee=null）不显示人均摊法句 -->
+           3.3：费用未定局（fee=null）不显示人均摊法句；scoreRule 有值才显示得分规则段（旧局无此字段） -->
       <NoteCard class="rules">
-        <b>规则牌：</b>{{ game.score }} 分制（领先 2 分才算赢）· {{ modeName }}{{ game.lateRule ? ' · 迟到排队尾等一轮' : '' }}
+        <b>规则牌：</b>{{ game.score }} 分制（领先 2 分才算赢）<template v-if="game.scoreRule"> · {{ game.scoreRule === 'rally' ? '每球得分制' : '发球得分制' }}</template> · {{ modeName }}{{ game.lateRule ? ' · 迟到排队尾等一轮' : '' }}
         · 满 {{ game.cap }} 人进候补，有人退出即刻递补<template v-if="game.fee != null"> · 人均＝总价 ¥{{ game.fee }} ÷ {{ perBase }}（{{ perNote }}）</template>。
       </NoteCard>
     </view>
@@ -194,7 +207,8 @@ import SectionTitle from '@/components/ui/SectionTitle.vue';
 import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
 import { useLiveStore } from '@/stores/live';
-import { heads, needOf, perHead, myEntry, isOrg } from '@/utils/format';
+import { heads, needOf, perHead, myEntry, isOrg, isForced } from '@/utils/format';
+import { durTxt } from '@/utils/time';
 import type { CourtMode } from '@/api/types';
 
 const store = useGameStore();
@@ -227,6 +241,9 @@ const reported = computed(() => game.value?.status === 'done');
 /* 5.1 终局内容（终局牌 + hero 战报 kv 的数据源） */
 const result = computed(() => game.value?.result);
 
+/* 3.3 打多久文案（拨盘 5 分步进会出现 115 分钟这类，整/半小时才用小时） */
+const durText = computed(() => (game.value ? durTxt(game.value.dur) : ''));
+
 /* alpha:1410 大时间 = t 末段（时刻）；1411 小字 = 前段拼接（今晚/周六…/10.06 周一）。
    3.3 改版后 t 可能是三段式，按末段=时刻、前段拼接=日段拆。 */
 const tBig = computed(() => {
@@ -247,11 +264,11 @@ const brandB = computed(() => {
   return i >= 0 ? game.value.name.slice(i + 3) : '';
 });
 
-/* alpha:1406 人均口径副文案（三态逐字） */
+/* alpha:1406 人均口径副文案（三态；3.2 订场改版：必打=手动锁或已订场，走 isForced） */
 const splitNote = computed(() => {
   const g = game.value;
   if (!g) return '';
-  return g.sure
+  return isForced(g)
     ? '人均按当前人数摊（最少要求已作废）'
     : hs.value < g.min
       ? `不足最少 ${g.min} 人 · 人均按最少摊`
@@ -262,12 +279,12 @@ const splitNote = computed(() => {
 const MODE_NAMES: Record<CourtMode, string> = { winner: '赢家留场', rotate: '纯粹轮转', balance: '均衡配对' };
 const modeName = computed(() => (game.value ? MODE_NAMES[game.value.mode] : ''));
 
-/* alpha:1466 规则牌人均分母与括注（Math.max(g.sure?0:g.min,hs) 逐字口径） */
-const perBase = computed(() => (game.value ? Math.max(game.value.sure ? 0 : game.value.min, hs.value) : 0));
+/* alpha:1466 规则牌人均分母与括注（Math.max(isForced?0:min,hs) 口径；3.2 订场改版换 isForced） */
+const perBase = computed(() => (game.value ? Math.max(isForced(game.value) ? 0 : game.value.min, hs.value) : 0));
 const perNote = computed(() => {
   const g = game.value;
   if (!g) return '';
-  return g.sure ? '必定开局后按实际人数摊' : hs.value < g.min ? '不足最少按最少摊' : '按当前人数摊';
+  return isForced(g) ? '必打后按实际人数摊' : hs.value < g.min ? '不足最少按最少摊' : '按当前人数摊';
 });
 
 /* ---- 操作接线（P5b）：toast 均由 game store 动作内逐字文案负责；视图刷新靠 store 响应式
@@ -295,9 +312,9 @@ const onJoin = () => {
 const onQuit = () => {
   if (game.value) ui.openSheet({ type: 'quit-confirm', gameId: game.value.id });
 };
-/** alpha:1459 sureGame */
-const onSure = () => {
-  if (game.value) store.sureGame(game.value.id);
+/** 锁定必打 / 订场登记（3.2 三态一入口）：BookingSheet（空锁=原 alpha:1459 sureGame） */
+const onBooking = () => {
+  if (game.value) ui.openSheet({ type: 'booking', gameId: game.value.id });
 };
 /** alpha:1460 editSheet → openLaunch(id)：LaunchSheet 编辑态（P6 填充） */
 const onEdit = () => {
@@ -310,10 +327,6 @@ const onCancel = () => {
 /** alpha:1449 inviteFromGame → InviteSheet(mode=to-game) */
 const onInvite = () => {
   if (game.value) ui.openSheet({ type: 'invite-to-game', gameId: game.value.id });
-};
-/** alpha:1450 addCourtSheet → ConfirmSheet(kind=add-court) */
-const onAddCourt = () => {
-  if (game.value) ui.openSheet({ type: 'add-court', gameId: game.value.id });
 };
 /** alpha:1468 startLive：live store 初始化（status→live · 随行展开 · 发牌）→ 跳现场页 */
 const onStart = () => {
@@ -400,6 +413,10 @@ const onPlayer = (uid: number) => {
 .kv .v.v-dl {
   font-size: 13px;
   line-height: 1.7; /* alpha:1416 截止小字 */
+}
+.kv .v.v-court {
+  font-size: 13px;
+  line-height: 1.7; /* 场地号小字（多个号如「3号、5号」不撑破 kv 网格） */
 }
 .sub.hero-note {
   margin-top: 10px;
@@ -539,12 +556,8 @@ const onPlayer = (uid: number) => {
 .actions .mid {
   align-self: center;
 }
-.actions .sure-chip {
-  color: var(--ice); /* alpha:1458 ice 描边锁定徽章 */
-  border-color: rgba(111, 231, 255, 0.45);
-}
 .actions .sure-btn {
-  color: var(--ice); /* alpha:1459 锁定必打按钮 */
+  color: var(--ice); /* alpha:1459 锁定必打按钮（三态锁共用入口，2026-10-04 订场改版） */
   border-color: rgba(111, 231, 255, 0.4);
 }
 .actions .cancel-btn {

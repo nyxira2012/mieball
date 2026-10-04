@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { U } from '@/api';
 import type { Game, GameEntry, User } from '@/api/types';
-import { freqName, heads, isMine, isOrg, known, myEntry, needOf, perHead, slotBig, slotName } from '@/utils/format';
+import { freqName, heads, isForced, isMine, isOrg, known, myEntry, needOf, perHead, slotBig, slotName } from '@/utils/format';
 
 function mkGame(p: Partial<Game>): Game {
   return {
@@ -42,9 +42,23 @@ describe('perHead 三口径（alpha:884 一字不差：不足最少按最少摊 
     const sured = { ...noSure, sure: true };
     expect(perHead(sured)).toBe(60);  // 300/5=60
   });
+  it('口径三延伸：已订场（booked）同 sure 口径——按当前人数摊，最少保底作废', () => {
+    const g = mkGame({ fee: 300, min: 8, booked: ['3号'], joined: [{ u: U.wang }, { u: U.wu }, { u: U.gu }, { u: U.li }, { u: U.shi }] });
+    expect(perHead(g)).toBe(60); // 300/5=60，而非不足最少按 8 摊的 38
+  });
   it('mock 局抽查：102 局人均 50（200 ÷ max(4, 4)）', () => {
     const g = mkGame({ fee: 200, min: 4, joined: [{ u: U.me }, { u: U.li, bring: 1 }, { u: U.bei }] });
     expect(perHead(g)).toBe(50);
+  });
+});
+
+describe('isForced（3.2 订场改版：必打 = 手动锁 OR 场上有号）', () => {
+  it('sure / booked / 两者 / 皆无 四态', () => {
+    expect(isForced(mkGame({}))).toBe(false);
+    expect(isForced(mkGame({ sure: true }))).toBe(true);
+    expect(isForced(mkGame({ booked: ['3号', '5号'] }))).toBe(true);
+    expect(isForced(mkGame({ sure: true, booked: ['3号'] }))).toBe(true);
+    expect(isForced(mkGame({ booked: [] }))).toBe(false); // 空数组=没登记
   });
 });
 

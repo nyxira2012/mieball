@@ -4,7 +4,7 @@ import { computed, reactive, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { U, delay, games as seedGames, intents as seedIntents, myIntent as seedMyIntent } from '@/api';
 import type { MyIntent, PublishInput, TimeBucket } from '@/api/types';
-import { heads, isOrg, myEntry } from '@/utils/format';
+import { heads, isOrg, isForced, myEntry } from '@/utils/format';
 import { gameTime } from '@/utils/time';
 import { useUiStore } from './ui';
 import { useUserStore } from './user';
@@ -58,12 +58,15 @@ export const useGameStore = defineStore('game', () => {
     return msg;
   }
 
-  /** 取消局（alpha:1164-1168 doCancel）：局从列表整体撤下 */
+  /** 取消局（alpha:1164-1168）：局从列表整体撤下；已订场的提醒一句去场馆退订（钱已花在 app 外） */
   function cancelGame(id: number): string | null {
     const i = games.findIndex((x) => x.id === id);
     if (i < 0) return null;
+    const booked = games[i].booked?.length;
     games.splice(i, 1);
-    const msg = '局已撤下 · 报名的球友「我的局」里同步消失';
+    const msg = booked
+      ? '局已撤下 · 已订场地记得去场馆退订，报名的球友「我的局」里同步消失'
+      : '局已撤下 · 报名的球友「我的局」里同步消失';
     useUiStore().toast(msg);
     return msg;
   }
@@ -85,34 +88,48 @@ export const useGameStore = defineStore('game', () => {
     return { name, day, tb, area };
   }
 
-  /** 发布（alpha:1394-1397）：新局插到列表最前，我是名单头一个。费用表单已去 → 新局 fee=null（费用未定） */
+  /** 发布（alpha:1394-1397）：新局插到列表最前，我是名单头一个。费用表单已去 → 新局 fee=null（费用未定）；
+      3.3 规则三件（分制/轮转/迟到）由表单直选落 score/mode/lateRule */
   function publishGame(p: PublishInput): string | null {
     const d = deriveGame(p);
     games.unshift({
       id: Date.now(), organizer: U.me, t: p.time, d: d.day, dur: p.dur, deadline: p.deadline,
       area: d.area, tb: d.tb, loc: p.venue, name: d.name, min: p.min, cap: p.cap, fee: null,
-      note: p.note.trim(), joined: [{ u: U.me }], wait: [], status: 'open', score: 11, mode: 'balance', lateRule: false,
+      joined: [{ u: U.me }], wait: [], status: 'open', score: p.score, mode: p.mode, scoreRule: p.scoreRule, lateRule: false,
     });
     const msg = '局已发布 · 名单头一个就是你，点局上的 ⤴ 分享到群里拉人';
     useUiStore().toast(msg);
     return msg;
   }
 
-  /** 改信息（alpha:1388-1392）：名单不动，截止定死不改；费用不在表单里 → 原 fee 原样保留 */
+  /** 改信息（alpha:1388-1392）：名单不动，截止定死不改；费用与说明不在表单里 → 原 note 原样保留。
+      3.2 订场改版：加场按钮取消，上限放宽（及一切令 heads<cap 的改动）由这里统一接手——
+      候补按先后自动转正（原 addCourt alpha:1198-1206 的递补循环原样搬入）。 */
   function editGame(id: number, p: PublishInput): string | null {
     const ed = games.find((x) => x.id === id);
     if (!ed) return null;
     const d = deriveGame(p);
     Object.assign(ed, {
       name: d.name, t: p.time, dur: p.dur, loc: p.venue, min: p.min, cap: p.cap,
-      note: p.note.trim(), d: d.day, area: d.area, tb: d.tb,
+      score: p.score, mode: p.mode, scoreRule: p.scoreRule, d: d.day, area: d.area, tb: d.tb,
     });
-    const msg = '局已改好 · 名单里的人看到的就是新信息';
+    let moved = 0;
+    while (ed.wait.length && heads(ed) < ed.cap) {
+      const e = ed.wait.shift();
+      if (e) { ed.joined.push(e); moved++; }
+    }
+    const left = ed.wait.length;
+    const msg = moved
+      ? left
+        ? `局已改好 · 上限放宽，候补转正，仍剩 ${left} 人满员（建议下次再参加）`
+        : '局已改好 · 上限放宽，候补已全部转正'
+      : '局已改好 · 名单里的人看到的就是新信息';
     useUiStore().toast(msg);
     return msg;
   }
 
-  /** 锁定必打（alpha:1171-1176）：人不够最少也照打，最少人数要求作废 */
+  /** 锁定必打 · 空锁（alpha:1171-1176）：不登记场地只上手动锁，最少人数要求作废。
+      订场（bookCourt）是必打的另一入口，带场地号与总价；两者口径统一在 isForced。 */
   function sureGame(id: number): string | null {
     const g = games.find((x) => x.id === id);
     if (!g) return null;
@@ -122,13 +139,40 @@ export const useGameStore = defineStore('game', () => {
     return msg;
   }
 
-  /** 到截止判定（alpha:1177-1189 逐字口径）：低于最少且未锁必打 → 自动终止（dead，组织者「我的局」可恢复）；
-    否则名单锁定、参加者不能再退出。 */
+  /** 订场登记（3.2 订场改版）：订场发生在 app 外（场馆/平台），这里登记结果——场地号 + 总价。
+      场上有号即必打（isForced）；费用从未定落定为总价，人均按当前人数摊（最少保底作废）。
+      可反复改：加片添号、退片删号改价，每次保存联动重算。 */
+  function bookCourt(id: number, courts: string[], fee: number): string | null {
+    const g = games.find((x) => x.id === id);
+    if (!g || !courts.length) return null;
+    g.booked = [...courts];
+    g.fee = fee;
+    const msg = `已订场 · ${courts.join('、')}（${courts.length} 片）· 这局必开，费用已落定`;
+    useUiStore().toast(msg);
+    return msg;
+  }
+
+  /** 清空订场登记（场地全退光）：局回到未订场原样——费用回「未定」；
+      手动锁（sure）是组织者明确点的，不跟着松。 */
+  function clearBooking(id: number): string | null {
+    const g = games.find((x) => x.id === id);
+    if (!g) return null;
+    g.booked = undefined;
+    g.fee = null;
+    const msg = g.sure
+      ? '订场登记已清空 · 手动锁定保留，这局仍必打'
+      : '订场登记已清空 · 局回到未订场，费用未定，截止照常判人数';
+    useUiStore().toast(msg);
+    return msg;
+  }
+
+  /** 到截止判定（alpha:1177-1189 延伸）：低于最少且未必打（手动锁 OR 已订场，isForced）→
+    自动终止（dead，组织者「我的局」可恢复）；否则名单锁定、参加者不能再退出。 */
   function hitDeadline(id: number): string | null {
     const g = games.find((x) => x.id === id);
     if (!g) return null;
     const h = heads(g);
-    if (h < g.min && !g.sure) {
+    if (h < g.min && !isForced(g)) {
       g.dead = true;
       const msg = '到截止 · 人数不足，局自动终止（组织者「我的局」留有未成局，可恢复）';
       useUiStore().toast(msg);
@@ -140,24 +184,7 @@ export const useGameStore = defineStore('game', () => {
     return msg;
   }
 
-  /** 加场（alpha:1198-1206 doAddCourt）：上限 +2，候补按先后自动转正 */
-  function addCourt(id: number): string | null {
-    const g = games.find((x) => x.id === id);
-    if (!g) return null;
-    g.cap += 2;
-    while (g.wait.length && heads(g) < g.cap) {
-      const e = g.wait.shift();
-      if (e) g.joined.push(e);
-    }
-    const left = g.wait.length;
-    const msg = left
-      ? `已加场 · 候补转正，仍剩 ${left} 人满员（建议下次再参加）`
-      : '已加场 · 候补已全部转正';
-    useUiStore().toast(msg);
-    return msg;
-  }
-
-  /** 恢复未成局（alpha:1207-1212）：回到终止前状态，名单原样 */
+  /** 恢复未成局（alpha:1207-1212）：回到终止前状态，名单原样（已订场的局必打，走不到 dead，此路只属未订场局） */
   function restoreGame(id: number): string | null {
     const g = games.find((x) => x.id === id);
     if (!g) return null;
@@ -224,7 +251,7 @@ export const useGameStore = defineStore('game', () => {
 
   return {
     games, intents, myIntent, waveCount, mySignups, myCheckins,
-    joinGame, quitGame, cancelGame, publishGame, editGame, sureGame, hitDeadline,
-    addCourt, restoreGame, inviteUser, shareGame, saveIntent, delIntent,
+    joinGame, quitGame, cancelGame, publishGame, editGame, sureGame, bookCourt, clearBooking,
+    hitDeadline, restoreGame, inviteUser, shareGame, saveIntent, delIntent,
   };
 });
