@@ -17,6 +17,10 @@
       "style": { "navigationBarTitleText": "我的" }
     },
     {
+      "path": "pages/mine/bills",
+      "style": { "navigationBarTitleText": "账单" }
+    },
+    {
       "path": "pages/detail/detail",
       "style": { "navigationBarTitleText": "球局详情" }
     },

@@ -1,7 +1,7 @@
 /* ---------- 数据（alpha:760-830 原样移植；改数据口径 = 改 alpha，不要在这里发明） ----------
    全部以可变引用导出：store 用 reactive()/ref() 包住同一份原始对象，
    mock / live 名册 / 榜单读写的是同一批对象（Vue reactive 对同一原始目标返回同一代理）。 */
-import type { Bill, Game, Intent, Ledger, MyIntent, Slot, User } from '@/api/types';
+import type { Bill, Game, Intent, MyIntent, Slot, User } from '@/api/types';
 
 export const U: Record<string, User> = {
   me: { id: 0, name: '我', elo: 1518, play: 34, win: 19, month: 18, last5: ['W', 'L', 'W', 'W', 'L'], chibi: { skin: 1, hair: 5, hc: 0, shirt: 0, face: 1, acc: 2 }, cardBg: 'neon', recentStats: { win: 3, loss: 1, hours: 2, kcal: 800 } },
@@ -111,6 +111,3 @@ slots.forEach((s) => {
   s.match = intents.filter((i) => i.slots.includes(s.k)).length + (myIntent && myIntent.slots.includes(s.k) ? 1 : 0);
 });
 /* alpha:827 waveCount —— 依赖运行时 myIntent，归 stores/game.ts 的 computed */
-export const ledger: Ledger = { period: '2026 年 10 月', feeRows: [
-  { g: '周四夜战 10.03', amt: 60, paid: false }, { g: '周末午后 10.05', amt: 50, paid: true }, { g: '周三单挑 10.01', amt: 45, paid: true },
-  { g: '周四夜战 10.10', amt: 60, paid: false }], pool: 1150, myShare: 215, myPaid: 245 };

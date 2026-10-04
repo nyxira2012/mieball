@@ -42,6 +42,13 @@ export const useBillStore = defineStore('bill', () => {
     return filtered.value.filter((b) => b.status === st).reduce((s, b) => s + b.amt, 0);
   }
 
+  /** 全量三数（不随 period 漂移）：我的页账单卡、注销守卫等「永远看全部」的口径专用。
+      period 是 pinia 单例跨页存活——账单页切过筛选后 filtered 会带着走，这两处不能消费 summary。 */
+  const totalSummary = computed(() => {
+    const by = (st: BillStatus) => bills.filter((b) => b.status === st).reduce((s, b) => s + b.amt, 0);
+    return { due: by('due'), paid: by('paid'), receivable: by('receivable') };
+  });
+
   /** 结算（5.1 辅助功能）：应付 → 已付；仅 due 行可结 */
   function settleBill(id: number): string | null {
     const b = bills.find((x) => x.id === id);
@@ -62,5 +69,5 @@ export const useBillStore = defineStore('bill', () => {
     return msg;
   }
 
-  return { bills, period, filtered, summary, settleBill, receiveBill };
+  return { bills, period, filtered, summary, totalSummary, settleBill, receiveBill };
 });

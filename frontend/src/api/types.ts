@@ -97,11 +97,6 @@ export interface Slot { k: string; n: string; desc: string; match: number }
 
 export interface MyIntent { slots: string[]; freq: number }
 
-export interface LedgerRow { g: string; amt: number; paid: boolean }
-
-/** 账本（alpha:828-830 · 结余 = myPaid − myShare，alpha:1941） */
-export interface Ledger { period: string; feeRows: LedgerRow[]; pool: number; myShare: number; myPaid: number }
-
 /** 账单状态四态（5.1 文档：待付/已付/该收/已收） */
 export type BillStatus = 'due' | 'paid' | 'receivable' | 'received';
 

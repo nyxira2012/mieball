@@ -1,5 +1,7 @@
 <template>
-  <!-- 我的页（P10）· alpha.html:644-673 模板 · 393-405 mecard/ledger 样式 · 1931-1976 renderMine/换装/mountDress -->
+  <!-- 我的页（P10）· 5.1 重做：形象区（点形象进装扮页）/ 账单卡（全量三数）/ 记录双卡 / 账号区。
+       版式承袭 alpha:644-673 的 stag/mecard/acc-row；旧「本期账本」卡、换装行、我的球局列表
+       分别由账单页（bills）、装扮页（dress）、登记/记录页（signup/logs）接管。 -->
   <PageShell tab="mine">
     <!-- alpha:645-648 头部：kicker + brand（「的」字黄色） -->
     <view class="stag">
@@ -7,9 +9,9 @@
       <view class="brand">我<text class="bem">的</text>球场</view>
     </view>
 
-    <!-- alpha:649-659 mecard：点头像循环换装（alpha:1960-1964，toast 在 user store cyclePart 内） -->
+    <!-- 头部形象区（5.1 页面设计）：点形象即进装扮页 -->
     <view class="mecard">
-      <view class="av" @click="user.cyclePart()">
+      <view class="av" @click="go('/pages/mine/dress')">
         <ChibiAvatar :chibi="me.chibi" :size="88" />
       </view>
       <view class="minfo">
@@ -22,91 +24,76 @@
           </AppChip>
           <!-- alpha:656 尾号 chip -->
           <AppChip>尾号 ···4721</AppChip>
+          <!-- 档案卡 = 别人看到的完整档案（与打球页名单点击同支弹层，userId 0 = 我） -->
+          <AppChip @click="onProfileCard">档案卡 ▸</AppChip>
+          <!-- 装扮入口（与点头像同页） -->
+          <AppChip @click="go('/pages/mine/dress')">装扮 ▸</AppChip>
         </view>
       </view>
     </view>
 
-    <!-- alpha:660 换装提示 notecard（文案逐字） -->
-    <NoteCard>
-      <text class="nb">换装：</text>点左边的小人，发型 / 衣服 / 表情随手换——你的球场形象你做主。
-    </NoteCard>
+    <!-- 账单卡（5.1）：totalSummary 是 store 的全量口径——period 单例跨页存活，
+         账单页切过筛选后 summary 会带着漂，主页卡/注销守卫不能消费它；
+         整卡可点进账单页看期间筛选与逐笔（class/@click 透传到 BillSummaryCard 根） -->
+    <SectionTitle title="账单" more="明细 ▸" @more="go('/pages/mine/bills')" />
+    <BillSummaryCard
+      class="bill-card"
+      :due="bill.totalSummary.due"
+      :paid="bill.totalSummary.paid"
+      :receivable="bill.totalSummary.receivable"
+      @click="go('/pages/mine/bills')"
+    />
 
-    <!-- alpha:1966-1975 mountDress：部件选择 chips，选中态黄描边（chip ok）；
-         点击切 dressPart 并 toast「选中「xx」· 点小人换」（user store setDressPart） -->
-    <view class="dress-row">
-      <AppChip
-        v-for="p in DRESS_PARTS"
-        :key="p"
-        :kind="p === user.dressPart ? 'ok' : 'default'"
-        @click="user.setDressPart(p)"
-      >
-        {{ PART_NAMES[p] }}
-      </AppChip>
-    </view>
-
-    <!-- alpha:662-663 本期账本（ledger 样式 alpha:398-405 · 模板 alpha:1942-1951 逐字） -->
-    <SectionTitle title="本期账本" more="10 月 · 一起结" />
-    <view class="ledger">
-      <view class="ltop">
-        <view>
-          <view class="kicker">AA POOL · {{ ledger.period }}</view>
-          <view class="sum">¥{{ ledger.pool }}</view>
-          <view class="sub sub11">本期总费用 · 结束时一起分</view>
-        </view>
-        <view class="rt">
-          <view class="kicker">MY BALANCE</view>
-          <!-- alpha:1941/1947 结余 = myPaid − myShare；垫多 lemon 带正号 / 还欠 coral -->
-          <view class="bal" :class="bal >= 0 ? 'pos' : 'neg'">{{ bal >= 0 ? '+' : '' }}{{ bal }}</view>
-          <view class="sub sub10">{{ bal >= 0 ? '垫多了 · 收钱' : '还欠着 · 转账' }}</view>
-        </view>
+    <!-- 记录双卡（5.1 页面设计）：登记局数与签到次数同一口径（我组织/已报名的未终止局），
+         签到只数 done 局留了 checkIn 的 -->
+    <view class="duo">
+      <view class="d-card" @click="go('/pages/mine/signup')">
+        <view class="d-t">参加登记</view>
+        <view class="d-s">共 {{ signupGames.length }} 局 · 签到 {{ checkins }} 次</view>
       </view>
-      <!-- alpha:1949-1950 逐笔：已垫付黄（pos）/ 待付珊瑚（neg） -->
-      <view v-for="r in ledger.feeRows" :key="r.g" class="lrow">
-        <text class="n">{{ r.g }}</text>
-        <text class="amt" :class="r.paid ? 'pos' : 'neg'">{{ r.paid ? '已垫付 ¥' + r.amt : '待付 ¥' + r.amt }}</text>
-      </view>
-      <view class="lfoot">
-        <!-- alpha:1951 结束本期 · 发起结算（toast 文案逐字） -->
-        <AppButton variant="ghost" size="sm" block @click="onSettle">结束本期 · 发起结算</AppButton>
+      <view class="d-card" @click="go('/pages/mine/logs')">
+        <view class="d-t">打球记录</view>
+        <view class="d-s">累计 {{ me.play }} 场</view>
       </view>
     </view>
 
-    <!-- alpha:665-666 我的球局：前 3 个未终止局（alpha:1952-1956 为简化行，P10 按任务口径复用完整 GameCard）；
-         点击进详情（alpha:908 openDetail 语义 → uni.navigateTo） -->
-    <SectionTitle title="我的球局" more="近期 3 场" />
-    <GameCard v-for="g in myGames" :key="g.id" :game="g" @tap="openGame(g.id)" />
-
-    <!-- alpha:668-672 账号：退出登录 / 注销账号（toast 文案逐字） -->
-    <SectionTitle title="账号" more="1.1 规格已定" />
+    <!-- 账号区（5.1）：行式入口 + 退出/注销（确认弹层，不再裸 toast） -->
+    <SectionTitle title="账号" />
+    <view class="acc-links">
+      <view class="acc-link" @click="go('/pages/mine/password')">修改密码 <text class="arr">▸</text></view>
+      <view class="acc-link" @click="go('/pages/mine/wechat')">微信授权 <text class="arr">▸</text></view>
+    </view>
     <view class="acc-row">
-      <AppButton variant="ghost" size="sm" class="grow" @click="onLogout">退出登录</AppButton>
-      <AppButton variant="ghost" size="sm" class="grow" @click="onDeleteAcc">注销账号</AppButton>
+      <AppButton variant="ghost" size="sm" class="grow" @click="onLogout">退出账号</AppButton>
+      <AppButton variant="ghost" size="sm" class="grow danger" @click="onDeleteAcc">注销账号</AppButton>
     </view>
   </PageShell>
 </template>
 
 <script setup lang="ts">
-/* 我的页（P10）· alpha.html:1931-1976 renderMine / 换装 / mountDress + 828-830 ledger */
+/* 我的页（P10）· 5.1 我的页主页面：底账入口聚合（账单/登记/记录）+ 账号区。
+   alpha:1931-1976 的 meName/战绩/ELO 段位口径保留，其余换装与账本逻辑退场。 */
 import { computed } from 'vue';
 import PageShell from '@/components/biz/PageShell.vue';
 import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
 import AppChip from '@/components/ui/AppChip.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import TierBadge from '@/components/ui/TierBadge.vue';
-import NoteCard from '@/components/ui/NoteCard.vue';
 import SectionTitle from '@/components/ui/SectionTitle.vue';
-import GameCard from '@/components/biz/GameCard.vue';
-import { useUserStore, DRESS_PARTS, PART_NAMES } from '@/stores/user';
+import BillSummaryCard from '@/components/biz/BillSummaryCard.vue';
+import { useUserStore } from '@/stores/user';
 import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
-import { ledger } from '@/api';
+import { useBillStore } from '@/stores/bill';
+import { isOrg, myEntry } from '@/utils/format';
 import { tier } from '@/utils/elo';
 
 const user = useUserStore();
 const gameStore = useGameStore();
 const ui = useUiStore();
+const bill = useBillStore();
 
-/** 我（alpha:1935 U.me；user store 与 games/live 同源引用，换装全产品同步） */
+/** 我（alpha:1935 U.me；user store 与 games/live 同源引用，装扮保存全产品同步） */
 const me = computed(() => user.me);
 /** alpha:1937：默认名「我」显示为「我的球场小人」 */
 const meName = computed(() => (me.value.name === '我' ? '我的球场小人' : me.value.name));
@@ -116,26 +103,26 @@ const record = computed(
 );
 /** alpha:1939 ELO chip 的段位（utils/elo.ts tier） */
 const meTier = computed(() => tier(me.value.elo));
-/** alpha:1941 结余 = myPaid − myShare（验收 C35 口径） */
-const bal = computed(() => ledger.myPaid - ledger.myShare);
-/** alpha:1952 前 3 个未终止局（!dead） */
-const myGames = computed(() => gameStore.games.filter((g) => !g.dead).slice(0, 3));
 
-/** alpha:1951 结束本期 · 发起结算（toast 文案逐字） */
-function onSettle(): void {
-  ui.toast('本期账单已生成 · 群里甩一张图，各自转账，不用每局分钱');
+/** 登记页同口径：我组织/已报名的未终止局（含 done —— 已结束局在登记页看签到行） */
+const signupGames = computed(() => gameStore.games.filter((g) => !g.dead && (isOrg(g) || myEntry(g))));
+/** 其中留有签到底账的局数 */
+const checkins = computed(() => signupGames.value.filter((g) => g.status === 'done' && g.myLog?.checkIn).length);
+
+/* —— 导航（uni 路由集中在页面层，store 不碰 uni.*；路由在模板处直读） —— */
+function go(url: string): void {
+  uni.navigateTo({ url });
 }
-/** 球局卡 → 局详情（alpha:1953 openDetail(g.id) 的 uni 路由等价） */
-function openGame(id: number): void {
-  uni.navigateTo({ url: `/pages/detail/detail?id=${id}` });
+/** 档案卡弹层 = 别人看到的完整档案卡（userId 0 = 我） */
+function onProfileCard(): void {
+  ui.openSheet({ type: 'profile', userId: 0 });
 }
-/** alpha:670 退出登录（toast 文案逐字） */
+/** 退出/注销走确认弹层（5.1 弹窗：两步/守卫逻辑在 AccountSheet） */
 function onLogout(): void {
-  ui.toast('已退出本机记忆 · 数据在云端');
+  ui.openSheet({ type: 'logout-confirm' });
 }
-/** alpha:671 注销账号（toast 文案逐字） */
 function onDeleteAcc(): void {
-  ui.toast('注销 = 档案匿名化 · 手机号释放');
+  ui.openSheet({ type: 'delete-confirm' });
 }
 </script>
 
@@ -192,100 +179,88 @@ function onDeleteAcc(): void {
   color: var(--dim);
   margin: 3px 0 8px;
 }
-/* alpha:654 chips 行 */
+/* alpha:654 chips 行（4 枚起换行兜底） */
 .mchips {
   display: flex;
   gap: 8px;
   align-items: center;
-}
-
-/* alpha:660 notecard 内 <b> 的淡紫强调（槽内容持有本页 scope，scoped 可达） */
-.nb {
-  color: var(--lilac);
-}
-
-/* ---------- 换装部件选择 chips 行（alpha:1968 mountDress 容器 style 逐字） ---------- */
-.dress-row {
-  display: flex;
-  gap: 6px;
   flex-wrap: wrap;
-  margin: -6px 0 16px;
 }
 
-/* ---------- 账本（alpha:398-405） ---------- */
-.ledger {
-  border: 1px solid rgba(255, 212, 0, 0.22);
+/* ---------- 账单卡（三数版式与配色内聚在 BillSummaryCard，此处只挂点击态） ---------- */
+.bill-card {
+  cursor: pointer;
+}
+.bill-card:active {
+  border-color: rgba(255, 212, 0, 0.4);
+}
+
+/* ---------- 记录双卡（5.1：参加登记 / 打球记录，mecard 简化版式） ---------- */
+.duo {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+.d-card {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 14px 16px;
+  background: linear-gradient(150deg, var(--ink3), var(--ink2));
+  cursor: pointer;
+}
+.d-card:active {
+  border-color: rgba(255, 212, 0, 0.4);
+}
+.d-t {
+  font-size: 15px;
+  font-weight: 800;
+}
+.d-s {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  margin-top: 4px;
+}
+
+/* ---------- 账号区（5.1：行式入口 + 退出/注销） ---------- */
+.acc-links {
+  border: 1px solid var(--line);
   border-radius: var(--r-lg);
   overflow: hidden;
   background: var(--ink2);
+  margin-bottom: 14px;
 }
-.ltop {
-  padding: 16px;
+.acc-link {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
-  background: linear-gradient(140deg, rgba(255, 212, 0, 0.1), transparent 60%);
+  align-items: center;
+  padding: 13px 16px;
+  font-size: 13px;
+  cursor: pointer;
 }
-.sum {
-  font-family: var(--disp);
-  font-size: 40px;
-  color: var(--lemon);
-  line-height: 1;
+.acc-link + .acc-link {
+  border-top: 1px solid var(--line);
 }
-/* alpha:1946 右列 text-align:right */
-.rt {
-  text-align: right;
-}
-/* alpha:1947 结余大字（颜色按正负二态，同 alpha 内联 style） */
-.bal {
-  font-family: var(--disp);
-  font-size: 26px;
-  line-height: 1.1;
-}
-.bal.pos {
-  color: var(--lemon);
-}
-.bal.neg {
-  color: var(--coral);
-}
-/* alpha:1945/1948 两行 sub 的内联字号覆盖 */
-.sub11 {
-  font-size: 11px;
-}
-.sub10 {
-  font-size: 10px;
-}
-.lrow {
-  display: flex;
-  justify-content: space-between;
-  padding: 11px 16px;
-  border-top: 1px solid rgba(245, 241, 232, 0.07);
-  font-size: 12px;
-}
-.lrow .n {
+.acc-link .arr {
+  font-family: var(--mono);
   color: var(--dim);
 }
-.lrow .amt {
-  font-family: var(--mono);
-  font-weight: 500;
-}
-.lrow .amt.pos {
+.acc-link:active {
   color: var(--lemon);
 }
-.lrow .amt.neg {
-  color: var(--coral);
-}
-/* alpha:1951 按钮容器 */
-.lfoot {
-  padding: 14px 16px;
-}
-
-/* ---------- 账号按钮行（alpha:669 flex + 按钮 flex:1） ---------- */
+/* alpha:669 flex + 按钮 flex:1 */
 .acc-row {
   display: flex;
   gap: 10px;
 }
 .acc-row .grow {
   flex: 1;
+}
+/* 注销 = 珊瑚描边强化（同 detail.vue .cancel-btn 口径；双类选择器压过 AppButton 内部 .btn-ghost） */
+.acc-row .danger {
+  color: var(--coral);
+  border-color: rgba(255, 90, 54, 0.4);
 }
 </style>

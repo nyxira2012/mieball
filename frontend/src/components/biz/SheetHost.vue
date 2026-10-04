@@ -1,7 +1,7 @@
 <template>
-  <!-- 全局单例弹层宿主：订阅 ui store 的 sheet（api/types.ts 的 SheetPayload 9 种联合类型），
-       按 type 判别分发到 biz 弹层组件（9 种全部已实装：P5b join/confirm/invite、P6 launch、
-       P7 intent-form、P9 profile）。
+  <!-- 全局单例弹层宿主：订阅 ui store 的 sheet（api/types.ts 的 SheetPayload 11 种联合类型），
+       按 type 判别分发到 biz 弹层组件（11 种全部已实装：P5b join/confirm/invite、P6 launch、
+       P7 intent-form、P9 profile、5.1 logout-confirm/delete-confirm）。
        遮罩点击关闭走 AppSheet 的 close 事件 → ui.closeSheet()（alpha:838 closeSheet）；
        页面隐藏时由 PageShell 的 onHide 统一关弹层（alpha:869 go() 进页前 closeSheet 的等价）。
        直接组合 ui/AppSheet（抽屉壳）；ui/SheetHost 为 P1 的通用注册表版本，试衣间页在用。
@@ -16,6 +16,8 @@
     <InviteSheet v-else-if="s?.type === 'invite-to-slot'" mode="to-slot" :user-id="s.userId" />
     <IntentFormSheet v-else-if="s?.type === 'intent-form'" />
     <LaunchSheet v-else-if="s?.type === 'launch'" :game-id="s.gameId" />
+    <AccountSheet v-else-if="s?.type === 'logout-confirm'" kind="logout" />
+    <AccountSheet v-else-if="s?.type === 'delete-confirm'" kind="delete" />
   </AppSheet>
 </template>
 
@@ -29,6 +31,7 @@ import ConfirmSheet from './ConfirmSheet.vue';
 import InviteSheet from './InviteSheet.vue';
 import IntentFormSheet from './IntentFormSheet.vue';
 import LaunchSheet from './LaunchSheet.vue';
+import AccountSheet from './AccountSheet.vue';
 
 const ui = useUiStore();
 /** 模板里对联合类型逐支收窄用 */
