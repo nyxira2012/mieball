@@ -6,7 +6,7 @@
   <view class="prow">
     <ChibiAvatar :chibi="player.chibi" :size="42" />
     <view class="info">
-      <view class="nm">{{ player.name }} <text v-if="player.shadow" class="badge shadow">随行</text> <text v-if="player.id === 0" class="badge fire">我</text></view>
+      <view class="nm">{{ player.name }} <text v-if="player.shadow" class="badge shadow">随行</text> <text v-if="player.id === CURRENT_USER_ID" class="badge fire">我</text></view>
       <view class="st" :class="st[1]">● {{ st[0] }}</view>
     </view>
     <view class="ops">
@@ -23,6 +23,7 @@
 import { computed } from 'vue';
 import type { PropType } from 'vue';
 import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
+import { CURRENT_USER_ID } from '@/api';
 import type { CheckStatus, User } from '@/api/types';
 
 const props = defineProps({

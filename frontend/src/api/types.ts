@@ -103,8 +103,17 @@ export interface MyIntent { slots: string[]; freq: number }
 /** 账单状态四态（5.1 文档：待付/已付/该收/已收） */
 export type BillStatus = 'due' | 'paid' | 'receivable' | 'received';
 
-/** 账单（5.1 文档：哪局、多少钱、什么状态；垫付只属组织者，故 role=org 才有 receivable） */
-export interface Bill { id: number; gameId: number; gname: string; date: string; amt: number; status: BillStatus; role: 'org' | 'member' }
+/** 该收按人明细一行——数据侧算好的每个人该摊多少、结没结，界面不自算（5.1 修订） */
+export interface BillPayer { u: User; amt: number; settled: boolean }
+
+/** 账单（5.1 文档：哪局、多少钱、什么状态；垫付只属组织者，故 role=org 才有 receivable。
+    member 行 amt=人均摊费、payee=该局组织者（欠谁）；org 行 amt=别人摊费合计（我那份自己出了，
+    刺客合议 #2 的「org 行=垫付总价」随 5.1 修订作废）、payers=数据侧给好的按人明细） */
+export interface Bill {
+  id: number; gameId: number; gname: string; date: string; amt: number; status: BillStatus; role: 'org' | 'member';
+  payee?: User;         // 欠谁——member 行＝该局组织者；org 行无此字段
+  payers?: BillPayer[]; // 该收按人明细，org 行才有；不含我自己
+}
 
 /** 场上待打的一片：A/B 两队（存玩家 id） */
 export interface LiveCourt { A: number[]; B: number[] }

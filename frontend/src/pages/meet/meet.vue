@@ -97,6 +97,7 @@ import FilterChips from '@/components/ui/FilterChips.vue';
 import SectionTitle from '@/components/ui/SectionTitle.vue';
 import EmptyBox from '@/components/ui/EmptyBox.vue';
 import type { Game, Intent } from '@/api/types';
+import { AREA_OPTS, communityMeta } from '@/api';
 import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
 import { freqName, isMine, isOrg, known, myEntry, slotName } from '@/utils/format';
@@ -108,7 +109,7 @@ const ui = useUiStore();
 /* ---- 头部（alpha:1072 日期行逐字，无「· ALPHA」尾——与首页 936 不同） ---- */
 const dateLine = computed(() => {
   const d = new Date();
-  return `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 星期${'日一二三四五六'[d.getDay()]} · 北京匹克球圈`;
+  return `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 星期${'日一二三四五六'[d.getDay()]} · ${communityMeta.name}`;
 });
 
 /* ---- 状态（alpha:956） ---- */
@@ -126,7 +127,6 @@ const TIME_OPTS = [
   { value: 'weekend', label: '周末' },
   { value: 'week', label: '本周' },
 ];
-const AREA_OPTS = ['全部', '工体', '望京', '五棵松', '亮马河'];
 
 /* ---- 跑马灯（alpha:983-994 meetTicker 逐字逻辑；s+s ×2 循环由 Ticker 负责） ---- */
 const tickerItems = computed<TickerItem[]>(() => {

@@ -18,6 +18,34 @@ export const U: Record<string, User> = {
   ken: { id: 11, name: '亮马河 Ken', elo: 1355, play: 12, win: 5, month: 2, last5: ['W', 'L', 'L', 'W', 'L'], chibi: { skin: 0, hair: 4, hc: 3, shirt: 6, face: 2, acc: 0 } },
   zhao: { id: 10, name: '赵姐的朋友', elo: 0, play: 0, win: 0, month: 0, shadow: true, chibi: { skin: 1, hair: 4, hc: 5, shirt: 0, face: 1, acc: 0 } },
 };
+
+/** 当前登录会话用户 ID（当前为 mock 账号 U.me.id，将来接 JWT/用户鉴权） */
+export const CURRENT_USER_ID = U.me.id;
+
+/** 交互演示模拟用户（分享后从群里加入的示例球友） */
+export const mockDemoUser = U.zhang;
+
+/** 业务商圈与地区选项（基础字典配置，供约球筛选与建局解析复用） */
+export const mockAreas = ['工体', '望京', '五棵松', '亮马河'];
+export const AREA_OPTS = ['全部', ...mockAreas];
+
+/** 现场开局演示时默认前 N 位球友已到场（alpha:1482 口径） */
+export const DEFAULT_MOCK_CHECKIN_COUNT = 9;
+
+/** mock 环境基准日期（2026-10-04，用于账单等相对期间推算，将来接真实系统时钟） */
+export const MOCK_BASE_DATE_STR = '2026-10-04';
+
+/** 圈子元数据与跑马灯展示（首页看板配置） */
+export const communityMeta = {
+  name: '北京匹克球圈',
+  channel: 'ALPHA',
+  tickerItems: [
+    { tag: 'NOW', text: '周四夜战进行中' },
+    { tag: 'ELO', text: '反手王卫冕 1421' },
+    { tag: 'INTENT', text: '意向池里攒下一局' },
+    { tag: 'SHARE', text: '局卡一键转群拉人' },
+  ],
+};
 /* 3.1 球局：organizer=组织者 · joined=[{u,bring}] 报名+带人（带的人也占名额）
    tb=时间桶（tonight/tomorrow/weekend/week）· area=地区（找局打筛选用）· invitedMe=别人邀请我 */
 /* 3.2 球局：min=最少人数（截止时判成不成）· cap=最多人数（满员线，进度只讲剩几坑）
@@ -76,15 +104,23 @@ export const games: Game[] = [
 ];
 /* alpha:805 let live=null —— 现场进行中状态，归 stores/live.ts */
 
-/* 5.1 账单：逐笔底账（应付=due 合计 86 · 该收仅组织者垫付；date 倒序，gameId 全部指向上面存活的 done 局。
-   金额口径与局卡/详情人均对齐：member 行 = 所连局 perHead，org 行 = 垫付总价（刺客合议 #2）。 */
+/* 5.1 账单（2026-10-04 修订）：逐笔底账，date 倒序，gameId 全部指向上面存活的 done 局。
+   member 行 amt = 所连局 perHead，payee = 该局组织者（待付行写明欠谁）；
+   org 行 amt = 别人摊费合计（我那份自己出了；刺客合议 #2 的「org 行=垫付总价」随 5.1 修订作废），
+   payers = 数据侧给好的按人明细（不含我自己）。数值与各局 heads/perHead 已核对：
+   98:180/4头45 · 97:200/4头50（li 带 1 人占 2 坑）· 94:720/8头90 · 93:164/4头41 · 96:720/9头80 · 95:160/4头40。
+   receivable 只剩 bill 2、6 两笔——bill 6 从 received 翻成 receivable 是为了演示「谁还欠你」的同人两场聚合
+   （li 100+90=190 · 2 场）；received 态运行期可达：一场全结清自动翻转。 */
 export const bills: Bill[] = [
-  { id: 1, gameId: 98, gname: '周五夜光局', date: '10.02', amt: 45, status: 'due', role: 'member' },
-  { id: 2, gameId: 97, gname: '午后加场局', date: '10.01', amt: 200, status: 'receivable', role: 'org' },
-  { id: 3, gameId: 96, gname: '周六夜战', date: '9.26', amt: 80, status: 'paid', role: 'member' },
-  { id: 4, gameId: 93, gname: '周五夜战', date: '9.25', amt: 41, status: 'due', role: 'member' },
-  { id: 5, gameId: 95, gname: '周日晨练局', date: '9.20', amt: 40, status: 'paid', role: 'member' },
-  { id: 6, gameId: 94, gname: '周六混搭局', date: '9.12', amt: 720, status: 'received', role: 'org' },
+  { id: 1, gameId: 98, gname: '周五夜光局', date: '10.02', amt: 45, status: 'due', role: 'member', payee: U.hai },
+  { id: 2, gameId: 97, gname: '午后加场局', date: '10.01', amt: 150, status: 'receivable', role: 'org',
+    payers: [ { u: U.li, amt: 100, settled: false }, { u: U.bei, amt: 50, settled: true } ] },
+  { id: 3, gameId: 96, gname: '周六夜战', date: '9.26', amt: 80, status: 'paid', role: 'member', payee: U.wang },
+  { id: 4, gameId: 93, gname: '周五夜战', date: '9.25', amt: 41, status: 'due', role: 'member', payee: U.wu },
+  { id: 5, gameId: 95, gname: '周日晨练局', date: '9.20', amt: 40, status: 'paid', role: 'member', payee: U.ken },
+  { id: 6, gameId: 94, gname: '周六混搭局', date: '9.12', amt: 630, status: 'receivable', role: 'org',
+    payers: [ { u: U.hai, amt: 90, settled: true }, { u: U.li, amt: 90, settled: false }, { u: U.wang, amt: 90, settled: true },
+              { u: U.wu, amt: 90, settled: false }, { u: U.gu, amt: 90, settled: true }, { u: U.shi, amt: 90, settled: true }, { u: U.yang, amt: 90, settled: true } ] },
 ];
 
 /* 3.1 意向：大概什么时段想打、多久打一次 —— 组局的人翻列表看中谁就邀请谁 */

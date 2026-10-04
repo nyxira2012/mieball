@@ -7,14 +7,10 @@ import type { CardBg, User } from '@/api/types';
 import { useLiveStore } from './live';
 import { useUiStore } from './ui';
 
-/** 换装部件（alpha:1932-1933） */
-export const DRESS_PARTS = ['skin', 'hair', 'hc', 'shirt', 'face', 'acc'] as const;
-export type DressPart = typeof DRESS_PARTS[number];
-export const PART_NAMES: Record<DressPart, string> = { skin: '肤色', hair: '发型', hc: '发色', shirt: '球衣', face: '表情', acc: '配饰' };
-/** 每部件可选变体数（值域 0..n-1）。同一真值还有两处硬编码：utils/chibi.ts 的越界模数、
-    stores/live.ts startLive 给随行访客随机的 Math.random()*n —— 改这里必须三处同步，
-    否则随机/渲染会越界出图。 */
-export const DRESS_RANGES: Record<DressPart, number> = { skin: 4, hair: 6, hc: 6, shirt: 8, face: 4, acc: 3 };
+import { DRESS_PARTS, PART_NAMES, DRESS_RANGES, type DressPart } from '@/utils/chibi';
+
+/** 换装部件名与变体数配置由 @/utils/chibi 单一真值导出，本 store 原样重导出保持向后兼容 */
+export { DRESS_PARTS, PART_NAMES, DRESS_RANGES, type DressPart };
 
 export const useUserStore = defineStore('user', () => {
   /** U 的同一份可变引用；reactive(U) 与 games/live 根读到的都是同一批代理对象 */

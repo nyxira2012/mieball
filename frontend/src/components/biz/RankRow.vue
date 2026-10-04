@@ -9,8 +9,8 @@
     <view class="mid">
       <view class="nm">
         <text class="nm-t">{{ user.name }}</text>
-        <!-- alpha:1770 u.id===0 → 「我」徽章 · liked → ♥ -->
-        <text v-if="user.id === 0" class="badge fire">我</text>
+        <!-- alpha:1770 u.id===CURRENT_USER_ID → 「我」徽章 · liked → ♥ -->
+        <text v-if="user.id === CURRENT_USER_ID" class="badge fire">我</text>
         <text v-if="user.liked" class="hrt">♥</text>
         <TierBadge :tier="tier(user.elo)" />
       </view>
@@ -37,6 +37,7 @@ import type { PropType } from 'vue';
 import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
 import TierBadge from '@/components/ui/TierBadge.vue';
 import Last5Dots from '@/components/ui/Last5Dots.vue';
+import { CURRENT_USER_ID } from '@/api';
 import type { User } from '@/api/types';
 import { useUiStore } from '@/stores/ui';
 import { fmtScore, tier } from '@/utils/elo';

@@ -46,6 +46,7 @@ import SectionTitle from '@/components/ui/SectionTitle.vue';
 import Ticker from '@/components/ui/Ticker.vue';
 import type { TickerItem } from '@/components/ui/Ticker.vue';
 import type { Game } from '@/api/types';
+import { communityMeta } from '@/api';
 import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
 import { freqName, myEntry, slotName } from '@/utils/format';
@@ -54,19 +55,14 @@ const gameStore = useGameStore();
 const ui = useUiStore();
 
 /* ---- 头部（alpha:613-618） ---- */
-/* alpha:936 日期行逐字：`${月} 月 ${日} 日 · 星期X · 北京匹克球圈 · ALPHA` */
+/* alpha:936 日期行逐字：`${月} 月 ${日} 日 · 星期X · ${圈子} · ${版本}` */
 const dateLine = computed(() => {
   const d = new Date();
-  return `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 星期${'日一二三四五六'[d.getDay()]} · 北京匹克球圈 · ALPHA`;
+  return `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 星期${'日一二三四五六'[d.getDay()]} · ${communityMeta.name} · ${communityMeta.channel}`;
 });
 
-/* alpha:938-939 首页跑马灯四段逐字（NOW/ELO/INTENT/SHARE，珊瑚 ● 分隔在 Ticker 内渲染） */
-const tickerItems: TickerItem[] = [
-  { tag: 'NOW', text: '周四夜战进行中' },
-  { tag: 'ELO', text: '反手王卫冕 1421' },
-  { tag: 'INTENT', text: '意向池里攒下一局' },
-  { tag: 'SHARE', text: '局卡一键转群拉人' },
-];
+/* alpha:938-939 首页跑马灯四段逐字（NOW/ELO/INTENT/SHARE，源自 communityMeta mock 数据） */
+const tickerItems: TickerItem[] = communityMeta.tickerItems;
 
 /* ---- 球局列表（alpha:948 games.filter(g=>!g.dead)；5.1 起 games[] 混入 done 局，首页只列可参加局） ---- */
 const openGames = computed(() => gameStore.games.filter((g) => !g.dead && g.status !== 'done'));

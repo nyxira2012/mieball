@@ -1,6 +1,9 @@
 /* 球局基础工具（alpha:881-892 · 意向卡 slotBig alpha:1023-1024） */
 import type { Game, GameEntry, User } from '@/api/types';
-import { games, slots } from '@/mock/data';
+import { CURRENT_USER_ID, games, slots } from '@/mock/data';
+
+/** 是否当前登录用户（基于 mock session 的统一判定，消除裸 0） */
+export const isMe = (id?: number): boolean => id === CURRENT_USER_ID;
 
 /** 带的人也占坑（alpha:882） */
 export const heads = (g: Game): number => g.joined.reduce((s, e) => s + 1 + (e.bring || 0), 0);
@@ -19,10 +22,10 @@ export const perHead = (g: Game): number =>
   g.fee == null ? 0 : Math.round(g.fee / Math.max(isForced(g) ? 0 : g.min || 1, heads(g)));
 
 /** 我的报名条目（alpha:885） */
-export const myEntry = (g: Game): GameEntry | undefined => g.joined.find((e) => e.u.id === 0);
+export const myEntry = (g: Game): GameEntry | undefined => g.joined.find((e) => isMe(e.u.id));
 
 /** 是否组织者（alpha:886） */
-export const isOrg = (g: Game): boolean => !!(g.organizer && g.organizer.id === 0);
+export const isOrg = (g: Game): boolean => !!(g.organizer && isMe(g.organizer.id));
 
 /** 我的局：组织 / 已加入 / 被邀请（alpha:887） */
 export const isMine = (g: Game): boolean => isOrg(g) || !!myEntry(g) || !!g.invitedMe;

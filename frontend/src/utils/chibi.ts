@@ -18,35 +18,41 @@ export const SKIN = ['#FFE3C8', '#F3C79E', '#D89B6A', '#9C6238']
 export const HAIRC = ['#2A2430', '#5B4632', '#C8562E', '#B8A9FF', '#E8D6A8', '#8A8F98']
 export const SHIRT = ['#FFD400', '#FF5A36', '#B8A9FF', '#6FE7FF', '#F5F1E8', '#FF8FB2', '#2A2430', '#F2A93B']
 
+/** 换装部件名与变体数配置（全站单一真实源） */
+export const DRESS_PARTS = ['skin', 'hair', 'hc', 'shirt', 'face', 'acc'] as const;
+export type DressPart = typeof DRESS_PARTS[number];
+export const PART_NAMES: Record<DressPart, string> = { skin: '肤色', hair: '发型', hc: '发色', shirt: '球衣', face: '表情', acc: '配饰' };
+export const DRESS_RANGES: Record<DressPart, number> = { skin: 4, hair: 6, hc: 6, shirt: 8, face: 4, acc: 3 };
+
 /** alpha.html:719-757 的 chibi(c, s) 原样移植（唯一改动：TS 类型标注） */
 export const chibi = (c?: ChibiConfig | null, s = 56): string => {
   const { skin = 0, hair = 0, hc = 0, shirt = 5, face = 0, acc = 0 } = c || {}
-  const sk = SKIN[skin % 4], hh = HAIRC[hc % 6], st = SHIRT[shirt % 8]
+  const sk = SKIN[skin % DRESS_RANGES.skin], hh = HAIRC[hc % DRESS_RANGES.hc], st = SHIRT[shirt % DRESS_RANGES.shirt]
   let hairSvg = ''
-  if (hair % 6 === 0) hairSvg = `<path d="M20 46 Q20 12 50 12 Q80 12 80 46 Q66 36 50 36 Q34 36 20 46Z" fill="${hh}"/>` // 碗盖刘海
-  if (hair % 6 === 1) hairSvg = `<path d="M20 46 Q20 12 50 12 Q80 12 80 46 Q66 36 50 36 Q34 36 20 46Z" fill="${hh}"/>
+  if (hair % DRESS_RANGES.hair === 0) hairSvg = `<path d="M20 46 Q20 12 50 12 Q80 12 80 46 Q66 36 50 36 Q34 36 20 46Z" fill="${hh}"/>` // 碗盖刘海
+  if (hair % DRESS_RANGES.hair === 1) hairSvg = `<path d="M20 46 Q20 12 50 12 Q80 12 80 46 Q66 36 50 36 Q34 36 20 46Z" fill="${hh}"/>
     <circle cx="50" cy="9" r="8" fill="${hh}"/>` // 丸子头
-  if (hair % 6 === 2) hairSvg = `<path d="M19 42 Q26 10 50 10 Q74 10 81 42 L74 40 Q70 26 58 24 L60 38 L52 22 L46 38 L42 24 Q30 26 26 40Z" fill="${hh}"/>` // 刺头
-  if (hair % 6 === 3) hairSvg = `<path d="M22 40 Q28 12 50 12 Q72 12 78 40 Q66 32 50 32 Q34 32 22 40Z" fill="${hh}"/>
+  if (hair % DRESS_RANGES.hair === 2) hairSvg = `<path d="M19 42 Q26 10 50 10 Q74 10 81 42 L74 40 Q70 26 58 24 L60 38 L52 22 L46 38 L42 24 Q30 26 26 40Z" fill="${hh}"/>` // 刺头
+  if (hair % DRESS_RANGES.hair === 3) hairSvg = `<path d="M22 40 Q28 12 50 12 Q72 12 78 40 Q66 32 50 32 Q34 32 22 40Z" fill="${hh}"/>
     <rect x="16" y="36" width="8" height="26" rx="4" fill="${hh}"/><rect x="76" y="36" width="8" height="26" rx="4" fill="${hh}"/>` // 长发
-  if (hair % 6 === 4) hairSvg = `<circle cx="30" cy="24" r="12" fill="${hh}"/><circle cx="50" cy="18" r="13" fill="${hh}"/>
+  if (hair % DRESS_RANGES.hair === 4) hairSvg = `<circle cx="30" cy="24" r="12" fill="${hh}"/><circle cx="50" cy="18" r="13" fill="${hh}"/>
     <circle cx="70" cy="24" r="12" fill="${hh}"/><path d="M22 42 Q26 24 50 22 Q74 24 78 42 Q60 34 50 34 Q40 34 22 42Z" fill="${hh}"/>` // 卷毛
-  if (hair % 6 === 5) hairSvg = `<path d="M21 38 Q24 10 50 10 Q76 10 79 38 L79 44 L21 44Z" fill="${st === '#FFD400' ? '#2A2430' : st}"/>
+  if (hair % DRESS_RANGES.hair === 5) hairSvg = `<path d="M21 38 Q24 10 50 10 Q76 10 79 38 L79 44 L21 44Z" fill="${st === '#FFD400' ? '#2A2430' : st}"/>
     <ellipse cx="68" cy="40" rx="16" ry="4.5" fill="${st === '#FFD400' ? '#2A2430' : st}"/>` // 棒球帽
   let faceSvg = ''
-  if (face % 4 === 0) faceSvg = `<circle cx="39" cy="46" r="3.2" fill="#2A2430"/><circle cx="61" cy="46" r="3.2" fill="#2A2430"/>
+  if (face % DRESS_RANGES.face === 0) faceSvg = `<circle cx="39" cy="46" r="3.2" fill="#2A2430"/><circle cx="61" cy="46" r="3.2" fill="#2A2430"/>
     <path d="M44 56 Q50 61 56 56" stroke="#2A2430" stroke-width="2.4" fill="none" stroke-linecap="round"/>` // 平静微笑
-  if (face % 4 === 1) faceSvg = `<path d="M35 46 q4 -5 8 0 M57 46 q4 -5 8 0" stroke="#2A2430" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  if (face % DRESS_RANGES.face === 1) faceSvg = `<path d="M35 46 q4 -5 8 0 M57 46 q4 -5 8 0" stroke="#2A2430" stroke-width="2.6" fill="none" stroke-linecap="round"/>
     <path d="M43 55 Q50 63 57 55Z" fill="#2A2430"/>` // 开心
-  if (face % 4 === 2) faceSvg = `<rect x="31" y="41" width="16" height="10" rx="4" fill="#2A2430"/><rect x="53" y="41" width="16" height="10" rx="4" fill="#2A2430"/>
+  if (face % DRESS_RANGES.face === 2) faceSvg = `<rect x="31" y="41" width="16" height="10" rx="4" fill="#2A2430"/><rect x="53" y="41" width="16" height="10" rx="4" fill="#2A2430"/>
     <rect x="46" y="44" width="8" height="3" fill="#2A2430"/><path d="M45 57 Q50 60 55 57" stroke="#2A2430" stroke-width="2.4" fill="none" stroke-linecap="round"/>` // 墨镜
-  if (face % 4 === 3) faceSvg = `<circle cx="39" cy="46" r="3" fill="#2A2430"/><circle cx="61" cy="46" r="3" fill="#2A2430"/>
+  if (face % DRESS_RANGES.face === 3) faceSvg = `<circle cx="39" cy="46" r="3" fill="#2A2430"/><circle cx="61" cy="46" r="3" fill="#2A2430"/>
     <path d="M35 39 l8 2 M65 39 l-8 2" stroke="#2A2430" stroke-width="2" stroke-linecap="round"/>
     <path d="M45 57 h10" stroke="#2A2430" stroke-width="2.4" stroke-linecap="round"/>` // 专注
   let accSvg = ''
-  if (acc % 3 === 1) accSvg = `<path d="M33 52 a8 7 0 0 1 14 0 M53 52 a8 7 0 0 1 14 0" stroke="#2A2430" stroke-width="2" fill="none"/>
+  if (acc % DRESS_RANGES.acc === 1) accSvg = `<path d="M33 52 a8 7 0 0 1 14 0 M53 52 a8 7 0 0 1 14 0" stroke="#2A2430" stroke-width="2" fill="none"/>
     <line x1="47" y1="52" x2="53" y2="52" stroke="#2A2430" stroke-width="2"/>` // 眼镜
-  if (acc % 3 === 2) accSvg = `<rect x="20" y="36" width="60" height="7" rx="3.5" fill="${st === '#F5F1E8' ? '#FF5A36' : '#F5F1E8'}"/>` // 发带
+  if (acc % DRESS_RANGES.acc === 2) accSvg = `<rect x="20" y="36" width="60" height="7" rx="3.5" fill="${st === '#F5F1E8' ? '#FF5A36' : '#F5F1E8'}"/>` // 发带
   return `<svg viewBox="0 0 100 100" width="${s}" height="${s}" aria-hidden="true">
     <ellipse cx="50" cy="95" rx="24" ry="4" fill="rgba(0,0,0,.25)"/>
     <rect x="30" y="64" width="40" height="30" rx="14" fill="${st}"/>

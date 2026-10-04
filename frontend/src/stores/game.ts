@@ -2,7 +2,16 @@
    硬约束：动作只改状态与返回/弹出文案 —— 不做路由跳转、不直接调 uni.*（导航由页面层做）。 */
 import { computed, reactive, ref } from 'vue';
 import { defineStore } from 'pinia';
-import { U, delay, games as seedGames, intents as seedIntents, myIntent as seedMyIntent } from '@/api';
+import {
+  CURRENT_USER_ID,
+  U,
+  delay,
+  games as seedGames,
+  intents as seedIntents,
+  mockAreas,
+  mockDemoUser,
+  myIntent as seedMyIntent,
+} from '@/api';
 import type { MyIntent, PublishInput, TimeBucket } from '@/api/types';
 import { heads, isOrg, isForced, myEntry } from '@/utils/format';
 import { gameTime } from '@/utils/time';
@@ -51,8 +60,8 @@ export const useGameStore = defineStore('game', () => {
   function quitGame(id: number): string | null {
     const g = games.find((x) => x.id === id);
     if (!g) return null;
-    g.joined = g.joined.filter((e) => e.u.id !== 0);
-    g.wait = g.wait.filter((e) => e.u.id !== 0);
+    g.joined = g.joined.filter((e) => e.u.id !== CURRENT_USER_ID);
+    g.wait = g.wait.filter((e) => e.u.id !== CURRENT_USER_ID);
     const msg = '已退出 · 名单里少了你';
     useUiStore().toast(msg);
     return msg;
@@ -84,7 +93,7 @@ export const useGameStore = defineStore('game', () => {
     );
     const wd = start.getDay();
     const tb: TimeBucket = off <= 0 ? 'tonight' : off === 1 ? 'tomorrow' : wd === 0 || wd === 6 ? 'weekend' : 'week';
-    const area = ['工体', '望京', '五棵松', '亮马河'].find((a) => p.venue.includes(a)) || '其他';
+    const area = mockAreas.find((a) => p.venue.includes(a)) || '其他';
     return { name, day, tb, area };
   }
 
@@ -220,8 +229,8 @@ export const useGameStore = defineStore('game', () => {
     if (isOrg(g) && !shared[id]) {
       shared[id] = true;
       delay(3000).then(() => {
-        if (!g.joined.some((e) => e.u.id === 12)) g.joined.push({ u: U.zhang, bring: 1 }); // alpha:1230
-        useUiStore().toast(`${U.zhang.name} 从群里点进来 · 加入并带了 1 人`);
+        if (!g.joined.some((e) => e.u.id === mockDemoUser.id)) g.joined.push({ u: mockDemoUser, bring: 1 }); // alpha:1230
+        useUiStore().toast(`${mockDemoUser.name} 从群里点进来 · 加入并带了 1 人`);
       });
     }
     return msg;

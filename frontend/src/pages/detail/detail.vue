@@ -101,7 +101,7 @@
       </SectionTitle>
       <view class="grid-p">
         <template v-for="e in game.joined" :key="e.u.id">
-          <view class="pcard" :class="{ me: e.u.id === 0 }" @click="onPlayer(e.u.id)">
+          <view class="pcard" :class="{ me: e.u.id === CURRENT_USER_ID }" @click="onPlayer(e.u.id)">
             <view v-if="e.u.shadow" class="tag">随行</view>
             <view v-else-if="e.bring" class="tag">带 {{ e.bring }} 人</view>
             <view class="avatar"><ChibiAvatar :chibi="e.u.chibi" :size="56" /></view>
@@ -203,7 +203,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppChip from '@/components/ui/AppChip.vue';
 import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
 import NoteCard from '@/components/ui/NoteCard.vue';
-import SectionTitle from '@/components/ui/SectionTitle.vue';
+import { CURRENT_USER_ID } from '@/api';
 import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
 import { useLiveStore } from '@/stores/live';

@@ -4,8 +4,10 @@
    reactive 对同一原始目标返回同一代理 —— 战力页自动联动。 */
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
+import { CURRENT_USER_ID, DEFAULT_MOCK_CHECKIN_COUNT } from '@/api';
 import type { CheckStatus, LiveState, User, WinChange } from '@/api/types';
 import { settleElo } from '@/utils/elo';
+import { DRESS_RANGES } from '@/utils/chibi';
 import { fillCourts, nextMatch, pById } from '@/utils/rotate';
 import { shouldEnd, undoScore } from '@/utils/score';
 import { useGameStore } from './game';
@@ -32,15 +34,19 @@ export const useLiveStore = defineStore('live', () => {
           id: 9000 + Math.floor(Math.random() * 999),
           name: `${e.u.name.slice(0, 2)}的球友`,
           elo: 1200, play: 0, win: 0, month: 0, shadow: true,
-          /* 随机值域 = user.ts DRESS_RANGES（skin4/hair6/hc6/shirt8/face4/acc3），同步改 —— 值域扩了这里会越界出图 */
+          /* 随机值域引用 chibi.ts 单一源 DRESS_RANGES */
           chibi: {
-            skin: Math.floor(Math.random() * 4), hair: Math.floor(Math.random() * 6), hc: Math.floor(Math.random() * 6),
-            shirt: Math.floor(Math.random() * 8), face: Math.floor(Math.random() * 4), acc: Math.floor(Math.random() * 3),
+            skin: Math.floor(Math.random() * DRESS_RANGES.skin),
+            hair: Math.floor(Math.random() * DRESS_RANGES.hair),
+            hc: Math.floor(Math.random() * DRESS_RANGES.hc),
+            shirt: Math.floor(Math.random() * DRESS_RANGES.shirt),
+            face: Math.floor(Math.random() * DRESS_RANGES.face),
+            acc: Math.floor(Math.random() * DRESS_RANGES.acc),
           },
         });
       }
     });
-    const roster = src.map((u, i) => { u.check = i < 9 ? 'ok' : 'absent'; u.skip = false; u.fire = false; return u; }); // alpha:1482
+    const roster = src.map((u, i) => { u.check = i < DEFAULT_MOCK_CHECKIN_COUNT ? 'ok' : 'absent'; u.skip = false; u.fire = false; return u; }); // alpha:1482
     const L: LiveState = {
       g, roster,
       queue: roster.filter((p) => p.check === 'ok').map((p) => p.id), // alpha:1483
@@ -78,12 +84,12 @@ export const useLiveStore = defineStore('live', () => {
   /** 歇一轮 / 连战（alpha:1629-1636 toggleMine）：互斥；连战排到队首 */
   function toggleMine(k: 'skip' | 'fire'): void {
     const L = live.value;
-    const m = L ? pById(L, 0) : undefined;
+    const m = L ? pById(L, CURRENT_USER_ID) : undefined;
     if (!L || !m) return;
     if (k === 'skip') { m.skip = !m.skip; if (m.skip) m.fire = false; }
     else {
       m.fire = !m.fire; if (m.fire) m.skip = false;
-      if (m.fire) { const i = L.queue.indexOf(0); if (i >= 0) { L.queue.splice(i, 1); L.queue.unshift(0); } }
+      if (m.fire) { const i = L.queue.indexOf(CURRENT_USER_ID); if (i >= 0) { L.queue.splice(i, 1); L.queue.unshift(CURRENT_USER_ID); } }
     }
     useUiStore().toast(k === 'skip' ? (m.skip ? '已标记歇一轮 · 下轮跳过你' : '取消歇一轮') : (m.fire ? '连战模式 · 排到队首' : '取消连战'));
   }
@@ -140,7 +146,7 @@ export const useLiveStore = defineStore('live', () => {
       p.month = (p.month || 0) + d;               // alpha:1705
       p.play++;                                   // alpha:1706
       if (up && !p.shadow) p.win++;
-      if (p.id === 0 && p.last5) p.last5 = [...p.last5.slice(1), up ? 'W' : 'L']; // alpha:1707 仅我滚动近5场（alpha 原样）
+      if (p.id === CURRENT_USER_ID && p.last5) p.last5 = [...p.last5.slice(1), up ? 'W' : 'L']; // alpha:1707 仅我滚动近5场（alpha 原样）
       chg.push({ name: p.name, up, d });
     });
     const wNm = winners.map((id) => byId(id).name).join(' & '); // alpha:1709

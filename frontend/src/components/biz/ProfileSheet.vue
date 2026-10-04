@@ -64,7 +64,7 @@ import type { PropType } from 'vue';
 import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
 import TierBadge from '@/components/ui/TierBadge.vue';
 import Last5Dots from '@/components/ui/Last5Dots.vue';
-import AppButton from '@/components/ui/AppButton.vue';
+import { CURRENT_USER_ID } from '@/api';
 import { useUserStore } from '@/stores/user';
 import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
@@ -72,7 +72,7 @@ import { fmtScore, tier } from '@/utils/elo';
 import { freqName, slotName } from '@/utils/format';
 
 const props = defineProps({
-  /** 档案目标用户 id（0=我；随行访客也可开） */
+  /** 档案目标用户 id（CURRENT_USER_ID=我；随行访客也可开） */
   userId: { type: Number as PropType<number>, required: true },
 });
 
@@ -82,8 +82,8 @@ const ui = useUiStore();
 
 /** alpha:1892 findUser（现场名册优先，再查 U 全表） */
 const u = computed(() => userStore.findUser(props.userId));
-/** alpha:1894 isMe = u.id===0 */
-const isMe = computed(() => u.value?.id === 0);
+/** alpha:1894 isMe = u.id===CURRENT_USER_ID */
+const isMe = computed(() => u.value?.id === CURRENT_USER_ID);
 /** alpha:1895 played = !u.shadow && u.play>0 */
 const played = computed(() => !!u.value && !u.value.shadow && u.value.play > 0);
 

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
+import { U } from '@/api/mock'; // 人名↔id 锚定（li=5、wu=3、bei=8…），比裸数字可读；id 是种子常量，resetModules 不变
 
 /* 每个用例 vi.resetModules() 重新求值模块图 → 拿到全新 mock 数据（等价 alpha 刷新页面） */
 beforeEach(async () => {
@@ -47,22 +48,24 @@ describe('期间过滤（今日=2026-10-04：7d 自 9.27、30d 自 9.04，边界
 });
 
 describe('三数总览 summary（基于 filtered，received 不进三数）', () => {
-  it('30d / all：应付 86 · 已付 120 · 该收 200（已收 720 不计入）', async () => {
+  it('30d / all：应付 86 · 已付 120 · 该收 280（未结口径：bill2 li 100 + bill6 li/wu 各 90；种子已结行不算）', async () => {
     const s = await loadStore();
     s.period = '30d';
-    expect(s.summary).toEqual({ due: 86, paid: 120, receivable: 200 });
+    expect(s.summary).toEqual({ due: 86, paid: 120, receivable: 280 });
     s.period = 'all';
-    expect(s.summary).toEqual({ due: 86, paid: 120, receivable: 200 });
+    expect(s.summary).toEqual({ due: 86, paid: 120, receivable: 280 });
+    // 同源锚：该收三数 === Σ debtors.amt（同一份未结明细的两种加总方向）
+    expect(s.summary.receivable).toBe(s.debtors.reduce((t, d) => t + d.amt, 0));
   });
 
-  it('7d：只剩 10.02/10.01 两笔 → 应付 45 · 已付 0 · 该收 200', async () => {
+  it('7d：只剩 10.02/10.01 两笔 → 应付 45 · 已付 0 · 该收 100（bill2 li 未结）', async () => {
     const s = await loadStore();
     s.period = '7d';
-    expect(s.summary).toEqual({ due: 45, paid: 0, receivable: 200 });
+    expect(s.summary).toEqual({ due: 45, paid: 0, receivable: 100 });
   });
 });
 
-describe('settle / receive 状态迁移（due→paid · receivable→received）', () => {
+describe('settle 状态迁移（due→paid）', () => {
   it('settle due 行：状态落 paid，三数随之此消彼长', async () => {
     const s = await loadStore();
     const msg = s.settleBill(1); // 10.02 待付 45
@@ -78,18 +81,53 @@ describe('settle / receive 状态迁移（due→paid · receivable→received）
     expect(s.settleBill(3)).toBeNull(); // paid
     expect(s.bills.find((b) => b.id === 2)?.status).toBe('receivable');
   });
+});
 
-  it('receive 该收行：状态落 received，该收归零', async () => {
+describe('receivePayer 逐人清账（5.1 修订：整笔一键收款作废）', () => {
+  it('部分结清不翻整笔：msg 报到人，行仍 receivable，该收只减他那份', async () => {
     const s = await loadStore();
-    const msg = s.receiveBill(2); // 10.01 该收 200（我垫付）
-    expect(msg).toBe('已收讫 · 该收变已收');
-    expect(s.bills.find((b) => b.id === 2)?.status).toBe('received');
-    expect(s.summary.receivable).toBe(0);
+    const msg = s.receivePayer(6, U.wu.id); // bill6 未结：li/wu
+    expect(msg).toBe(`已收 ${U.wu.name} 这笔`);
+    expect(s.bills.find((b) => b.id === 6)?.status).toBe('receivable');
+    expect(s.summary.receivable).toBe(190); // 280 − 90（wu 结了）
   });
 
-  it('receive 非 receivable 行 → null', async () => {
+  it('全清翻整笔：最后一人收掉 → 行落 received（received 态的运行期来源）', async () => {
     const s = await loadStore();
-    expect(s.receiveBill(1)).toBeNull(); // due
-    expect(s.receiveBill(6)).toBeNull(); // received
+    const msg = s.receivePayer(2, U.li.id); // bill2 仅剩 li 未结
+    expect(msg).toBe('已收讫 · 这场全结清');
+    expect(s.bills.find((b) => b.id === 2)?.status).toBe('received');
+    expect(s.summary.receivable).toBe(180); // 独立 store 实例从种子起算：只剩 bill6 的 li+wu 未结
+  });
+
+  it('已结再收 → null；对 due/paid 行收 → null', async () => {
+    const s = await loadStore();
+    expect(s.receivePayer(6, U.bei.id)).toBeNull(); // bei 已结，不重复收
+    expect(s.receivePayer(1, U.hai.id)).toBeNull(); // due 行无按人明细
+    expect(s.receivePayer(3, U.wang.id)).toBeNull(); // paid 行
+  });
+});
+
+describe('debtors「谁还欠你」（filtered 同口径，按人聚合未结 payer，amt 降序）', () => {
+  it('all：li 190·2场（bill2+bill6 同人聚合）· wu 90·1场', async () => {
+    const s = await loadStore();
+    expect(s.debtors).toEqual([
+      { u: U.li, amt: 190, n: 2 },
+      { u: U.wu, amt: 90, n: 1 },
+    ]);
+  });
+
+  it('7d：bill6 被筛掉 → 只剩 li 100·1场', async () => {
+    const s = await loadStore();
+    s.period = '7d';
+    expect(s.debtors).toEqual([{ u: U.li, amt: 100, n: 1 }]);
+  });
+
+  it('结清后移出：收掉 bill2 的 li 与 bill6 的 wu、li → debtors 空', async () => {
+    const s = await loadStore();
+    s.receivePayer(2, U.li.id);
+    s.receivePayer(6, U.wu.id);
+    s.receivePayer(6, U.li.id); // bill6 最后一笔 → 整笔翻 received
+    expect(s.debtors).toEqual([]);
   });
 });

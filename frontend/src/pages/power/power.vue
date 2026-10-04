@@ -22,7 +22,7 @@
       </view>
 
       <!-- 我的战力卡（alpha:1844-1861）：点卡开我的档案，卡内头像去「我的」页 -->
-      <MyPowerCard :rank="myRank" @profile="openProfile(0)" />
+      <MyPowerCard :rank="myRank" @profile="openProfile(CURRENT_USER_ID)" />
 
       <!-- 前三打架图（alpha:1862-1870）：点人开档案 -->
       <SectionTitle title="前三 · 对峙中" more="点人看档案" />
@@ -89,6 +89,7 @@ import BrawlStage from '@/components/biz/BrawlStage.vue';
 import RankRow from '@/components/biz/RankRow.vue';
 import SectionTitle from '@/components/ui/SectionTitle.vue';
 import EmptyBox from '@/components/ui/EmptyBox.vue';
+import { CURRENT_USER_ID } from '@/api';
 import { useUiStore } from '@/stores/ui';
 import { useUserStore } from '@/stores/user';
 
@@ -101,8 +102,8 @@ const rows = computed(() =>
     .filter((u) => !u.shadow && u.play > 0)
     .sort((a, b) => b.elo - a.elo),
 );
-/** alpha:1826 myRank = rows.findIndex(u=>u.id===0)+1 */
-const myRank = computed(() => rows.value.findIndex((u) => u.id === 0) + 1);
+/** alpha:1826 myRank = rows.findIndex(u=>u.id===CURRENT_USER_ID)+1 */
+const myRank = computed(() => rows.value.findIndex((u) => u.id === CURRENT_USER_ID) + 1);
 /** alpha:1827 t3 = rows.slice(0,3) */
 const t3 = computed(() => rows.value.slice(0, 3));
 
