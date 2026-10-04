@@ -231,3 +231,6 @@ tmp/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+
+# mieball 后端本地库（SQLite）
+backend/*.db
