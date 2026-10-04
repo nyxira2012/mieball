@@ -24,6 +24,13 @@ export function gameTime(t: string): Date {
   return d;
 }
 
+/** 'M.DD' → 同年（2026）内可比较的天序：月*100+日 单调递增（I3.2 自 stores/bill.ts 迁入：
+    纯日期序函数归 utils；账单/局日期年份恒为当年，mock 无跨年） */
+export function dayOrd(date: string): number {
+  const [m, d] = date.split('.').map(Number);
+  return m * 100 + d;
+}
+
 /** 距离某时点还有多久（alpha:975-981；已过 → null） */
 export function untilTxt(d: Date): string | null {
   const mins = Math.round((d.getTime() - new Date().getTime()) / 60000);

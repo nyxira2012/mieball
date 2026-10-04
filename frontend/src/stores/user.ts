@@ -1,6 +1,6 @@
 /* 用户 store（alpha:846-847 findUser · alpha:1922-1929 toggleLike · alpha:1958-1975 换装）
    不触碰任何 uni.*；页面跳转由页面层做。 */
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive } from 'vue';
 import { defineStore } from 'pinia';
 import { U } from '@/api';
 import type { User } from '@/api/types';
@@ -42,25 +42,9 @@ export const useUserStore = defineStore('user', () => {
     return msg;
   }
 
-  /** 当前选中的换装部件（alpha:1959 let dressPart='shirt'） */
-  const dressPart = ref<DressPart>('shirt');
-  /** 部件选择 chips（alpha:1970-1972） */
-  function setDressPart(p: DressPart): string {
-    dressPart.value = p;
-    const msg = `选中「${PART_NAMES[p]}」· 点小人换`;
-    useUiStore().toast(msg);
-    return msg;
-  }
-  /** 点小人循环换（alpha:1960-1964：chibi[part]+1，逐字口径） */
-  function cyclePart(): string {
-    const m = users.me;
-    m.chibi[dressPart.value] = (m.chibi[dressPart.value] || 0) + 1;
-    const msg = `已换${PART_NAMES[dressPart.value]} · 再点继续换`;
-    useUiStore().toast(msg);
-    return msg;
-  }
-
   /* —— 5.1 我的页纯增量：装扮页即点即换 + 账号操作（mock 不接真后端，toast 即验收面）—— */
+  /* 批4：旧换装三件套（选中部件 ref + 选件/点小人循环换两个动作，SC5 化石）已随「点头像循环换装」
+     交互退场 —— 新交互（装扮页变体 chips）走下方 setVariant */
 
   /** 装扮页选件即换（5.1）：直接落 me.chibi，不 toast —— 预览即反馈，页面安静 */
   function setVariant(part: DressPart, v: number): void {
@@ -117,7 +101,7 @@ export const useUserStore = defineStore('user', () => {
   }
 
   return {
-    users, me, findUser, toggleLike, dressPart, setDressPart, cyclePart,
+    users, me, findUser, toggleLike,
     setVariant, saveProfile, changePwd, wechatAuth, logout, deleteAccount,
   };
 });

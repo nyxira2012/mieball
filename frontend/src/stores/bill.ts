@@ -4,18 +4,13 @@ import { computed, reactive, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { bills as seedBills } from '@/api';
 import type { Bill, BillStatus } from '@/api/types';
+import { dayOrd } from '@/utils/time';
 import { useUiStore } from './ui';
 
 /** 账单状态四态 ↔ 文案（枚举↔文案常量表，PART_NAMES 先例） */
 export const BILL_STATUS_NAMES: Record<BillStatus, string> = { due: '待付', paid: '已付', receivable: '该收', received: '已收' };
 
 export type BillPeriod = '7d' | '30d' | 'all';
-
-/** 'M.DD' → 同年（2026）内可比较的天序：月*100+日 单调递增。账单年份恒为当年，不做跨年。 */
-export function billDay(date: string): number {
-  const [m, d] = date.split('.').map(Number);
-  return m * 100 + d;
-}
 
 /* 期间下界（M.DD，含当天）：今天=2026-10-04 → 近 7 天自 9.27、近 30 天自 9.04。
    mock 无真实时钟，与 data.ts 的日期硬编码同源口径；'all' 不过滤。 */
@@ -29,7 +24,7 @@ export const useBillStore = defineStore('bill', () => {
   /** 按期间过滤后的逐笔列表（date 倒序由种子保序给出） */
   const filtered = computed<Bill[]>(() => {
     const from = period.value === 'all' ? null : PERIOD_FROM[period.value];
-    return from ? bills.filter((b) => billDay(b.date) >= billDay(from)) : bills.slice();
+    return from ? bills.filter((b) => dayOrd(b.date) >= dayOrd(from)) : bills.slice();
   });
 
   /** 三数总览（基于 filtered）：received 已收讫不进三数 */

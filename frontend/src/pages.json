@@ -21,6 +21,26 @@
       "style": { "navigationBarTitleText": "账单" }
     },
     {
+      "path": "pages/mine/dress",
+      "style": { "navigationBarTitleText": "装扮形象" }
+    },
+    {
+      "path": "pages/mine/signup",
+      "style": { "navigationBarTitleText": "参加登记" }
+    },
+    {
+      "path": "pages/mine/logs",
+      "style": { "navigationBarTitleText": "打球记录" }
+    },
+    {
+      "path": "pages/mine/password",
+      "style": { "navigationBarTitleText": "修改密码" }
+    },
+    {
+      "path": "pages/mine/wechat",
+      "style": { "navigationBarTitleText": "微信授权" }
+    },
+    {
       "path": "pages/detail/detail",
       "style": { "navigationBarTitleText": "球局详情" }
     },

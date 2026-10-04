@@ -1,0 +1,105 @@
+<template>
+  <!-- 打球记录页（5.1 子页）：done 局一场一行按时间倒序 + 期间筛选，点卡进打球详情。
+       局卡渲染完全复用 GameCard done 分支（已结束 + 比分胜/负）。 -->
+  <PageShell>
+    <!-- 子页统一返回行（bills.vue 同形态） -->
+    <view class="backrow" @click="goBack">◂ 返回</view>
+
+    <view class="stag">
+      <view class="kicker">Match Log</view>
+      <view class="brand">记<text class="bem">录</text></view>
+    </view>
+
+    <!-- 头统计：累计 N 场 = me.play，与列表条数解耦 —— mock 只收录最近几场，口径同档案卡（技术设计残余决策 3） -->
+    <view class="stat">累计 {{ me.play }} 场</view>
+
+    <!-- 期间筛选（5.1 辅助功能：记录按时间） -->
+    <FilterChips v-model="period" :options="PERIOD_OPTS" />
+
+    <template v-if="list.length">
+      <GameCard v-for="g in list" :key="g.id" :game="g" @tap="openGame(g)" />
+    </template>
+    <EmptyBox v-else text="这段期间没有打过的局 · 换个筛法" />
+  </PageShell>
+</template>
+
+<script setup lang="ts">
+import { computed, ref } from 'vue';
+import PageShell from '@/components/biz/PageShell.vue';
+import GameCard from '@/components/biz/GameCard.vue';
+import FilterChips from '@/components/ui/FilterChips.vue';
+import EmptyBox from '@/components/ui/EmptyBox.vue';
+import { useGameStore } from '@/stores/game';
+import { useUserStore } from '@/stores/user';
+import { dayOrd } from '@/utils/time';
+import type { Game } from '@/api/types';
+
+const game = useGameStore();
+const user = useUserStore();
+const me = computed(() => user.me);
+
+/* 期间下界（M.DD，含当天）：今天=2026-10-04 → 近 7 天自 9.27、近 30 天自 9.04。
+   mock 无真实时钟，与 stores/bill.ts PERIOD_FROM 及 mock 日期硬编码同源口径；'all' 不过滤 */
+type LogPeriod = '7d' | '30d' | 'all';
+const PERIOD_FROM: Record<Exclude<LogPeriod, 'all'>, string> = { '7d': '9.27', '30d': '9.04' };
+
+/* 期间单选（string|number 对齐 FilterChips v-model 联合类型，meet.vue fTime 同法） */
+const period = ref<string | number>('all');
+const PERIOD_OPTS = [
+  { value: 'all', label: '全部' },
+  { value: '7d', label: '近 7 天' },
+  { value: '30d', label: '近 30 天' },
+];
+
+/** 记录列表：done 局按期间过滤（dayOrd 月*100+日，月份不补零不能裸比较字符串）后 d 倒序 */
+const list = computed<Game[]>(() => {
+  const done = game.games.filter((g) => g.status === 'done');
+  const from = period.value === 'all' ? null : PERIOD_FROM[String(period.value) as Exclude<LogPeriod, 'all'>];
+  const hit = from ? done.filter((g) => dayOrd(g.d) >= dayOrd(from)) : done;
+  return hit.sort((a, b) => dayOrd(b.d) - dayOrd(a.d));
+});
+
+/** 局卡点击进打球详情页（5.1） */
+function openGame(g: Game): void {
+  uni.navigateTo({ url: '/pages/detail/detail?id=' + g.id });
+}
+function goBack(): void {
+  uni.navigateBack();
+}
+</script>
+
+<style lang="scss" scoped>
+/* ---------- 子页统一返回行（mono 11px dim · :active lemon） ---------- */
+.backrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  padding: 8px 2px;
+  cursor: pointer;
+  display: inline-block;
+}
+.backrow:active {
+  color: var(--lemon);
+}
+
+/* ---------- 头部 brand（bills.vue 同款） ---------- */
+.brand {
+  font-family: var(--disp);
+  font-size: 34px;
+  line-height: 1.04;
+  margin: 6px 0 2px;
+  font-weight: 700;
+}
+.brand .bem {
+  font-style: normal;
+  color: var(--lemon);
+}
+
+/* 头统计行（mono 10px dim） */
+.stat {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  margin: 4px 2px 8px;
+}
+</style>
