@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
 
+from ..core import errors
 from ..db.models import Account
 from ..services.accounts import AccountBook
 from ..services.keys import KeyVault
@@ -37,6 +38,13 @@ def current_account(
     if not token:
         return None
     return book.by_token(token)
+
+
+def require_account(account: Account | None = Depends(current_account)) -> Account:
+    """登录守卫：没钥匙/钥匙失效 → 401 no_identity（区别于 current_account 的游客静默）。"""
+    if account is None:
+        raise errors.no_identity()
+    return account
 
 
 def client_ip(request: Request) -> str:

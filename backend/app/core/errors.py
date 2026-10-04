@@ -27,6 +27,18 @@ def phone_invalid() -> ApiError:
     return ApiError(422, "phone_invalid", "手机号位数不对，请输入 11 位大陆手机号")
 
 
+def phone_mismatch() -> ApiError:
+    return ApiError(422, "phone_mismatch", "请输入本账号的手机号")
+
+
+def card_bg_invalid() -> ApiError:
+    return ApiError(422, "card_bg_invalid", "卡背不合法")
+
+
+def purpose_invalid() -> ApiError:
+    return ApiError(422, "purpose_invalid", "验证码用途不合法")
+
+
 def nickname_invalid(msg: str = "昵称需 1-16 个字符") -> ApiError:
     return ApiError(422, "nickname_invalid", msg)
 

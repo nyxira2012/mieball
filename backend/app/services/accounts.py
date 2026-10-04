@@ -130,12 +130,10 @@ class AccountBook:
     # ---- 注销（4.6：档案匿名化、手机号释放、历史封存、全钥匙失效） ----
 
     def deactivate(self, *, account_id: int, phone: str, code: str) -> None:
-        account = self._by_id(account_id)
-        if account is None or account.status != "active":
-            raise errors.no_identity()
+        account = self._require_active(account_id)
         _check_phone(phone)
         if account.phone != phone:
-            raise errors.ApiError(422, "phone_mismatch", "请输入本账号的手机号")
+            raise errors.phone_mismatch()
 
         self.sms.verify(phone, "deactivate", code)
 
@@ -180,16 +178,14 @@ class AccountBook:
         chibi: dict[str, Any] | None = None,
         card_bg: str | None = None,
     ) -> dict:
-        account = self._by_id(account_id)
-        if account is None or account.status != "active":
-            raise errors.no_identity()
+        account = self._require_active(account_id)
         if nickname is not None:
             account.nickname = _resolve_nickname(nickname)
         if chibi is not None:
             account.chibi = json.dumps(_validate_chibi(chibi))
         if card_bg is not None:
             if card_bg not in CARD_BGS:
-                raise errors.ApiError(422, "card_bg_invalid", "卡背不合法")
+                raise errors.card_bg_invalid()
             account.card_bg = card_bg
         self.db.commit()
         return self.view(account_id, viewer="self")
@@ -230,6 +226,13 @@ class AccountBook:
 
     def _by_id(self, account_id: int) -> Account | None:
         return self.db.get(Account, account_id)
+
+    def _require_active(self, account_id: int) -> Account:
+        """在册守卫：查无或已注销一律 no_identity（deactivate/update_profile 共用）。"""
+        account = self._by_id(account_id)
+        if account is None or account.status != "active":
+            raise errors.no_identity()
+        return account
 
     def _resume_or_taken(self, existing: Account, device_marker: str) -> str:
         """占用分支：同设备且在续接窗口内 → 直接再发一把未验证钥匙续上；否则报占用。"""

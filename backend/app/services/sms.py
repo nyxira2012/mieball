@@ -11,7 +11,7 @@
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Protocol
 
 from sqlalchemy import func, select, update
@@ -61,7 +61,7 @@ class SmsGate:
 
     def send(self, phone: str, purpose: str, ip: str) -> None:
         if purpose not in PURPOSES:
-            raise errors.ApiError(422, "purpose_invalid", "验证码用途不合法")
+            raise errors.purpose_invalid()
         now = clock.now()
         day = clock.today_key(now)
 
@@ -117,12 +117,10 @@ class SmsGate:
             raise errors.sms_code_invalid()
         now = clock.now()
         if now > row.expires_at:
-            row.used_at = now
-            self.db.commit()
+            self._consume(row, now)
             raise errors.sms_code_expired()
         if row.attempts >= MAX_ATTEMPTS:
-            row.used_at = now
-            self.db.commit()
+            self._consume(row, now)
             raise errors.sms_code_invalid()
         if row.fingerprint != security.code_fingerprint(phone, purpose, code):
             row.attempts += 1
@@ -131,10 +129,14 @@ class SmsGate:
             if remaining <= 0:
                 raise errors.sms_code_invalid()
             raise errors.sms_bad_code(remaining)
-        row.used_at = now
-        self.db.commit()
+        self._consume(row, now)
 
     # ---- 内部 ----
+
+    def _consume(self, row: PhoneCode, now: datetime) -> None:
+        """一次性消费：作废该码（过期/超次/核销成功三路共用）。"""
+        row.used_at = now
+        self.db.commit()
 
     def _count(self, *, day: str, phone: str | None = None, ip: str | None = None) -> int:
         stmt = select(func.count(PhoneCode.id)).where(PhoneCode.day == day)

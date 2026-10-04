@@ -10,10 +10,9 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from ...core import errors
 from ...db.models import Account
 from ...services.accounts import AccountBook
-from ..deps import bearer_token, client_ip, current_account, get_account_book
+from ..deps import bearer_token, client_ip, current_account, get_account_book, require_account
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -87,11 +86,9 @@ def me(
 @router.post("/profile")
 def update_profile(
     body: ProfileIn,
-    account: Account | None = Depends(current_account),
+    account: Account = Depends(require_account),
     book: AccountBook = Depends(get_account_book),
 ):
-    if account is None:
-        raise errors.no_identity()
     return {"account": book.update_profile(
         account.id, nickname=body.nickname, chibi=body.chibi, card_bg=body.card_bg
     )}
@@ -137,10 +134,8 @@ def redeem(
 @router.post("/deactivate")
 def deactivate(
     body: DeactivateIn,
-    account: Account | None = Depends(current_account),
+    account: Account = Depends(require_account),
     book: AccountBook = Depends(get_account_book),
 ):
-    if account is None:
-        raise errors.no_identity()
     book.deactivate(account_id=account.id, phone=body.phone, code=body.code)
     return {"ok": True}

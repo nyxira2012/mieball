@@ -14,6 +14,8 @@ from .core.config import Settings, get_settings
 from .core.errors import ApiError
 from .db.engine import Base, make_session_factory
 
+API_VERSION = "0.2.0"
+
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
@@ -21,7 +23,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # 第一版不引 Alembic：启动时建表；后续结构变了再上迁移（docs/1.1 §B 量级下够用）
     Base.metadata.create_all(factory.kw["bind"])
 
-    app = FastAPI(title="mieball API", version="0.2.0")
+    app = FastAPI(title="mieball API", version=API_VERSION)
     app.state.settings = settings
     app.state.session_factory = factory
 
@@ -47,7 +49,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def root():
         return {
             "service": "mieball-backend",
-            "version": "0.2.0",
+            "version": API_VERSION,
             "docs": "/docs",
             "health": "/api/health",
         }
