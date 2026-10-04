@@ -52,57 +52,11 @@ export const useUserStore = defineStore('user', () => {
     users.me.cardBg = v;
   }
 
-  /** 保存资料（5.1 装扮页）：昵称非空才落；我是同一份对象引用，改名即全站同步 */
-  function saveProfile(name: string): string {
-    const n = name.trim();
-    if (!n) {
-      const m = '昵称不能为空';
-      useUiStore().toast(m);
-      return m;
-    }
-    users.me.name = n;
-    const msg = '已保存 · 全局同步换新';
-    useUiStore().toast(msg);
-    return msg;
-  }
-
-  /** 修改密码（5.1）：原密非空 / 新密≥6 位 / 两次一致，按序拦截 */
-  function changePwd(oldPwd: string, p1: string, p2: string): string {
-    const fail = !oldPwd ? '请输入原密码'
-      : p1.length < 6 ? '新密码至少 6 位'
-        : p1 !== p2 ? '两次输入的新密码不一致' : null;
-    if (fail) {
-      useUiStore().toast(fail);
-      return fail;
-    }
-    const msg = '密码已修改 · 下次登录用新密码';
-    useUiStore().toast(msg);
-    return msg;
-  }
-
-  /** 微信授权登录（5.1）：小程序 / H5 / App 三端账号通用 */
-  function wechatAuth(): string {
-    const msg = '已授权 · 小程序 / H5 / App 账号通用';
-    useUiStore().toast(msg);
-    return msg;
-  }
-
-  /** 退出账号（5.1）：仅本机登出，云端数据不动 */
-  function logout(): string {
-    const msg = '已退出本机登录 · 数据都在云端';
-    useUiStore().toast(msg);
-    return msg;
-  }
-
-  /** 注销账号（5.1）：永久删除；mock 无真后端，toast 即验收面 */
-  function deleteAccount(): string {
-    const msg = '已注销 · 形象匿名化 · 手机号释放';
-    useUiStore().toast(msg);
-    return msg;
-  }
+  /* 账号动作（建号/找回/接管/退出/注销/云端保存名片）已移至 session store（1.1）；
+     密码与微信授权随 MVP 下架（评审 D1）。 */
 
   return {
     users, me, findUser, toggleLike,
-    setVariant, setCardBg, saveProfile, changePwd, wechatAuth, logout, deleteAccount,
+    setVariant, setCardBg,
   };
 });

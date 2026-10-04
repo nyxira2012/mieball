@@ -153,7 +153,10 @@ export type SheetPayload =
   | { type: 'intent-form' }                      // 留/改意向（alpha:1266）
   | { type: 'launch'; gameId?: number }          // 组局表单：无 gid 新建（alpha:1301）
   | { type: 'logout-confirm' }                   // 退出账号确认（5.1 弹窗：只是这台设备登出，数据都在）
-  | { type: 'delete-confirm' };                  // 注销账号确认（5.1 弹窗：后果说明 + 二次确认，两步都过才执行）
+  | { type: 'delete-confirm' }                   // 注销账号确认（5.1 弹窗：后果说明 + 二次确认，两步都过才执行）
+  | { type: 'signup-card'; pendingJoin?: { gameId: number; bring: number }; pendingLaunch?: PublishInput; pendingCheckin?: { gameId: number } };
+  // 名片建号卡（1.1 A1）：游客点报名/建局/扫码签到时弹出；建号成功自动接着完成挂起的动作（D3 两步拆分）
+  // pendingCheckin（2.1·选项A）：扫码到场一律走名片建号，建号成功后自动「我到了」进候场区
 
 /** 胜利结算卡每人涨跌 */
 export interface WinChange { name: string; up: boolean; d: number }

@@ -3,7 +3,6 @@
 import { computed, reactive, ref } from 'vue';
 import { defineStore } from 'pinia';
 import {
-  CURRENT_USER_ID,
   U,
   delay,
   games as seedGames,
@@ -56,12 +55,12 @@ export const useGameStore = defineStore('game', () => {
     return null; // alpha:1137 已加入 → 只关弹层进详情
   }
 
-  /** 退出局（alpha:1148-1153 doQuit）：名额立刻释放，你带的人也一起退（候补同样清） */
+  /** 退出局（alpha:1148-1153 doQuit）：名额立刻释放，你带的人也一起退（候补同样清）。「我」运行时读 U.me.id */
   function quitGame(id: number): string | null {
     const g = games.find((x) => x.id === id);
     if (!g) return null;
-    g.joined = g.joined.filter((e) => e.u.id !== CURRENT_USER_ID);
-    g.wait = g.wait.filter((e) => e.u.id !== CURRENT_USER_ID);
+    g.joined = g.joined.filter((e) => e.u.id !== U.me.id);
+    g.wait = g.wait.filter((e) => e.u.id !== U.me.id);
     const msg = '已退出 · 名单里少了你';
     useUiStore().toast(msg);
     return msg;

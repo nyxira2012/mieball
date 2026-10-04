@@ -101,7 +101,7 @@
       </SectionTitle>
       <view class="grid-p">
         <template v-for="e in game.joined" :key="e.u.id">
-          <view class="pcard" :class="{ me: e.u.id === CURRENT_USER_ID }" @click="onPlayer(e.u.id)">
+          <view class="pcard" :class="{ me: e.u.id === meId }" @click="onPlayer(e.u.id)">
             <view v-if="e.u.shadow" class="tag">随行</view>
             <view v-else-if="e.bring" class="tag">带 {{ e.bring }} 人</view>
             <view class="avatar"><ChibiAvatar :chibi="e.u.chibi" :size="56" /></view>
@@ -203,8 +203,8 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppChip from '@/components/ui/AppChip.vue';
 import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
 import NoteCard from '@/components/ui/NoteCard.vue';
-import { CURRENT_USER_ID } from '@/api';
 import { useGameStore } from '@/stores/game';
+import { useUserStore } from '@/stores/user';
 import { useUiStore } from '@/stores/ui';
 import { useLiveStore } from '@/stores/live';
 import { heads, needOf, perHead, myEntry, isOrg, isForced } from '@/utils/format';
@@ -290,6 +290,8 @@ const perNote = computed(() => {
 /* ---- 操作接线（P5b）：toast 均由 game store 动作内逐字文案负责；视图刷新靠 store 响应式
    （alpha:1136/1152/1168 等处的 renderHome/renderMeet/openDetail/go 由响应式 + 既有页面承担） ---- */
 const ui = useUiStore();
+/** 响应式「我」id（1.1 会话接管 U.me 后联动） */
+const meId = computed(() => useUserStore().me.id);
 const liveStore = useLiveStore();
 
 /** alpha:1418 shareGame（组织者首享 3 秒后模拟小张加入，store 内逐字） */

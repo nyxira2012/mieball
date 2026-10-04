@@ -1,9 +1,9 @@
 /* 球局基础工具（alpha:881-892 · 意向卡 slotBig alpha:1023-1024） */
 import type { Game, GameEntry, User } from '@/api/types';
-import { CURRENT_USER_ID, games, slots } from '@/mock/data';
+import { U, games, slots } from '@/mock/data';
 
-/** 是否当前登录用户（基于 mock session 的统一判定，消除裸 0） */
-export const isMe = (id?: number): boolean => id === CURRENT_USER_ID;
+/** 是否当前登录用户（运行时读 U.me.id：真账号接管「我」位后 id 非 0，快照常量会认错人） */
+export const isMe = (id?: number): boolean => id === U.me.id;
 
 /** 带的人也占坑（alpha:882） */
 export const heads = (g: Game): number => g.joined.reduce((s, e) => s + 1 + (e.bring || 0), 0);

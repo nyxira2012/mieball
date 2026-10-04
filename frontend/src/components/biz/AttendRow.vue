@@ -6,7 +6,7 @@
   <view class="prow">
     <ChibiAvatar :chibi="player.chibi" :size="42" />
     <view class="info">
-      <view class="nm">{{ player.name }} <text v-if="player.shadow" class="badge shadow">随行</text> <text v-if="player.id === CURRENT_USER_ID" class="badge fire">我</text></view>
+      <view class="nm">{{ player.name }} <text v-if="player.shadow" class="badge shadow">随行</text> <text v-if="player.id === userStore.me.id" class="badge fire">我</text></view>
       <view class="st" :class="st[1]">● {{ st[0] }}</view>
     </view>
     <view class="ops">
@@ -23,7 +23,7 @@
 import { computed } from 'vue';
 import type { PropType } from 'vue';
 import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
-import { CURRENT_USER_ID } from '@/api';
+import { useUserStore } from '@/stores/user';
 import type { CheckStatus, User } from '@/api/types';
 
 const props = defineProps({
@@ -31,6 +31,7 @@ const props = defineProps({
   player: { type: Object as PropType<User>, required: true },
 });
 const emit = defineEmits<{ (e: 'check', st: CheckStatus): void }>();
+const userStore = useUserStore();
 
 /* alpha:1579 五态文案与样式类（逐字） */
 const ST: Record<CheckStatus, [string, string]> = {

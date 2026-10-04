@@ -22,8 +22,8 @@
           <AppChip kind="ok">
             <TierBadge :tier="meTier" /> ELO {{ me.elo }} · {{ meTier }} 段
           </AppChip>
-          <!-- alpha:656 尾号 chip -->
-          <AppChip>尾号 ···4721</AppChip>
+          <!-- alpha:656 尾号 chip：登录后是账号真实尾号，游客回落演示尾号 -->
+          <AppChip>尾号 ···{{ session.phoneTail }}</AppChip>
           <!-- 档案卡 = 别人看到的完整档案（与打球页名单点击同支弹层，userId 0 = 我） -->
           <AppChip @click="onProfileCard">档案卡 ▸</AppChip>
           <!-- 装扮入口（与点头像同页） -->
@@ -56,11 +56,15 @@
       </view>
     </view>
 
-    <!-- 账号区（5.1）：行式入口 + 退出/注销（确认弹层，不再裸 toast） -->
+    <!-- 账号区（1.1/5.1 对齐）：密码与微信授权已随 MVP 下架（D1）；游客给找回入口 -->
     <SectionTitle title="账号" />
     <view class="acc-links">
-      <view class="acc-link" @click="go('/pages/mine/password')">修改密码 <text class="arr">▸</text></view>
-      <view class="acc-link" @click="go('/pages/mine/wechat')">微信授权 <text class="arr">▸</text></view>
+      <view v-if="session.isGuest" class="acc-link" @click="go('/pages/mine/login')">
+        登录 · 我是老球友（手机号找回） <text class="arr">▸</text>
+      </view>
+      <view v-else class="acc-link" @click="go('/pages/mine/dress')">
+        手机号 {{ maskedPhone }} · 唯一钥匙 <text class="arr">▸</text>
+      </view>
     </view>
     <view class="acc-row">
       <AppButton variant="ghost" size="sm" class="grow" @click="onLogout">退出账号</AppButton>
@@ -81,15 +85,23 @@ import TierBadge from '@/components/ui/TierBadge.vue';
 import SectionTitle from '@/components/ui/SectionTitle.vue';
 import BillSummaryCard from '@/components/biz/BillSummaryCard.vue';
 import { useUserStore } from '@/stores/user';
+import { useSessionStore } from '@/stores/session';
 import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
 import { useBillStore } from '@/stores/bill';
 import { tier } from '@/utils/elo';
 
 const user = useUserStore();
+const session = useSessionStore();
 const gameStore = useGameStore();
 const ui = useUiStore();
 const bill = useBillStore();
+
+/** 账号区行：登录后手机号打码展示（完整号只在装扮页/档案给自己看，§C2） */
+const maskedPhone = computed(() => {
+  const p = session.account?.phone;
+  return p ? `${p.slice(0, 3)}****${p.slice(-4)}` : '';
+});
 
 /** 我（alpha:1935 U.me；user store 与 games/live 同源引用，装扮保存全产品同步） */
 const me = computed(() => user.me);
