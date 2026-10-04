@@ -50,7 +50,8 @@ export type TimeBucket = 'tonight' | 'tomorrow' | 'weekend' | 'week';
 /** 发牌模式（alpha:1404 winner 赢家留场 / rotate 纯粹轮转 / balance 均衡配对） */
 export type CourtMode = 'winner' | 'rotate' | 'balance';
 
-export type GameStatus = 'open' | 'ready' | 'live';
+/** done=已结束局（5.1）：作为一等球局留在 games[]，换取局卡/详情/摊账弹层整链复用 */
+export type GameStatus = 'open' | 'ready' | 'live' | 'done';
 
 /** 球局。alpha:776-780 的口径注释是权威语义（mock/data.ts 原样保留） */
 export interface Game {
@@ -78,6 +79,8 @@ export interface Game {
   locked?: boolean;     // 已到截止锁定（参加者不能再退出）
   sure?: boolean;       // 必定开局（最少人数要求作废）
   dead?: boolean;       // 未成局（自动终止 · 组织者可恢复）
+  result?: { sa: number; sb: number; myWin: boolean }; // 已结束局的最终比分（5.1 局卡 done 分支 / 记录页看比分）
+  myLog?: { checkIn: string; checkOut?: string };      // 我的到场底账：签到/早退时刻（5.1 登记页「签到 19:02 · 早退 21:30」）
 }
 
 /** 留意向（alpha:807：大概什么时段想打、多久打一次 —— 组局的人翻列表看中谁就邀请谁） */
@@ -98,6 +101,12 @@ export interface LedgerRow { g: string; amt: number; paid: boolean }
 
 /** 账本（alpha:828-830 · 结余 = myPaid − myShare，alpha:1941） */
 export interface Ledger { period: string; feeRows: LedgerRow[]; pool: number; myShare: number; myPaid: number }
+
+/** 账单状态四态（5.1 文档：待付/已付/该收/已收） */
+export type BillStatus = 'due' | 'paid' | 'receivable' | 'received';
+
+/** 账单（5.1 文档：哪局、多少钱、什么状态；垫付只属组织者，故 role=org 才有 receivable） */
+export interface Bill { id: number; gameId: number; gname: string; date: string; amt: number; status: BillStatus; role: 'org' | 'member' }
 
 /** 场上待打的一片：A/B 两队（存玩家 id） */
 export interface LiveCourt { A: number[]; B: number[] }
@@ -135,7 +144,9 @@ export type SheetPayload =
   | { type: 'invite-to-game'; gameId: number }   // 局详情翻意向列表拉人（alpha:1213）
   | { type: 'invite-to-slot'; userId: number }   // 球员档案选局邀请（alpha:1239）
   | { type: 'intent-form' }                      // 留/改意向（alpha:1266）
-  | { type: 'launch'; gameId?: number };         // 组局表单：无 gid 新建（alpha:1301）
+  | { type: 'launch'; gameId?: number }          // 组局表单：无 gid 新建（alpha:1301）
+  | { type: 'logout-confirm' }                   // 退出账号确认（5.1 弹窗：只是这台设备登出，数据都在）
+  | { type: 'delete-confirm' };                  // 注销账号确认（5.1 弹窗：后果说明 + 二次确认，两步都过才执行）
 
 /** 胜利结算卡每人涨跌 */
 export interface WinChange { name: string; up: boolean; d: number }

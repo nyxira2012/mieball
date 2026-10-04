@@ -1,7 +1,7 @@
 /* ---------- 数据（alpha:760-830 原样移植；改数据口径 = 改 alpha，不要在这里发明） ----------
    全部以可变引用导出：store 用 reactive()/ref() 包住同一份原始对象，
    mock / live 名册 / 榜单读写的是同一批对象（Vue reactive 对同一原始目标返回同一代理）。 */
-import type { Game, Intent, Ledger, MyIntent, Slot, User } from '@/api/types';
+import type { Bill, Game, Intent, Ledger, MyIntent, Slot, User } from '@/api/types';
 
 export const U: Record<string, User> = {
   me: { id: 0, name: '我', elo: 1518, play: 34, win: 19, month: 18, last5: ['W', 'L', 'W', 'W', 'L'], chibi: { skin: 1, hair: 5, hc: 0, shirt: 0, face: 1, acc: 2 }, cardBg: 'neon', recentStats: { win: 3, loss: 1, hours: 2, kcal: 800 } },
@@ -46,8 +46,45 @@ export const games: Game[] = [
   { id: 107, organizer: U.shi, t: '今晚 21:00', d: '今天', tb: 'tonight', area: '望京', dur: 1, deadline: '今晚 19:00',
     loc: '望京 · 花家地球馆 · 1 片', name: '加时夜战 · 临时凑', min: 4, cap: 6, fee: 300, note: '临时凑 · 来就能打',
     joined: [{ u: U.shi }, { u: U.gu }], wait: [], status: 'open', score: 11, mode: 'balance', lateRule: true },
+  /* 5.1 已结束局（done 一等球局）：result=最终比分 · myLog=我的到场底账（签到/早退）。
+     必填字段与进行中局同构，局卡/详情/摊账链路整链复用；日期按今天=2026-10-04（周日）回推校准星期。 */
+  { id: 93, organizer: U.wu, t: '周五 20:00', d: '9.25', tb: 'week', area: '五棵松', dur: 2, deadline: '周五 18:00',
+    loc: '五棵松 · 万事达球馆 · 1 片', name: '周五夜战', min: 4, cap: 6, fee: 164,
+    joined: [{ u: U.wu }, { u: U.me }, { u: U.yang }, { u: U.bei }], wait: [], status: 'done',
+    score: 21, mode: 'rotate', lateRule: true, result: { sa: 19, sb: 21, myWin: false }, myLog: { checkIn: '19:55' } },
+  { id: 94, organizer: U.me, t: '周六 19:00', d: '9.12', tb: 'weekend', area: '工体', dur: 2, deadline: '周六 12:00',
+    loc: '工体北路 · 京篮匹克球馆 · 2 片', name: '周六混搭局', min: 8, cap: 12, fee: 720,
+    joined: [{ u: U.me }, { u: U.hai }, { u: U.li }, { u: U.wang }, { u: U.wu }, { u: U.gu }, { u: U.shi }, { u: U.yang }], wait: [], status: 'done',
+    score: 21, mode: 'balance', lateRule: false, result: { sa: 21, sb: 19, myWin: true } },
+  { id: 95, organizer: U.ken, t: '周日 10:00', d: '9.20', tb: 'weekend', area: '亮马河', dur: 2, deadline: '周六 18:00',
+    loc: '亮马河 · 滨河球场 · 2 片', name: '周日晨练局', min: 4, cap: 4, fee: 160,
+    joined: [{ u: U.ken }, { u: U.me }, { u: U.tong }, { u: U.shi }], wait: [], status: 'done',
+    score: 21, mode: 'rotate', lateRule: false, result: { sa: 15, sb: 21, myWin: false }, myLog: { checkIn: '09:52' } },
+  { id: 96, organizer: U.wang, t: '周六 19:00', d: '9.26', tb: 'weekend', area: '工体', dur: 2, deadline: '周六 17:00',
+    loc: '工体北路 · 京篮匹克球馆 · 3 片', name: '周六夜战', min: 8, cap: 12, fee: 720,
+    joined: [{ u: U.wang }, { u: U.hai }, { u: U.wu }, { u: U.gu }, { u: U.li }, { u: U.me }, { u: U.shi }, { u: U.yang }, { u: U.bei }], wait: [], status: 'done',
+    score: 21, mode: 'winner', lateRule: true, locked: true, result: { sa: 21, sb: 17, myWin: true }, myLog: { checkIn: '19:02', checkOut: '21:30' } },
+  { id: 97, organizer: U.me, t: '周四 14:00', d: '10.01', tb: 'week', area: '望京', dur: 2, deadline: '周三 20:00',
+    loc: '望京 · 花家地球馆 · 2 片', name: '午后加场局', min: 4, cap: 8, fee: 200,
+    joined: [{ u: U.me }, { u: U.li, bring: 1 }, { u: U.bei }], wait: [], status: 'done',
+    score: 21, mode: 'balance', lateRule: false, result: { sa: 21, sb: 15, myWin: true }, myLog: { checkIn: '13:58' } },
+  { id: 98, organizer: U.hai, t: '周五 20:00', d: '10.02', tb: 'week', area: '五棵松', dur: 2, deadline: '周五 18:00',
+    loc: '五棵松 · 万事达球馆 · 1 片', name: '周五夜光局', min: 4, cap: 6, fee: 180,
+    joined: [{ u: U.hai }, { u: U.me }, { u: U.wu }, { u: U.tong }], wait: [], status: 'done',
+    score: 21, mode: 'rotate', lateRule: true, result: { sa: 17, sb: 21, myWin: false }, myLog: { checkIn: '20:01' } },
 ];
 /* alpha:805 let live=null —— 现场进行中状态，归 stores/live.ts */
+
+/* 5.1 账单：逐笔底账（应付=due 合计 86 · 该收仅组织者垫付；date 倒序，gameId 全部指向上面存活的 done 局。
+   金额口径与局卡/详情人均对齐：member 行 = 所连局 perHead，org 行 = 垫付总价（刺客合议 #2）。 */
+export const bills: Bill[] = [
+  { id: 1, gameId: 98, gname: '周五夜光局', date: '10.02', amt: 45, status: 'due', role: 'member' },
+  { id: 2, gameId: 97, gname: '午后加场局', date: '10.01', amt: 200, status: 'receivable', role: 'org' },
+  { id: 3, gameId: 96, gname: '周六夜战', date: '9.26', amt: 80, status: 'paid', role: 'member' },
+  { id: 4, gameId: 93, gname: '周五夜战', date: '9.25', amt: 41, status: 'due', role: 'member' },
+  { id: 5, gameId: 95, gname: '周日晨练局', date: '9.20', amt: 40, status: 'paid', role: 'member' },
+  { id: 6, gameId: 94, gname: '周六混搭局', date: '9.12', amt: 720, status: 'received', role: 'org' },
+];
 
 /* 3.1 意向：大概什么时段想打、多久打一次 —— 组局的人翻列表看中谁就邀请谁 */
 const slotDefs: Omit<Slot, 'match'>[] = [

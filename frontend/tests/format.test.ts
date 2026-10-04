@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { U } from '@/api';
-import type { Game, GameEntry } from '@/api/types';
+import type { Game, GameEntry, User } from '@/api/types';
 import { freqName, heads, isMine, isOrg, known, myEntry, needOf, perHead, slotBig, slotName } from '@/utils/format';
 
 function mkGame(p: Partial<Game>): Game {
@@ -71,7 +71,10 @@ describe('known（alpha:888-889，同局打过 = 熟人；静态集合按启动�
     expect(known(U.zhao)).toBe(true); // 101 随行也是名单里的人
   });
   it('无交集且未喜欢 → 不算熟人', () => {
-    expect(known(U.ken)).toBe(false);
+    // 5.1 done 局入 mock 后，我参与的 93-98 把 U 全员变成同局熟人（ken 是 95 组织者），
+    // 「无交集」fixture 只能造局外人；zhang 未进我任何一局，仍守此分支。
+    const outsider: User = { id: 99, name: '局外人', elo: 1200, play: 0, win: 0, month: 0, chibi: {} };
+    expect(known(outsider)).toBe(false);
     expect(known(U.zhang)).toBe(false);
   });
 });
