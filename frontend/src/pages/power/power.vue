@@ -184,17 +184,9 @@ watch(rOpen, () => nextTick(() => measure()));
   justify-content: space-between;
   align-items: flex-end;
 }
-/* alpha.html:86-88 h1.brand（base.scss 里选择器绑 h1 元素，页面按试衣间页同款用本地类承载；
-   margin-bottom:0 来自 alpha:1835 内联样式） */
+/* alpha:1835 power 大字 margin-bottom:0（其余 brand/em 版式走全局 .brand 类） */
 .brand {
-  font-family: var(--disp);
-  font-size: 34px;
-  line-height: 1.04;
   margin: 6px 0 0;
-}
-.brand .em {
-  font-style: normal;
-  color: var(--lemon);
 }
 /* alpha:1842 sub margin-top:6px */
 .sub-mt {

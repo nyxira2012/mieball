@@ -19,10 +19,6 @@ export const U: Record<string, User> = {
   zhao: { id: 10, name: '赵姐的朋友', elo: 0, play: 0, win: 0, month: 0, shadow: true, chibi: { skin: 1, hair: 4, hc: 5, shirt: 0, face: 1, acc: 0 } },
 };
 
-/** [已废弃] 演示期快照（=U.me.id 初值 0）。1.1 会话接管「我」位后 id 会变，
-    新代码一律运行时读 U.me.id（动作层）或 user store 的 me.id（响应式展示层），勿再引用本常量 */
-export const CURRENT_USER_ID = U.me.id;
-
 /** 交互演示模拟用户（分享后从群里加入的示例球友） */
 export const mockDemoUser = U.zhang;
 

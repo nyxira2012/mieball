@@ -1,6 +1,10 @@
 /* 球局基础工具（alpha:881-892 · 意向卡 slotBig alpha:1023-1024） */
-import type { Game, GameEntry, User } from '@/api/types';
+import type { CourtMode, Game, GameEntry, User } from '@/api/types';
 import { U, games, slots } from '@/mock/data';
+
+/** 发牌模式名单一源（原 live.vue/detail.vue 内联 MODE_NAMES 挪出：live 页顶条/规则抽屉与
+    live store 的 setRuleMode toast、detail 规则牌、LaunchSheet 规则三件共用一份） */
+export const MODE_NAMES: Record<CourtMode, string> = { winner: '赢家留场', rotate: '纯粹轮转', balance: '均衡配对' };
 
 /** 是否当前登录用户（运行时读 U.me.id：真账号接管「我」位后 id 非 0，快照常量会认错人） */
 export const isMe = (id?: number): boolean => id === U.me.id;

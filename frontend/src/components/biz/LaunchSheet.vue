@@ -107,6 +107,7 @@ import { useGameStore } from '@/stores/game';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
 import type { CourtMode, PublishInput } from '@/api/types';
+import { MODE_NAMES } from '@/utils/format';
 import { dayToken, durTxt, gameTime } from '@/utils/time';
 
 const props = defineProps({
@@ -127,12 +128,12 @@ const GRID_LABELS: string[] = Array.from(
   { length: GRID_N },
   (_, i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${String((i % 2) * 30).padStart(2, '0')}`,
 );
-/** 规则三件（3.3：说明字段去掉，直选分制/轮转/迟到；词表与 detail 规则牌/现场页同源） */
+/** 规则三件（3.3：说明字段去掉，直选分制/轮转/迟到；label 引 MODE_NAMES 与 detail/live 同源） */
 const SCORES = [11, 15, 21];
 const MODES: Array<{ value: CourtMode; label: string }> = [
-  { value: 'balance', label: '均衡配对' },
-  { value: 'winner', label: '赢家留场' },
-  { value: 'rotate', label: '纯粹轮转' },
+  { value: 'balance', label: MODE_NAMES.balance },
+  { value: 'winner', label: MODE_NAMES.winner },
+  { value: 'rotate', label: MODE_NAMES.rotate },
 ];
 const SCORE_RULES = [
   { value: 'rally', label: '每球得分制' },

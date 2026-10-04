@@ -2,8 +2,8 @@
   <!-- 参加登记页（5.1 子页）：已报名/组局的局一屏看全（含已结束局看签到行），点卡进原约球详情。
        列表口径/局卡与约球页同族（GameCard 复用），本页只做筛选与导航。 -->
   <PageShell>
-    <!-- 子页统一返回行（bills.vue 同形态） -->
-    <view class="backrow" @click="goBack">◂ 返回</view>
+    <!-- 子页统一返回行（BackRow） -->
+    <BackRow />
 
     <view class="stag">
       <view class="kicker">My Games</view>
@@ -32,6 +32,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import PageShell from '@/components/biz/PageShell.vue';
+import BackRow from '@/components/biz/BackRow.vue';
 import GameCard from '@/components/biz/GameCard.vue';
 import FilterChips from '@/components/ui/FilterChips.vue';
 import EmptyBox from '@/components/ui/EmptyBox.vue';
@@ -76,36 +77,12 @@ const emptyTxt = computed(() => {
 function openGame(g: Game): void {
   uni.navigateTo({ url: '/pages/detail/detail?id=' + g.id });
 }
-function goBack(): void {
-  uni.navigateBack();
-}
 </script>
 
 <style lang="scss" scoped>
-/* ---------- 子页统一返回行（mono 11px dim · :active lemon） ---------- */
-.backrow {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--dim);
-  padding: 8px 2px;
-  cursor: pointer;
-  display: inline-block;
-}
-.backrow:active {
-  color: var(--lemon);
-}
-
-/* ---------- 头部 brand（bills.vue 同款） ---------- */
+/* ---------- 头部 brand：版式走全局 .brand 类，只补 700 加粗（bills 同款） ---------- */
 .brand {
-  font-family: var(--disp);
-  font-size: 34px;
-  line-height: 1.04;
-  margin: 6px 0 2px;
   font-weight: 700;
-}
-.brand .bem {
-  font-style: normal;
-  color: var(--lemon);
 }
 
 /* 头统计行（mono 10px dim） */

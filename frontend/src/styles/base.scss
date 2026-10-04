@@ -65,15 +65,23 @@ uni-text {
   font-weight: 400;
   letter-spacing: 0.01em;
 }
-h1.brand {
+/* 品牌大字（alpha:84-87）：uni 模板用 view/text 不用 h1/em，故除 h1.brand 外同时挂 .brand
+   类选择器（.bem/.em 承载 em，.brand-line 承载 <br> 换行）——各页不再自带同值副本 */
+h1.brand,
+.brand {
   font-family: var(--disp);
   font-size: 34px;
   line-height: 1.04;
   margin: 6px 0 2px;
 }
-h1.brand em {
+h1.brand em,
+.brand .bem,
+.brand .em {
   font-style: normal;
   color: var(--lemon);
+}
+.brand .brand-line {
+  display: block;
 }
 .sub {
   color: var(--dim);

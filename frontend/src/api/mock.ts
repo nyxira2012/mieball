@@ -7,7 +7,6 @@ export {
   intents,
   myIntent,
   slots,
-  CURRENT_USER_ID,
   mockDemoUser,
   mockAreas,
   AREA_OPTS,

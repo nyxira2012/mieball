@@ -2,8 +2,8 @@
   <!-- 装扮页（5.1 子页）：预览大图（可切「别人看到的档案卡」效果）+ 分类装扮件 + 卡背背景 + 昵称保存。
        换件/背景即点即换（me 是 store 同源引用，全局同步换新）；昵称本地草稿，显式保存才落。 -->
   <PageShell>
-    <!-- 子页统一返回行（bills.vue 同形态） -->
-    <view class="backrow" @click="goBack">◂ 返回</view>
+    <!-- 子页统一返回行（BackRow） -->
+    <BackRow />
 
     <view class="stag">
       <view class="kicker">Dress Up</view>
@@ -73,6 +73,7 @@
    本页只做选择接线与预览展示。 */
 import { computed, ref } from 'vue';
 import PageShell from '@/components/biz/PageShell.vue';
+import BackRow from '@/components/biz/BackRow.vue';
 import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
 import AppSeg from '@/components/ui/AppSeg.vue';
 import AppChip from '@/components/ui/AppChip.vue';
@@ -118,37 +119,12 @@ const CARD_BGS: { v: CardBg; n: string }[] = [
 
 /** 昵称草稿 */
 const nameDraft = ref(me.value.name);
-
-function goBack(): void {
-  uni.navigateBack();
-}
 </script>
 
 <style lang="scss" scoped>
-/* ---------- 子页统一返回行（mono 11px dim · :active lemon） ---------- */
-.backrow {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--dim);
-  padding: 8px 2px;
-  cursor: pointer;
-  display: inline-block;
-}
-.backrow:active {
-  color: var(--lemon);
-}
-
-/* ---------- 头部 brand（bills.vue 同款：base.scss h1.brand 匹配不上 uni-view，页面内按同值复制） ---------- */
+/* ---------- 头部 brand：版式走全局 .brand 类，只补 700 加粗（bills 同款） ---------- */
 .brand {
-  font-family: var(--disp);
-  font-size: 34px;
-  line-height: 1.04;
-  margin: 6px 0 2px;
   font-weight: 700;
-}
-.brand .bem {
-  font-style: normal;
-  color: var(--lemon);
 }
 
 /* ---------- 预览区大卡：140px 小人居中，卡面造型与 mecard 同族 ---------- */

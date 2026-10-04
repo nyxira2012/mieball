@@ -1,8 +1,8 @@
 <template>
   <!-- 账单页（5.1 子页）：期间筛选 + 三数总览 + 逐笔列表（结算/收款行内动作，点行进原局详情看摊账） -->
   <PageShell>
-    <!-- 子页统一返回行（uni 多页无返回手势兜底；后续 5.1 子页同形态） -->
-    <view class="backrow" @click="goBack">◂ 返回</view>
+    <!-- 子页统一返回行（BackRow；uni 多页无返回手势兜底） -->
+    <BackRow />
 
     <view class="stag">
       <view class="kicker">Bills</view>
@@ -68,6 +68,7 @@
    本页只做筛选接线、行展开/导航与展示。 */
 import { computed, ref } from 'vue';
 import PageShell from '@/components/biz/PageShell.vue';
+import BackRow from '@/components/biz/BackRow.vue';
 import BillSummaryCard from '@/components/biz/BillSummaryCard.vue';
 import FilterChips from '@/components/ui/FilterChips.vue';
 import EmptyBox from '@/components/ui/EmptyBox.vue';
@@ -104,36 +105,12 @@ function amtTxt(b: Bill): string {
   }
   return `¥${b.amt}`;
 }
-function goBack(): void {
-  uni.navigateBack();
-}
 </script>
 
 <style lang="scss" scoped>
-/* ---------- 子页统一返回行（mono 11px dim · :active lemon） ---------- */
-.backrow {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--dim);
-  padding: 8px 2px;
-  cursor: pointer;
-  display: inline-block;
-}
-.backrow:active {
-  color: var(--lemon);
-}
-
-/* ---------- 头部 brand（同 home/meet/mine 页本地类，base.scss h1.brand 匹配不上 uni-view） ---------- */
+/* ---------- 头部 brand：版式走全局 .brand 类，只补 700 加粗（mine 系约定，补 alpha h1 的 UA 默认加粗） ---------- */
 .brand {
-  font-family: var(--disp);
-  font-size: 34px;
-  line-height: 1.04;
-  margin: 6px 0 2px;
   font-weight: 700;
-}
-.brand .bem {
-  font-style: normal;
-  color: var(--lemon);
 }
 
 /* 总览卡与逐笔列表之间的间距（卡本体样式在 BillSummaryCard） */

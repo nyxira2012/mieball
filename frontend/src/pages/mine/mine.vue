@@ -132,19 +132,9 @@ function onDeleteAcc(): void {
 </script>
 
 <style lang="scss" scoped>
-/* ---------- 头部 brand（alpha:85-87 h1.brand / h1.brand em）：
-   base.scss 的 h1.brand 选择器带元素名、匹配不上 uni-view，故在页面内按同值复制类；
-   font-weight 700 补 alpha h1 的 UA 默认加粗 ---------- */
+/* ---------- 头部 brand：版式走全局 .brand 类，此处只补 alpha h1 的 UA 默认加粗 ---------- */
 .brand {
-  font-family: var(--disp);
-  font-size: 34px;
-  line-height: 1.04;
-  margin: 6px 0 2px;
   font-weight: 700;
-}
-.brand .bem {
-  font-style: normal;
-  color: var(--lemon);
 }
 
 /* ---------- mecard（alpha:394-397 · 结构 alpha:649-659） ---------- */

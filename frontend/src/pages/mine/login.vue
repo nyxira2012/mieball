@@ -2,7 +2,7 @@
   <!-- 「我是老球友」两步页（1.1 A1 / 4.4）：输手机号 → 输 6 位验证码。
        查无账号明确提示核对重输，绝不静默建空号；底部写死客服出口。 -->
   <PageShell>
-    <view class="backrow" @click="goBack">◂ 返回</view>
+    <BackRow />
 
     <view class="stag">
       <view class="kicker">Old Friend</view>
@@ -42,6 +42,7 @@
 /* 找回页：状态机 phone → sms，动作走 session store；错误按 ApiError.code 分流提示。 */
 import { onUnmounted, ref } from 'vue';
 import PageShell from '@/components/biz/PageShell.vue';
+import BackRow from '@/components/biz/BackRow.vue';
 import AppField from '@/components/ui/AppField.vue';
 import AppInput from '@/components/ui/AppInput.vue';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -128,36 +129,12 @@ async function onVerify(): Promise<void> {
     busy.value = false;
   }
 }
-
-function goBack(): void {
-  uni.navigateBack();
-}
 </script>
 
 <style lang="scss" scoped>
-/* 子页统一返回行（dress.vue 同形态） */
-.backrow {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--dim);
-  padding: 8px 2px;
-  cursor: pointer;
-  display: inline-block;
-}
-.backrow:active {
-  color: var(--lemon);
-}
-
+/* 头部 brand：版式走全局 .brand 类，只补 700 加粗 */
 .brand {
-  font-family: var(--disp);
-  font-size: 34px;
-  line-height: 1.04;
-  margin: 6px 0 2px;
   font-weight: 700;
-}
-.brand .bem {
-  font-style: normal;
-  color: var(--lemon);
 }
 .kicker {
   font-family: var(--mono);

@@ -207,9 +207,8 @@ import { useGameStore } from '@/stores/game';
 import { useUserStore } from '@/stores/user';
 import { useUiStore } from '@/stores/ui';
 import { useLiveStore } from '@/stores/live';
-import { heads, needOf, perHead, myEntry, isOrg, isForced } from '@/utils/format';
+import { heads, needOf, perHead, myEntry, isOrg, isForced, MODE_NAMES } from '@/utils/format';
 import { durTxt } from '@/utils/time';
-import type { CourtMode } from '@/api/types';
 
 const store = useGameStore();
 
@@ -275,8 +274,7 @@ const splitNote = computed(() => {
       : `人均按当前 ${hs.value} 人摊`;
 });
 
-/* alpha:1405 发牌模式名 */
-const MODE_NAMES: Record<CourtMode, string> = { winner: '赢家留场', rotate: '纯粹轮转', balance: '均衡配对' };
+/* alpha:1405 发牌模式名（词表在 utils/format 的 MODE_NAMES） */
 const modeName = computed(() => (game.value ? MODE_NAMES[game.value.mode] : ''));
 
 /* alpha:1466 规则牌人均分母与括注（Math.max(isForced?0:min,hs) 口径；3.2 订场改版换 isForced） */
@@ -349,17 +347,7 @@ const onPlayer = (uid: number) => {
 </script>
 
 <style lang="scss" scoped>
-/* 页面专属类（alpha:226-245 hero/kv/steps/grid-p/pcard/avatar + openDetail 内联样式）。
-   品牌大字同 base.scss 的 h1.brand（alpha:84-87）——uni 模板不能用 h1，故页面自带同值类。 */
-.brand {
-  font-family: var(--disp);
-  font-size: 34px;
-  line-height: 1.04;
-  margin: 6px 0 2px;
-}
-.brand .brand-line {
-  display: block;
-}
+/* 页面专属类（alpha:226-245 hero/kv/steps/grid-p/pcard/avatar + openDetail 内联样式）。 */
 
 /* ---------- hero / kv / steps（alpha:226-230） ---------- */
 .hero {

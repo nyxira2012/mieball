@@ -296,17 +296,7 @@ watch(
 </script>
 
 <style lang="scss" scoped>
-/* alpha:1070 头部 brand（base.scss 的 h1.brand 绑元素，页面按 home/power 页同款本地类承载） */
-.brand {
-  font-family: var(--disp);
-  font-size: 34px;
-  line-height: 1.04;
-  margin: 6px 0 2px;
-}
-.brand .bem {
-  font-style: normal;
-  color: var(--lemon);
-}
+/* alpha:1070 头部 brand 走全局 .brand/.bem 类（base.scss） */
 
 /* alpha:370-372 分区头：球局 · 悬浮置顶（CSS sticky） */
 .msec-head {

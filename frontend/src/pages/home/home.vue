@@ -91,23 +91,7 @@ const waveLine2 = computed(() =>
 </script>
 
 <style lang="scss" scoped>
-/* 页面专属样式。kicker/sub/sec-t 排版类在全局 base.scss；brand 因 uni 模板不能用 h1，
-   页面自带同值类（alpha:86-87，同 detail 页约定）。 */
-.brand {
-  font-family: var(--disp);
-  font-size: 34px;
-  line-height: 1.04;
-  margin: 6px 0 2px;
-}
-/* alpha:87 h1.brand em */
-.brand .bem {
-  font-style: normal;
-  color: var(--lemon);
-}
-/* alpha:615 <br> 两行结构的等价实现（同 detail 页 .brand-line） */
-.brand .brand-line {
-  display: block;
-}
+/* 页面专属样式。kicker/sub/sec-t 排版类在全局 base.scss；brand/bem/brand-line 亦走全局类。 */
 
 /* ---------- wave 卡（alpha:546-548 + 622-628 内联样式） ---------- */
 .wave {
