@@ -9,10 +9,6 @@
     <view class="page">
       <slot />
     </view>
-    <!-- P11 宽屏两侧竖排装饰字（alpha:607/704 .deco，仅 >560px 显示，样式见下方媒体查询；
-         alpha 的 <b> 段按项目约定用块级 text 承载，避开小程序不支持的原生标签） -->
-    <view class="deco deco-l">NIGHTCOURT<text class="deco-m">PICKLEBALL</text>ALPHA BUILD · 3.1 / 5.1</view>
-    <view class="deco deco-r">夜球场<text class="deco-m">SINGLE FILE</text>NO FRAMEWORK · PURE CRAFT</view>
     <TabBar v-if="tab" :current="tab" />
     <ToastHost />
     <ConfettiHost />
@@ -78,43 +74,8 @@ onHide(() => ui.closeSheet());
   }
 }
 
-/* ---------- P11 宽屏两侧竖排装饰字（alpha:57-59 .deco + 607/704 结构，仅 >560px 显示） ---------- */
-.deco {
-  display: none; /* 移动端（≤560px）不渲染，同 alpha max-width:560px 分支 */
-}
-@media (min-width: 561px) {
-  .deco {
-    display: block;
-    position: fixed;
-    top: 50%;
-    transform: translateY(-50%);
-    writing-mode: vertical-rl;
-    font-family: var(--disp);
-    letter-spacing: 0.5em;
-    color: rgba(255, 212, 0, 0.5);
-    font-size: 13px;
-    text-transform: uppercase;
-    user-select: none;
-    pointer-events: none;
-    z-index: 0;
-  }
-  /* alpha .deco b：珊瑚色中段（块级 text 承载，见模板注释） */
-  .deco .deco-m {
-    display: block;
-    color: var(--coral);
-    margin: 18px 0;
-  }
-  /* 画布（居中 480px）左/右缘外挂：alpha #stage gap 为 56px，但 561-620px 视口放不下，
-     取 24px（480/2+24+13 ≈ 277px 每侧，561px 视口起可完整容纳不溢出） */
-  .deco-l {
-    right: calc(50% + 240px + 24px);
-  }
-  .deco-r {
-    left: calc(50% + 240px + 24px);
-  }
-}
-
 /* ---------- 噪点颗粒（alpha:70-71 .grain，data-uri 逐字） ---------- */
+/* 注：alpha 宽屏两侧的 .deco 竖排装饰字按用户要求未迁移（2026-10-04） */
 .grain {
   position: fixed;
   inset: 0;
