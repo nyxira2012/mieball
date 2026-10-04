@@ -68,8 +68,8 @@ const tickerItems: TickerItem[] = [
   { tag: 'SHARE', text: '局卡一键转群拉人' },
 ];
 
-/* ---- 球局列表（alpha:948 games.filter(g=>!g.dead)） ---- */
-const openGames = computed(() => gameStore.games.filter((g) => !g.dead));
+/* ---- 球局列表（alpha:948 games.filter(g=>!g.dead)；5.1 起 games[] 混入 done 局，首页只列可参加局） ---- */
+const openGames = computed(() => gameStore.games.filter((g) => !g.dead && g.status !== 'done'));
 
 /* alpha:907 点卡分支：inv（被邀请且未加入）→ joinSheet(g.id)；其余 → openDetail(g.id) */
 function onGameTap(g: Game): void {

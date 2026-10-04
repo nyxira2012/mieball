@@ -131,15 +131,16 @@ const AREA_OPTS = ['全部', '工体', '望京', '五棵松', '亮马河'];
 /* ---- 跑马灯（alpha:983-994 meetTicker 逐字逻辑；s+s ×2 循环由 Ticker 负责） ---- */
 const tickerItems = computed<TickerItem[]>(() => {
   const bits: TickerItem[] = [];
-  // alpha:985-986 被邀请条目（未加入才提示）
+  // alpha:985-986 被邀请条目（未加入才提示）；5.1：done 局一并排除，与列表口径一致
   game.games
-    .filter((g) => !g.dead && g.invitedMe && !myEntry(g))
+    .filter((g) => !g.dead && g.status !== 'done' && g.invitedMe && !myEntry(g))
     .forEach((g) =>
       bits.push({ tag: '邀请', text: `${g.organizer.name} 邀你加入「${g.name}」· 点一下就加入` }),
     );
   // alpha:987-990 NEXT：我参加/组织的局里最近一场的开打倒计时
+  // 5.1：done 局须显式排除——gameTime 会把已过的「周X」顺延下周、日期串兜底成今天，未来时间过滤排不掉终局
   const nx = game.games
-    .filter((g) => !g.dead && (isOrg(g) || myEntry(g)))
+    .filter((g) => !g.dead && g.status !== 'done' && (isOrg(g) || myEntry(g)))
     .map((g) => ({ g, t: gameTime(g.t) }))
     .filter((x) => x.t.getTime() > Date.now())
     .sort((a, b) => a.t.getTime() - b.t.getTime())[0];
@@ -151,7 +152,8 @@ const tickerItems = computed<TickerItem[]>(() => {
 });
 
 /* ---- 球局区（alpha:1054-1057） ---- */
-/* alpha:1054-1055 flt = games.filter(!dead && (fTime all || tb) && (fArea 全部 || area))，gameTime 升序 */
+/* alpha:1054-1055 flt = games.filter(!dead && (fTime all || tb) && (fArea 全部 || area))，gameTime 升序；
+   5.1 起排除 done 局（本区只面向未开场的局，已结束局归登记/记录页） */
 const ftv = computed(() => String(fTime.value));
 const fav = computed(() => String(fArea.value));
 const flt = computed(() =>
@@ -159,6 +161,7 @@ const flt = computed(() =>
     .filter(
       (g) =>
         !g.dead &&
+        g.status !== 'done' &&
         (ftv.value === 'all' || g.tb === ftv.value) &&
         (fav.value === '全部' || g.area === fav.value),
     )

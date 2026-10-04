@@ -42,7 +42,8 @@
           {{ game.note ? `说明：${game.note} · ` : '' }}{{ splitNote }}
         </view>
         <view class="row act2">
-          <AppButton variant="ghost" size="sm" @click="onShare">⤴ 分享到群</AppButton>
+          <!-- 5.1：done 局不渲染分享——shareGame 对组织者首享会模拟「小张加入」，终局名单不能被改写 -->
+          <AppButton v-if="game.status !== 'done'" variant="ghost" size="sm" @click="onShare">⤴ 分享到群</AppButton>
           <AppButton
             v-if="org && !game.locked && game.status === 'open'"
             variant="ghost"
@@ -53,15 +54,16 @@
         </view>
       </view>
 
-      <!-- alpha:1425-1428 steps 进度条：status !== 'open' 时「报名/候补」点亮 -->
+      <!-- alpha:1425-1428 steps 进度条：status !== 'open' 时「报名/候补」点亮；
+           5.1：live/done 点亮「进行中」，done 点亮「战报」（连接线随较晚段，status 线性推进） -->
       <view class="steps">
         <text class="s" :class="{ on: started }">报名</text>
         <view class="i" :class="{ on: started }" />
         <text class="s" :class="{ on: started }">候补</text>
-        <view class="i" />
-        <text class="s">进行中</text>
-        <view class="i" />
-        <text class="s">战报</text>
+        <view class="i" :class="{ on: played }" />
+        <text class="s" :class="{ on: played }">进行中</text>
+        <view class="i" :class="{ on: reported }" />
+        <text class="s" :class="{ on: reported }">战报</text>
       </view>
 
       <!-- alpha:1429-1444 名单：组织者排头一个 · 随行/带 N 人角标 · 随行展开成独立 pcard -->
@@ -86,7 +88,7 @@
           </view>
         </template>
         <!-- alpha:1439-1442 未加入时的虚线加入卡 -->
-        <view v-if="!joined" class="pcard join" @click="onJoin">
+        <view v-if="!joined && game.status !== 'done'" class="pcard join" @click="onJoin">
           <view class="plus">＋</view>
           <view class="nm">加入 / 带人</view>
         </view>
@@ -122,12 +124,13 @@
           class="grow"
           @click="onQuit"
         >退出局</AppButton>
-        <AppChip v-if="joined && !org && game.locked" class="mid">已到截止 · 不能退出</AppChip>
-        <template v-if="org && game.status !== 'live'">
+        <AppChip v-if="joined && !org && game.locked && game.status !== 'done'" class="mid">已到截止 · 不能退出</AppChip>
+        <!-- 5.1：org 动作收紧为 open/ready——done 局不再出现锁定/改信息/取消（原 gating 仅排除 live） -->
+        <template v-if="org && (game.status === 'open' || game.status === 'ready')">
           <AppChip v-if="game.sure" class="mid sure-chip">🔒 已锁定必打 · 人数不足也照打</AppChip>
           <AppButton v-else variant="ghost" class="grow sure-btn" @click="onSure">🔒 锁定必打</AppButton>
         </template>
-        <template v-if="org && game.status !== 'live'">
+        <template v-if="org && (game.status === 'open' || game.status === 'ready')">
           <AppButton variant="ghost" @click="onEdit">改信息</AppButton>
           <AppButton variant="ghost" class="cancel-btn" @click="onCancel">取消局</AppButton>
         </template>
@@ -192,6 +195,12 @@ const full = computed(() => !!game.value && hs.value >= game.value.cap);
 const joined = computed(() => !!game.value && !!myEntry(game.value));
 const org = computed(() => !!game.value && isOrg(game.value));
 const started = computed(() => !!game.value && game.value.status !== 'open'); // alpha:1425-1428 steps 点亮条件
+/* 5.1 steps 后两段：played=已开打（live 及终局 done）、reported=战报已出（done） */
+const played = computed(() => {
+  const s = game.value?.status;
+  return s === 'live' || s === 'done';
+});
+const reported = computed(() => game.value?.status === 'done');
 
 /* alpha:1410 大时间 = t 第二段（时刻）；1411 小字 = t 第一段（今晚/周六…） */
 const tBig = computed(() => (game.value ? (game.value.t.split(' ')[1] ?? '') : ''));

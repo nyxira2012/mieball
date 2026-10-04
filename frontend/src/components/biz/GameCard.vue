@@ -1,8 +1,10 @@
 <template>
-  <!-- 球局卡 · alpha.html:898-917 gameCard() 逐字对齐（P5a 全量版）：
-       时间大字（dd 大字 + tt 小字两行）· 局名 + 角色标签（我发起 org / 被邀请 inv / 已加入 dim）·
-       地点行 · foot 状态 chips（进行中 = live-dot + 「进行中」hot；满员 = 「满员 · 候补」full；
-       否则「剩 N 坑」ok）+「min-cap 人」chip +「人均 ¥N」chip + 头像叠层（前 5 + +N ·含随行）。
+  <!-- 球局卡 · alpha.html:898-917 gameCard 为基底（P5a 全量版）：
+       时间大字（dd 大字 + tt 小字两行）· 局名 · 地点行 · foot 状态 chips（进行中 = live-dot + 「进行中」hot；满员 = 「满员 · 候补」full；
+       否则「剩 N 坑」ok；5.1 done = 「已结束」+ 比分胜/负，隐去满员/剩坑与人数 chip）+「min-cap 人」chip。
+       与 alpha 的差异（用户要求 2026-10-04）：
+       ① 头像叠层（前 5 + +N ·含随行）在卡片右上（name 行右端），角色标签（我发起 org / 被邀请 inv / 已加入 dim）移到 foot 行右端；
+       ② 「人均 ¥N」chip 从 foot 行移除（含 done 形态；人均信息仍在局详情与报名弹层）——均勿改回。
        is-live：珊瑚描边 + LIVE 角标（alpha:122-126）；is-inv：被邀请珊瑚描边（alpha:329）。
        静态阶段只 emit('tap')：openDetail 或 joinSheet 分支由父层决定（alpha:908，P4/P7 接线）。 -->
   <view class="gcard" :class="{ 'is-live': live, 'is-inv': inv }" @click="emit('tap')">
@@ -15,24 +17,31 @@
       <view class="meta">
         <view class="name">
           <text class="title-txt">{{ game.name }}</text>
-          <AppChip v-if="role" :kind="role">{{ roleTxt }}</AppChip>
-        </view>
-        <view class="loc">{{ game.loc }}</view>
-        <view class="foot">
-          <template v-if="live">
-            <view class="live-dot" />
-            <AppChip kind="hot">进行中</AppChip>
-          </template>
-          <AppChip v-else-if="full" kind="full">满员 · 候补</AppChip>
-          <AppChip v-else kind="ok">剩 {{ game.cap - hs }} 坑</AppChip>
-          <AppChip>{{ game.min }}-{{ game.cap }} 人</AppChip>
-          <AppChip>人均 ¥{{ ph }}</AppChip>
-          <view class="sp" />
+          <!-- 用户要求（2026-10-04）：头像叠层与角色标签上下互换——叠层右上、角色标签右下（与 alpha 相反，勿"修"回） -->
           <view class="stack-line">
             <!-- alpha:895-897 stackOf：前 5 个 joined 头像；plusn 文案逐字（+ / +N / ·含随行） -->
             <AvatarStack :avatars="stackChibis" :max="5" />
             <text class="plusn">{{ plusn }}</text>
           </view>
+        </view>
+        <view class="loc">{{ game.loc }}</view>
+        <view class="foot">
+          <!-- 5.1 done 形态：[已结束][比分 胜/负][人均]，隐去满员/剩坑与人数 chip（角色标签/头像叠层照旧） -->
+          <template v-if="done">
+            <AppChip>已结束</AppChip>
+            <AppChip v-if="result">
+              <text :class="result.myWin ? 'res-w' : 'res-l'">{{ result.sa }} · {{ result.sb }} {{ result.myWin ? '胜' : '负' }}</text>
+            </AppChip>
+          </template>
+          <template v-else-if="live">
+            <view class="live-dot" />
+            <AppChip kind="hot">进行中</AppChip>
+          </template>
+          <AppChip v-else-if="full" kind="full">满员 · 候补</AppChip>
+          <AppChip v-else kind="ok">剩 {{ game.cap - hs }} 坑</AppChip>
+          <AppChip v-if="!done">{{ game.min }}-{{ game.cap }} 人</AppChip>
+          <view class="sp" />
+          <AppChip v-if="role" :kind="role">{{ roleTxt }}</AppChip>
         </view>
       </view>
     </view>
@@ -46,7 +55,7 @@ import type { PropType } from 'vue'
 import AppChip from '@/components/ui/AppChip.vue'
 import AvatarStack from '@/components/ui/AvatarStack.vue'
 import type { Game } from '@/api/types'
-import { heads, perHead, myEntry, isOrg } from '@/utils/format'
+import { heads, myEntry, isOrg } from '@/utils/format'
 
 const props = defineProps({
   game: { type: Object as PropType<Game>, required: true },
@@ -54,9 +63,11 @@ const props = defineProps({
 const emit = defineEmits<{ (e: 'tap'): void }>()
 
 const hs = computed(() => heads(props.game))
-const ph = computed(() => perHead(props.game))
 const live = computed(() => props.game.status === 'live') // alpha:899 liveing
 const full = computed(() => hs.value >= props.game.cap) // alpha:899 full
+/* 5.1 done 形态：已结束局渲染「已结束 + 比分胜/负」，隐去满员/剩坑与人数 chip（人均 chip 已按用户要求移除） */
+const done = computed(() => props.game.status === 'done')
+const result = computed(() => props.game.result)
 
 /* alpha:900-901 角色：org 优先 → 被邀请（未加入）→ 已加入 → 无标签 */
 const joined = computed(() => !!myEntry(props.game))
@@ -170,6 +181,13 @@ const plusn = computed(
   box-shadow: 0 0 0 0 rgba(255, 90, 54, 0.6);
   animation: pulse 1.6s infinite;
   flex: none;
+}
+/* 5.1 done 比分 chip 的胜负色：AppChip kind 无黄红两态，默认 dim 色 chip 内嵌 text 覆盖 */
+.res-w {
+  color: var(--lemon);
+}
+.res-l {
+  color: var(--coral);
 }
 /* alpha:126-129 is-live 珊瑚描边 + LIVE 角标 */
 .gcard.is-live {
