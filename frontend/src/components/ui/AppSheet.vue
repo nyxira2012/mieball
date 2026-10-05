@@ -33,10 +33,13 @@ const emit = defineEmits<{ (e: 'close'): void }>()
   z-index: 80;
   opacity: 0;
   pointer-events: none;
-  transition: 0.25s;
+  /* visibility 一并收：backdrop-filter 对 opacity:0 元素照样生效，不收会把整页常驻压糊 */
+  visibility: hidden;
+  transition: 0.25s, visibility 0.25s;
 }
 .mask.on {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 /* alpha.html:554-562 */

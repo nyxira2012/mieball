@@ -86,12 +86,14 @@ const dots = computed<{ l: number; t: number }[]>(() => {
   background: rgba(8, 8, 11, 0.9);
   backdrop-filter: blur(6px);
   opacity: 0;
+  visibility: hidden; /* backdrop-filter 对 opacity:0 照样生效，须连 visibility 一起收（同 EndSettleModal mmask） */
   pointer-events: none;
-  transition: 0.22s;
+  transition: 0.22s, visibility 0.22s;
   cursor: pointer;
 }
 .qrwrap.on {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 .qr-card {

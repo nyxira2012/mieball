@@ -137,6 +137,15 @@ const preview = computed<WinChange[]>(() => {
   inset: 0;
   background: rgba(8, 8, 11, 0.72);
   backdrop-filter: blur(3px);
+  /* 关窗态必须连 visibility 一起收：backdrop-filter 对 opacity:0 的元素照样生效，
+     只切透明度会把整页常驻压糊（走查实录：mmask 漏收 → 全屏发糊） */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.22s, visibility 0.22s;
+}
+.mwrap.on .mmask {
+  opacity: 1;
+  visibility: visible;
 }
 .modal {
   position: relative;
