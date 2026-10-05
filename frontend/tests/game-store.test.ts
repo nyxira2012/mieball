@@ -298,17 +298,14 @@ describe('inviteUser（alpha:1249-1263）：3.2 秒模拟对方点一下就加�
   });
 });
 
-describe('saveIntent / delIntent / waveCount（alpha:827, 1286-1297）', () => {
-  it('空时段拦截 / 更新 / 删除 / 同波段计数', async () => {
+describe('saveIntent / delIntent（alpha:1286-1297）', () => {
+  it('空时段拦截 / 更新 / 删除', async () => {
     const s = await loadStore();
-    expect(s.waveCount).toBe(3); // 初始 we-n：wang/hai/li
     expect(s.saveIntent([], 2)).toBe('至少选一个时段');
     expect(s.myIntent).toEqual({ slots: ['we-n'], freq: 2 }); // 原值未动
     expect(s.saveIntent(['wd', 'we-d'], 1)).toBe('意向已更新 · 想改随时改');
     expect(s.myIntent).toEqual({ slots: ['wd', 'we-d'], freq: 1 });
-    expect(s.waveCount).toBe(7); // wd:hai/wu/shi/zhang + we-d:li/yang/ken
     expect(s.delIntent()).toBe('意向已删 · 随时可以再留');
     expect(s.myIntent).toBeNull();
-    expect(s.waveCount).toBe(0);
   });
 });

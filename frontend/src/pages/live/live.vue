@@ -5,7 +5,7 @@
        url query 的 id：onShow 时若现场未开则自动 startLive（深链/刷新兜底；hasLive 已开不重复，避免重置名册）。
        扫码签到深链（2.1·选项A）：二维码编码 {origin}/#/pages/live/live?id=<球局id>，
        uni-app H5 hash 路由原生承接；游客点「＋到场」先弹名片建号（SignupSheet），建号成功自动签到进候场区。 -->
-  <PageShell bare>
+  <PageShell bare tab="live">
     <!-- 无 live 空态（alpha:1532-1535 逐字；bare 壳下自补边距） -->
     <template v-if="!liveStore.hasLive">
       <view class="empty-wrap">
@@ -99,6 +99,7 @@ import RulesSheet from '@/components/biz/RulesSheet.vue';
 import EndSettleModal from '@/components/biz/EndSettleModal.vue';
 import QrOverlay from '@/components/biz/QrOverlay.vue';
 import { useLiveStore } from '@/stores/live';
+import { useGameStore } from '@/stores/game';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
 import { isOrg, courtLabel } from '@/utils/format';
@@ -191,9 +192,23 @@ onLoad((options) => {
   const raw = (options as Record<string, string | undefined> | undefined)?.id;
   const n = raw != null ? Number(raw) : NaN;
   liveId.value = Number.isFinite(n) ? n : null;
+  /* 1.5 灵活首页·状态分发（冷启动仅一次；switchTab 不重跑 onLoad，用户主动点现场键回来不受影响）：
+     无深链 id、store 未在打、也无 live 局 → 现场对当下无意义，落约球页过渡
+     （组织者视角/预约卡/形象页等后续档位实现后再扩这条分发链）。 */
+  if (
+    liveId.value == null &&
+    !liveStore.hasLive &&
+    !useGameStore().games.some((g) => g.status === 'live')
+  ) {
+    uni.switchTab({ url: '/pages/meet/meet' });
+  }
 });
 onShow(() => {
-  if (liveId.value != null && !liveStore.hasLive) liveStore.startLive(liveId.value);
+  if (liveStore.hasLive) return;
+  /* 带 id 深链（扫码/detail 进现场）优先；入口页直进（#/ 无 query）时自动接上唯一
+     进行中的局。冷启动无局已被 onLoad 分发去约球页，走到这说明是用户主动回现场键。 */
+  const id = liveId.value ?? useGameStore().games.find((g) => g.status === 'live')?.id;
+  if (id != null) liveStore.startLive(id);
 });
 /** 页面隐藏（切 tab/进退页面）清本地弹层，避免残留到别的页 */
 onHide(() => {
@@ -208,9 +223,10 @@ function goOpenTonight(): void {
 </script>
 
 <style lang="scss" scoped>
-/* 编排层布局：三块全屏（bare 壳 padding 归零，safe-area 由顶条/候场条各自处理） */
+/* 编排层布局：三块全屏（bare 壳 padding 归零，safe-area 由顶条/候场条各自处理）；
+   底部让出公共导航高度（TabBar fixed 常驻后候场条落在 nav 之上） */
 .live-root {
-  height: 100vh;
+  height: calc(100vh - var(--nav-h) - env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
 }

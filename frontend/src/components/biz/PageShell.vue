@@ -31,8 +31,8 @@ import SheetHost from './SheetHost.vue';
 import { useUiStore } from '@/stores/ui';
 
 defineProps({
-  /** 当前 tab 键；不传 = 非 tab 页（detail/live，无 TabBar） */
-  tab: { type: String as PropType<'home' | 'meet' | 'power' | 'mine'>, default: undefined },
+  /** 当前 tab 键；不传 = 非 tab 页（detail，无 TabBar）。live 传键时配 bare（全屏三块 + 导航） */
+  tab: { type: String as PropType<'live' | 'meet' | 'power' | 'mine'>, default: undefined },
   /** 裸页模式：壳层 padding 清零，页面自管边距（2.1 打球页三块全屏布局用；默认行为不变） */
   bare: { type: Boolean, default: false },
 });

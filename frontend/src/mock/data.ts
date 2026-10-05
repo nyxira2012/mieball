@@ -36,16 +36,10 @@ export const DEFAULT_MOCK_CHECKIN_COUNT = 9;
 /** mock 环境基准日期（2026-10-04，用于账单等相对期间推算，将来接真实系统时钟） */
 export const MOCK_BASE_DATE_STR = '2026-10-04';
 
-/** 圈子元数据与跑马灯展示（首页看板配置） */
+/** 圈子元数据（meet 页日期行在用；原首页跑马灯 tickerItems 随 home 页退役删除） */
 export const communityMeta = {
   name: '北京匹克球圈',
   channel: 'ALPHA',
-  tickerItems: [
-    { tag: 'NOW', text: '周四夜战进行中' },
-    { tag: 'ELO', text: '反手王卫冕 1421' },
-    { tag: 'INTENT', text: '意向池里攒下一局' },
-    { tag: 'SHARE', text: '局卡一键转群拉人' },
-  ],
 };
 /* 3.1 球局：organizer=组织者 · joined=[{u,bring}] 报名+带人（带的人也占名额）
    tb=时间桶（tonight/tomorrow/weekend/week）· area=地区（找局打筛选用）· invitedMe=别人邀请我 */
@@ -57,7 +51,7 @@ export const games: Game[] = [
   { id: 101, organizer: U.wang, t: '今晚 19:00', d: '今天', tb: 'tonight', area: '工体', dur: 2, deadline: '今天 17:00',
     loc: '工体北路 · 京篮匹克球馆 · 3 片', name: '周四夜战', min: 8, cap: 12, fee: 720, note: '老搭子局 · 新朋友走候补',
     joined: [{ u: U.wang }, { u: U.hai, bring: 2 }, { u: U.wu }, { u: U.gu }, { u: U.li }, { u: U.me }, { u: U.shi }, { u: U.yang }, { u: U.bei }, { u: U.tong }, { u: U.zhao }], wait: [],
-    status: 'ready', locked: true, score: 11, mode: 'winner', lateRule: true },
+    status: 'live', locked: true, score: 11, mode: 'winner', lateRule: true },
   { id: 102, organizer: U.me, t: '周六 14:00', d: '10.07', tb: 'weekend', area: '望京', dur: 2, deadline: '周五 20:00',
     loc: '望京 · 花家地球馆 · 2 片', name: '周末午后局', min: 4, cap: 8, fee: 480, booked: ['3号', '5号'], note: '新手友好 · 打完一起晚饭',
     joined: [{ u: U.me }, { u: U.li, bring: 1 }, { u: U.bei }], wait: [], status: 'open', score: 11, mode: 'balance', lateRule: false },

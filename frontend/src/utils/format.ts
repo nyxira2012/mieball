@@ -54,7 +54,7 @@ export const isOrg = (g: Game): boolean => !!(g.organizer && isMe(g.organizer.id
 export const isMine = (g: Game): boolean => isOrg(g) || !!myEntry(g) || !!g.invitedMe;
 
 /** 点局卡分支（alpha:907 单一源）：被邀请且未加入 → 先弹加入卡；其余 → 进详情页。
-    home/meet 的 onGameTap 各自消费（导航留在页面层），判定不再两处各写一份 */
+    meet 的 onGameTap 消费（导航留在页面层），判定不再两处各写一份 */
 export const gameTapAction = (g: Game): 'join' | 'detail' => (!!g.invitedMe && !myEntry(g) ? 'join' : 'detail');
 
 /** 自动局名「日段 · 场馆末段」单一源（不填名时的兜底名）：LaunchSheet 占位/发布与

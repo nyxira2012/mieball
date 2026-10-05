@@ -195,7 +195,7 @@ const scopeLabel = computed(() => (intentScope.value === 'all' ? '所有人' : '
 const myIntentLine = computed(() => (game.myIntent ? game.myIntent.slots.map(slotName).join(' / ') : ''));
 
 /* ---- 点击分支 ---- */
-/* alpha:907 点球局卡分支同首页（判定在 utils/format 的 gameTapAction 单一源）：
+/* alpha:907 点球局卡分支（判定在 utils/format 的 gameTapAction 单一源）：
    被邀请未加入 → joinSheet；其余 → 详情页 */
 function onGameTap(g: Game): void {
   if (gameTapAction(g) === 'join') {

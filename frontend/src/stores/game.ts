@@ -24,10 +24,6 @@ export const useGameStore = defineStore('game', () => {
   const intents = reactive(seedIntents);
   const myIntent = ref<MyIntent | null>(seedMyIntent);
 
-  /** 首页 wave 卡：人正和你在同一个波段（alpha:827 waveCount 逐字口径） */
-  const waveCount = computed(() =>
-    myIntent.value ? intents.filter((i) => i.slots.some((k) => myIntent.value!.slots.includes(k))).length : 0);
-
   /* —— 5.1 我的页登记口径（单一源）：原先 mine.vue 双卡与 signup.vue 各持一份手写 filter，
      两处互指「同口径」却各自维护，口径漂移风险下沉到 store（消费方只做排序/筛选/展示） —— */
 
@@ -255,7 +251,7 @@ export const useGameStore = defineStore('game', () => {
   }
 
   return {
-    games, intents, myIntent, waveCount, mySignups, myCheckins,
+    games, intents, myIntent, mySignups, myCheckins,
     joinGame, quitGame, cancelGame, publishGame, editGame, sureGame, bookCourt, clearBooking,
     hitDeadline, restoreGame, inviteUser, shareGame, saveIntent, delIntent,
   };
