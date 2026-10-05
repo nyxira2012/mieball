@@ -51,6 +51,7 @@ import AvatarStack from '@/components/ui/AvatarStack.vue';
 import TierBadge from '@/components/ui/TierBadge.vue';
 import type { Intent } from '@/api/types';
 import { useUiStore } from '@/stores/ui';
+import { useUserStore } from '@/stores/user';
 import { fmtScore, tier } from '@/utils/elo';
 import { freqName, known, slotBig, slotName } from '@/utils/format';
 
@@ -60,12 +61,13 @@ const props = defineProps({
 const emit = defineEmits<{ (e: 'tap'): void }>();
 
 const ui = useUiStore();
+const userStore = useUserStore();
 
 /* alpha:1026 [big,small]=slotBig(i.slots[0]) */
 const big = computed(() => slotBig(props.intent.slots[0])[0]);
 const small = computed(() => slotBig(props.intent.slots[0])[1]);
-/* alpha:1027 played = !u.shadow && u.play>0 */
-const played = computed(() => !props.intent.u.shadow && props.intent.u.play > 0);
+/* alpha:1027 played（上过场谓词单一源在 user store 的 hasPlayed） */
+const played = computed(() => userStore.hasPlayed(props.intent.u));
 /* alpha:1037 时段 · 频率 · 「note」 */
 const locLine = computed(
   () =>

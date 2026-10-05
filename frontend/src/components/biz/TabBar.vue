@@ -7,27 +7,31 @@
        与 ChibiAvatar 并列为全库唯二 v-html 出口——后续小程序化时集中替换为 image 静态资源。 -->
   <view class="nav">
     <view class="bar">
-      <view class="nbtn" :class="{ on: current === 'home' }" @click="go('home')">
-        <view class="ico" v-html="ICONS.home" />
-        <text class="lbl">首页</text>
+      <view
+        v-for="t in TABS_L"
+        :key="t.k"
+        class="nbtn"
+        :class="{ on: current === t.k }"
+        @click="go(t.k)"
+      >
+        <view class="ico" v-html="ICONS[t.k]" />
+        <text class="lbl">{{ t.label }}</text>
         <!-- LIVE 红点：live store 有进行中球局时点亮（alpha:150 .dot · alpha:681 #live-dot-nav） -->
-        <view v-if="live.hasLive" class="dot" />
-      </view>
-      <view class="nbtn" :class="{ on: current === 'meet' }" @click="go('meet')">
-        <view class="ico" v-html="ICONS.meet" />
-        <text class="lbl">约球</text>
+        <view v-if="t.k === 'home' && live.hasLive" class="dot" />
       </view>
       <!-- 发局 FAB（alpha:686 button#fab）：开抽屉不跳页 -->
       <view class="fab" @click="openLaunch">
         <view class="fab-ico" v-html="ICONS.fab" />
       </view>
-      <view class="nbtn" :class="{ on: current === 'power' }" @click="go('power')">
-        <view class="ico" v-html="ICONS.power" />
-        <text class="lbl">战力</text>
-      </view>
-      <view class="nbtn" :class="{ on: current === 'mine' }" @click="go('mine')">
-        <view class="ico" v-html="ICONS.mine" />
-        <text class="lbl">我的</text>
+      <view
+        v-for="t in TABS_R"
+        :key="t.k"
+        class="nbtn"
+        :class="{ on: current === t.k }"
+        @click="go(t.k)"
+      >
+        <view class="ico" v-html="ICONS[t.k]" />
+        <text class="lbl">{{ t.label }}</text>
       </view>
     </view>
   </view>
@@ -49,6 +53,16 @@ const ICONS = {
 
 /** 4 个 tab 键（与 pages.json tabBar 顺序一致；detail/live 非 tab 页不挂本组件） */
 type TabKey = 'home' | 'meet' | 'power' | 'mine';
+
+/** tab 配置（label/键单一来源；FAB 夹在 meet 与 power 之间，故拆左右两组渲染） */
+const TABS = [
+  { k: 'home', label: '首页' },
+  { k: 'meet', label: '约球' },
+  { k: 'power', label: '战力' },
+  { k: 'mine', label: '我的' },
+] as const satisfies readonly { k: TabKey; label: string }[];
+const TABS_L = TABS.slice(0, 2);
+const TABS_R = TABS.slice(2);
 
 const props = defineProps({
   /** 当前所在 tab（由页面壳传入；detail/live 等非 tab 页不挂 TabBar） */

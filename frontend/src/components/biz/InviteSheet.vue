@@ -7,9 +7,9 @@
     <!-- ===== to-game：翻意向列表（alpha:1216-1220） ===== -->
     <template v-if="mode === 'to-game' && g">
       <!-- alpha:1216 h3：`邀请入「局短名」` -->
-      <view class="t">邀请入「{{ g.name.replace(/ ·.*/, '') }}」</view>
+      <view class="sheet-t">邀请入「{{ g.name.replace(/ ·.*/, '') }}」</view>
       <!-- alpha:1217 hint -->
-      <view class="hint">翻意向列表挑人 · 局会出现在 ta 的「我的局」里，点一下就加入</view>
+      <view class="sheet-hint">翻意向列表挑人 · 局会出现在 ta 的「我的局」里，点一下就加入</view>
       <!-- alpha:1218-1220 意向行（liked 优先 → 熟人优先）→ doInvite(uid, gid) -->
       <template v-if="sortedIntents.length">
         <view v-for="i in sortedIntents" :key="i.u.id" class="mrow" @click="onInvite(i.u.id, g.id)">
@@ -28,9 +28,9 @@
     <!-- ===== to-slot：翻我发起的局（alpha:1243-1247） ===== -->
     <template v-else-if="mode === 'to-slot' && u">
       <!-- alpha:1243 h3：`邀请 ${u.name}` -->
-      <view class="t">邀请 {{ u.name }}</view>
+      <view class="sheet-t">邀请 {{ u.name }}</view>
       <!-- alpha:1244 hint -->
-      <view class="hint">选一个你发起的局 · 局会出现在 ta 的「我的局」里，点一下就加入</view>
+      <view class="sheet-hint">选一个你发起的局 · 局会出现在 ta 的「我的局」里，点一下就加入</view>
       <!-- alpha:1245-1247 我发起的 open 且未成局 → doInvite(uid, g.id) -->
       <view v-for="mg in mineOpen" :key="mg.id" class="mrow" @click="onInviteSlot(mg.id)">
         <view class="mnm">
@@ -106,17 +106,7 @@ function onInviteSlot(gid: number): void {
 </script>
 
 <style lang="scss" scoped>
-/* alpha:558-561 壳层 h3/.hint 同款（SheetHost 不传壳层 title，各弹层自带，同 ProfileSheet） */
-.t {
-  font-family: var(--disp);
-  font-size: 21px;
-  margin-bottom: 4px;
-}
-.hint {
-  font-size: 12px;
-  color: var(--dim);
-  margin-bottom: 16px;
-}
+/* 壳层标题/hint 走全局 .sheet-t/.sheet-hint（base.scss 收源） */
 /* alpha:347-348 意向/选局行 */
 .mrow {
   border: 1px solid rgba(245, 241, 232, 0.12);

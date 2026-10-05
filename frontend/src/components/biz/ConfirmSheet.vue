@@ -8,8 +8,8 @@
   <view v-if="g" class="cs">
     <!-- ===== quit：alpha:1142-1146 ===== -->
     <template v-if="kind === 'quit'">
-      <view class="t">退出这局？</view>
-      <view class="hint">{{ g.t }} · {{ g.loc }} · 退出后名额立刻释放，你带的人也一起退</view>
+      <view class="sheet-t">退出这局？</view>
+      <view class="sheet-hint">{{ g.t }} · {{ g.loc }} · 退出后名额立刻释放，你带的人也一起退</view>
       <view class="btns">
         <!-- alpha:1145 再想想 → closeSheet -->
         <AppButton variant="ghost" class="flex1" @click="ui.closeSheet()">再想想</AppButton>
@@ -20,8 +20,8 @@
 
     <!-- ===== cancel：alpha:1158-1162 + 订场退订提醒 ===== -->
     <template v-else>
-      <view class="t">取消这个局？</view>
-      <view class="hint">已报名的 {{ hs }} 人都会收到取消通知 · 名额、订场一并作废</view>
+      <view class="sheet-t">取消这个局？</view>
+      <view class="sheet-hint">已报名的 {{ hs }} 人都会收到取消通知 · 名额、订场一并作废</view>
       <!-- 已订场：钱已花在 app 外，撤局前提醒去场馆退订 -->
       <view v-if="g.booked?.length" class="sub warnline">
         这局已登记订场（{{ g.booked.join('、') }}）· 撤局后记得去场馆退订
@@ -85,17 +85,7 @@ function onCancel(): void {
 </script>
 
 <style lang="scss" scoped>
-/* alpha:558-561 壳层 h3/.hint 同款（SheetHost 不传壳层 title，各弹层自带，同 ProfileSheet） */
-.t {
-  font-family: var(--disp);
-  font-size: 21px;
-  margin-bottom: 4px;
-}
-.hint {
-  font-size: 12px;
-  color: var(--dim);
-  margin-bottom: 16px;
-}
+/* 壳层标题/hint 走全局 .sheet-t/.sheet-hint（base.scss 收源） */
 /* alpha:1144/1160 双钮排 display:flex;gap:10px（两钮各 flex:1） */
 .btns {
   display: flex;

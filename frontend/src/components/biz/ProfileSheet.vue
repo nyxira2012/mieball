@@ -6,8 +6,8 @@
        意向行（game store intents 查该用户）· 非我双按钮：喜欢(burn/ghost) + 邀请入局。 -->
   <view v-if="u" class="pf">
     <!-- alpha:1900 h3 + hint（SheetHost 未传壳层 title，档案自带，样式同 AppSheet 壳 alpha:558-561） -->
-    <view class="t">球员档案</view>
-    <view class="hint">全产品同一份 · 约球意向 / 现场页 / 榜单打开的都是它</view>
+    <view class="sheet-t">球员档案</view>
+    <view class="sheet-hint">全产品同一份 · 约球意向 / 现场页 / 榜单打开的都是它</view>
 
     <!-- alpha:1901-1913 头像 + 右列 -->
     <view class="hero">
@@ -83,8 +83,8 @@ const ui = useUiStore();
 const u = computed(() => userStore.findUser(props.userId));
 /** alpha:1894 isMe = u.id===me.id（响应式：真账号接管「我」位后 id 联动） */
 const isMe = computed(() => u.value?.id === userStore.me.id);
-/** alpha:1895 played = !u.shadow && u.play>0 */
-const played = computed(() => !!u.value && !u.value.shadow && u.value.play > 0);
+/** alpha:1895 played（上过场谓词单一源在 user store 的 hasPlayed） */
+const played = computed(() => !!u.value && userStore.hasPlayed(u.value));
 
 /** alpha:1896-1897 摘要三态：已开局 / 访客 / 未开局（逐字口径） */
 const sum = computed(() => {
@@ -116,17 +116,7 @@ function onInvite(): void {
 </script>
 
 <style lang="scss" scoped>
-/* alpha:558-561 壳层 h3/.hint 同款（disp 21px mb4 · 12px dim mb16） */
-.t {
-  font-family: var(--disp);
-  font-size: 21px;
-  margin-bottom: 4px;
-}
-.hint {
-  font-size: 12px;
-  color: var(--dim);
-  margin-bottom: 16px;
-}
+/* 壳层标题/hint 走全局 .sheet-t/.sheet-hint（base.scss 收源） */
 /* alpha:1901 hero 行 */
 .hero {
   display: flex;

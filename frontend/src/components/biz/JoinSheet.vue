@@ -5,12 +5,12 @@
        视图刷新靠 store 响应式（alpha:1136 renderHome/renderMeet/openDetail 的等价物）。 -->
   <view v-if="g" class="js">
     <!-- alpha:1112 h3：`${full?'满员 · 进候补':(g.invitedMe&&!myEntry(g)?'接受邀请 · 加入':'加入')}「局短名」` -->
-    <view class="t">{{ full ? '满员 · 进候补' : g.invitedMe && !my ? '接受邀请 · 加入' : '加入' }}「{{ shortName }}」</view>
+    <view class="sheet-t">{{ full ? '满员 · 进候补' : g.invitedMe && !my ? '接受邀请 · 加入' : '加入' }}「{{ shortName }}」</view>
     <!-- alpha:1113-1115 hint：满员 → 候补栏文案（<b>候补栏</b> 用加粗 text 等价）；未满 → 名单/剩坑/人均（+不足最少括注） -->
-    <view v-if="full" class="hint">
+    <view v-if="full" class="sheet-hint">
       {{ g.t }} · {{ g.loc }} · 名额满了——加入将进入<text class="bb">候补栏</text>，有人退出即刻递补
     </view>
-    <view v-else class="hint">
+    <view v-else class="sheet-hint">
       {{ g.t }} · {{ g.loc }} · {{ hs }}/{{ g.cap }} · 剩 {{ need }} 坑 · {{ feeTxt
       }}{{ g.fee != null && hs < g.min && !forced ? `（不足最少 ${g.min} 人按最少摊）` : '' }}
     </view>
@@ -68,12 +68,12 @@ const feeTxt = computed(() => (g.value && g.value.fee != null ? `人均约 ¥${p
 const jbring = ref(0);
 
 /** alpha:1127-1137 doJoin：store.joinGame（含 toast）→ closeSheet（已加入也只关弹层）。
-    1.1 先看后报：游客先弹名片建号卡，建号成功自动接着报名（D3 拆两步、用户看一步） */
+    1.1 先看后报：游客先弹名片建号卡，建号成功自动接着报名（D3 拆两步、用户看一步；
+    「关当前层-开建号卡」的门收在 ui store 的 signupThen，JoinSheet/LaunchSheet/live 页同门） */
 function onConfirm(): void {
   if (!g.value) return;
   if (session.isGuest) {
-    ui.closeSheet();
-    ui.openSheet({ type: 'signup-card', pendingJoin: { gameId: g.value.id, bring: jbring.value } });
+    ui.signupThen({ pendingJoin: { gameId: g.value.id, bring: jbring.value } });
     return;
   }
   game.joinGame(g.value.id, jbring.value);
@@ -82,17 +82,7 @@ function onConfirm(): void {
 </script>
 
 <style lang="scss" scoped>
-/* alpha:558-561 壳层 h3/.hint 同款（SheetHost 不传壳层 title，各弹层自带，同 ProfileSheet） */
-.t {
-  font-family: var(--disp);
-  font-size: 21px;
-  margin-bottom: 4px;
-}
-.hint {
-  font-size: 12px;
-  color: var(--dim);
-  margin-bottom: 16px;
-}
+/* 壳层标题/hint 走全局 .sheet-t/.sheet-hint（base.scss 收源） */
 /* alpha:1114 <b>候补栏</b> */
 .bb {
   font-weight: 700;

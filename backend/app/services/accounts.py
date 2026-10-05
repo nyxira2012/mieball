@@ -87,7 +87,7 @@ class AccountBook:
                 raise
             token = self._resume_or_taken(existing, device_marker)
             return self.view(existing.id, viewer="self"), token
-        self.db.refresh(account)
+        # id 在 flush 时已回填（模型无 server 端默认值），view() 又走同库会话——不必 refresh
 
         token = self.keys.issue(account.id, device_marker, verified=False)
         return self.view(account.id, viewer="self"), token

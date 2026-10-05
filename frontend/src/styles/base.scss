@@ -188,3 +188,46 @@ h1.brand em,
   background: rgba(184, 169, 255, 0.16);
   color: var(--lilac);
 }
+
+/* ---------- 弹层壳层标题/说明（alpha:558-561，9 个 biz 弹层收源——原各组件 scoped 副本删；
+   AppSheet 的 title/hint props 走的是同一版式） ---------- */
+.sheet-t {
+  font-family: var(--disp);
+  font-size: 21px;
+  margin-bottom: 4px;
+}
+.sheet-hint {
+  font-size: 12px;
+  color: var(--dim);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+/* ---------- 小操作按钮（alpha:339-343，meet 意向条 / DeadCard 恢复撤局 / bills 结算收款
+   三处收源；变体 on-in=主行动、on-no=危险，.rec 等页面私变体留各页 scoped） ---------- */
+.tbtn {
+  flex: none;
+  padding: 7px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(245, 241, 232, 0.16);
+  background: none;
+  color: var(--dim);
+  font-size: 12px;
+  font-weight: 700;
+  transition: 0.15s;
+  font-family: var(--sans);
+  cursor: pointer;
+}
+.tbtn:active {
+  transform: scale(0.93);
+}
+.tbtn.on-in {
+  background: var(--lemon);
+  color: var(--ink);
+  border-color: var(--lemon);
+}
+.tbtn.on-no {
+  border-color: var(--coral);
+  color: var(--coral);
+  background: rgba(255, 90, 54, 0.08);
+}

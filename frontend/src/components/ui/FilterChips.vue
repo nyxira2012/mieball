@@ -13,7 +13,7 @@
 </template>
 
 <script setup lang="ts">
-/* alpha.html:334-337 .fchips/.fchip 找局打横滚筛选 chips（单选或多选） */
+/* alpha.html:334-337 .fchips/.fchip 找局打横滚筛选 chips（单选） */
 import { computed } from 'vue'
 import type { PropType } from 'vue'
 
@@ -24,34 +24,18 @@ export interface FchipOption {
 
 const props = defineProps({
   options: { type: Array as PropType<Array<string | number | FchipOption>>, required: true },
-  /** 单选时为 value；multiple 时为数组 */
-  modelValue: {
-    type: [String, Number, Array] as PropType<string | number | Array<string | number>>,
-    default: '',
-  },
-  multiple: { type: Boolean, default: false },
+  modelValue: { type: [String, Number] as PropType<string | number>, default: '' },
 })
-const emit = defineEmits<{ (e: 'update:modelValue', v: string | number | Array<string | number>): void }>()
+const emit = defineEmits<{ (e: 'update:modelValue', v: string | number): void }>()
 
 const normOptions = computed<FchipOption[]>(() =>
   props.options.map((o) => (typeof o === 'object' ? o : { value: o, label: String(o) })),
 )
 
-const isActive = (v: string | number) =>
-  props.multiple
-    ? Array.isArray(props.modelValue) && props.modelValue.includes(v)
-    : props.modelValue === v
+const isActive = (v: string | number) => props.modelValue === v
 
 const select = (v: string | number) => {
-  if (!props.multiple) {
-    emit('update:modelValue', v)
-    return
-  }
-  const cur = Array.isArray(props.modelValue) ? [...props.modelValue] : []
-  const idx = cur.indexOf(v)
-  if (idx >= 0) cur.splice(idx, 1)
-  else cur.push(v)
-  emit('update:modelValue', cur)
+  emit('update:modelValue', v)
 }
 </script>
 

@@ -74,14 +74,15 @@ import FilterChips from '@/components/ui/FilterChips.vue';
 import EmptyBox from '@/components/ui/EmptyBox.vue';
 import { useBillStore, BILL_STATUS_NAMES, PERIOD_OPTS, payerSum, type BillPeriod } from '@/stores/bill';
 import type { Bill, BillStatus } from '@/api/types';
+import { goGame } from '@/utils/nav';
 
 const bill = useBillStore();
 
-/** FilterChips 的宽类型（string|number，meet.vue fTime 同法）与 BillPeriod 窄类型之间的桥 */
-const period = computed<string | number>({
+/** 账单期（BillPeriod 窄类型直接双向绑定——FilterChips v-model 已收窄为 string|number） */
+const period = computed<BillPeriod>({
   get: () => bill.period,
   set: (v) => {
-    bill.period = v as BillPeriod;
+    bill.period = v;
   },
 });
 
@@ -89,7 +90,7 @@ const period = computed<string | number>({
 const openId = ref<number | null>(null);
 function tapBill(b: Bill): void {
   if (b.status === 'receivable') openId.value = openId.value === b.id ? null : b.id;
-  else uni.navigateTo({ url: '/pages/detail/detail?id=' + b.gameId });
+  else goGame(b.gameId);
 }
 
 /** 金额状态色：due→coral / receivable→lemon / paid·received→dim */
@@ -244,22 +245,7 @@ function amtTxt(b: Bill): string {
   font-size: 11px;
 }
 
-/* 行内动作小钮（meet.vue .tbtn 风格；receivable 收款 lemon 描边） */
-.tbtn {
-  flex: none;
-  padding: 7px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(245, 241, 232, 0.16);
-  background: none;
-  color: var(--dim);
-  font-size: 12px;
-  font-weight: 700;
-  transition: 0.15s;
-  font-family: var(--sans);
-}
-.tbtn:active {
-  transform: scale(0.93);
-}
+/* 行内动作小钮：基础形走全局 .tbtn（base.scss 收源）；receivable 收款 lemon 描边为本页私变体 */
 .tbtn.rec {
   border-color: rgba(255, 212, 0, 0.5);
   color: var(--lemon);

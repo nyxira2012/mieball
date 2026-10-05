@@ -102,7 +102,8 @@ import { useLiveStore } from '@/stores/live';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
 import { isOrg, courtLabel } from '@/utils/format';
-import { maxCourts } from '@/utils/rotate';
+import { maxCourts, usedCourts } from '@/utils/rotate';
+import { goGame } from '@/utils/nav';
 
 /** 本地弹层槽（单槽替换语义：开新的自动顶旧的；与全局 SheetPayload 互不相干） */
 type LocalSheet =
@@ -153,7 +154,7 @@ function openProfile(id: number): void {
 function onCheckin(): void {
   const g = L.value?.g;
   if (!g) return;
-  if (session.isGuest) ui.openSheet({ type: 'signup-card', pendingCheckin: { gameId: g.id } });
+  if (session.isGuest) ui.signupThen({ pendingCheckin: { gameId: g.id } });
   else liveSheet.value = { k: 'checkin' };
 }
 
@@ -167,12 +168,12 @@ function courtName(idx: number): string {
   return courtLabel(L.value?.g.booked, idx);
 }
 
-/** 空闲卡：片数上限在 utils/rotate 的 maxCourts 单一源；只出「下一片可开」一张
-    （原型口径单张空闲卡：候场够了点自动排阵，不逐片刷屏）；候场有人时才出。 */
+/** 空闲卡：片数上限在 utils/rotate 的 maxCourts 单一源，已占片数用镜像口径 usedCourts；
+    只出「下一片可开」一张（原型口径单张空闲卡：候场够了点自动排阵，不逐片刷屏）；候场有人时才出。 */
 const idleIdx = computed<number[]>(() => {
   const l = L.value;
   if (!l) return [];
-  const dealt = (l.cur ? 1 : 0) + l.courts.length;
+  const dealt = usedCourts(l);
   return maxCourts(l.g) - dealt > 0 && l.queue.length ? [dealt] : [];
 });
 
@@ -202,7 +203,7 @@ onHide(() => {
 
 /** alpha:1534-1535 空态按钮 → openDetail(101) */
 function goOpenTonight(): void {
-  uni.navigateTo({ url: '/pages/detail/detail?id=101' });
+  goGame(101);
 }
 </script>
 

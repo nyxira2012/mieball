@@ -26,6 +26,10 @@ export const mockDemoUser = U.zhang;
 export const mockAreas = ['工体', '望京', '五棵松', '亮马河'];
 export const AREA_OPTS = ['全部', ...mockAreas];
 
+/** 场馆名单一源：LaunchSheet 地点 chips 与上面局 seeds 的 loc、game store 的 area 推断同源
+    （场馆改名只动这里；「手输新场地」伪选项由 LaunchSheet 自加） */
+export const mockVenues = ['工体北路 · 京篮匹克球馆', '望京 · 花家地球馆', '五棵松 · 万事达球馆'];
+
 /** 现场开局演示时默认前 N 位球友已到场（alpha:1482 口径） */
 export const DEFAULT_MOCK_CHECKIN_COUNT = 9;
 

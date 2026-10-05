@@ -24,12 +24,12 @@
       <!-- ---------- 换人二段态：列对侧池 ---------- -->
       <template v-else>
         <view class="ps-swap-t">把 {{ p.name }} 换成谁？</view>
-        <view v-if="pool.length" class="ps-pool">
-          <view v-for="id in pool" :key="id" class="ps-row" @click="emit('swap-target', id)">
-            <view class="row-av"><ChibiAvatar :chibi="byId(id).chibi" :size="32" /></view>
+        <view v-if="poolRows.length" class="ps-pool">
+          <view v-for="r in poolRows" :key="r.id" class="ps-row" @click="emit('swap-target', r.id)">
+            <view class="row-av"><ChibiAvatar :chibi="r.u.chibi" :size="32" /></view>
             <view class="row-info">
-              <view class="row-nm">{{ byId(id).name }}<text v-if="byId(id).shadow" class="badge guest">访客</text></view>
-              <view class="row-meta">已打 {{ byId(id).play }} 场 · ELO {{ byId(id).elo || '—' }}</view>
+              <view class="row-nm">{{ r.u.name }}<text v-if="r.u.shadow" class="badge guest">访客</text></view>
+              <view class="row-meta">已打 {{ r.u.play }} 场 · ELO {{ r.u.elo || '—' }}</view>
             </view>
             <text class="row-go">换 ‹</text>
           </view>
@@ -67,7 +67,6 @@ const emit = defineEmits<{
 }>();
 
 const liveStore = useLiveStore();
-const byId = (id: number) => liveStore.byId(id);
 
 /** 点中的人（roster 真身查不到 = 抽屉失效，内容整体不渲染；byId 的「—」占位不适合这里） */
 const p = computed(() => liveStore.live?.roster.find((x) => x.id === props.personId));
@@ -90,11 +89,13 @@ const onCourtIds = computed<number[]>(() => {
 const personOnCourt = computed(() => onCourtIds.value.includes(props.personId));
 
 /** 对侧池：person 在场上 → 列队列全员；person 在队列 → 列场上全员。
-    过滤名册查不到的 id（建号换 id 后场上残留旧 id 的 mock 路径），不出「—」行。 */
-const pool = computed<number[]>(() => {
+    过滤名册查不到的 id（建号换 id 后场上残留旧 id 的 mock 路径），不出「—」行。
+    行数据 computed 一次解析好（模板逐字段 byId 是每行多次名册线性扫描）。 */
+const poolRows = computed(() => {
   const l = liveStore.live;
   if (!l) return [];
-  return (personOnCourt.value ? l.queue : onCourtIds.value).filter((id) => !!pById(l, id));
+  const ids = (personOnCourt.value ? l.queue : onCourtIds.value).filter((id) => !!pById(l, id));
+  return ids.map((id) => ({ id, u: liveStore.byId(id) }));
 });
 </script>
 

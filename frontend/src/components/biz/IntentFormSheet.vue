@@ -5,9 +5,9 @@
        校验「至少选一个时段」（toast 逐字由 store 发），保存 → game.saveIntent + closeSheet。 -->
   <view>
     <!-- alpha:1269 标题两态 -->
-    <view class="t">{{ game.myIntent ? '改我的意向' : '留我的意向' }}</view>
+    <view class="sheet-t">{{ game.myIntent ? '改我的意向' : '留我的意向' }}</view>
     <!-- alpha:1270 hint 逐字 -->
-    <view class="hint">大概什么时段想打、多久打一次 —— 组局的人凑人时会看见你</view>
+    <view class="sheet-hint">大概什么时段想打、多久打一次 —— 组局的人凑人时会看见你</view>
 
     <!-- alpha:1271-1274 slotgrid：4 时段卡（on = 电青描边 + 淡青底） -->
     <view class="slotgrid">
@@ -84,17 +84,7 @@ function save(): void {
 </script>
 
 <style lang="scss" scoped>
-/* alpha:558-561 壳层 h3/.hint 同款（SheetHost 未传壳层 title，表单自带，同 ProfileSheet 约定） */
-.t {
-  font-family: var(--disp);
-  font-size: 21px;
-  margin-bottom: 4px;
-}
-.hint {
-  font-size: 12px;
-  color: var(--dim);
-  margin-bottom: 16px;
-}
+/* 壳层标题/hint 走全局 .sheet-t/.sheet-hint（base.scss 收源） */
 /* alpha.html:362-367 slotgrid / slot */
 .slotgrid {
   display: grid;

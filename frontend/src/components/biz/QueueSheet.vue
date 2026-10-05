@@ -2,20 +2,20 @@
   <!-- 完整候场队列抽屉（temp/打球页原型 sh-queue 逐字）：首 4 行 .next 高亮（已排进下一场），
        每行 mono 小注（已打/ ELO）+ 右侧 tag（下一场 / 我还有 N 轮）；点行开点人抽屉（页面编排）。 -->
   <AppSheet :visible="visible" title="候场队列" hint="下四位已排进下一场 · 点人可换人 / 歇两轮 / 连战 / 退场" @close="emit('close')">
-    <template v-if="queue.length">
+    <template v-if="rows.length">
       <view
-        v-for="(id, i) in queue"
-        :key="id"
+        v-for="(r, i) in rows"
+        :key="r.id"
         class="qs-row"
         :class="{ next: i < 4 }"
-        @click="emit('person', id)"
+        @click="emit('person', r.id)"
       >
-        <view class="row-av"><ChibiAvatar :chibi="byId(id).chibi" :size="30" /></view>
+        <view class="row-av"><ChibiAvatar :chibi="r.u.chibi" :size="30" /></view>
         <view class="info">
-          <view class="nm">{{ byId(id).name }}<text v-if="byId(id).shadow" class="badge guest">访客</text></view>
-          <view class="meta">已打 {{ byId(id).play }} 场 · ELO {{ byId(id).elo || '—' }}</view>
+          <view class="nm">{{ r.u.name }}<text v-if="r.u.shadow" class="badge guest">访客</text></view>
+          <view class="meta">已打 {{ r.u.play }} 场 · ELO {{ r.u.elo || '—' }}</view>
         </view>
-        <text v-if="id === U.me.id && myRound != null" class="tag tag-me">还有 {{ myRound }} 轮</text>
+        <text v-if="r.id === U.me.id && myRound != null" class="tag tag-me">还有 {{ myRound }} 轮</text>
         <text v-else-if="i < 4" class="tag">下一场</text>
       </view>
     </template>
@@ -41,8 +41,8 @@ const emit = defineEmits<{
 }>();
 
 const liveStore = useLiveStore();
-const byId = (id: number) => liveStore.byId(id);
-const queue = computed(() => liveStore.live?.queue ?? []);
+/** 行数据 computed 一次解析好（模板逐字段 byId 是每行多次名册线性扫描） */
+const rows = computed(() => (liveStore.live?.queue ?? []).map((id) => ({ id, u: liveStore.byId(id) })));
 const myRound = computed(() => liveStore.myRound);
 </script>
 

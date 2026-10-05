@@ -35,13 +35,26 @@ export function gameTime(t: string): Date {
 /** 日期 → 展示日段：距今天 0/1/2 天 → 今天/明天/后天；其余 → 「M.DD 周X」（如 10.06 周一）。
     组局表单拨盘（3.3 改版）用它落 Game.t / deadline 的日段，与 gameTime 的精确日期分支配套。 */
 export function dayToken(d: Date): string {
-  const now = new Date();
-  const day0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const off = Math.round(
-    (new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - day0.getTime()) / 86400000,
-  );
+  const off = dayOff(d);
   if (off >= 0 && off <= 2) return ['今天', '明天', '后天'][off];
   return `${d.getMonth() + 1}.${String(d.getDate()).padStart(2, '0')} 周${'日一二三四五六'[d.getDay()]}`;
+}
+
+/** Date 距今天的天数偏移（按当日零点差）：dayToken / 拨盘回填 / game store 的 tb 推导共用
+    （纯日期算术，此前三处各抄一份）。 */
+export function dayOff(d: Date): number {
+  const now = new Date();
+  const day0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round(
+    (new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - day0.getTime()) / 86400000,
+  );
+}
+
+/** 局时间串拆分（GameCard 时间位与 detail hero 共用）：末段=时刻、前段拼接=日段
+    （3.3 改版后 t 可能是「10.06 周一 19:00」三段式；格式再变只改这里）。 */
+export function splitGameTime(t: string): { day: string; hm: string } {
+  const p = t.split(' ');
+  return { day: p.slice(0, -1).join(' '), hm: p[p.length - 1] ?? '' };
 }
 
 /** Date → 「HH:mm」（24 小时制补零；组局表单拨盘用） */

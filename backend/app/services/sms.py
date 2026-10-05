@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Protocol
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.orm import Session
 
 from ..core import clock, errors, security
@@ -72,11 +72,19 @@ class SmsGate:
             retry_after = int(RESEND_COOLDOWN_SECONDS - (now - last.created_at).total_seconds()) or 1
             raise errors.sms_cooldown(retry_after)
 
-        if self._count(day=day, phone=phone) >= PHONE_DAILY_LIMIT:
+        # 三条限频同表同 day，一条 COUNT 查齐（手机号/ IP/ 全站预算），省两次往返
+        phone_n, ip_n, day_n = self.db.execute(
+            select(
+                func.sum(case((PhoneCode.phone == phone, 1), else_=0)),
+                func.sum(case((PhoneCode.ip == ip, 1), else_=0)),
+                func.count(PhoneCode.id),
+            ).where(PhoneCode.day == day)
+        ).one()
+        if int(phone_n or 0) >= PHONE_DAILY_LIMIT:
             raise errors.sms_phone_daily()
-        if ip and self._count(day=day, ip=ip) >= IP_DAILY_LIMIT:
+        if ip and int(ip_n or 0) >= IP_DAILY_LIMIT:
             raise errors.sms_ip_daily()
-        if self._count(day=day) >= self.settings.sms_daily_budget:
+        if int(day_n) >= self.settings.sms_daily_budget:
             raise errors.sms_unavailable()
 
         # 新码作废旧码（同号同用途同时只活一条）
@@ -137,11 +145,3 @@ class SmsGate:
         """一次性消费：作废该码（过期/超次/核销成功三路共用）。"""
         row.used_at = now
         self.db.commit()
-
-    def _count(self, *, day: str, phone: str | None = None, ip: str | None = None) -> int:
-        stmt = select(func.count(PhoneCode.id)).where(PhoneCode.day == day)
-        if phone is not None:
-            stmt = stmt.where(PhoneCode.phone == phone)
-        if ip is not None:
-            stmt = stmt.where(PhoneCode.ip == ip)
-        return int(self.db.execute(stmt).scalar_one())

@@ -5,8 +5,8 @@
        已订场 → 面板可重开改登记（退一片删一个号、总价改成退完后实际花的钱）或清空。
        组装全用公共件（AppField/AppInput/AppButton）；动作走 game store（bookCourt/clearBooking/sureGame，toast 在 store 内）。 -->
   <view v-if="g" class="bks">
-    <view class="t">锁定必打 · 订场登记</view>
-    <view class="hint">订了场这局就必开 · 场地号和总价随时可改，退一片就删一个号、照小票改总价</view>
+    <view class="sheet-t">锁定必打 · 订场登记</view>
+    <view class="sheet-hint">订了场这局就必开 · 场地号和总价随时可改，退一片就删一个号、照小票改总价</view>
 
     <!-- 现状行：订几片、花多少的参考（截止后本面板仍可改——临到场场馆换号很常见，名单锁定只锁人） -->
     <view class="sub stat">
@@ -117,17 +117,7 @@ function onClear(): void {
 </script>
 
 <style lang="scss" scoped>
-/* 壳层标题/hint 同款（各弹层自带的做法，同 ProfileSheet/JoinSheet） */
-.t {
-  font-family: var(--disp);
-  font-size: 21px;
-  margin-bottom: 4px;
-}
-.hint {
-  font-size: 12px;
-  color: var(--dim);
-  margin-bottom: 16px;
-}
+/* 壳层标题/hint 走全局 .sheet-t/.sheet-hint（base.scss 收源） */
 /* 现状行（11px dim，同 LaunchSheet ppl-hint 家族） */
 .stat {
   color: var(--dim);

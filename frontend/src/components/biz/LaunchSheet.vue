@@ -11,8 +11,8 @@
        成功后只关弹层 —— toast 由 game store 的 publishGame/editGame 内置。 -->
   <view class="lc">
     <!-- alpha:1316 标题（壳层样式同 AppSheet 的 h3/.hint） -->
-    <view class="t">{{ isEd ? '改局 · 名单不动' : '组局' }}</view>
-    <view class="hint">{{
+    <view class="sheet-t">{{ isEd ? '改局 · 名单不动' : '组局' }}</view>
+    <view class="sheet-hint">{{
       isEd
         ? '名单里的人再打开，看到的就是新信息 · 截止时间定死不能改'
         : '从上到下拨完点发布 · 发完点局上的 ⤴ 转到群里拉人'
@@ -106,9 +106,10 @@ import WheelPicker from '@/components/ui/WheelPicker.vue';
 import { useGameStore } from '@/stores/game';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
+import { mockVenues } from '@/api';
 import type { CourtMode, PublishInput } from '@/api/types';
-import { MODE_NAMES } from '@/utils/format';
-import { dayToken, durTxt, gameTime } from '@/utils/time';
+import { MODE_NAMES, SCORE_RULE_NAMES, autoGameName } from '@/utils/format';
+import { dayOff, dayToken, durTxt, gameTime } from '@/utils/time';
 
 const props = defineProps({
   /** 有 gameId = 改局（带原值）；无/查不到 = 新建（查不到按新建兜底） */
@@ -128,7 +129,8 @@ const GRID_LABELS: string[] = Array.from(
   { length: GRID_N },
   (_, i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${String((i % 2) * 30).padStart(2, '0')}`,
 );
-/** 规则三件（3.3：说明字段去掉，直选分制/轮转/迟到；label 引 MODE_NAMES 与 detail/live 同源） */
+/** 规则三件（3.3：说明字段去掉，直选分制/轮转/迟到；label 引 MODE_NAMES/SCORE_RULE_NAMES
+    与 detail/live 同源） */
 const SCORES = [11, 15, 21];
 const MODES: Array<{ value: CourtMode; label: string }> = [
   { value: 'balance', label: MODE_NAMES.balance },
@@ -136,26 +138,20 @@ const MODES: Array<{ value: CourtMode; label: string }> = [
   { value: 'rotate', label: MODE_NAMES.rotate },
 ];
 const SCORE_RULES = [
-  { value: 'rally', label: '每球得分制' },
-  { value: 'serve', label: '发球得分制' },
+  { value: 'rally', label: SCORE_RULE_NAMES.rally },
+  { value: 'serve', label: SCORE_RULE_NAMES.serve },
 ];
-/** 旧版 chips（alpha:1308-1310/1344-1345，3.3 改版弃用）：时间/时长/费用/截止 chips → 拨盘与预设 */
-const VENS = ['工体北路 · 京篮匹克球馆', '望京 · 花家地球馆', '五棵松 · 万事达球馆', '手输新场地'];
+/** 地点 chips：场馆名单一源在 mock/data（与局 seeds 的 loc、area 推断同源）+ 手输项 */
+const VENS = [...mockVenues, '手输新场地'];
 
 /** 分钟 ↔ 网格下标（夹取） */
 const m2g = (m: number): number => Math.max(0, Math.min(Math.round(m / STEP), GRID_N - 1));
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(v, hi));
-/** 某日期距今天的天数偏移（用于把 Date 映射回日期列下标） */
-function dayOffset(d: Date): number {
-  const now = new Date();
-  const day0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - day0.getTime()) / 86400000);
-}
 
 /* ---- 表单状态 ---- */
 const isEd = ref(false);
 const lf = reactive({
-  gid: 0, name: '', deadline: '', venue: '', min: 4, cap: 6,
+  gid: 0, name: '', deadline: '', min: 4, cap: 6,
   score: 11, mode: 'balance' as CourtMode, scoreRule: 'rally' as 'rally' | 'serve',
 });
 const venOn = ref('');
@@ -248,7 +244,7 @@ const autoDlDate = computed(() => {
 });
 /** 把截止状态收进所选日期的合法窗（自动重算 / 开打变化后的手动态都走这里） */
 function applyDl(d: Date): void {
-  dlDayI.value = clamp(dayOffset(d), 0, dayI.value);
+  dlDayI.value = clamp(dayOff(d), 0, dayI.value);
   const { lo, hi } = dlBounds(dlDayI.value);
   dlMin.value = clamp(ceilStep(d.getHours() * 60 + d.getMinutes()), lo, hi);
 }
@@ -277,8 +273,9 @@ watch([dayI, startMin], () => {
 
 /* ---- 地点 / 人数 / 说明 ---- */
 const venueSel = computed(() => (venOn.value === '手输新场地' ? vCustom.value.trim() || venOn.value : venOn.value));
-/** 自动默认名「日段 · 地点」：占位提示与不填时的发布名同源 */
-const autoName = computed(() => `${dayLabels.value[dayI.value]} · ${venueSel.value.split(' · ').pop()}`);
+/** 自动默认名「日段 · 地点」：占位提示与不填时的发布名同源（utils/format 的 autoGameName，
+    game store 发布/改局同消费） */
+const autoName = computed(() => autoGameName(dayLabels.value[dayI.value], venueSel.value));
 
 function lfMin(v: number): void {
   lf.min = v;
@@ -292,17 +289,17 @@ function init(): void {
   isEd.value = !!ed;
   lf.gid = ed ? ed.id : 0;
   lf.name = ed ? ed.name : '';
-  lf.venue = ed ? ed.loc : VENS[0];
+  const loc = ed ? ed.loc : VENS[0];
   lf.min = ed ? ed.min : 4;
   lf.cap = ed ? ed.cap : 6;
   lf.score = ed ? ed.score : 11;
   lf.mode = ed ? ed.mode : 'balance';
   lf.scoreRule = ed?.scoreRule ?? 'rally';
-  venOn.value = VENS.includes(lf.venue) ? lf.venue : '手输新场地';
-  vCustom.value = venOn.value === '手输新场地' && !VENS.includes(lf.venue) ? lf.venue : '';
+  venOn.value = VENS.includes(loc) ? loc : '手输新场地';
+  vCustom.value = venOn.value === '手输新场地' && !VENS.includes(loc) ? loc : '';
   if (ed) {
     const sd = gameTime(ed.t);
-    dayI.value = clamp(dayOffset(sd), 0, DAY_N - 1);
+    dayI.value = clamp(dayOff(sd), 0, DAY_N - 1);
     startMin.value = m2g(sd.getHours() * 60 + sd.getMinutes()) * STEP;
     endMin.value = clamp(
       startMin.value + Math.round(ed.dur * 60),
@@ -344,8 +341,7 @@ function publish(): void {
   else {
     // 1.1 先看后报：游客建局先弹名片建号卡，建号成功由弹层接着发布（表单值随身带走不重填）
     if (session.isGuest) {
-      ui.closeSheet();
-      ui.openSheet({ type: 'signup-card', pendingLaunch: input });
+      ui.signupThen({ pendingLaunch: input });
       return;
     }
     game.publishGame(input);
@@ -356,17 +352,7 @@ function publish(): void {
 </script>
 
 <style lang="scss" scoped>
-/* 壳层标题/hint（alpha:558-561 同 ProfileSheet 做法） */
-.t {
-  font-family: var(--disp);
-  font-size: 21px;
-  margin-bottom: 4px;
-}
-.hint {
-  font-size: 12px;
-  color: var(--dim);
-  margin-bottom: 16px;
-}
+/* 壳层标题/hint 走全局 .sheet-t/.sheet-hint（base.scss 收源） */
 /* 局名无标签：与 AppField 内容区同距 */
 .lc-name {
   margin-bottom: 14px;

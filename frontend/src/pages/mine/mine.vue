@@ -62,9 +62,9 @@
       <view v-if="session.isGuest" class="acc-link" @click="go('/pages/mine/login')">
         登录 · 我是老球友（手机号找回） <text class="arr">▸</text>
       </view>
-      <view v-else class="acc-link" @click="go('/pages/mine/dress')">
-        手机号 {{ maskedPhone }} · 唯一钥匙 <text class="arr">▸</text>
-      </view>
+          <view v-else class="acc-link" @click="go('/pages/mine/dress')">
+            手机号 {{ session.maskedPhone }} · 唯一钥匙 <text class="arr">▸</text>
+          </view>
     </view>
     <view class="acc-row">
       <AppButton variant="ghost" size="sm" class="grow" @click="onLogout">退出账号</AppButton>
@@ -97,11 +97,7 @@ const gameStore = useGameStore();
 const ui = useUiStore();
 const bill = useBillStore();
 
-/** 账号区行：登录后手机号打码展示（完整号只在装扮页/档案给自己看，§C2） */
-const maskedPhone = computed(() => {
-  const p = session.account?.phone;
-  return p ? `${p.slice(0, 3)}****${p.slice(-4)}` : '';
-});
+/** 账号区行的手机号打码口径在 session store（maskedPhone 单一源，AccountSheet 同消费） */
 
 /** 我（alpha:1935 U.me；user store 与 games/live 同源引用，装扮保存全产品同步） */
 const me = computed(() => user.me);

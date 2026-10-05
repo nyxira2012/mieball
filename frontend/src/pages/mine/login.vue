@@ -40,7 +40,7 @@
 
 <script setup lang="ts">
 /* 找回页：状态机 phone → sms，动作走 session store；错误按 ApiError.code 分流提示。 */
-import { onUnmounted, ref } from 'vue';
+import { ref } from 'vue';
 import PageShell from '@/components/biz/PageShell.vue';
 import BackRow from '@/components/biz/BackRow.vue';
 import AppField from '@/components/ui/AppField.vue';
@@ -48,38 +48,24 @@ import AppInput from '@/components/ui/AppInput.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
-import { ApiError } from '@/api/http';
+import { ApiError, errText } from '@/api/http';
+import { useSmsCountdown } from '@/composables/useSmsCountdown';
+import { isValidPhone } from '@/utils/validate';
 
 const session = useSessionStore();
 const ui = useUiStore();
+const { countdown, start: startCountdown } = useSmsCountdown();
 
 const step = ref<'phone' | 'sms'>('phone');
 const phone = ref('');
 const code = ref('');
 const hint = ref('');
 const busy = ref(false);
-const countdown = ref(0);
-let timer: ReturnType<typeof setInterval> | null = null;
-
-function startCountdown(): void {
-  countdown.value = 60;
-  if (timer) clearInterval(timer);
-  timer = setInterval(() => {
-    countdown.value--;
-    if (countdown.value <= 0 && timer) {
-      clearInterval(timer);
-      timer = null;
-    }
-  }, 1000);
-}
-onUnmounted(() => {
-  if (timer) clearInterval(timer);
-});
 
 async function onNext(): Promise<void> {
   hint.value = '';
   const p = phone.value.trim();
-  if (!/^1[3-9]\d{9}$/.test(p)) {
+  if (!isValidPhone(p)) {
     hint.value = '请输入 11 位手机号';
     return;
   }
@@ -92,7 +78,7 @@ async function onNext(): Promise<void> {
     if (e instanceof ApiError && e.code === 'no_account') {
       hint.value = '这个手机号还没有账号，请核对后重输'; // 查无账号：不发码、不建空号（§4.4）
     } else {
-      hint.value = e instanceof ApiError ? e.message : '网络不给力，请稍后再试';
+      hint.value = errText(e);
     }
   } finally {
     busy.value = false;
@@ -106,7 +92,7 @@ async function onResend(): Promise<void> {
     startCountdown();
     ui.toast('验证码已重发');
   } catch (e) {
-    ui.toast(e instanceof ApiError ? e.message : '网络不给力，请稍后再试');
+    ui.toast(errText(e));
   } finally {
     busy.value = false;
   }
@@ -124,7 +110,7 @@ async function onVerify(): Promise<void> {
     ui.toast('欢迎回来 · 战绩都在');
     uni.navigateBack();
   } catch (e) {
-    hint.value = e instanceof ApiError ? e.message : '网络不给力，请稍后再试';
+    hint.value = errText(e);
   } finally {
     busy.value = false;
   }

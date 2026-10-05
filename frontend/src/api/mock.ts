@@ -9,6 +9,7 @@ export {
   slots,
   mockDemoUser,
   mockAreas,
+  mockVenues,
   AREA_OPTS,
   DEFAULT_MOCK_CHECKIN_COUNT,
   MOCK_BASE_DATE_STR,

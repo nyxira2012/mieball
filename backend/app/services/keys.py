@@ -6,12 +6,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from ..core import clock, security
 from ..db.models import Account, DeviceKey
+
+# last_used_at 是纯遥测（全库只写不读）：按钥匙 1 小时节流一次写库，
+# 否则每个认证请求都为它付一次 commit（SQLite 每次 commit 都是一次磁盘同步）
+LAST_USED_THROTTLE = timedelta(hours=1)
 
 
 @dataclass(frozen=True)
@@ -49,12 +54,19 @@ class KeyVault:
         ).first()
         if row is None:
             return None
-        # 顺手记最后使用时间；失败不影响认人
+        # 顺手记最后使用时间（1 小时节流，见 LAST_USED_THROTTLE）；失败不影响认人
         try:
-            self.db.execute(
-                update(DeviceKey).where(DeviceKey.id == row.id).values(last_used_at=clock.now())
+            now = clock.now()
+            res = self.db.execute(
+                update(DeviceKey)
+                .where(
+                    DeviceKey.id == row.id,
+                    or_(DeviceKey.last_used_at.is_(None), DeviceKey.last_used_at < now - LAST_USED_THROTTLE),
+                )
+                .values(last_used_at=now)
             )
-            self.db.commit()
+            if res.rowcount:
+                self.db.commit()
         except Exception:  # noqa: BLE001
             self.db.rollback()
         return KeyInfo(account_id=row.account_id, key_id=row.id)

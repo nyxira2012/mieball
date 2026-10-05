@@ -38,13 +38,14 @@ import FilterChips from '@/components/ui/FilterChips.vue';
 import EmptyBox from '@/components/ui/EmptyBox.vue';
 import { useGameStore } from '@/stores/game';
 import { dayOrd, gameTime } from '@/utils/time';
+import { goGame } from '@/utils/nav';
 import type { Game } from '@/api/types';
 
 const game = useGameStore();
 /* 登记全集与签到计数 = game store 的 mySignups/myCheckins 单一源（mine.vue 双卡同消费）；
    本页只在其上做状态筛选与排序 */
 
-/* 状态单选（string|number 对齐 FilterChips v-model 联合类型，meet.vue fTime 同法） */
+/* 状态单选（BillPeriod 同族窄类型；FilterChips v-model 已收窄为 string|number） */
 const mode = ref<string | number>('all');
 const MODE_OPTS = [
   { value: 'all', label: '全部' },
@@ -73,9 +74,9 @@ const emptyTxt = computed(() => {
   return '还没有报过名 · 去约球页找一局';
 });
 
-/** 局卡点击进原约球详情页（5.1） */
+/** 局卡点击进原约球详情页（5.1；路径契约在 utils/nav 单一源） */
 function openGame(g: Game): void {
-  uni.navigateTo({ url: '/pages/detail/detail?id=' + g.id });
+  goGame(g.id);
 }
 </script>
 

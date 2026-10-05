@@ -16,34 +16,24 @@
       </view>
 
       <view class="match-arena">
-        <view class="arena-side">
-          <view class="side-label team-a">TEAM A</view>
-          <view class="players-duo">
-            <view v-for="id in A" :key="`a${id}`" class="player-unit" @click="emit('profile', id)">
-              <view class="avatar-wrap"><ChibiAvatar :chibi="byId(id).chibi" :size="44" /></view>
-              <text class="pname">{{ byId(id).name }}</text>
-              <text class="pelo">{{ byId(id).elo || '新' }}</text>
-              <text v-if="byId(id).shadow" class="badge guest">访客</text>
-              <text v-else-if="byId(id).skip" class="badge rest">歇</text>
+        <template v-for="(s, si) in sides" :key="s.k">
+          <view class="arena-side">
+            <view class="side-label" :class="s.team">{{ s.label }}</view>
+            <view class="players-duo">
+              <view v-for="pl in s.players" :key="`${s.k}${pl.id}`" class="player-unit" @click="emit('profile', pl.id)">
+                <view class="avatar-wrap"><ChibiAvatar :chibi="pl.p.chibi" :size="44" /></view>
+                <text class="pname">{{ pl.p.name }}</text>
+                <text class="pelo">{{ pl.p.elo || '新' }}</text>
+                <text v-if="pl.p.shadow" class="badge guest">访客</text>
+                <text v-else-if="pl.p.skip" class="badge rest">歇</text>
+              </view>
             </view>
           </view>
-        </view>
-        <view class="scoreboard-center">
-          <view class="vs-big">VS</view>
-          <view v-if="variant === 'ready'" class="score-rule-tip">上一场终局即开打</view>
-        </view>
-        <view class="arena-side">
-          <view class="side-label team-b">TEAM B</view>
-          <view class="players-duo">
-            <view v-for="id in B" :key="`b${id}`" class="player-unit" @click="emit('profile', id)">
-              <view class="avatar-wrap"><ChibiAvatar :chibi="byId(id).chibi" :size="44" /></view>
-              <text class="pname">{{ byId(id).name }}</text>
-              <text class="pelo">{{ byId(id).elo || '新' }}</text>
-              <text v-if="byId(id).shadow" class="badge guest">访客</text>
-              <text v-else-if="byId(id).skip" class="badge rest">歇</text>
-            </view>
+          <view v-if="si === 0" class="scoreboard-center">
+            <view class="vs-big">VS</view>
+            <view v-if="variant === 'ready'" class="score-rule-tip">上一场终局即开打</view>
           </view>
-        </view>
+        </template>
       </view>
 
       <!-- 卡底记分框（原型 .score-plate）：点左数字 = A +1，点右 = B +1；领先侧 .lead 高亮 -->
@@ -126,11 +116,17 @@ const emit = defineEmits<{
 
 const liveStore = useLiveStore();
 const ui = useUiStore();
-const byId = (id: number) => liveStore.byId(id);
 
 /** 队伍 id 列表：playing 读 cur，ready 读 court */
 const A = computed<number[]>(() => (props.variant === 'playing' ? props.cur?.A : props.court?.A) ?? []);
 const B = computed<number[]>(() => (props.variant === 'playing' ? props.cur?.B : props.court?.B) ?? []);
+/** A/B 两队一并解析球员（computed 一次算好，模板只读数组——逐字段 byId 是每格一次名册线性扫描） */
+const sides = computed(() =>
+  [
+    { k: 'a', label: 'TEAM A', team: 'team-a', ids: A.value },
+    { k: 'b', label: 'TEAM B', team: 'team-b', ids: B.value },
+  ].map((s) => ({ ...s, players: s.ids.map((id) => ({ id, p: liveStore.byId(id) })) })),
+);
 const sa = computed(() => props.cur?.sa ?? 0);
 const sb = computed(() => props.cur?.sb ?? 0);
 

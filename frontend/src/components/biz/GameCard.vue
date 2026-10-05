@@ -60,6 +60,7 @@ import AppChip from '@/components/ui/AppChip.vue'
 import AvatarStack from '@/components/ui/AvatarStack.vue'
 import type { Game } from '@/api/types'
 import { heads, myEntry, isOrg } from '@/utils/format'
+import { splitGameTime } from '@/utils/time'
 
 const props = defineProps({
   game: { type: Object as PropType<Game>, required: true },
@@ -82,10 +83,11 @@ const role = computed(() => (isOrg(props.game) ? 'org' : inv.value ? 'inv' : joi
 const roleTxt = computed(() => (role.value === 'org' ? '我发起' : role.value === 'inv' ? '被邀请' : '已加入'))
 
 /* alpha:905 const [tt,td]=g.t.split(' ')：大字 td=末段时刻、小字 tt=其余段（今晚 / 10.06 周一）。
-   3.3 改版后 t 可能是「10.06 周一 19:00」三段式，按末段=时刻、前段拼接=日段拆。 */
-const parts = computed(() => props.game.t.split(' '))
-const tt = computed(() => parts.value.slice(0, -1).join(' '))
-const td = computed(() => parts.value[parts.value.length - 1] ?? '')
+   3.3 改版后 t 可能是「10.06 周一 19:00」三段式，拆分规则在 utils/time 的 splitGameTime 单一源
+   （detail hero 同消费）。 */
+const ts = computed(() => splitGameTime(props.game.t))
+const tt = computed(() => ts.value.day)
+const td = computed(() => ts.value.hm)
 
 /* alpha:895-897 stackOf：头像取 joined 前 5；plusn = '+' + 超 5 的人数 + 含随行标记（alpha 原样：
    不足 5 人时也渲染裸 '+'，逐字保留） */

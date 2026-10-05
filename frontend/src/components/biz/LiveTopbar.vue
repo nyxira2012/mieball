@@ -75,17 +75,22 @@ const org = computed(() => (L.value ? isOrg(L.value.g) : false));
 const venue = computed(() => (L.value ? venueOf(L.value.g) : ''));
 const orgChip = computed(() => (org.value ? `组织者 · ${L.value!.g.organizer.name}` : `球友 · ${U.me.name}`));
 
-/* ---------- 剩余时间倒计时：gameTime + dur 小时 − now，clamp 0，h:mm:ss mono 珊瑚 ---------- */
+/* ---------- 剩余时间倒计时：结束时刻（开打 + dur）只随局变化，拆开缓存——
+     否则每秒重算都把固定的开打时间串重新 gameTime 解析一遍 ---------- */
 const now = ref(Date.now());
 let secTimer: ReturnType<typeof setInterval> | null = null;
 onMounted(() => {
   secTimer = setInterval(() => { now.value = Date.now(); }, 1000);
 });
 onUnmounted(() => { if (secTimer) clearInterval(secTimer); });
-const timerTxt = computed(() => {
+const endAt = computed(() => {
   const g = L.value?.g;
-  if (!g) return '0:00:00';
-  const s = Math.max(0, Math.floor((gameTime(g.t).getTime() + g.dur * 3600e3 - now.value) / 1000));
+  if (!g) return null;
+  return gameTime(g.t).getTime() + g.dur * 3600e3;
+});
+const timerTxt = computed(() => {
+  if (endAt.value == null) return '0:00:00';
+  const s = Math.max(0, Math.floor((endAt.value - now.value) / 1000));
   const h = Math.floor(s / 3600);
   return `${h}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 });

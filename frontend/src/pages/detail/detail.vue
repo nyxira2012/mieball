@@ -184,7 +184,7 @@
       <!-- alpha:1466 规则牌（modeName/迟到规则/候补递补/人均摊法口径逐字）；
            3.3：费用未定局（fee=null）不显示人均摊法句；scoreRule 有值才显示得分规则段（旧局无此字段） -->
       <NoteCard class="rules">
-        <b>规则牌：</b>{{ game.score }} 分制（领先 2 分才算赢）<template v-if="game.scoreRule"> · {{ game.scoreRule === 'rally' ? '每球得分制' : '发球得分制' }}</template> · {{ modeName }}{{ game.lateRule ? ' · 迟到排队尾等一轮' : '' }}
+        <b>规则牌：</b>{{ game.score }} 分制（领先 2 分才算赢）<template v-if="game.scoreRule"> · {{ SCORE_RULE_NAMES[game.scoreRule] }}</template> · {{ modeName }}{{ game.lateRule ? ' · 迟到排队尾等一轮' : '' }}
         · 满 {{ game.cap }} 人进候补，有人退出即刻递补<template v-if="game.fee != null"> · 人均＝总价 ¥{{ game.fee }} ÷ {{ perBase }}（{{ perNote }}）</template>。
       </NoteCard>
     </view>
@@ -207,8 +207,9 @@ import { useGameStore } from '@/stores/game';
 import { useUserStore } from '@/stores/user';
 import { useUiStore } from '@/stores/ui';
 import { useLiveStore } from '@/stores/live';
-import { heads, needOf, perHead, myEntry, isOrg, isForced, MODE_NAMES } from '@/utils/format';
-import { durTxt } from '@/utils/time';
+import { heads, needOf, perHead, perBaseOf, myEntry, isOrg, isForced, MODE_NAMES, SCORE_RULE_NAMES } from '@/utils/format';
+import { durTxt, splitGameTime } from '@/utils/time';
+import { goGame, goLive } from '@/utils/nav';
 
 const store = useGameStore();
 
@@ -244,12 +245,10 @@ const result = computed(() => game.value?.result);
 const durText = computed(() => (game.value ? durTxt(game.value.dur) : ''));
 
 /* alpha:1410 大时间 = t 末段（时刻）；1411 小字 = 前段拼接（今晚/周六…/10.06 周一）。
-   3.3 改版后 t 可能是三段式，按末段=时刻、前段拼接=日段拆。 */
-const tBig = computed(() => {
-  const p = game.value ? game.value.t.split(' ') : [];
-  return p[p.length - 1] ?? '';
-});
-const tDay = computed(() => (game.value ? game.value.t.split(' ').slice(0, -1).join(' ') : ''));
+   拆分规则在 utils/time 的 splitGameTime 单一源（GameCard 时间位同消费）。 */
+const ts = computed(() => splitGameTime(game.value?.t ?? ''));
+const tBig = computed(() => ts.value.hm);
+const tDay = computed(() => ts.value.day);
 
 /* alpha:1405 局名首个 ' · ' 断行（replace(' · ','<br>') 的等价拆分，其余 ' · ' 原样保留） */
 const brandA = computed(() => {
@@ -277,8 +276,9 @@ const splitNote = computed(() => {
 /* alpha:1405 发牌模式名（词表在 utils/format 的 MODE_NAMES） */
 const modeName = computed(() => (game.value ? MODE_NAMES[game.value.mode] : ''));
 
-/* alpha:1466 规则牌人均分母与括注（Math.max(isForced?0:min,hs) 口径；3.2 订场改版换 isForced） */
-const perBase = computed(() => (game.value ? Math.max(isForced(game.value) ? 0 : game.value.min, hs.value) : 0));
+/* alpha:1466 规则牌人均分母与括注：分母与 perHead 同源（utils/format 的 perBaseOf，
+   曾手抄一份丢了 `|| 1` 守卫）；3.2 订场改版换 isForced */
+const perBase = computed(() => (game.value ? perBaseOf(game.value) : 0));
 const perNote = computed(() => {
   const g = game.value;
   if (!g) return '';
@@ -332,12 +332,11 @@ const onInvite = () => {
 const onStart = () => {
   if (!game.value) return;
   liveStore.startLive(game.value.id);
-  uni.navigateTo({ url: `/pages/live/live?id=${game.value.id}` });
+  goLive(game.value.id);
 };
-/** alpha:1465 go('live')：已 live 的局回现场页 */
+/** alpha:1465 go('live')：已 live 的局回现场页（路径契约与 detail 跳转同归 utils/nav） */
 const onLive = () => {
-  if (!game.value) return;
-  uni.navigateTo({ url: `/pages/live/live?id=${game.value.id}` });
+  if (game.value) goLive(game.value.id);
 };
 /** 名单球员卡 → 球员档案弹层（ProfileSheet 全产品共用；alpha 详情卡未挂 onclick，
    本迁移按 P9「现场队员/榜单都唤起」的共用口径在此接入） */

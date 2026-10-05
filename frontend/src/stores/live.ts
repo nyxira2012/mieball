@@ -10,7 +10,7 @@ import { DEFAULT_MOCK_CHECKIN_COUNT, U } from '@/api';
 import type { CheckStatus, CourtMode, LiveState, User } from '@/api/types';
 import { settleElo } from '@/utils/elo';
 import { DRESS_RANGES } from '@/utils/chibi';
-import { fillCourts, nextMatch, pById } from '@/utils/rotate';
+import { fillCourts, nextMatch, pById, usedCourts } from '@/utils/rotate';
 import { shouldEnd, undoScore } from '@/utils/score';
 import { MODE_NAMES } from '@/utils/format';
 import { useGameStore } from './game';
@@ -299,7 +299,7 @@ export const useLiveStore = defineStore('live', () => {
   }
 
   /** 场地输入（2.1 顶条：『3、4 / 3,4 / 3 4 / 3号、4号』→ ['3号','4号']，无「号」补上）。
-      校验：至少 1 片，且 ≥ 在打(cur)+待开(courts)——在打和待开的场地不能收。
+      校验：至少 1 片，且 ≥ 已占片数（usedCourts：在打+待开）——在打和待开的场地不能收。
       过 → 写 g.booked + fillCourts（按新片数补片）→ true；不过 → toast 提示 → false */
   function setCourtsInput(text: string): boolean {
     const L = live.value;
@@ -309,7 +309,7 @@ export const useLiveStore = defineStore('live', () => {
       .map((s) => s.trim())
       .filter((s) => /^\d+号?$/.test(s))          // 只认「N / N号」形，其余 token 丢弃
       .map((s) => (s.endsWith('号') ? s : `${s}号`));
-    const need = (L.cur ? 1 : 0) + L.courts.length;
+    const need = usedCourts(L);
     if (parts.length < 1) {
       useUiStore().toast('至少要有 1 片场地');
       return false;

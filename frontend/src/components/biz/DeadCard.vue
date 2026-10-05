@@ -121,31 +121,5 @@ const hs = computed(() => heads(props.game))
 .sp {
   flex: 1;
 }
-/* 小操作按钮（alpha:339-343 .tbtn + on-in/on-no 变体） */
-.tbtn {
-  padding: 7px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(245, 241, 232, 0.16);
-  background: none;
-  color: var(--dim);
-  font-size: 12px;
-  font-weight: 700;
-  transition: 0.15s;
-  font-family: var(--sans);
-  cursor: pointer;
-  flex: none;
-}
-.tbtn:active {
-  transform: scale(0.93);
-}
-.tbtn.on-in {
-  background: var(--lemon);
-  color: var(--ink);
-  border-color: var(--lemon);
-}
-.tbtn.on-no {
-  border-color: var(--coral);
-  color: var(--coral);
-  background: rgba(255, 90, 54, 0.08);
-}
+/* 小操作按钮走全局 .tbtn/.tbtn.on-in/.tbtn.on-no（base.scss 收源） */
 </style>

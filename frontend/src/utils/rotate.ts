@@ -26,6 +26,12 @@ export function maxCourts(g: LiveState['g']): number {
   return g.booked?.length || (g.cap >= 12 ? 3 : 2);
 }
 
+/** 已占片数（在打 1 片 + 待开片数）：maxCourts 的镜像概念——live 顶条场地输入校验
+    （在打和待开的片不能收）与打球页空闲卡下标共用。 */
+export function usedCourts(live: LiveState): number {
+  return (live.cur ? 1 : 0) + live.courts.length;
+}
+
 /** 发牌（alpha:1501-1523 逐字对齐）：只补片不清场——已在场上待打的片永远保留；
     胜者留场只在头片空缺时生效；balance 蛇形按分降序（A=[首,末] B=[二,三]）；
     片数口径见 maxCourts；发完队列重排且 fire（连战）优先回队。 */

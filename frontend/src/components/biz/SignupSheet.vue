@@ -5,8 +5,8 @@
   <view class="ss">
     <!-- ===== 态一：填名片 ===== -->
     <template v-if="mode === 'card'">
-      <view class="t">{{ title }}</view>
-      <view class="hint">填张名片就同时建号 · 以后永远免密，不用记密码</view>
+      <view class="sheet-t">{{ title }}</view>
+      <view class="sheet-hint">填张名片就同时建号 · 以后永远免密，不用记密码</view>
 
       <AppField label="叫什么">
         <AppInput v-model="nickname" placeholder="常用球友名，如 海淀反手王（可跳过）" :maxlength="16" />
@@ -39,8 +39,8 @@
 
     <!-- ===== 态二：手机号已被占用（4.5） ===== -->
     <template v-else-if="mode === 'occupied'">
-      <view class="t">这个手机号已经有人用了</view>
-      <view class="hint">手机号永远归手机的主人——短信验证是最终裁决，验证后立即进入那个账号</view>
+      <view class="sheet-t">这个手机号已经有人用了</view>
+      <view class="sheet-hint">手机号永远归手机的主人——短信验证是最终裁决，验证后立即进入那个账号</view>
       <view class="btns">
         <AppButton variant="ghost" class="flex1" @click="mode = 'card'">不是我的号？返回重填</AppButton>
         <AppButton variant="pri" class="flex1" :disabled="busy" @click="onTakeover">用短信验证，进入</AppButton>
@@ -49,8 +49,8 @@
 
     <!-- ===== 态三：短信验证（接管） ===== -->
     <template v-else>
-      <view class="t">短信验证</view>
-      <view class="hint">验证码已发至 {{ phone }}（找回/接管都走这里，手机在谁手里号就归谁）</view>
+      <view class="sheet-t">短信验证</view>
+      <view class="sheet-hint">验证码已发至 {{ phone }}（找回/接管都走这里，手机在谁手里号就归谁）</view>
       <AppField label="6 位验证码">
         <view class="frow">
           <AppInput v-model="code" type="number" placeholder="6 位数字" :maxlength="6" class="flex1" />
@@ -78,7 +78,9 @@ import { useGameStore } from '@/stores/game';
 import { useLiveStore } from '@/stores/live';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
-import { ApiError, clearCardDraft, readCardDraft, writeCardDraft } from '@/api/http';
+import { ApiError, clearCardDraft, errText, readCardDraft, writeCardDraft } from '@/api/http';
+import { useSmsCountdown } from '@/composables/useSmsCountdown';
+import { isValidPhone } from '@/utils/validate';
 import type { ChibiConfig, PublishInput } from '@/api/types';
 
 const props = defineProps({
@@ -112,50 +114,45 @@ const code = ref('');
 /** 选中的预设下标；null=没选（跳过 → 服务端默认小人） */
 const picked = ref<number | null>(null);
 const busy = ref(false);
-const countdown = ref(0);
-let timer: ReturnType<typeof setInterval> | null = null;
+const { countdown, start: startCountdown } = useSmsCountdown();
 
 const title = computed(() => (props.pendingJoin ? '填张名片，报名' : props.pendingLaunch ? '填张名片，建局' : '填张名片'));
 const actionLabel = computed(() => (props.pendingJoin ? '确定报名' : props.pendingLaunch ? '确定建局' : '确定'));
 
-/* ---- 草稿：本机持久化（断网重进内容还在） ---- */
+/* ---- 草稿：本机持久化（断网重进内容还在）。
+     打字密集场景，300ms 防抖再落存储，卸载/提交前 flush 补一次，防丢语义不变 ---- */
 const draft = readCardDraft<{ nickname: string; phone: string; picked: number | null }>();
 if (draft) {
   nickname.value = draft.nickname ?? '';
   phone.value = draft.phone ?? '';
   picked.value = draft.picked ?? null;
 }
-watch([nickname, phone, picked], () => {
+let draftTimer: ReturnType<typeof setTimeout> | null = null;
+let draftDirty = false;
+function flushDraft(): void {
+  if (draftTimer) {
+    clearTimeout(draftTimer);
+    draftTimer = null;
+  }
+  if (!draftDirty) return;
+  draftDirty = false;
   writeCardDraft({ nickname: nickname.value, phone: phone.value, picked: picked.value });
+}
+watch([nickname, phone, picked], () => {
+  draftDirty = true;
+  if (draftTimer) clearTimeout(draftTimer);
+  draftTimer = setTimeout(flushDraft, 300);
 });
+onUnmounted(flushDraft);
 
 function pick(i: number): void {
   picked.value = picked.value === i ? null : i;
 }
 
-function startCountdown(): void {
-  countdown.value = 60;
-  if (timer) clearInterval(timer);
-  timer = setInterval(() => {
-    countdown.value--;
-    if (countdown.value <= 0 && timer) {
-      clearInterval(timer);
-      timer = null;
-    }
-  }, 1000);
-}
-onUnmounted(() => {
-  if (timer) clearInterval(timer);
-});
-
-function errMsg(e: unknown): string {
-  return e instanceof ApiError ? e.message : '出错了，请稍后再试';
-}
-
 /* ---- 提交名片 ---- */
 async function onSubmitCard(): Promise<void> {
   const p = phone.value.trim();
-  if (!/^1[3-9]\d{9}$/.test(p)) {
+  if (!isValidPhone(p)) {
     ui.toast('请输入 11 位手机号');
     return;
   }
@@ -173,7 +170,7 @@ async function onSubmitCard(): Promise<void> {
     if (e instanceof ApiError && e.code === 'phone_taken') {
       mode.value = 'occupied';
     } else {
-      ui.toast(errMsg(e));
+      ui.toast(errText(e));
     }
   } finally {
     busy.value = false;
@@ -188,7 +185,7 @@ async function onTakeover(): Promise<void> {
     startCountdown();
     mode.value = 'sms';
   } catch (e) {
-    ui.toast(errMsg(e));
+    ui.toast(errText(e));
   } finally {
     busy.value = false;
   }
@@ -201,7 +198,7 @@ async function onResend(): Promise<void> {
     startCountdown();
     ui.toast('验证码已重发');
   } catch (e) {
-    ui.toast(errMsg(e));
+    ui.toast(errText(e));
   } finally {
     busy.value = false;
   }
@@ -223,7 +220,7 @@ async function onVerify(): Promise<void> {
     });
     afterSuccess('已进入你的账号');
   } catch (e) {
-    ui.toast(errMsg(e)); // sms_bad_code / sms_code_invalid 等文案由后端给全
+    ui.toast(errText(e)); // sms_bad_code / sms_code_invalid 等文案由后端给全
   } finally {
     busy.value = false;
   }
@@ -246,17 +243,7 @@ function afterSuccess(msg: string): void {
 </script>
 
 <style lang="scss" scoped>
-/* 壳层标题/hint 与 JoinSheet/AccountSheet 同款 */
-.t {
-  font-family: var(--disp);
-  font-size: 21px;
-  margin-bottom: 4px;
-}
-.hint {
-  font-size: 12px;
-  color: var(--dim);
-  margin-bottom: 16px;
-}
+/* 壳层标题/hint 走全局 .sheet-t/.sheet-hint（base.scss 收源） */
 .btns {
   display: flex;
   gap: 10px;

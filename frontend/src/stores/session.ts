@@ -43,6 +43,11 @@ export const useSessionStore = defineStore('session', () => {
   const isGuest = computed(() => status.value !== 'ready');
   /** 名片尾号（游客回落到演示尾号，页面 chip 不断色） */
   const phoneTail = computed(() => account.value?.phone_tail ?? '4721');
+  /** 本人手机号打码（139****1234）：我的页账号区与注销短信步共用展示口径；无账号 → null */
+  const maskedPhone = computed<string | null>(() => {
+    const p = account.value?.phone ?? '';
+    return p ? `${p.slice(0, 3)}****${p.slice(-4)}` : null;
+  });
 
   /* ---- 内部：真账号接到 U.me 过渡位（经 reactive 代理写入，全站同步换新） ---- */
 
@@ -155,6 +160,7 @@ export const useSessionStore = defineStore('session', () => {
     account,
     isGuest,
     phoneTail,
+    maskedPhone,
     init,
     signupWithCard,
     requestCode,

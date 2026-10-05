@@ -8,7 +8,7 @@
 
 <script setup lang="ts">
 /* alpha.html:839-845 confetti(n)：n 粒、四色轮换、1/3 圆形、随机时长与延迟的 cfall 下落，
-   3200ms 后移除。两种触发方式：expose 的 burst(n)（命令式）与 trigger prop（声明式） */
+   3200ms 后移除。触发只走 trigger prop（声明式）：页面/组件调 ui.burst(n) 驱动。 */
 import { ref, watch } from 'vue'
 import type { PropType } from 'vue'
 
@@ -20,16 +20,19 @@ const props = defineProps({
 
 interface CfPart {
   id: number
+  burst: number
   style: Record<string, string>
 }
 
 const parts = ref<CfPart[]>([])
 let seq = 0
+let burstSeq = 0
 
 /* alpha.html:842 四色 */
 const CF_COLORS = ['#FFD400', '#FF5A36', '#F5F1E8', '#B8A9FF']
 
 const burst = (n = props.count) => {
+  const myBurst = ++burstSeq
   for (let i = 0; i < n; i++) {
     const id = ++seq
     const style: Record<string, string> = {
@@ -38,11 +41,12 @@ const burst = (n = props.count) => {
       animation: `cfall ${1.4 + Math.random() * 1.4}s ${Math.random() * 0.5}s cubic-bezier(.3,.6,.6,1) forwards`,
     }
     if (i % 3) style.borderRadius = '50%'
-    parts.value.push({ id, style })
-    setTimeout(() => {
-      parts.value = parts.value.filter((p) => p.id !== id)
-    }, 3200)
+    parts.value.push({ id, burst: myBurst, style })
   }
+  // 整波同生同灭：一个定时器按波次一次移除（原逐粒挂 56 个 timer + 56 次过滤纯属浪费）
+  setTimeout(() => {
+    parts.value = parts.value.filter((p) => p.burst !== myBurst)
+  }, 3200)
 }
 
 watch(
@@ -51,8 +55,6 @@ watch(
     if (v > 0) burst(props.count)
   },
 )
-
-defineExpose({ burst })
 </script>
 
 <style lang="scss" scoped>

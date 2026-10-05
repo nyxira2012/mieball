@@ -7,10 +7,7 @@ import type { CardBg, User } from '@/api/types';
 import { useLiveStore } from './live';
 import { useUiStore } from './ui';
 
-import { DRESS_PARTS, PART_NAMES, DRESS_RANGES, type DressPart } from '@/utils/chibi';
-
-/** 换装部件名与变体数配置由 @/utils/chibi 单一真值导出，本 store 原样重导出保持向后兼容 */
-export { DRESS_PARTS, PART_NAMES, DRESS_RANGES, type DressPart };
+import type { DressPart } from '@/utils/chibi';
 
 export const useUserStore = defineStore('user', () => {
   /** U 的同一份可变引用；reactive(U) 与 games/live 根读到的都是同一批代理对象 */
@@ -26,6 +23,11 @@ export const useUserStore = defineStore('user', () => {
       if (p) return p;
     }
     return Object.values(users).find((u) => u.id === id);
+  }
+
+  /** 上过场谓词单一源（alpha:865 榜单 / 1027 意向卡 / 1895 档案卡三处口径收敛）：非随行且打过至少一场 */
+  function hasPlayed(u: User): boolean {
+    return !u.shadow && u.play > 0;
   }
 
   /** 喜欢：静默单向（alpha:1922-1925），约球页/意向列表优先展示 */
@@ -56,7 +58,7 @@ export const useUserStore = defineStore('user', () => {
      密码与微信授权随 MVP 下架（评审 D1）。 */
 
   return {
-    users, me, findUser, toggleLike,
+    users, me, findUser, hasPlayed, toggleLike,
     setVariant, setCardBg,
   };
 });

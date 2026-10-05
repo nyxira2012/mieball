@@ -95,10 +95,10 @@ import { useUserStore } from '@/stores/user';
 const ui = useUiStore();
 const userStore = useUserStore();
 
-/** alpha:865 rankRows：!shadow && play>0，按 elo 降序 */
+/** alpha:865 rankRows：hasPlayed（!shadow && play>0，谓词单一源在 user store），按 elo 降序 */
 const rows = computed(() =>
   Object.values(userStore.users)
-    .filter((u) => !u.shadow && u.play > 0)
+    .filter(userStore.hasPlayed)
     .sort((a, b) => b.elo - a.elo),
 );
 /** alpha:1826 myRank = rows.findIndex(u=>u.id===me.id)+1（响应式 me.id） */

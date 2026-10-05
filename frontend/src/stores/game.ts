@@ -12,8 +12,8 @@ import {
   myIntent as seedMyIntent,
 } from '@/api';
 import type { MyIntent, PublishInput, TimeBucket } from '@/api/types';
-import { heads, isOrg, isForced, myEntry } from '@/utils/format';
-import { gameTime } from '@/utils/time';
+import { autoGameName, heads, isOrg, isForced, myEntry } from '@/utils/format';
+import { dayOff, gameTime } from '@/utils/time';
 import { useUiStore } from './ui';
 import { useUserStore } from './user';
 
@@ -80,16 +80,13 @@ export const useGameStore = defineStore('game', () => {
   }
 
   /** 发布/改局共用的推导（alpha:1383-1387）：局名「日段 · 地点」自动起名、tb 时间桶（按真实日期算）、area 地区推断。
-      3.3 改版：time 可能是「10.06 周一 19:00」三段精确式，tb 由 gameTime 解析出的日期推导。 */
+      3.3 改版：time 可能是「10.06 周一 19:00」三段精确式，tb 由 gameTime 解析出的日期推导。
+      自动名与天数偏移的规则在 utils（autoGameName/dayOff），与 LaunchSheet 预览同源。 */
   function deriveGame(p: PublishInput): { name: string; day: string; tb: TimeBucket; area: string } {
-    const name = p.name.trim() || `${p.time.split(' ')[0]} · ${p.venue.split(' · ').pop()}`;
+    const name = p.name.trim() || autoGameName(p.time, p.venue);
     const day = p.time.split(' ')[0];
     const start = gameTime(p.time);
-    const z = new Date();
-    z.setHours(0, 0, 0, 0);
-    const off = Math.round(
-      (new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime() - z.getTime()) / 86400000,
-    );
+    const off = dayOff(start);
     const wd = start.getDay();
     const tb: TimeBucket = off <= 0 ? 'tonight' : off === 1 ? 'tomorrow' : wd === 0 || wd === 6 ? 'weekend' : 'week';
     const area = mockAreas.find((a) => p.venue.includes(a)) || '其他';

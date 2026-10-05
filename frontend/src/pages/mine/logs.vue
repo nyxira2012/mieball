@@ -34,6 +34,7 @@ import { useGameStore } from '@/stores/game';
 import { useUserStore } from '@/stores/user';
 import { PERIOD_FROM, PERIOD_OPTS, type BillPeriod } from '@/stores/bill';
 import { dayOrd } from '@/utils/time';
+import { goGame } from '@/utils/nav';
 import type { Game } from '@/api/types';
 
 const game = useGameStore();
@@ -41,7 +42,7 @@ const user = useUserStore();
 const me = computed(() => user.me);
 
 /* 期间档位与下界同源 bill store（BillPeriod/PERIOD_FROM/PERIOD_OPTS），本页不再持副本 */
-const period = ref<string | number>('all');
+const period = ref<BillPeriod>('all');
 
 /** 记录列表：done 局按期间过滤（dayOrd 月*100+日，月份不补零不能裸比较字符串）后 d 倒序 */
 const list = computed<Game[]>(() => {
@@ -51,9 +52,9 @@ const list = computed<Game[]>(() => {
   return hit.sort((a, b) => dayOrd(b.d) - dayOrd(a.d));
 });
 
-/** 局卡点击进打球详情页（5.1） */
+/** 局卡点击进打球详情页（5.1；路径契约在 utils/nav 单一源） */
 function openGame(g: Game): void {
-  uni.navigateTo({ url: '/pages/detail/detail?id=' + g.id });
+  goGame(g.id);
 }
 </script>
 

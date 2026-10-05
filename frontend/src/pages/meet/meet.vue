@@ -100,8 +100,9 @@ import type { Game, Intent } from '@/api/types';
 import { AREA_OPTS, communityMeta } from '@/api';
 import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
-import { freqName, isMine, isOrg, known, myEntry, slotName } from '@/utils/format';
+import { freqName, gameTapAction, isMine, isOpen, isOrg, known, myEntry, slotName } from '@/utils/format';
 import { gameTime, untilTxt } from '@/utils/time';
+import { goGame } from '@/utils/nav';
 
 const game = useGameStore();
 const ui = useUiStore();
@@ -131,16 +132,17 @@ const TIME_OPTS = [
 /* ---- 跑马灯（alpha:983-994 meetTicker 逐字逻辑；s+s ×2 循环由 Ticker 负责） ---- */
 const tickerItems = computed<TickerItem[]>(() => {
   const bits: TickerItem[] = [];
-  // alpha:985-986 被邀请条目（未加入才提示）；5.1：done 局一并排除，与列表口径一致
+  // alpha:985-986 被邀请条目（未加入才提示）；isOpen 为列表过滤口径单一源（5.1 起排除 done 局）
   game.games
-    .filter((g) => !g.dead && g.status !== 'done' && g.invitedMe && !myEntry(g))
+    .filter((g) => isOpen(g) && g.invitedMe && !myEntry(g))
     .forEach((g) =>
       bits.push({ tag: '邀请', text: `${g.organizer.name} 邀你加入「${g.name}」· 点一下就加入` }),
     );
-  // alpha:987-990 NEXT：我参加/组织的局里最近一场的开打倒计时
-  // 5.1：done 局须显式排除——gameTime 会把已过的「周X」顺延下周、日期串兜底成今天，未来时间过滤排不掉终局
-  const nx = game.games
-    .filter((g) => !g.dead && g.status !== 'done' && (isOrg(g) || myEntry(g)))
+  // alpha:987-990 NEXT：我参加/组织的局里最近一场的开打倒计时。
+  // 消费 game store 的登记口径单一源 mySignups（含 !dead，登记页/我的页同源），
+  // 再排掉 done 局——gameTime 会把已过的「周X」顺延下周、日期串兜底成今天，未来时间过滤排不掉终局
+  const nx = game.mySignups
+    .filter((g) => g.status !== 'done')
     .map((g) => ({ g, t: gameTime(g.t) }))
     .filter((x) => x.t.getTime() > Date.now())
     .sort((a, b) => a.t.getTime() - b.t.getTime())[0];
@@ -152,20 +154,22 @@ const tickerItems = computed<TickerItem[]>(() => {
 });
 
 /* ---- 球局区（alpha:1054-1057） ---- */
-/* alpha:1054-1055 flt = games.filter(!dead && (fTime all || tb) && (fArea 全部 || area))，gameTime 升序；
-   5.1 起排除 done 局（本区只面向未开场的局，已结束局归登记/记录页） */
+/* alpha:1054-1055 flt = games.filter(isOpen && (fTime all || tb) && (fArea 全部 || area))，gameTime 升序；
+   5.1 起排除 done 局（本区只面向未开场的局，已结束局归登记/记录页）。
+   排序先 map 出缓存的时间值再比（比较器里反复 gameTime 解析是 O(n log n) 次），tickerItems 同法 */
 const ftv = computed(() => String(fTime.value));
 const fav = computed(() => String(fArea.value));
 const flt = computed(() =>
   game.games
     .filter(
       (g) =>
-        !g.dead &&
-        g.status !== 'done' &&
+        isOpen(g) &&
         (ftv.value === 'all' || g.tb === ftv.value) &&
         (fav.value === '全部' || g.area === fav.value),
     )
-    .sort((a, b) => gameTime(a.t).getTime() - gameTime(b.t).getTime()),
+    .map((g) => ({ g, t: gameTime(g.t).getTime() }))
+    .sort((a, b) => a.t - b.t)
+    .map((x) => x.g),
 );
 /* alpha:1056/1088 pinned = 我参加/组织的置顶，列表 = [...pinned, ...rest] */
 const ordered = computed(() => {
@@ -191,13 +195,14 @@ const scopeLabel = computed(() => (intentScope.value === 'all' ? '所有人' : '
 const myIntentLine = computed(() => (game.myIntent ? game.myIntent.slots.map(slotName).join(' / ') : ''));
 
 /* ---- 点击分支 ---- */
-/* alpha:907 点球局卡分支同首页：被邀请未加入 → joinSheet；其余 → 详情页 */
+/* alpha:907 点球局卡分支同首页（判定在 utils/format 的 gameTapAction 单一源）：
+   被邀请未加入 → joinSheet；其余 → 详情页 */
 function onGameTap(g: Game): void {
-  if (!!g.invitedMe && !myEntry(g)) {
+  if (gameTapAction(g) === 'join') {
     ui.openSheet({ type: 'join', gameId: g.id });
     return;
   }
-  uni.navigateTo({ url: `/pages/detail/detail?id=${g.id}` });
+  goGame(g.id);
 }
 /* alpha:1063/1065 intentForm() → intent-form 弹层 */
 function openIntentForm(): void {
@@ -418,27 +423,7 @@ watch(
   gap: 6px;
   flex: none;
 }
-/* alpha:339-343 小操作按钮（改/删意向；DeadCard 同源副本） */
-.tbtn {
-  padding: 7px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(245, 241, 232, 0.16);
-  background: none;
-  color: var(--dim);
-  font-size: 12px;
-  font-weight: 700;
-  transition: 0.15s;
-  font-family: var(--sans);
-  flex: none;
-}
-.tbtn:active {
-  transform: scale(0.93);
-}
-.tbtn.on-no {
-  border-color: var(--coral);
-  color: var(--coral);
-  background: rgba(255, 90, 54, 0.08);
-}
+/* 小操作按钮走全局 .tbtn/.tbtn.on-no（base.scss 收源） */
 /* alpha:1101 说明行内联 font-size:11px;margin:2px 2px 0 */
 .intent-note {
   font-size: 11px;

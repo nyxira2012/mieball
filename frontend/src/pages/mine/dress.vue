@@ -82,7 +82,8 @@ import AppInput from '@/components/ui/AppInput.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import NoteCard from '@/components/ui/NoteCard.vue';
 import ProfileSheet from '@/components/biz/ProfileSheet.vue';
-import { useUserStore, DRESS_PARTS, DRESS_RANGES, PART_NAMES, type DressPart } from '@/stores/user';
+import { useUserStore } from '@/stores/user';
+import { DRESS_PARTS, DRESS_RANGES, PART_NAMES, type DressPart } from '@/utils/chibi';
 import { useSessionStore } from '@/stores/session';
 import type { CardBg } from '@/api/types';
 

@@ -14,6 +14,12 @@ export class ApiError extends Error {
   }
 }
 
+/** 调用方兜底文案单一源：ApiError 用后端/网络层给的 message，其余（编程错误等）用通用文案。
+    各页 catch 里统一 errText(e)，不再各自手写 instanceof 三元（兜底文案曾分叉两版）。 */
+export function errText(e: unknown): string {
+  return e instanceof ApiError ? e.message : '网络不给力，请稍后再试';
+}
+
 const BASE = '/api';
 const TOKEN_KEY = 'mieball.token';
 const DEVICE_KEY = 'mieball.device';

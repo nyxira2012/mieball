@@ -49,7 +49,8 @@ import type { Game } from '@/api/types';
 import { communityMeta } from '@/api';
 import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
-import { freqName, myEntry, slotName } from '@/utils/format';
+import { freqName, isOpen, gameTapAction, slotName } from '@/utils/format';
+import { goGame, goLive } from '@/utils/nav';
 
 const gameStore = useGameStore();
 const ui = useUiStore();
@@ -64,16 +65,24 @@ const dateLine = computed(() => {
 /* alpha:938-939 首页跑马灯四段逐字（NOW/ELO/INTENT/SHARE，源自 communityMeta mock 数据） */
 const tickerItems: TickerItem[] = communityMeta.tickerItems;
 
-/* ---- 球局列表（alpha:948 games.filter(g=>!g.dead)；5.1 起 games[] 混入 done 局，首页只列可参加局） ---- */
-const openGames = computed(() => gameStore.games.filter((g) => !g.dead && g.status !== 'done'));
+/* ---- 球局列表（alpha:948 games.filter(g=>!g.dead)；5.1 起 games[] 混入 done 局，首页只列可参加局，
+     口径在 utils/format 的 isOpen 单一源） ---- */
+const openGames = computed(() => gameStore.games.filter(isOpen));
 
-/* alpha:907 点卡分支：inv（被邀请且未加入）→ joinSheet(g.id)；其余 → openDetail(g.id) */
+/* alpha:907 点卡分支（判定在 utils/format 的 gameTapAction 单一源，meet 页同消费）：
+   inv（被邀请且未加入）→ joinSheet(g.id)；其余 → openDetail(g.id)。
+   2026-10-05 修订（仅首页，meet 页不动）：status=live 的局直达现场页——进现场是
+   开打后最高频操作，详情页此时只剩中转价值；冷启动/切局由 live 页 onShow 兜底开打。 */
 function onGameTap(g: Game): void {
-  if (!!g.invitedMe && !myEntry(g)) {
+  if (gameTapAction(g) === 'join') {
     ui.openSheet({ type: 'join', gameId: g.id });
     return;
   }
-  uni.navigateTo({ url: `/pages/detail/detail?id=${g.id}` });
+  if (g.status === 'live') {
+    goLive(g.id);
+    return;
+  }
+  goGame(g.id);
 }
 
 /* ---- 约球入口 wave 卡（alpha:941-947 两态） ---- */
