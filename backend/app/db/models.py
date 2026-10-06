@@ -224,6 +224,14 @@ class LiveState(Base):
     streak_max: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     round: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # 管理员名单（2.2 §4.6 封撤的真值，存 Account.id；组织者独占封撤、散场即止不回写局簿）
+    admins: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # 战报事件句留痕（2.2 §4.6/§4.9 撤管理员与换人）：结构化事件行，句式拼装归前端
+    # （契约§2 后端不产中文文案）
+    feed: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # 场地片数（2.2 场地设置的后端真值）：开账按订场登记起笔、缺省按人数回退
+    # （镜像 rotate.ts courtCount 单一源）；缩片先撤空闲片、不得少于在用片数
+    courts_count: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
 
 
 class LivePlayer(Base):

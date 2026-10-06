@@ -1,8 +1,10 @@
-"""live 路由 —— 现场总账的 HTTP 面（读 + 记分链写）：纯参数搬运，规则全在 LiveBook。
+"""live 路由 —— 现场总账的 HTTP 面（读 + 记分链写 + 2.2 域写 + 散场链）：
+纯参数搬运，规则全在 LiveBook。
 
 响应约定同 games：成功体直接是总账视图（写后回最新画面）；防线退回的 409 在
 {"error": {code, message}} 之外再带 "view"（最新总账，前端对表用）。
-写请求一律带 base_total_seq（片级另带 base_court_seq）——出发时看到的两级号。
+写请求一律带 base_total_seq（片级另带 base_court_seq）——出发时看到的两级号；
+check/swap/tempo/rules/封撤管理员/散场链动全场，只走总号（2.3 §4.8-4）。
 """
 
 from __future__ import annotations
@@ -64,6 +66,54 @@ class CancelIn(BaseModel):
     no_redeal: bool = False
     base_total_seq: int
     base_court_seq: int
+
+
+class CheckIn(BaseModel):
+    """报到四态（2.2 §4.2/4.3/4.5）：player_id 是名册行 id，代办他人需全权。"""
+
+    player_id: int
+    check: Literal["ok", "late", "join", "left"]
+    base_total_seq: int
+
+
+class SwapIn(BaseModel):
+    """换人（2.2 §4.9）：out_id 场上名册行、in_id 候场名册行。"""
+
+    out_id: int
+    in_id: int
+    base_total_seq: int
+
+
+class TempoIn(BaseModel):
+    """歇连（2.2 §4.10）：skip 按一次叠一轮、fire 连战、unskip 取消休息。"""
+
+    player_id: int
+    action: Literal["skip", "fire", "unskip"]
+    base_total_seq: int
+
+
+class RulesIn(BaseModel):
+    """规则四件套+场地片数（2.2 §4.7 收权）：全可选，只动显式给的字段。"""
+
+    doubles: bool | None = None
+    down: Literal["all", "loser", "n1", "n2", "n3"] | None = None
+    pairing: Literal["queue", "balance"] | None = None
+    streak_max: int | None = Field(default=None, ge=1)
+    courts_count: int | None = Field(default=None, ge=1)
+    base_total_seq: int
+
+
+class PlayerWriteIn(BaseModel):
+    """按名册行定靶的全场写（封撤管理员）公共身位。"""
+
+    player_id: int
+    base_total_seq: int
+
+
+class TotalWriteIn(BaseModel):
+    """全场写的公共身位（只走总号）。"""
+
+    base_total_seq: int
 
 
 @router.get("")
@@ -199,4 +249,125 @@ def live_cancel(
         no_redeal=body.no_redeal,
         base_total_seq=body.base_total_seq,
         base_court_seq=body.base_court_seq,
+    )
+
+
+@router.post("/check")
+def live_check(
+    game_id: int,
+    body: CheckIn,
+    account: Account = Depends(require_account),
+    book: LiveBook = Depends(get_live_book),
+):
+    return book.check(
+        game_id=game_id,
+        actor_id=account.id,
+        player_id=body.player_id,
+        check=body.check,
+        base_total_seq=body.base_total_seq,
+    )
+
+
+@router.post("/swap")
+def live_swap(
+    game_id: int,
+    body: SwapIn,
+    account: Account = Depends(require_account),
+    book: LiveBook = Depends(get_live_book),
+):
+    return book.swap(
+        game_id=game_id,
+        actor_id=account.id,
+        out_id=body.out_id,
+        in_id=body.in_id,
+        base_total_seq=body.base_total_seq,
+    )
+
+
+@router.post("/tempo")
+def live_tempo(
+    game_id: int,
+    body: TempoIn,
+    account: Account = Depends(require_account),
+    book: LiveBook = Depends(get_live_book),
+):
+    return book.tempo(
+        game_id=game_id,
+        actor_id=account.id,
+        player_id=body.player_id,
+        action=body.action,
+        base_total_seq=body.base_total_seq,
+    )
+
+
+@router.post("/rules")
+def live_rules(
+    game_id: int,
+    body: RulesIn,
+    account: Account = Depends(require_account),
+    book: LiveBook = Depends(get_live_book),
+):
+    return book.rules(
+        game_id=game_id,
+        actor_id=account.id,
+        base_total_seq=body.base_total_seq,
+        **body.model_dump(exclude={"base_total_seq"}),
+    )
+
+
+@router.post("/set-admin")
+def live_set_admin(
+    game_id: int,
+    body: PlayerWriteIn,
+    account: Account = Depends(require_account),
+    book: LiveBook = Depends(get_live_book),
+):
+    return book.set_admin(
+        game_id=game_id,
+        actor_id=account.id,
+        player_id=body.player_id,
+        base_total_seq=body.base_total_seq,
+    )
+
+
+@router.post("/unset-admin")
+def live_unset_admin(
+    game_id: int,
+    body: PlayerWriteIn,
+    account: Account = Depends(require_account),
+    book: LiveBook = Depends(get_live_book),
+):
+    return book.unset_admin(
+        game_id=game_id,
+        actor_id=account.id,
+        player_id=body.player_id,
+        base_total_seq=body.base_total_seq,
+    )
+
+
+@router.post("/sweep-cancel-all")
+def live_sweep_cancel_all(
+    game_id: int,
+    body: TotalWriteIn,
+    account: Account = Depends(require_account),
+    book: LiveBook = Depends(get_live_book),
+):
+    return book.sweep_cancel_all(
+        game_id=game_id,
+        actor_id=account.id,
+        base_total_seq=body.base_total_seq,
+    )
+
+
+@router.post("/end")
+def live_end(
+    game_id: int,
+    body: TotalWriteIn,
+    account: Account = Depends(require_account),
+    book: LiveBook = Depends(get_live_book),
+):
+    return book.end(
+        game_id=game_id,
+        actor_id=account.id,
+        base_total_seq=body.base_total_seq,
     )

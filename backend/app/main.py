@@ -25,7 +25,13 @@ _NEW_COLUMNS = {
         "terminated_at": "DATETIME",
         "cancelled_at": "DATETIME",
         "ended_at": "DATETIME",
-    }
+    },
+    # 2.3 批3：管理员名单/战报事件句/场地片数（JSON 列补齐要带字面默认值，存量行不吃 ORM default）
+    "live_state": {
+        "admins": "JSON DEFAULT '[]'",
+        "feed": "JSON DEFAULT '[]'",
+        "courts_count": "INTEGER NOT NULL DEFAULT 2",
+    },
 }
 
 
