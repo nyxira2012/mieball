@@ -102,9 +102,9 @@ import { useLiveStore } from '@/stores/live';
 import { useGameStore } from '@/stores/game';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
-import { isOrg, courtLabel } from '@/utils/format';
+import { courtLabel } from '@/utils/format';
 import { maxCourts, usedCourts } from '@/utils/rotate';
-import { goGame, goMeet } from '@/utils/nav';
+import { goMeet } from '@/utils/nav';
 
 /** 本地弹层槽（单槽替换语义：开新的自动顶旧的；与全局 SheetPayload 互不相干） */
 type LocalSheet =
@@ -119,7 +119,7 @@ const session = useSessionStore();
 const ui = useUiStore();
 
 const L = computed(() => liveStore.live);
-const org = computed(() => (L.value ? isOrg(L.value.g) : false));
+const org = computed(() => !!L.value?.g.my?.isOrganizer); // viewer 块定值（游客无 my 恒 false）
 
 const liveSheet = ref<LocalSheet | null>(null);
 const qrOpen = ref(false);
@@ -167,7 +167,7 @@ function goPull(): void {
 
 /* ---------- 卡片名映射（口径在 utils/format 的 courtLabel 单一源） ---------- */
 function courtName(idx: number): string {
-  return courtLabel(L.value?.g.booked, idx);
+  return courtLabel(L.value?.g.courts, idx);
 }
 
 /** 空闲卡：片数上限在 utils/rotate 的 maxCourts 单一源，已占片数用镜像口径 usedCourts；
@@ -213,9 +213,9 @@ onHide(() => {
   qrOpen.value = false;
 });
 
-/** alpha:1534-1535 空态按钮 → openDetail(101) */
+/** alpha:1534-1535 空态按钮 → 约球页找局/发局（mock 演示局已随隔离线退场，101 不再是落点） */
 function goOpenTonight(): void {
-  goGame(101);
+  goMeet();
 }
 </script>
 

@@ -59,7 +59,6 @@ import NoteCard from '@/components/ui/NoteCard.vue';
 import EmptyBox from '@/components/ui/EmptyBox.vue';
 import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
 import { useLiveStore } from '@/stores/live';
-import { gameTime } from '@/utils/time';
 import { U } from '@/api';
 
 defineProps({
@@ -73,7 +72,7 @@ const liveStore = useLiveStore();
 const lateTxt = computed(() => {
   const g = liveStore.live?.g;
   if (!g) return '未到';
-  const mins = Math.floor((Date.now() - gameTime(g.t).getTime()) / 60000);
+  const mins = Math.floor((Date.now() - new Date(g.startAt).getTime()) / 60000);
   return mins > 0 ? `已迟到 ${mins} 分钟` : '未到';
 });
 

@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
+import { U } from '@/api';
+import type { EntryRow, Game, User } from '@/api/types';
 
-/* 每个用例重置模块图 → 全新 mock 数据；104 局（balance · 8 cap）与 102 局做确定性推演。
-   2.1 打球页改版（批1）：终局从「到分自动落账」改为 point→settling 快照→confirmSettle 确认落账；
-   newRound/toggleMine 退役，改测 cancelMatch/clearScore/autoDeal/togglePerson 等新动作。 */
+/* 每个用例重置模块图 → 全新 mock 数据；102（balance · 8 上限）与 101（winner · 12 上限）
+   两组真局 fixture 做确定性推演。
+   2.1 打球页改版（批1）：终局从「到分自动落账」改为 point→settling 快照→confirmSettle 确认落账。
+   1.2 隔离线：startLive 吃重塑后的真局对象（形状与后端 game_view 镜像），名册从 formal
+   报名行展开、mock U 同 id 者借真实战绩对象（结算落回战力榜）。 */
 beforeEach(async () => {
   vi.resetModules();
   setActivePinia(createPinia());
@@ -12,14 +16,46 @@ beforeEach(async () => {
 async function load() {
   const liveMod = await import('@/stores/live');
   const uiMod = await import('@/stores/ui');
-  const gameMod = await import('@/stores/game');
-  return { live: liveMod.useLiveStore(), ui: uiMod.useUiStore(), game: gameMod.useGameStore() };
+  return { live: liveMod.useLiveStore(), ui: uiMod.useUiStore() };
+}
+
+const person = (u: User) => ({ id: u.id, nickname: u.name, chibi: u.chibi });
+const entry = (u: User, bring = 0): EntryRow => ({ account: person(u), bring, standing: 'formal', waitSeq: null });
+
+/** 102 同构（原 mock 种子口径）：我组织 · li 带 1 · bei，balance，已订场 2 片 */
+function g102(): Game {
+  return {
+    id: 102, name: '周末午后局', organizer: person(U.me),
+    startAt: '2026-10-10T14:00:00+08:00', endAt: '2026-10-10T16:00:00+08:00', deadlineAt: '2026-10-10T12:00:00+08:00',
+    venueName: '望京 · 花家地球馆', venueAddress: null,
+    minPlayers: 4, maxPlayers: 8, visibility: 'public',
+    scoring: 11, rotation: 'balance', scoreRule: 'rally',
+    manualLock: false, courts: ['3号', '5号'], feeTotal: 480,
+    status: 'locked', unlocked: false, joinable: true,
+    heads: 4, slotsLeft: 4, perHead: 120, forced: true,
+    entries: [entry(U.me), entry(U.li, 1), entry(U.bei)],
+    my: { isOrganizer: true, myEntry: { bring: 0, standing: 'formal', waitSeq: null }, invited: false },
+  };
+}
+
+/** 101 同构：11 人报名（hai 带 2 · zhao 随行在 mock U 带阴影标）· winner 模式 · 未订场 */
+function g101(): Game {
+  return {
+    ...g102(),
+    id: 101, name: '周四夜战', organizer: person(U.wang), maxPlayers: 12, slotsLeft: 1,
+    rotation: 'winner', courts: null, feeTotal: 720, forced: false,
+    entries: [
+      entry(U.wang), entry(U.hai, 2), entry(U.wu), entry(U.gu), entry(U.li),
+      entry(U.me), entry(U.shi), entry(U.yang), entry(U.bei), entry(U.tong), entry(U.zhao),
+    ],
+    my: { isOrganizer: false, myEntry: { bring: 0, standing: 'formal', waitSeq: null }, invited: false },
+  };
 }
 
 /** 把 102 局 cur 打到 11:9（到分，settling 已开未落账）。返回句柄 + 访客 id（roster[2]） */
 async function setupSettling() {
   const h = await load();
-  h.live.startLive(102);
+  h.live.startLive(g102());
   const L = h.live.live!;
   for (let i = 0; i < 9; i++) h.live.point('a');
   for (let i = 0; i < 9; i++) h.live.point('b');
@@ -30,14 +66,14 @@ async function setupSettling() {
 
 describe('startLive（alpha:1471-1490）', () => {
   it('随行展开成 shadow 访客（随机 chibi）· 前 9 人 ok · balance 蛇形发牌 · 红点亮', async () => {
-    const { live, game } = await load();
+    const { live } = await load();
     expect(live.hasLive).toBe(false);
-    const msg = live.startLive(102); // joined: me + li(bring 1) + bei → 4 人
+    const msg = live.startLive(g102()); // entries: me + li(bring 1) + bei → 4 人
     const L = live.live!;
     const guest = L.roster[2];
     expect(msg).toBe('球局开始 · 现场已点亮');
     expect(live.hasLive).toBe(true);
-    expect(L.g.status).toBe('live');
+    expect(L.g.id).toBe(102); // 现场克隆局：改动不回写 game store（派生态归后端）
     expect(L.roster).toHaveLength(4);
     expect(L.roster.filter((p) => p.shadow)).toHaveLength(1);
     expect(guest.shadow).toBe(true);
@@ -46,16 +82,15 @@ describe('startLive（alpha:1471-1490）', () => {
     expect(L.roster.every((p) => p.check === 'ok')).toBe(true); // 4 < 9 全部到场
     expect(L.roster.every((p) => p.skip === 0)).toBe(true);     // 歇两轮计数从 0 起
     // balance 按分降序蛇形：li1574 / me1518 / bei1452 / 访客1200 → A=[li,访客] B=[me,bei]
-    // （102 局 joined 顺序的 id：me=0 · li=5 · bei=8，访客 id ≥9000 动态）
+    // （102 局 entries 顺序的 id：me=0 · li=5 · bei=8，访客 id ≥9000 动态）
     expect(L.cur!.A).toEqual([5, guest.id]);
     expect(L.cur!.B).toEqual([0, 8]);
     expect(L.cur!.sa).toBe(0);
     expect(L.queue).toEqual([]); // 全部上场
-    expect(game.games.find((x) => x.id === 102)!.status).toBe('live');
   });
   it('超过 9 人时：前 9 ok 其余 absent（101 局：11 报名 + hai 带 2 访客 = 13）', async () => {
     const { live } = await load();
-    live.startLive(101);
+    live.startLive(g101());
     const L = live.live!;
     expect(L.roster).toHaveLength(13);
     expect(L.roster.filter((p) => p.shadow)).toHaveLength(3); // hai 带 2 访客 + zhao 本就是随行
@@ -69,7 +104,7 @@ describe('startLive（alpha:1471-1490）', () => {
 describe('point → settling → confirmSettle（2.1 §5 结算流 · alpha:1688-1728 数值口径）：K=24 / 败方六成 / 随行半权重', () => {
   it('11:9 到点开 settling（cur 不动），confirmSettle(true,11,9) 落账 + 自动排下一场，战力榜联动', async () => {
     const { live } = await load();
-    live.startLive(102);
+    live.startLive(g102());
     const L = live.live!;
     const guest = L.roster[2].id;
     for (let i = 0; i < 9; i++) live.point('a');
@@ -133,7 +168,7 @@ describe('point → settling → confirmSettle（2.1 §5 结算流 · alpha:1688
   });
   it('11:10 不收局，undoPoint 按最后得分方回退，12:10 到点开弹窗、确认后入史', async () => {
     const { live } = await load();
-    live.startLive(102);
+    live.startLive(g102());
     const L = live.live!;
     for (let i = 0; i < 10; i++) live.point('a');
     for (let i = 0; i < 10; i++) live.point('b');
@@ -153,7 +188,7 @@ describe('point → settling → confirmSettle（2.1 §5 结算流 · alpha:1688
   });
   it('openSettle：手动入口快照当前比分；无 cur 时静默不开', async () => {
     const { live } = await load();
-    live.startLive(102);
+    live.startLive(g102());
     const L = live.live!;
     live.point('a');
     live.point('a'); // 2:0 未到分
@@ -194,7 +229,7 @@ describe('setCheck / togglePerson / cancelMatch / clearScore / autoDeal（2.1 §
   });
   it('setCheck late：缺席者（原不在队）到场即从队尾进队（avail 放行的配套口径）', async () => {
     const { live } = await load();
-    live.startLive(101);
+    live.startLive(g101());
     const L = live.live!;
     const absentId = L.roster.find((p) => p.check === 'absent')!.id;
     expect(L.queue).not.toContain(absentId);
@@ -203,7 +238,7 @@ describe('setCheck / togglePerson / cancelMatch / clearScore / autoDeal（2.1 §
   });
   it('avail 放行 late（2.1 §3 裁决）：setCheck(id,late) 后 autoDeal 能把迟到者发上场', async () => {
     const { live } = await load();
-    live.startLive(102);
+    live.startLive(g102());
     const L = live.live!;
     live.cancelMatch();        // 全员候场 [li, 访客, me, bei]
     live.setCheck(5, 'late');  // li 迟到 → 队尾、check='late'
@@ -228,7 +263,7 @@ describe('setCheck / togglePerson / cancelMatch / clearScore / autoDeal（2.1 §
   });
   it('cancelMatch：人回流队尾、不计积分、无待开片则 cur=null', async () => {
     const { live } = await load();
-    live.startLive(102);
+    live.startLive(g102());
     const L = live.live!;
     const guest = L.roster[2].id;
     for (let i = 0; i < 5; i++) live.point('a'); // 5:0 未打完
@@ -242,7 +277,7 @@ describe('setCheck / togglePerson / cancelMatch / clearScore / autoDeal（2.1 §
   });
   it('cancelMatch：有待开片则顶上（101：cur 取消 → 待开片上记分板）', async () => {
     const { live } = await load();
-    live.startLive(101);
+    live.startLive(g101());
     const L = live.live!;
     expect(L.courts).toHaveLength(1); // 一片在打 + 一片待开
     live.cancelMatch();
@@ -253,7 +288,7 @@ describe('setCheck / togglePerson / cancelMatch / clearScore / autoDeal（2.1 §
   });
   it('clearScore：比分与最后得分方一起清零（undo 不再误撤）', async () => {
     const { live } = await load();
-    live.startLive(102);
+    live.startLive(g102());
     const L = live.live!;
     live.point('a');
     live.point('b');
@@ -268,7 +303,7 @@ describe('setCheck / togglePerson / cancelMatch / clearScore / autoDeal（2.1 §
   });
   it('autoDeal：空闲时发牌并顶上一场；cur 在则只补片不动 cur', async () => {
     const { live } = await load();
-    live.startLive(102);
+    live.startLive(g102());
     const L = live.live!;
     const guest = L.roster[2].id;
     live.cancelMatch(); // 全员候场、无 cur
@@ -285,7 +320,7 @@ describe('swapPlayers / addGuests / setCourtsInput / myRound（2.1 §1/§3/§4�
   it('swapPlayers：场上↔候场互换（cur 的 outId→inId，候场的坑由 outId 顶）', async () => {
     const { live } = await load();
     const { U } = await import('@/api');
-    live.startLive(102);
+    live.startLive(g102());
     const L = live.live!;
     live.addGuests(1, '小陈', U.me);
     const xin = L.roster[4].id; // 新访客在候场队尾
@@ -296,7 +331,7 @@ describe('swapPlayers / addGuests / setCourtsInput / myRound（2.1 §1/§3/§4�
   it('addGuests：空名→「介绍人前两字+的球友」；非空多位→name·2/name·3；单位不带序号；shadow 进队尾', async () => {
     const { live } = await load();
     const { U } = await import('@/api');
-    live.startLive(102);
+    live.startLive(g102());
     const L = live.live!;
     expect(L.queue).toEqual([]); // 全上场 → 队尾即紧接其后
     live.addGuests(2, '', U.li);
@@ -312,36 +347,36 @@ describe('swapPlayers / addGuests / setCourtsInput / myRound（2.1 §1/§3/§4�
   });
   it('setCourtsInput：『3、4 / 3,4 / 3 4 / 3号、4号』归一成 [3号,4号] 写 booked', async () => {
     const { live } = await load();
-    live.startLive(102);
+    live.startLive(g102());
     const L = live.live!;
-    expect(L.g.booked).toEqual(['3号', '5号']); // mock 原值
+    expect(L.g.courts).toEqual(['3号', '5号']); // mock 原值
     for (const txt of ['3、4', '3,4', '3 4', '3号、4号']) {
       expect(live.setCourtsInput(txt)).toBe(true);
-      expect(L.g.booked).toEqual(['3号', '4号']);
+      expect(L.g.courts).toEqual(['3号', '4号']);
     }
   });
   it('setCourtsInput：在打+待开不可收（片数不足拒、booked 不动），够片则过', async () => {
     const { live } = await load();
-    live.startLive(101);
+    live.startLive(g101());
     const L = live.live!;
     expect(L.cur).not.toBeNull();
     expect(L.courts).toHaveLength(1); // 在打 1 + 待开 1 → 至少 2 片
     expect(live.setCourtsInput('3号')).toBe(false);
-    expect(L.g.booked).toBeUndefined(); // 原值不动
+    expect(L.g.courts).toBeNull(); // 原值不动
     expect(live.setCourtsInput('3号、5号')).toBe(true);
-    expect(L.g.booked).toEqual(['3号', '5号']);
+    expect(L.g.courts).toEqual(['3号', '5号']);
   });
   it('setCourtsInput：空输入 / 全垃圾 token 拒', async () => {
     const { live } = await load();
-    live.startLive(102);
+    live.startLive(g102());
     expect(live.setCourtsInput('')).toBe(false);
     expect(live.setCourtsInput('   ')).toBe(false);
     expect(live.setCourtsInput('abc')).toBe(false);
-    expect(live.live!.g.booked).toEqual(['3号', '5号']); // 不动
+    expect(live.live!.g.courts).toEqual(['3号', '5号']); // 不动
   });
   it('myRound：102 局取消后队列 4 人、我 idx0（连战顶队首）→ 1；在打时 → null', async () => {
     const { live } = await load();
-    live.startLive(102);
+    live.startLive(g102());
     expect(live.myRound).toBeNull(); // 我在 cur 上，不在队列
     const L = live.live!;
     live.cancelMatch();
@@ -352,7 +387,7 @@ describe('swapPlayers / addGuests / setCourtsInput / myRound（2.1 §1/§3/§4�
   });
   it('myRound 公式随待开片放大：101 双取消重发 → 我 idx0 + 1 待开片 → 2', async () => {
     const { live } = await load();
-    live.startLive(101);
+    live.startLive(g101());
     expect(live.myRound).toBeNull(); // 我在待开片上（不在队列）
     live.cancelMatch(); // 待开片顶上 → 我又进 cur
     live.cancelMatch(); // 全员回队

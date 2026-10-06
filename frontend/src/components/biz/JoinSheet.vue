@@ -1,18 +1,15 @@
 <template>
-  <!-- 加入球局弹层（alpha.html:1107-1122 joinSheet 逐字）：标题三态（满员 · 进候补 / 接受邀请 · 加入 / 加入）
-       · hint 两态（满员候补文案 or 名单/剩坑/人均+不足最少按最少摊括注）· 带人 stepper（0-3，共占 N 坑联动）
-       · 确认钮（加入候补/确定加入）。确定 → game.joinGame(gameId, bring)（store 内 toast）→ 关弹层；
-       视图刷新靠 store 响应式（alpha:1136 renderHome/renderMeet/openDetail 的等价物）。 -->
+  <!-- 加入球局弹层（alpha.html:1107-1122）：标题三态（满员 · 进候补 / 接受邀请 · 加入 / 加入）
+       · hint（名单/剩坑/人均）· 带人 stepper（0-3，共占 N 坑联动）· 确认钮（加入候补/确定加入）。
+       确定 → game.joinGame（store 内 toast：正式/候补分支）→ 关弹层；失败 toast 人话留在弹层可重试。
+       1.1 先看后报：游客先弹名片建号卡，建号成功自动接着报名（D3）。 -->
   <view v-if="g" class="js">
-    <!-- alpha:1112 h3：`${full?'满员 · 进候补':(g.invitedMe&&!myEntry(g)?'接受邀请 · 加入':'加入')}「局短名」` -->
-    <view class="sheet-t">{{ full ? '满员 · 进候补' : g.invitedMe && !my ? '接受邀请 · 加入' : '加入' }}「{{ shortName }}」</view>
-    <!-- alpha:1113-1115 hint：满员 → 候补栏文案（<b>候补栏</b> 用加粗 text 等价）；未满 → 名单/剩坑/人均（+不足最少括注） -->
-    <view v-if="full" class="sheet-hint">
-      {{ g.t }} · {{ g.loc }} · 名额满了——加入将进入<text class="bb">候补栏</text>，有人退出即刻递补
-    </view>
-    <view v-else class="sheet-hint">
-      {{ g.t }} · {{ g.loc }} · {{ hs }}/{{ g.cap }} · 剩 {{ need }} 坑 · {{ feeTxt
-      }}{{ g.fee != null && hs < g.min && !forced ? `（不足最少 ${g.min} 人按最少摊）` : '' }}
+    <view class="sheet-t">{{ full ? '满员 · 进候补' : g.my?.invited && !g.my?.myEntry ? '接受邀请 · 加入' : '加入' }}「{{ shortName }}」</view>
+    <view class="sheet-hint">
+      {{ tLine }} · {{ g.venueName }} · {{ g.heads }}/{{ g.maxPlayers }} ·
+      {{ full ? `名额满了——加入将进入` : `剩 ${g.slotsLeft} 坑 ·` }}
+      <text v-if="full" class="bb">候补栏</text><text v-if="full">，有人退出即刻递补</text>
+      <text v-else> {{ feeTxt }}</text>
     </view>
 
     <!-- alpha:1116-1121 field「带几个人 · 带的人也占坑」+ stepper(0-3) + 共占坑数 hint -->
@@ -24,12 +21,12 @@
     </AppField>
 
     <!-- alpha:1122 确认钮：btn pri blk，满员文案「加入候补」 -->
-    <AppButton variant="pri" block @click="onConfirm">{{ full ? '加入候补' : '确定加入' }}</AppButton>
+    <AppButton variant="pri" block :disabled="busy" @click="onConfirm">{{ busy ? '加入中…' : full ? '加入候补' : '确定加入' }}</AppButton>
   </view>
 </template>
 
 <script setup lang="ts">
-/* 加入球局 JoinSheet（alpha.html:1107-1138 joinSheet/jStep/doJoin · P5b）。
+/* 加入球局 JoinSheet（alpha.html:1107-1138 · P5b · 1.2 接线修订面）。
    jbring 每次开弹层重置为 0（alpha:1111）——SheetHost 按 type 分发，关闭即卸载本组件。 */
 import { computed, ref } from 'vue';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -38,7 +35,8 @@ import AppStepper from '@/components/ui/AppStepper.vue';
 import { useGameStore } from '@/stores/game';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
-import { heads, needOf, perHead, myEntry, isForced } from '@/utils/format';
+import { isoDay, isoHm } from '@/utils/time';
+import { errText } from '@/api/http';
 
 const props = defineProps({
   gameId: { type: Number, required: true },
@@ -48,36 +46,36 @@ const game = useGameStore();
 const session = useSessionStore();
 const ui = useUiStore();
 
-/** alpha:1109 games.find；局被撤下等场景的兜底（v-if 不渲染） */
-const g = computed(() => game.games.find((x) => x.id === props.gameId) ?? null);
-/** alpha:1110 full = heads >= cap */
-const full = computed(() => !!g.value && heads(g.value) >= g.value.cap);
-/** alpha:1112 局短名（「 · 」起截断，正则逐字取自 alpha 的 replace 调用） */
+/** 局被撤下等场景的兜底（v-if 不渲染）；链接直达的局走 store.current */
+const g = computed(() => game.findGame(props.gameId));
+/** alpha:1110 full = 剩坑 0（后端定值） */
+const full = computed(() => !!g.value && g.value.slotsLeft <= 0);
+const busy = ref(false);
+/** alpha:1112 局短名（「 · 」起截断） */
 const shortName = computed(() => (g.value ? g.value.name.replace(/ ·.*/, '') : ''));
-/** alpha:1112 标题里「接受邀请 · 加入」分支的 !myEntry(g) */
-const my = computed(() => (g.value ? myEntry(g.value) : undefined));
-/** alpha:1115 hint 数据（未满态） */
-const hs = computed(() => (g.value ? heads(g.value) : 0));
-const need = computed(() => (g.value ? needOf(g.value) : 0));
-const ph = computed(() => (g.value ? perHead(g.value) : 0));
-/** 费用尾注：有总价 → 人均约数（+不足最少括注，必打局最少已作废不带括注）；fee=null（3.3 后新发布的局）→ 费用未定 */
-const forced = computed(() => (g.value ? isForced(g.value) : false));
-const feeTxt = computed(() => (g.value && g.value.fee != null ? `人均约 ¥${ph.value}` : '费用未定'));
+const tLine = computed(() => (g.value ? `${isoDay(g.value.startAt)} ${isoHm(g.value.startAt)}` : ''));
+/** 费用尾注：后端定值人均；未定 → 费用未定 */
+const feeTxt = computed(() => (g.value?.perHead != null ? `人均约 ¥${g.value.perHead}` : '费用未定'));
 
-/** alpha:1107/1111 let jbring=0（带的人数，0-3，alpha:1124 jStep 的 min/max） */
+/** alpha:1107/1111 let jbring=0（带的人数，0-3） */
 const jbring = ref(0);
 
-/** alpha:1127-1137 doJoin：store.joinGame（含 toast）→ closeSheet（已加入也只关弹层）。
-    1.1 先看后报：游客先弹名片建号卡，建号成功自动接着报名（D3 拆两步、用户看一步；
-    「关当前层-开建号卡」的门收在 ui store 的 signupThen，JoinSheet/LaunchSheet/live 页同门） */
-function onConfirm(): void {
-  if (!g.value) return;
+/** alpha:1127-1137 doJoin：成功关弹层（toast 在 store）；失败 toast 留在弹层可重试 */
+async function onConfirm(): Promise<void> {
+  if (!g.value || busy.value) return;
   if (session.isGuest) {
     ui.signupThen({ pendingJoin: { gameId: g.value.id, bring: jbring.value } });
     return;
   }
-  game.joinGame(g.value.id, jbring.value);
-  ui.closeSheet();
+  busy.value = true;
+  try {
+    await game.joinGame(g.value.id, jbring.value);
+    ui.closeSheet();
+  } catch (e) {
+    ui.toast(errText(e));
+  } finally {
+    busy.value = false;
+  }
 }
 </script>
 

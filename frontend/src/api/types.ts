@@ -1,5 +1,7 @@
 /* 夜球场 · 类型定义（P2 数据层）
-   字段名与 mock/data.ts（alpha:760-830 原样移植）一一对应。 */
+   1.2 接线重塑：局/意向按后端 game_view / intent_view 镜像成可读 camelCase（store/页面消费本文件）；
+   线上 snake_case 形状镜像在 api/games.ts（GameViewApi/IntentViewApi），映射收在 stores/game.ts 单点。
+   mock 隔离线（账单/登记/记录/现场演示）继续吃文末 MockGame 快照形状。 */
 
 /** Q 版头像配置（alpha:719 chibi(c) 的参数对象；SVG 生成函数在 utils/chibi.ts，归 P1） */
 export interface ChibiConfig {
@@ -10,9 +12,6 @@ export interface ChibiConfig {
   face?: number;
   acc?: number;
 }
-
-/** alpha:762 recentStats（我的页运动数据条） */
-export interface RecentStats { win: number; loss: number; hours: number; kcal: number }
 
 /** 我的战力卡卡背（alpha:1844 bg-neon/gold/cyber/aurora） */
 export type CardBg = 'neon' | 'gold' | 'cyber' | 'aurora';
@@ -42,64 +41,110 @@ export interface User {
   fire?: boolean;        // 连战：排到队首，与歇互斥（alpha:1631-1633）
 }
 
-/** 报名条目：带的人也占坑（alpha:776 · heads 计入 bring） */
+/** alpha:762 recentStats（我的页运动数据条） */
+export interface RecentStats { win: number; loss: number; hours: number; kcal: number }
+
+/** 报名条目（MockGame 遗留形状）：带的人也占坑（alpha:776 · heads 计入 bring） */
 export interface GameEntry { u: User; bring?: number }
 
-/** 时间桶（约球页筛选，alpha:776） */
+/** 时间桶（MockGame 遗留；真局列表筛选由页面从 startAt 现算） */
 export type TimeBucket = 'tonight' | 'tomorrow' | 'weekend' | 'week';
 
 /** 发牌模式（alpha:1404 winner 赢家留场 / rotate 纯粹轮转 / balance 均衡配对） */
 export type CourtMode = 'winner' | 'rotate' | 'balance';
 
-/** done=已结束局（5.1）：作为一等球局留在 games[]，换取局卡/详情/摊账弹层整链复用 */
-export type GameStatus = 'open' | 'ready' | 'live' | 'done';
+/** 视图状态 7 态（单一源=后端 game_views.derive；派生态读时算：
+    locked 随时刻翻 locked/live/done，pending 拖过开打=terminated） */
+export type GameStatus = 'open' | 'locked' | 'live' | 'done' | 'terminated' | 'cancelled' | 'pending';
 
-/** 球局。alpha:776-780 的口径注释是权威语义（mock/data.ts 原样保留） */
+/** 谁能翻到（可见档；enum 真值=后端模型，档位只管列表翻不翻得到、不管链接进出） */
+export type Visibility = 'played' | 'public' | 'invite_only';
+
+/** 名单里的一人（后端 person_view 镜像）：对外只显昵称+小人（1.1 隐私口径） */
+export interface Person { id: number; nickname: string; chibi: ChibiConfig }
+
+/** 报名行：formal 按报名先后在前、候补按 seq 跟后（后端 entry_rows 保序，前端不再排序） */
+export interface EntryRow {
+  account: Person;
+  bring: number;
+  standing: 'formal' | 'waitlist';
+  waitSeq: number | null;
+}
+
+/** viewer 视角块（my_block 镜像）；匿名请求不带 my */
+export interface MyBlock {
+  isOrganizer: boolean;
+  myEntry: { bring: number; standing: 'formal' | 'waitlist'; waitSeq: number | null } | null;
+  invited: boolean;
+}
+
+/** 球局（game_view 镜像）。人头/剩坑/人均/forced 是后端算好的定值（A4：画面不自算）；
+    entries 仅详情与写动作出口带（列表简版没有），my 仅登录 viewer 带。 */
 export interface Game {
   id: number;
-  organizer: User;
-  t: string;            // '今晚 19:00'（utils/time.ts gameTime 解析）
-  d: string;            // 展示用日期（'今天' / '10.07'）
-  tb: TimeBucket;
-  area: string;         // 地区（找局打筛选用）
-  dur: number;          // 打多久（小时）
-  deadline: string;     // 组局截止：到点锁名单，定死不改
-  loc: string;
   name: string;
-  min: number;          // 最少人数（截止时判成不成）
-  cap: number;          // 最多人数（满员线，进度只讲剩几坑）
-  fee: number | null;   // 预计费用总价；null=费用未定（2026-10-04 定：发局表单去掉费用，新局为 null，旧局保留数字）
-  note?: string;
-  joined: GameEntry[];
-  wait: GameEntry[];    // 候补栏：满员加入进这里，有人退出即刻递补
+  organizer: Person;
+  startAt: string;        // ISO 8601 +08:00（契约§2：相对表达只许待在输入框）
+  endAt: string;
+  deadlineAt: string;     // 截止发布即定死（不变承诺3）
+  venueName: string;
+  venueAddress: string | null;
+  minPlayers: number;     // 最少人数（截止时判成不成）
+  maxPlayers: number;     // 最多人数（满员线，进度只讲剩几坑）
+  visibility: Visibility;
+  scoring: number;        // 分制 target（先到 N 且净胜 2）
+  rotation: CourtMode;
+  scoreRule: string;      // 后端 str 原样；非 rally/serve 的值不显示得分规则段（旧局容错）
+  manualLock: boolean;    // 必打手动锁（锁上不撤）
+  courts: string[] | null; // 订场登记的场地号；场上有号即必打；null=未登记
+  feeTotal: number | null; // 总价（整数元）；null=费用未定
   status: GameStatus;
-  score: number;        // 分制 target（先到 N 且净胜 2，alpha:1686）
-  scoreRule?: 'rally' | 'serve'; // 得分规则：rally=每球得分 / serve=发球得分（3.3 表单直选；旧局无此字段不显示）
-  mode: CourtMode;
-  lateRule: boolean;    // 迟到排队尾等一轮（3.3 起退出组局表单，仅存量局/现场逻辑保留）
-  invitedMe?: boolean;  // 别人邀请我
-  locked?: boolean;     // 已到截止锁定（参加者不能再退出）
-  sure?: boolean;       // 必打 · 手动锁（点「锁定必打」不带场地；锁上不撤，与订场锁并存于 isForced 口径）
-  booked?: string[];    // 订场登记的场地号（如 ['3号','5号']，片数=个数；订场发生在 app 外，这里只登记结果）。
-                        // 场上有号即必打（utils/format isForced），fee 随登记落定为总价；清空后 fee 回 null
-  dead?: boolean;       // 未成局（自动终止 · 组织者可恢复）
-  result?: { sa: number; sb: number; myWin: boolean }; // 已结束局的最终比分（5.1 局卡 done 分支 / 记录页看比分）
-  myLog?: { checkIn: string; checkOut?: string };      // 我的到场底账：签到/早退时刻（5.1 登记页「签到 19:02 · 早退 21:30」）
+  unlocked: boolean;      // 改约解锁：锁定局改了时间/地点，开打前可退
+  joinable: boolean;      // 派生态 ∈ {open, locked, live}——加入按钮显隐直接读
+  heads: number;          // 人头（自己+带的人，后端定值）
+  slotsLeft: number;      // 剩几坑
+  perHead: number | null; // 人均（half-up）；null=未定
+  forced: boolean;        // 必打 = 手动锁 ∨ 场上有号
+  entries?: EntryRow[];
+  my?: MyBlock;
 }
 
-/** 留意向（alpha:807：大概什么时段想打、多久打一次 —— 组局的人翻列表看中谁就邀请谁） */
+/** 留意向（intent_view 镜像）：时段词表沿用 mock/data slots（后端只存 key 串不校验）；
+    invited=被我邀过、known=与 viewer 同局打过（都是后端定值） */
 export interface Intent {
-  u: User;
+  account: Person;
   slots: string[];
-  freq: number;         // 0=随缘 / 1 / 2
-  note?: string;
-  done?: boolean;       // 被邀请后标记（alpha:1257）
+  frequency: number;      // 0=随缘 / 1 / 2
+  note: string | null;
+  updatedAt: string;
+  invited: boolean;
+  known: boolean;
 }
 
-/** 时段定义。match=同波段人数（alpha:826 启动时算一次，后续改意向不重算 —— alpha 原样） */
-export interface Slot { k: string; n: string; desc: string; match: number }
+/** 我的一份意向 */
+export interface MyIntent { slots: string[]; frequency: number; note: string | null }
 
-export interface MyIntent { slots: string[]; freq: number }
+/** 时段定义（前端词表单一源，后端不校验词表——防两真值） */
+export interface Slot { k: string; n: string; desc: string }
+
+/** 局卡展示模型（批4 裁决①：GameCard props 收窄为卡面原子，组件与数据源解耦——
+    meet 传真局映射 newGameCard，登记/记录页传 mock 映射 mockGameCard） */
+export interface GameCardModel {
+  id: number;
+  name: string;
+  dayText: string;         // 时间位小字：'今晚' / '10.06 周一'
+  hmText: string;          // 时间位大字：'19:00'
+  venueText: string;
+  status: GameStatus;
+  minPlayers: number;
+  maxPlayers: number;
+  slotsLeft: number;
+  forcedLabel?: string;    // '已订场 · 必开' / '必开'；未锁定则缺省
+  result?: { sa: number; sb: number; myWin: boolean }; // done 战报（mock 快照域）
+  myRole?: 'org' | 'inv' | 'joined' | null;
+  stackAvatars: ChibiConfig[];
+  stackPlus: string;       // 头像叠层溢出文案：'+' / '+N' / '+N · 含随行'
+}
 
 /** 账单状态四态（5.1 文档：待付/已付/该收/已收） */
 export type BillStatus = 'due' | 'paid' | 'receivable' | 'received';
@@ -108,8 +153,7 @@ export type BillStatus = 'due' | 'paid' | 'receivable' | 'received';
 export interface BillPayer { u: User; amt: number; settled: boolean }
 
 /** 账单（5.1 文档：哪局、多少钱、什么状态；垫付只属组织者，故 role=org 才有 receivable。
-    member 行 amt=人均摊费、payee=该局组织者（欠谁）；org 行 amt=别人摊费合计（我那份自己出了，
-    刺客合议 #2 的「org 行=垫付总价」随 5.1 修订作废）、payers=数据侧给好的按人明细） */
+    member 行 amt=人均摊费、payee=该局组织者（欠谁）；org 行 amt=别人摊费合计、payers=按人明细） */
 export interface Bill {
   id: number; gameId: number; gname: string; date: string; amt: number; status: BillStatus; role: 'org' | 'member';
   payee?: User;         // 欠谁——member 行＝该局组织者；org 行无此字段
@@ -126,7 +170,8 @@ export interface LiveMatch { A: number[]; B: number[]; sa: number; sb: number }
     页面渲染时拼「names 胜」（v-html 仅允许 ChibiAvatar 使用）。 */
 export interface MatchHistory { names: string; sa: number; sb: number }
 
-/** 现场状态（alpha:1483-1485 live） */
+/** 现场状态（alpha:1483-1485 live）。g 是真局对象的浅克隆：现场改规则/场地只落在克隆上，
+    不回写 game store 的局（派生态归后端）。 */
 export interface LiveState {
   g: Game;
   roster: User[];
@@ -142,6 +187,26 @@ export interface LiveState {
 /** 分制（alpha:850 scoreMode 默认 elo） */
 export type ScoreMode = 'elo' | 'ntrp';
 
+/** 组局表单提交值（线上形状 snake_case，POST /games 请求体镜像；契约§1）。
+    拨盘串→ISO 的换算归 LaunchSheet（utils/time.ts toIso）。 */
+export interface PublishGameInput {
+  name: string;            // LaunchSheet 自动起名后提交（契约§2 后端不产中文），提交时非空
+  start_at: string;        // ISO +08:00
+  end_at: string;
+  deadline_at: string;     // 默认开打前 2h；手动拨过即固定
+  venue_name: string;
+  venue_address: string | null;
+  min_players: number;
+  max_players: number;
+  visibility: Visibility;  // 默认 'played'（熟人优先裁决）
+  scoring: number;
+  rotation: CourtMode;
+  score_rule: string;
+}
+
+/** 改局输入：十参全可选；deadline_at 在类型层就挡死（不变承诺3：发布即定死不改） */
+export type EditGameInput = Partial<Omit<PublishGameInput, 'deadline_at'>> & { deadline_at?: never };
+
 /** 全局单例弹层 payload（§2.2：P2 全量预定义，后续阶段只消费不改） */
 export type SheetPayload =
   | { type: 'profile'; userId: number }
@@ -155,26 +220,44 @@ export type SheetPayload =
   | { type: 'launch'; gameId?: number }          // 组局表单：无 gid 新建（alpha:1301）
   | { type: 'logout-confirm' }                   // 退出账号确认（5.1 弹窗：只是这台设备登出，数据都在）
   | { type: 'delete-confirm' }                   // 注销账号确认（5.1 弹窗：后果说明 + 二次确认，两步都过才执行）
-  | { type: 'signup-card'; pendingJoin?: { gameId: number; bring: number }; pendingLaunch?: PublishInput; pendingCheckin?: { gameId: number } };
+  | { type: 'signup-card'; pendingJoin?: { gameId: number; bring: number }; pendingLaunch?: PublishGameInput; pendingCheckin?: { gameId: number } };
   // 名片建号卡（1.1 A1）：游客点报名/建局/扫码签到时弹出；建号成功自动接着完成挂起的动作（D3 两步拆分）
   // pendingCheckin（2.1·选项A）：扫码到场一律走名片建号，建号成功后自动「我到了」进候场区
 
-/** 结算 ±积分一行（2.1 打球页改版：终局结算弹窗 EndSettleModal 的预览行复用本形状——
-    名字 / 涨或跌 / 数值；WinPopup 退役后 live store 不再落 ui.win，弹窗自调 settleElo 组装） */
+/** 结算 ±积分一行（2.1 打球页改版：终局结算弹窗 EndSettleModal 的预览行复用本形状） */
 export interface WinChange { name: string; up: boolean; d: number }
 
-/** 组局表单提交值（publishGame/editGame 共用；2026-10-04 定：费用从表单去掉，改局不动原局的 fee；
-    说明字段去掉，改选规则三件——分制/轮转/迟到规则，直接落 Game 的 score/mode/lateRule）
-    time/deadline 为组局拨盘产物：日段（今天/明天/后天/M.DD 周X）+ HH:mm，由 utils/time.ts gameTime 解析。 */
-export interface PublishInput {
-  name: string;       // 可为空串 → 自动起名「日段 · 地点」
-  time: string;       // '后天 19:00' / '10.06 周一 19:00' 等
-  dur: number;        // 打多久（小时）——由拨盘起止时刻算出，不再单独选
-  deadline: string;   // '后天 17:00' 等绝对时刻；编辑态定死不改（alpha:1388）
-  venue: string;
-  min: number;
-  cap: number;
-  score: number;      // 分制 target（先到 N 且净胜 2）
-  mode: CourtMode;    // 轮转方式（赢家留场/纯粹轮转/均衡配对）
-  scoreRule: 'rally' | 'serve'; // 得分规则（每球得分制/发球得分制；2026-10-04 替代表单里的迟到规则）
+/** ─────────── mock 隔离线快照形状（1.2 起冻结：字段不再生长） ───────────
+    账单/登记/记录/现场演示继续吃 mock/data.ts 种子（5.1 快照域）；
+    1.2 真局一律走上面的 Game。谁引用 t/d/tb/result 等旧字段，类型上必须经过 MockGame——
+    type-check 借此画出隔离边界。 */
+export interface MockGame {
+  id: number;
+  organizer: User;
+  t: string;            // '今晚 19:00'（utils/time.ts gameTime 解析）
+  d: string;            // 展示用日期（'今天' / '10.07'）
+  tb: TimeBucket;
+  area: string;         // 地区（找局打筛选用）
+  dur: number;          // 打多久（小时）
+  deadline: string;     // 组局截止：到点锁名单，定死不改
+  loc: string;
+  name: string;
+  min: number;          // 最少人数（截止时判成不成）
+  cap: number;          // 最多人数（满员线，进度只讲剩几坑）
+  fee: number | null;   // 预计费用总价；null=费用未定
+  note?: string;
+  joined: GameEntry[];
+  wait: GameEntry[];    // 候补栏：满员加入进这里，有人退出即刻递补
+  status: GameStatus;
+  score: number;        // 分制 target
+  scoreRule?: 'rally' | 'serve';
+  mode: CourtMode;
+  lateRule: boolean;
+  invitedMe?: boolean;
+  locked?: boolean;
+  sure?: boolean;       // 必打手动锁
+  booked?: string[];    // 订场登记的场地号
+  dead?: boolean;       // 未成局（自动终止）
+  result?: { sa: number; sb: number; myWin: boolean }; // 已结束局的最终比分
+  myLog?: { checkIn: string; checkOut?: string };      // 我的到场底账
 }

@@ -1,311 +1,326 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
+import type { GameViewApi } from '@/api/games';
 
-/* 每个用例 vi.resetModules() 重新求值模块图 → 拿到全新 mock 数据（等价 alpha 刷新页面） */
-beforeEach(async () => {
-  vi.resetModules();
+/* 1.2 接线重写：game store 动作全是真接口调用——api 层整体 mock，用例喂 crafted
+   game_view/intent_view（形状与后端 game_views.py 逐字对齐），测的是 store 侧的
+   映射（toGame）、回填（upsert/refresh）与文案分支。 */
+const api = vi.hoisted(() => ({
+  apiPublishGame: vi.fn(),
+  apiListGames: vi.fn(),
+  apiMyGames: vi.fn(),
+  apiGameDetail: vi.fn(),
+  apiJoinGame: vi.fn(),
+  apiQuitGame: vi.fn(),
+  apiEditGame: vi.fn(),
+  apiLockGame: vi.fn(),
+  apiBookCourt: vi.fn(),
+  apiClearBooking: vi.fn(),
+  apiCancelGame: vi.fn(),
+  apiRestoreGame: vi.fn(),
+  apiInviteUser: vi.fn(),
+  apiListIntents: vi.fn(),
+  apiMyIntent: vi.fn(),
+  apiSaveIntent: vi.fn(),
+  apiDeleteIntent: vi.fn(),
+}));
+
+vi.mock('@/api/games', () => api);
+
+beforeEach(() => {
+  vi.clearAllMocks();
   setActivePinia(createPinia());
-});
-afterEach(() => {
-  vi.useRealTimers();
 });
 
 async function loadStore() {
   const mod = await import('@/stores/game');
-  return mod.useGameStore();
+  return { store: mod.useGameStore(), ui: (await import('@/stores/ui')).useUiStore() };
 }
 
-describe('joinGame（alpha:1127-1138 doJoin）', () => {
-  it('带人占坑：joined 追加 {u:me, bring}，文案带共占坑数', async () => {
-    const s = await loadStore();
-    const msg = s.joinGame(103, 2); // 103：wu+yang 2 人，cap 6
-    const g = s.games.find((x) => x.id === 103)!;
-    expect(msg).toBe('已加入 · 带了 2 人（共占 3 坑）');
-    const mine = g.joined.find((e) => e.u.id === 0);
-    expect(mine?.bring).toBe(2);
-    expect(g.invitedMe).toBeFalsy();
+/* ---- game_view 造数（线上 snake 形状） ---- */
+let seq = 400;
+function mkView(p: Partial<GameViewApi> = {}): GameViewApi {
+  seq += 1;
+  return {
+    id: seq,
+    name: `测试局 ${seq}`,
+    organizer: { id: 7, nickname: '朝阳反手王', chibi: {} },
+    start_at: '2026-10-08T19:00:00+08:00',
+    end_at: '2026-10-08T21:00:00+08:00',
+    deadline_at: '2026-10-08T17:00:00+08:00',
+    venue_name: '测试球馆',
+    venue_address: null,
+    min_players: 4,
+    max_players: 8,
+    visibility: 'public',
+    scoring: 11,
+    rotation: 'balance',
+    score_rule: 'rally',
+    manual_lock: false,
+    courts: null,
+    fee_total: null,
+    status: 'open',
+    unlocked: false,
+    joinable: true,
+    heads: 1,
+    slots_left: 7,
+    per_head: null,
+    forced: false,
+    ...p,
+  };
+}
+
+describe('loadGames / loadMine / loadDetail（读链）', () => {
+  it('列表填充 + snake→camel 映射抽查（定值直读，A4）', async () => {
+    api.apiListGames.mockResolvedValue([
+      mkView({
+        heads: 5, slots_left: 3, per_head: 96, forced: true,
+        my: { is_organizer: true, my_entry: { bring: 2, standing: 'formal', wait_seq: null }, invited: false },
+      }),
+    ]);
+    const { store } = await loadStore();
+    await store.loadGames();
+    expect(store.games).toHaveLength(1);
+    const g = store.games[0]!;
+    expect(g.startAt).toBe('2026-10-08T19:00:00+08:00');
+    expect(g.maxPlayers).toBe(8);
+    expect(g.perHead).toBe(96);
+    expect(g.slotsLeft).toBe(3);
+    expect(g.forced).toBe(true);
+    expect(g.my?.isOrganizer).toBe(true);
+    expect(g.my?.myEntry?.bring).toBe(2);
+    expect(g.organizer.nickname).toBe('朝阳反手王');
   });
 
-  it('满员 → 进候补栏（heads≥cap 判定）', async () => {
-    const s = await loadStore();
-    const { U } = await import('@/api');
-    const g = s.games.find((x) => x.id === 105)!; // tong 1 人 · cap 4
-    g.joined.push({ u: U.wang }, { u: U.hai }, { u: U.wu }); // 排满到 4/4（用例布置）
-    const msg = s.joinGame(105);
-    expect(msg).toBe('已进候补栏 · 有人退出即刻递补');
-    expect(g.wait.map((e) => e.u.id)).toEqual([0]);
-    expect(g.joined.some((e) => e.u.id === 0)).toBe(false);
+  it('loadDetail 落 current：链接直达的局经 findGame 取到', async () => {
+    api.apiGameDetail.mockResolvedValue(mkView({ id: 9 }));
+    const { store } = await loadStore();
+    const g = await store.loadDetail(9);
+    expect(g.id).toBe(9);
+    expect(store.findGame(9)?.id).toBe(9);
   });
 
-  it('已加入 → 不重复加入（返回 null）', async () => {
-    const s = await loadStore();
-    const g = s.games.find((x) => x.id === 102)!; // 我在 102 名单里
-    const n = g.joined.length;
-    expect(s.joinGame(102)).toBeNull();
-    expect(g.joined).toHaveLength(n);
-  });
-
-  it('被邀请局加入后 invitedMe 清除', async () => {
-    const s = await loadStore();
-    const g = s.games.find((x) => x.id === 106)!;
-    expect(g.invitedMe).toBe(true);
-    s.joinGame(106);
-    expect(g.invitedMe).toBe(false);
+  it('findGame 优先 current，再两个列表', async () => {
+    api.apiListGames.mockResolvedValue([mkView({ id: 1 })]);
+    api.apiGameDetail.mockResolvedValue(mkView({ id: 2 }));
+    const { store } = await loadStore();
+    await store.loadGames();
+    await store.loadDetail(2);
+    expect(store.findGame(2)?.id).toBe(2); // current 优先
+    expect(store.findGame(1)?.id).toBe(1); // 列表兜底
+    expect(store.findGame(99)).toBeNull();
   });
 });
 
-describe('hitDeadline 两分支（alpha:1177-1189）', () => {
-  it('低于最少且未锁必打 → dead（自动终止）', async () => {
-    const s = await loadStore();
-    const msg = s.hitDeadline(103); // 2/4 人，未 sure
-    const g = s.games.find((x) => x.id === 103)!;
-    expect(msg).toBe('到截止 · 人数不足，局自动终止（组织者「我的局」留有未成局，可恢复）');
-    expect(g.dead).toBe(true);
-  });
-  it('人数达标 → locked（名单锁定）', async () => {
-    const s = await loadStore();
-    const msg = s.hitDeadline(102); // 4/4 人 ≥ min
-    const g = s.games.find((x) => x.id === 102)!;
-    expect(msg).toBe('到截止 · 名单锁定，参加者不能再退出');
-    expect(g.locked).toBe(true);
-    expect(g.dead).toBeFalsy();
-  });
-  it('人不够但已锁必打 → locked 而非 dead', async () => {
-    const s = await loadStore();
-    s.sureGame(105); // 1/4 人
-    const msg = s.hitDeadline(105);
-    const g = s.games.find((x) => x.id === 105)!;
-    expect(g.locked).toBe(true);
-    expect(g.dead).toBeFalsy();
-    expect(msg).toBe('到截止 · 名单锁定，参加者不能再退出');
-  });
-});
-
-describe('editGame 上限放宽候补转正（3.2 订场改版：加场并入改局，原 addCourt alpha:1198-1206 的递补循环）', () => {
-  it('候补全部转正', async () => {
-    const s = await loadStore();
-    const { U } = await import('@/api');
-    const g = s.games.find((x) => x.id === 105)!; // 1/4
-    g.joined.push({ u: U.wang }, { u: U.hai }, { u: U.wu }); // 4/4
-    s.joinGame(105); // 我进候补
-    const msg = s.editGame(105, {
-      name: '周末白天随便打打', time: '周六 10:00', dur: 2, deadline: '周五 18:00',
-      venue: '亮马河 · 滨河球场 · 2 片', min: 4, cap: 6, score: 11, mode: 'rotate', scoreRule: 'rally',
+describe('publishGame（发局）', () => {
+  it('新局插列表头（后端 id 倒序）；默认档 toast 带冷启动引导', async () => {
+    api.apiListGames.mockResolvedValue([mkView({ id: 1 })]);
+    const { store, ui } = await loadStore();
+    await store.loadGames();
+    api.apiPublishGame.mockResolvedValue(mkView({ id: 2, visibility: 'played' }));
+    const g = await store.publishGame({
+      name: '周六 · 测试球馆', start_at: '2026-10-10T14:00:00+08:00', end_at: '2026-10-10T16:00:00+08:00',
+      deadline_at: '2026-10-10T12:00:00+08:00', venue_name: '测试球馆', venue_address: null,
+      min_players: 4, max_players: 8, visibility: 'played', scoring: 11, rotation: 'balance', score_rule: 'rally',
     });
-    expect(g.cap).toBe(6);
-    expect(g.wait).toHaveLength(0);
-    expect(g.joined.some((e) => e.u.id === 0)).toBe(true);
-    expect(msg).toBe('局已改好 · 上限放宽，候补已全部转正');
+    expect(store.games[0]!.id).toBe(2); // unshift 排头
+    expect(g.visibility).toBe('played');
+    expect(ui.toastMsg).toContain('主要通过你转的链接');
   });
-  it('候补多于新增坑位：按先后转正，剩余留候补', async () => {
-    const s = await loadStore();
-    const { U } = await import('@/api');
-    const g = s.games.find((x) => x.id === 107)!; // 2/6
-    g.joined.push({ u: U.wang }, { u: U.hai }, { u: U.wu }, { u: U.yang }); // 6/6
-    s.joinGame(107); // 候补[我]
-    g.wait.push({ u: U.tong }, { u: U.ken }, { u: U.zhang }); // 候补共 4 人（用例布置）
-    const msg = s.editGame(107, { // cap 6→8，只转正 2 人（我、tong）
-      name: '加时夜战 · 临时凑', time: '今晚 21:00', dur: 1, deadline: '今晚 19:00',
-      venue: '望京 · 花家地球馆 · 1 片', min: 4, cap: 8, score: 11, mode: 'balance', scoreRule: 'rally',
+
+  it('公开档 toast 不带引导', async () => {
+    const { store, ui } = await loadStore();
+    api.apiPublishGame.mockResolvedValue(mkView({ visibility: 'public' }));
+    await store.publishGame({
+      name: 'x', start_at: '', end_at: '', deadline_at: '', venue_name: 'x', venue_address: null,
+      min_players: 4, max_players: 8, visibility: 'public', scoring: 11, rotation: 'balance', score_rule: 'rally',
     });
-    expect(g.cap).toBe(8);
-    expect(g.wait.map((e) => e.u.id)).toEqual([11, 12]); // 先进先出，ken/zhang 留下
-    expect(g.joined.at(-2)?.u.id).toBe(0);
-    expect(g.joined.at(-1)?.u.id).toBe(9); // tong
-    expect(msg).toBe('局已改好 · 上限放宽，候补转正，仍剩 2 人满员（建议下次再参加）');
+    expect(ui.toastMsg).toContain('分享到群里拉人');
+    expect(ui.toastMsg).not.toContain('链接');
   });
 });
 
-describe('bookCourt / clearBooking（3.2 订场改版：订场即必打，费用随登记落定）', () => {
-  it('订场登记：场地号落 booked、费用落定、截止不再因人数终止', async () => {
-    const s = await loadStore();
-    const msg = s.bookCourt(105, ['3号', '5号'], 480); // 105：1/4 人
-    const g = s.games.find((x) => x.id === 105)!;
-    expect(msg).toBe('已订场 · 3号、5号（2 片）· 这局必开，费用已落定');
-    expect(g.booked).toEqual(['3号', '5号']);
-    expect(g.fee).toBe(480);
-    expect(g.sure).toBeFalsy(); // 订场锁≠手动锁
-    const dl = s.hitDeadline(105); // 1 < min 4，但场上有号 → 必打
-    expect(g.locked).toBe(true);
-    expect(g.dead).toBeFalsy();
-    expect(dl).toBe('到截止 · 名单锁定，参加者不能再退出');
+describe('joinGame（报名 · toast 按返回名单分支）', () => {
+  it('正式加入：带人文案 + 列表同 id 行替换（upsert）', async () => {
+    api.apiListGames.mockResolvedValue([mkView({ id: 5, heads: 2, slots_left: 6 })]);
+    const { store, ui } = await loadStore();
+    await store.loadGames();
+    api.apiJoinGame.mockResolvedValue(
+      mkView({
+        id: 5, heads: 5, slots_left: 3,
+        my: { is_organizer: false, my_entry: { bring: 2, standing: 'formal', wait_seq: null }, invited: false },
+      }),
+    );
+    const g = await store.joinGame(5, 2);
+    expect(g.my?.myEntry?.bring).toBe(2);
+    expect(store.games[0]!.heads).toBe(5); // upsert 已替换
+    expect(ui.toastMsg).toBe('已加入 · 带了 2 人（共占 3 坑）');
   });
-  it('退一片改登记：删号改价联动（总价照小票手填）', async () => {
-    const s = await loadStore();
-    s.bookCourt(103, ['A1', 'B2'], 400);
-    const msg = s.bookCourt(103, ['A1'], 260);
-    const g = s.games.find((x) => x.id === 103)!;
-    expect(msg).toBe('已订场 · A1（1 片）· 这局必开，费用已落定');
-    expect(g.booked).toEqual(['A1']);
-    expect(g.fee).toBe(260);
-  });
-  it('清空登记：无手动锁 → 局回未订场原样（费用未定，截止照常判人数）', async () => {
-    const s = await loadStore();
-    s.bookCourt(105, ['3号'], 300);
-    const msg = s.clearBooking(105);
-    const g = s.games.find((x) => x.id === 105)!;
-    expect(msg).toBe('订场登记已清空 · 局回到未订场，费用未定，截止照常判人数');
-    expect(g.booked).toBeUndefined();
-    expect(g.fee).toBeNull();
-    s.hitDeadline(105); // 1 < min 4，锁全退光 → 自动终止
-    expect(g.dead).toBe(true);
-  });
-  it('清空登记：手动锁不跟着松（先空锁、后订场、再退光 → 仍必打）', async () => {
-    const s = await loadStore();
-    s.sureGame(103);
-    s.bookCourt(103, ['A1'], 200);
-    const msg = s.clearBooking(103);
-    const g = s.games.find((x) => x.id === 103)!;
-    expect(msg).toBe('订场登记已清空 · 手动锁定保留，这局仍必打');
-    expect(g.sure).toBe(true);
-    s.hitDeadline(103); // 2/4 人，手动锁在 → 不终止
-    expect(g.locked).toBe(true);
-    expect(g.dead).toBeFalsy();
-  });
-  it('撤局时已订场 → toast 带退订提醒', async () => {
-    const s = await loadStore();
-    s.bookCourt(106, ['3号'], 300);
-    const msg = s.cancelGame(106);
-    expect(msg).toBe('局已撤下 · 已订场地记得去场馆退订，报名的球友「我的局」里同步消失');
-  });
-  it('空场地号 → 不落登记（返回 null，弹层已拦，store 再兜一层）', async () => {
-    const s = await loadStore();
-    expect(s.bookCourt(105, [], 480)).toBeNull();
+
+  it('坑不够整行落候补：候补文案（4.3 提示）', async () => {
+    api.apiListGames.mockResolvedValue([mkView({ id: 1 })]);
+    const { store, ui } = await loadStore();
+    await store.loadGames(); // JoinSheet 的局必经 findGame 取自 store，先落列表
+    api.apiJoinGame.mockResolvedValue(
+      mkView({
+        id: 1, heads: 8, slots_left: 0,
+        my: { is_organizer: false, my_entry: { bring: 0, standing: 'waitlist', wait_seq: 1 }, invited: false },
+      }),
+    );
+    await store.joinGame(1, 0);
+    expect(ui.toastMsg).toBe('已进候补栏 · 有人退出即刻递补');
+    expect(store.findGame(1)?.my?.myEntry?.standing).toBe('waitlist');
   });
 });
 
-describe('publish / edit（alpha:1375-1398）', () => {
-  it('发布：局名自动起名「时间 · 地点」、tb/area 推断、我在名单头一个、插到列表最前', async () => {
-    const s = await loadStore();
-    const n = s.games.length;
-    const msg = s.publishGame({
-      name: '', time: '周六 10:00', dur: 2, deadline: '打前 2 小时',
-      venue: '工体北路 · 京篮匹克球馆', min: 4, cap: 6, score: 15, mode: 'rotate', scoreRule: 'serve',
+describe('quitGame / cancelGame（只回 ok 的动作：回填在 store）', () => {
+  it('退局：refresh 重拉单局回填（候补递补可见）', async () => {
+    api.apiListGames.mockResolvedValue([mkView({ id: 5, heads: 4, slots_left: 4 })]);
+    const { store, ui } = await loadStore();
+    await store.loadGames();
+    api.apiQuitGame.mockResolvedValue({ ok: true });
+    api.apiGameDetail.mockResolvedValue(mkView({ id: 5, heads: 2, slots_left: 6 }));
+    await store.quitGame(5);
+    expect(ui.toastMsg).toBe('已退出 · 名单里少了你');
+    expect(store.games[0]!.heads).toBe(2);
+  });
+
+  it('撤局：从列表移除、current 清空、组织者不留痕', async () => {
+    api.apiMyGames.mockResolvedValue([mkView({ id: 5 })]);
+    const { store, ui } = await loadStore();
+    await store.loadMine();
+    await store.loadDetail(5);
+    api.apiCancelGame.mockResolvedValue({ ok: true });
+    await store.cancelGame(5);
+    expect(store.myGames).toHaveLength(0);
+    expect(store.findGame(5)).toBeNull();
+    expect(ui.toastMsg).toContain('同步消失');
+  });
+});
+
+describe('editGame（改局 · 上限放宽反馈）', () => {
+  it('候补全部转正：toast「已全部转正」', async () => {
+    api.apiGameDetail.mockResolvedValue(
+      mkView({
+        id: 5,
+        entries: [
+          { account: { id: 1, nickname: '甲', chibi: {} }, bring: 0, standing: 'formal', wait_seq: null },
+        ],
+      }),
+    );
+    const { store, ui } = await loadStore();
+    await store.loadDetail(5);
+    api.apiEditGame.mockResolvedValue(
+      mkView({
+        id: 5, max_players: 8,
+        entries: [
+          { account: { id: 1, nickname: '甲', chibi: {} }, bring: 0, standing: 'formal', wait_seq: null },
+          { account: { id: 2, nickname: '乙', chibi: {} }, bring: 0, standing: 'formal', wait_seq: null },
+          { account: { id: 3, nickname: '丙', chibi: {} }, bring: 0, standing: 'formal', wait_seq: null },
+          { account: { id: 4, nickname: '丁', chibi: {} }, bring: 1, standing: 'formal', wait_seq: null },
+        ],
+      }),
+    );
+    await store.editGame(5, { max_players: 8 });
+    expect(ui.toastMsg).toBe('局已改好 · 上限放宽，候补已全部转正');
+  });
+
+  it('普通改局（没放宽）：toast「名单里的人看到的就是新信息」', async () => {
+    api.apiGameDetail.mockResolvedValue(mkView({ id: 5 }));
+    const { store, ui } = await loadStore();
+    await store.loadDetail(5);
+    api.apiEditGame.mockResolvedValue(mkView({ id: 5, name: '新名' }));
+    await store.editGame(5, { name: '新名' });
+    expect(ui.toastMsg).toBe('局已改好 · 名单里的人看到的就是新信息');
+    expect(store.findGame(5)?.name).toBe('新名');
+  });
+});
+
+describe('lockGame / bookCourt / clearBooking（必打三态）', () => {
+  it('空锁与订场的 toast 逐字', async () => {
+    const { store, ui } = await loadStore();
+    api.apiLockGame.mockResolvedValue(mkView({ id: 5, manual_lock: true, forced: true }));
+    await store.lockGame(5);
+    expect(ui.toastMsg).toContain('已锁定必打');
+    api.apiBookCourt.mockResolvedValue(
+      mkView({ id: 5, manual_lock: true, courts: ['3号', '5号'], fee_total: 480, per_head: 60, forced: true }),
+    );
+    await store.bookCourt(5, ['3号', '5号'], 480);
+    expect(ui.toastMsg).toBe('已订场 · 3号、5号（2 片）· 这局必开，费用已落定');
+    api.apiClearBooking.mockResolvedValue(
+      mkView({ id: 5, manual_lock: true, courts: null, fee_total: null, per_head: null, forced: true }),
+    );
+    await store.clearBooking(5);
+    expect(ui.toastMsg).toBe('订场登记已清空 · 手动锁定保留，这局仍必打');
+  });
+
+  it('清空登记（无手动锁）→ 局回未订场原样文案', async () => {
+    const { store, ui } = await loadStore();
+    api.apiClearBooking.mockResolvedValue(
+      mkView({ id: 5, manual_lock: false, courts: null, fee_total: null, forced: false }),
+    );
+    await store.clearBooking(5);
+    expect(ui.toastMsg).toBe('订场登记已清空 · 局回到未订场，费用未定，截止照常判人数');
+  });
+});
+
+describe('restoreGame / inviteUser', () => {
+  it('恢复 → 待处置文案；邀请 → 带名 toast + 意向列表重拉', async () => {
+    api.apiListIntents.mockResolvedValue([
+      {
+        account: { id: 12, nickname: '小张', chibi: {} }, slots: ['wd'], frequency: 1, note: null,
+        updated_at: '2026-10-06T10:00:00+08:00', invited: false, known: false,
+      },
+    ]);
+    const { store, ui } = await loadStore();
+    await store.loadIntents();
+    api.apiMyGames.mockResolvedValue([mkView({ id: 5, status: 'terminated' })]);
+    await store.loadMine(); // 未成局区从 myGames 点恢复——局先在列表里，upsert 才有落点
+    api.apiRestoreGame.mockResolvedValue(mkView({ id: 5, status: 'pending' }));
+    await store.restoreGame(5);
+    expect(ui.toastMsg).toContain('待处置');
+    expect(store.findGame(5)?.status).toBe('pending');
+    api.apiInviteUser.mockResolvedValue({ ok: true });
+    await store.inviteUser(5, 12);
+    expect(api.apiInviteUser).toHaveBeenCalledWith(5, 12);
+    expect(ui.toastMsg).toBe('已邀请 小张 · 局已出现在 ta 的「我的局」');
+    expect(api.apiListIntents).toHaveBeenCalledTimes(2); // 已邀标记重拉
+  });
+});
+
+describe('saveIntent / delIntent（意向簿）', () => {
+  it('空时段：本地拦截（toast + 抛错，不发请求）', async () => {
+    const { store, ui } = await loadStore();
+    await expect(store.saveIntent([], 2, '')).rejects.toThrow();
+    expect(ui.toastMsg).toBe('至少选一个时段');
+    expect(api.apiSaveIntent).not.toHaveBeenCalled();
+  });
+
+  it('留/改：写 myIntent，两态文案', async () => {
+    const { store, ui } = await loadStore();
+    api.apiSaveIntent.mockResolvedValue({
+      account: { id: 0, nickname: '我', chibi: {} },
+      slots: ['we-n'], frequency: 2, note: '夜战优先', updated_at: '', invited: false, known: false,
     });
-    const g = s.games[0];
-    expect(msg).toBe('局已发布 · 名单头一个就是你，点局上的 ⤴ 分享到群里拉人');
-    expect(s.games).toHaveLength(n + 1);
-    expect(g.name).toBe('周六 · 京篮匹克球馆');
-    expect(g.tb).toBe('weekend');
-    expect(g.area).toBe('工体');
-    expect(g.joined).toEqual([{ u: expect.objectContaining({ id: 0 }) }]);
-    expect(g.note).toBeUndefined(); // 3.3：说明字段去掉，新局无说明
-    expect(g.fee).toBeNull(); // 3.3：费用从表单去掉，新局费用未定
-    expect(g.score).toBe(15); // 规则三件由表单直选
-    expect(g.mode).toBe('rotate');
-    expect(g.scoreRule).toBe('serve');
-    expect(g.lateRule).toBe(false); // 3.3：迟到规则退出表单，新局恒为 false
-    expect(g.status).toBe('open');
-  });
-  it('发布：今晚/自定义场地 → tonight / 其他', async () => {
-    const s = await loadStore();
-    s.publishGame({
-      name: '自定义名', time: '今晚 21:30', dur: 1, deadline: '打前 2 小时',
-      venue: '朝阳公园某馆', min: 2, cap: 4, score: 11, mode: 'balance', scoreRule: 'rally',
+    await store.saveIntent(['we-n'], 2, '夜战优先');
+    expect(ui.toastMsg).toBe('意向已留下 · 组局的人凑人时会看见你');
+    expect(store.myIntent).toEqual({ slots: ['we-n'], frequency: 2, note: '夜战优先' });
+    api.apiSaveIntent.mockResolvedValue({
+      account: { id: 0, nickname: '我', chibi: {} },
+      slots: ['wd'], frequency: 1, note: '', updated_at: '', invited: false, known: false,
     });
-    const g = s.games[0];
-    expect(g.name).toBe('自定义名');
-    expect(g.tb).toBe('tonight');
-    expect(g.area).toBe('其他');
+    await store.saveIntent(['wd'], 1, '');
+    expect(ui.toastMsg).toBe('意向已更新 · 想改随时改');
+    expect(store.myIntent?.slots).toEqual(['wd']);
   });
-  it('编辑：名单不动、截止定死不改', async () => {
-    const s = await loadStore();
-    const g = s.games.find((x) => x.id === 101)!;
-    const joinedBefore = g.joined.map((e) => e.u.id);
-    const msg = s.editGame(101, {
-      name: '改名夜战', time: '今晚 20:00', dur: 3, deadline: '今天 17:00',
-      venue: '望京 · 花家地球馆', min: 6, cap: 10, score: 21, mode: 'winner', scoreRule: 'rally',
-    });
-    expect(msg).toBe('局已改好 · 名单里的人看到的就是新信息');
-    expect(g.deadline).toBe('今天 17:00'); // 截止定死
-    expect(g.joined.map((e) => e.u.id)).toEqual(joinedBefore);
-    expect(g.name).toBe('改名夜战');
-    expect(g.area).toBe('望京');
-    expect(g.tb).toBe('tonight');
-    expect(g.cap).toBe(10);
-    expect(g.score).toBe(21); // 规则三件随改局更新
-    expect(g.mode).toBe('winner');
-    expect(g.scoreRule).toBe('rally');
-  });
-});
 
-describe('quit / cancel / restore（alpha:1148-1212）', () => {
-  it('退局：名单与候补里都有我就清掉', async () => {
-    const s = await loadStore();
-    const { U } = await import('@/api');
-    s.joinGame(103);      // 我进名单
-    const g = s.games.find((x) => x.id === 103)!;
-    g.wait.push({ u: U.me }); // 用例布置：候补里也有我
-    const msg = s.quitGame(103);
-    expect(msg).toBe('已退出 · 名单里少了你');
-    expect(g.joined.some((e) => e.u.id === 0)).toBe(false);
-    expect(g.wait.some((e) => e.u.id === 0)).toBe(false);
-  });
-  it('取消局：从列表整体消失', async () => {
-    const s = await loadStore();
-    const n = s.games.length;
-    const msg = s.cancelGame(103);
-    expect(msg).toBe('局已撤下 · 报名的球友「我的局」里同步消失');
-    expect(s.games).toHaveLength(n - 1);
-    expect(s.games.some((x) => x.id === 103)).toBe(false);
-  });
-  it('恢复未成局：dead 归位、名单原样', async () => {
-    const s = await loadStore();
-    s.hitDeadline(103); // → dead
-    const g = s.games.find((x) => x.id === 103)!;
-    expect(g.dead).toBe(true);
-    const msg = s.restoreGame(103);
-    expect(msg).toBe('局已恢复 · 名单原样回来，再决定必定开局还是撤局');
-    expect(g.dead).toBe(false);
-    expect(g.joined.map((e) => e.u.id)).toEqual([3, 7]); // wu, yang 原样
-  });
-});
-
-describe('shareGame（alpha:1224-1237）：3 秒模拟小张加入并带 1 人（仅组织者首次）', () => {
-  it('组织者分享 → 3 秒后小张带 1 人进名单；再次分享不重复', async () => {
-    vi.useFakeTimers();
-    const s = await loadStore();
-    const g = s.games.find((x) => x.id === 102)!; // 我是组织者
-    const msg = s.shareGame(102);
-    expect(msg).toBe('分享卡片已生成 · 转到微信群里拉人');
-    expect(g.joined.some((e) => e.u.id === 12)).toBe(false);
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(g.joined.find((e) => e.u.id === 12)?.bring).toBe(1);
-    s.shareGame(102); // 第二次分享不重复拉人
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(g.joined.filter((e) => e.u.id === 12)).toHaveLength(1);
-  });
-  it('非组织者分享 → 无人加入', async () => {
-    vi.useFakeTimers();
-    const s = await loadStore();
-    const g = s.games.find((x) => x.id === 103)!;
-    s.shareGame(103);
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(g.joined.some((e) => e.u.id === 12)).toBe(false);
-  });
-});
-
-describe('inviteUser（alpha:1249-1263）：3.2 秒模拟对方点一下就加入，意向标记 done', () => {
-  it('邀请后对方加入名单（未满员 → joined）', async () => {
-    vi.useFakeTimers();
-    const s = await loadStore();
-    const msg = s.inviteUser(9, 103); // 通州长胶姨 → 夜光单挑夜
-    expect(msg).toBe('已邀请 通州长胶姨 · 局已出现在 ta 的「我的局」');
-    const g = s.games.find((x) => x.id === 103)!;
-    await vi.advanceTimersByTimeAsync(3200);
-    expect(g.joined.some((e) => e.u.id === 9)).toBe(true);
-    expect(s.intents.find((i) => i.u.id === 9)?.done).toBe(true);
-  });
-});
-
-describe('saveIntent / delIntent（alpha:1286-1297）', () => {
-  it('空时段拦截 / 更新 / 删除', async () => {
-    const s = await loadStore();
-    expect(s.saveIntent([], 2)).toBe('至少选一个时段');
-    expect(s.myIntent).toEqual({ slots: ['we-n'], freq: 2 }); // 原值未动
-    expect(s.saveIntent(['wd', 'we-d'], 1)).toBe('意向已更新 · 想改随时改');
-    expect(s.myIntent).toEqual({ slots: ['wd', 'we-d'], freq: 1 });
-    expect(s.delIntent()).toBe('意向已删 · 随时可以再留');
-    expect(s.myIntent).toBeNull();
+  it('删意向：myIntent 清空', async () => {
+    const { store, ui } = await loadStore();
+    api.apiMyIntent.mockResolvedValue(null);
+    await store.loadMyIntent();
+    api.apiDeleteIntent.mockResolvedValue({ ok: true });
+    await store.delIntent();
+    expect(store.myIntent).toBeNull();
+    expect(ui.toastMsg).toBe('意向已删 · 随时可以再留');
   });
 });

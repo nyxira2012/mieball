@@ -1,6 +1,9 @@
-/* 球局基础工具（alpha:881-892 · 意向卡 slotBig alpha:1023-1024） */
-import type { CourtMode, Game, GameEntry, User } from '@/api/types';
-import { U, games, slots } from '@/mock/data';
+/* 球局基础工具（alpha:881-892 · 意向卡 slotBig alpha:1023-1024）
+   1.2 接线清账：人头/剩坑/人均/forced/名单谓词全改读后端定值（A4 画面不自算），
+   本文件只剩文案表、卡面映射（newGameCard/mockGameCard）与少量无数据可依的纯展示口径。 */
+import type { ChibiConfig, CourtMode, Game, GameCardModel, GameStatus, MockGame } from '@/api/types';
+import { U, slots } from '@/mock/data';
+import { isoDay, isoHm, splitGameTime } from '@/utils/time';
 
 /** 发牌模式名单一源（原 live.vue/detail.vue 内联 MODE_NAMES 挪出：live 页顶条/规则抽屉与
     live store 的 setRuleMode toast、detail 规则牌、LaunchSheet 规则三件共用一份） */
@@ -9,64 +12,83 @@ export const MODE_NAMES: Record<CourtMode, string> = { winner: '赢家留场', r
 /** 得分规则名单一源（MODE_NAMES 同族）：LaunchSheet 规则三件与 detail 规则牌共用 */
 export const SCORE_RULE_NAMES: Record<'rally' | 'serve', string> = { rally: '每球得分制', serve: '发球得分制' };
 
-/** 场馆词（loc「望京 · 花家地球馆 · 2 片」取第二段，无则空串）——
-    打球页顶条 brand 高亮词与二维码浮层标题共用 */
-export const venueOf = (g: Game): string => g.loc.split(' · ')[1] ?? '';
+/** 视图 7 态 ↔ 文案（单一源=后端 derive；先例 MODE_NAMES/BILL_STATUS_NAMES） */
+export const GAME_STATUS_NAMES: Record<GameStatus, string> = {
+  open: '报名中', locked: '已锁定', live: '进行中', done: '已结束',
+  terminated: '已终止', cancelled: '已取消', pending: '待处置',
+};
 
-/** 场地显示名（booked 存量「3号」→「3号场」；无登记回退序号场）——
+/** 场地显示名（登记的「3号」→「3号场」；无登记回退序号场）——
     打球页对局卡/空闲卡与终局结算弹窗 kicker 共用 */
-export const courtLabel = (booked: string[] | undefined, idx: number): string => {
-  const n = booked?.[idx] ?? `${idx + 1}号`;
+export const courtLabel = (courts: string[] | null | undefined, idx: number): string => {
+  const n = courts?.[idx] ?? `${idx + 1}号`;
   return n.endsWith('场') ? n : `${n}场`;
 };
 
 /** 是否当前登录用户（运行时读 U.me.id：真账号接管「我」位后 id 非 0，快照常量会认错人） */
 export const isMe = (id?: number): boolean => id === U.me.id;
 
-/** 带的人也占坑（alpha:882） */
-export const heads = (g: Game): number => g.joined.reduce((s, e) => s + 1 + (e.bring || 0), 0);
-
-/** 剩几坑（满员线口径，alpha:883） */
-export const needOf = (g: Game): number => Math.max(0, g.cap - heads(g));
-
-/** 必打判定（3.2 订场改版公共口径）：手动锁（sure）OR 场上有号（booked 非空）。
-    截止是否自动终止、人均是否作废最少保底、卡面/详情的必打标识，全走这一个判定。 */
-export const isForced = (g: Game): boolean => !!(g.sure || g.booked?.length);
-
-/** 3.2 人均摊法口径（alpha:884 延伸）：
-    不足最少按最少摊 / 够最少按当前人数摊 / 必打（手动锁或已订场）后最少作废按当前人数摊。
-    fee=null（费用未定局）→ 0，调用方按 fee 判断显隐 */
-export const perHead = (g: Game): number => (g.fee == null ? 0 : Math.round(g.fee / perBaseOf(g)));
-
-/** 人均分母（perHead 与 detail 规则牌同源；下限 1 防 0 除——detail 页曾手抄一份丢了 `|| 1` 守卫） */
-export const perBaseOf = (g: Game): number => Math.max(isForced(g) ? 0 : g.min || 1, heads(g));
-
-/** 可参加局谓词（未终止且未打完）：首页/约球页等列表入口的过滤口径单一源 */
-export const isOpen = (g: Game): boolean => !g.dead && g.status !== 'done';
-
-/** 我的报名条目（alpha:885） */
-export const myEntry = (g: Game): GameEntry | undefined => g.joined.find((e) => isMe(e.u.id));
-
-/** 是否组织者（alpha:886） */
-export const isOrg = (g: Game): boolean => !!(g.organizer && isMe(g.organizer.id));
-
-/** 我的局：组织 / 已加入 / 被邀请（alpha:887） */
-export const isMine = (g: Game): boolean => isOrg(g) || !!myEntry(g) || !!g.invitedMe;
+/** 是否组织者（真局看 viewer 块定值；游客无 my 恒 false） */
+export const isOrg = (g: Game): boolean => !!g.my?.isOrganizer;
 
 /** 点局卡分支（alpha:907 单一源）：被邀请且未加入 → 先弹加入卡；其余 → 进详情页。
-    meet 的 onGameTap 消费（导航留在页面层），判定不再两处各写一份 */
-export const gameTapAction = (g: Game): 'join' | 'detail' => (!!g.invitedMe && !myEntry(g) ? 'join' : 'detail');
+    meet 的 onGameTap 消费（导航留在页面层） */
+export const gameTapAction = (g: Game): 'join' | 'detail' =>
+  !!g.my?.invited && !g.my?.myEntry ? 'join' : 'detail';
 
-/** 自动局名「日段 · 场馆末段」单一源（不填名时的兜底名）：LaunchSheet 占位/发布与
-    game store 发布/改局共用，改规则只动这里，预览名与落库名不会劈叉 */
+/** 自动局名「日段 · 场馆末段」单一源（不填名时的兜底名）：LaunchSheet 占位/发布共用，
+    改规则只动这里，预览名与落库名不会劈叉 */
 export const autoGameName = (time: string, venue: string): string =>
   `${time.split(' ')[0]} · ${venue.split(' · ').pop()}`;
 
-/** 同局打过 = 熟人（alpha:888，启动时算一次的静态集合 —— alpha 原样，后续新建的局不并入） */
-const knownIds = new Set<number>(games.filter(isMine).flatMap((g) => g.joined.map((e) => e.u.id)));
+/** 真局 → 卡面模型（meet 列表用）：时间/场馆/必打标都是纯展示换算，
+    人头进度读后端定值 slotsLeft；角色与头像来自 entries+my */
+export function newGameCard(g: Game): GameCardModel {
+  const formal = g.entries?.filter((e) => e.standing === 'formal') ?? [];
+  return {
+    id: g.id,
+    name: g.name,
+    dayText: isoDay(g.startAt),
+    hmText: isoHm(g.startAt),
+    venueText: g.venueName,
+    status: g.status,
+    minPlayers: g.minPlayers,
+    maxPlayers: g.maxPlayers,
+    slotsLeft: g.slotsLeft,
+    forcedLabel: g.courts?.length ? '已订场 · 必开' : g.manualLock ? '必开' : undefined,
+    myRole: g.my?.isOrganizer
+      ? 'org'
+      : g.my?.myEntry
+        ? 'joined'
+        : g.my?.invited
+          ? 'inv'
+          : null,
+    stackAvatars: formal.slice(0, 5).map((e) => e.account.chibi),
+    stackPlus: `+${g.heads - 5 > 0 ? g.heads - 5 : ''}`,
+  };
+}
 
-/** 喜欢过的 或 同局打过（alpha:889） */
-export const known = (u: User): boolean => !!(u.liked || knownIds.has(u.id));
+/** mock 快照局 → 卡面模型（登记/记录页隔离线用；口径逐字保持 5.1 的 GameCard 行为） */
+export function mockGameCard(g: MockGame): GameCardModel {
+  const hs = g.joined.reduce((s, e) => s + 1 + (e.bring || 0), 0);
+  const joinedMe = g.joined.some((e) => isMe(e.u.id));
+  return {
+    id: g.id,
+    name: g.name,
+    dayText: splitGameTime(g.t).day,
+    hmText: splitGameTime(g.t).hm,
+    venueText: g.loc,
+    status: g.status,
+    minPlayers: g.min,
+    maxPlayers: g.cap,
+    slotsLeft: Math.max(0, g.cap - hs),
+    forcedLabel: g.booked?.length ? '已订场 · 必开' : g.sure ? '必开' : undefined,
+    myRole: isMe(g.organizer.id) ? 'org' : joinedMe ? 'joined' : g.invitedMe ? 'inv' : null,
+    stackAvatars: g.joined.slice(0, 5).map((e) => e.u.chibi),
+    stackPlus: `+${hs - 5 > 0 ? hs - 5 : ''}${g.joined.some((e) => e.u.shadow) ? ' ·含随行' : ''}`,
+    result: g.result,
+  };
+}
 
 /** 时段名（alpha:890） */
 export const slotName = (k: string): string => (slots.find((s) => s.k === k)?.n) || k;

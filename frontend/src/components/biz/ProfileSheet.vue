@@ -95,13 +95,13 @@ const sum = computed(() => {
   return x.shadow ? '访客 · 费用照常 · 积分半权重不进榜' : '还没打过 · 待第一局校准';
 });
 
-/** alpha:1898 it = intents.find(i=>i.u.id===u.id) */
-const intent = computed(() => game.intents.find((i) => i.u.id === u.value?.id));
+/** alpha:1898 it = intents.find(i=>i.account.id===u.id) */
+const intent = computed(() => game.intents.find((i) => i.account.id === u.value?.id));
 /** alpha:1915 意向行正文：slots · 频率 · note */
 const intentTxt = computed(() => {
   const it = intent.value;
   if (!it) return '';
-  return ` · ${it.slots.map(slotName).join(' · ')} · ${freqName(it.freq)}${it.note ? ` · 「${it.note}」` : ''}`;
+  return ` · ${it.slots.map(slotName).join(' · ')} · ${freqName(it.frequency)}${it.note ? ` · 「${it.note}」` : ''}`;
 });
 
 /** alpha:1918 toggleLike：store 内置 toast（alpha:1925 文案），liked 变化由响应式联动榜单/按钮态 */

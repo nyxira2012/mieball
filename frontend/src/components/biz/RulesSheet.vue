@@ -5,14 +5,14 @@
     <AppField label="局分分制 · First To">
       <AppSeg
         :options="SCORE_OPTS"
-        :model-value="g?.score ?? 11"
+        :model-value="g?.scoring ?? 11"
         @update:model-value="liveStore.setRuleScore(Number($event))"
       />
     </AppField>
     <AppField label="轮换发牌模式">
       <AppSeg
         :options="MODE_OPTS"
-        :model-value="g?.mode ?? 'winner'"
+        :model-value="g?.rotation ?? 'winner'"
         @update:model-value="liveStore.setRuleMode($event as CourtMode)"
       />
     </AppField>

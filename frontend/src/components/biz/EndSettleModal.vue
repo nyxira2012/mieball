@@ -90,7 +90,7 @@ watch(
 );
 
 /** 当前场显示名（口径在 utils/format 的 courtLabel 单一源：playing 卡同款） */
-const courtName = computed(() => courtLabel(liveStore.live?.g.booked, 0));
+const courtName = computed(() => courtLabel(liveStore.live?.g.courts, 0));
 
 const namesA = computed(() => (liveStore.live?.cur?.A ?? []).map((id) => liveStore.byId(id).name).join(' / '));
 const namesB = computed(() => (liveStore.live?.cur?.B ?? []).map((id) => liveStore.byId(id).name).join(' / '));

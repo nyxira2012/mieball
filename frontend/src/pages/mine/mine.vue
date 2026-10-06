@@ -44,11 +44,12 @@
       @click="go('/pages/mine/bills')"
     />
 
-    <!-- 记录双卡（5.1 页面设计）：登记局数/签到次数统一走 game store 的 mySignups/myCheckins 单一口径 -->
+    <!-- 记录双卡（5.1 页面设计）：登记局数/签到次数直读 mock 种子（1.2 隔离线，
+         口径同登记页：我组织/已报名 且未终止；真局数据归 game store 的 myGames） -->
     <view class="duo">
       <view class="d-card" @click="go('/pages/mine/signup')">
         <view class="d-t">参加登记</view>
-        <view class="d-s">共 {{ gameStore.mySignups.length }} 局 · 签到 {{ gameStore.myCheckins.length }} 次</view>
+        <view class="d-s">共 {{ mySignups.length }} 局 · 签到 {{ myCheckins.length }} 次</view>
       </view>
       <view class="d-card" @click="go('/pages/mine/logs')">
         <view class="d-t">打球记录</view>
@@ -84,18 +85,24 @@ import AppButton from '@/components/ui/AppButton.vue';
 import TierBadge from '@/components/ui/TierBadge.vue';
 import SectionTitle from '@/components/ui/SectionTitle.vue';
 import BillSummaryCard from '@/components/biz/BillSummaryCard.vue';
+import { games as seedGames } from '@/api';
 import { useUserStore } from '@/stores/user';
 import { useSessionStore } from '@/stores/session';
-import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
 import { useBillStore } from '@/stores/bill';
+import { isMe } from '@/utils/format';
 import { tier } from '@/utils/elo';
 
 const user = useUserStore();
 const session = useSessionStore();
-const gameStore = useGameStore();
 const ui = useUiStore();
 const bill = useBillStore();
+
+/* 登记口径（隔离线，与登记页 signup.vue 同式）：我组织/已报名 且未终止 */
+const mySignups = computed(() =>
+  seedGames.filter((g) => !g.dead && (isMe(g.organizer.id) || g.joined.some((e) => isMe(e.u.id)))),
+);
+const myCheckins = computed(() => mySignups.value.filter((g) => g.status === 'done' && !!g.myLog?.checkIn));
 
 /** 账号区行的手机号打码口径在 session store（maskedPhone 单一源，AccountSheet 同消费） */
 

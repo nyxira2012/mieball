@@ -1,7 +1,9 @@
 /* ---------- 数据（alpha:760-830 原样移植；改数据口径 = 改 alpha，不要在这里发明） ----------
    全部以可变引用导出：store 用 reactive()/ref() 包住同一份原始对象，
-   mock / live 名册 / 榜单读写的是同一批对象（Vue reactive 对同一原始目标返回同一代理）。 */
-import type { Bill, Game, Intent, MyIntent, Slot, User } from '@/api/types';
+   mock / live 名册 / 榜单读写的是同一批对象（Vue reactive 对同一原始目标返回同一代理）。
+   1.2 接线：games 种子改型 MockGame（5.1 隔离线快照冻结——账单/登记/记录/现场演示继续吃这份，
+   字段不再生长）；局/意向真数据走 api/games.ts + stores/game。 */
+import type { Bill, MockGame, Slot, User } from '@/api/types';
 
 export const U: Record<string, User> = {
   me: { id: 0, name: '我', elo: 1518, play: 34, win: 19, month: 18, last5: ['W', 'L', 'W', 'W', 'L'], chibi: { skin: 1, hair: 5, hc: 0, shirt: 0, face: 1, acc: 2 }, cardBg: 'neon', recentStats: { win: 3, loss: 1, hours: 2, kcal: 800 } },
@@ -22,11 +24,11 @@ export const U: Record<string, User> = {
 /** 交互演示模拟用户（分享后从群里加入的示例球友） */
 export const mockDemoUser = U.zhang;
 
-/** 业务商圈与地区选项（基础字典配置，供约球筛选与建局解析复用） */
+/** 业务商圈与地区选项（基础字典配置；1.2 起真局列表不再按地区筛，仅存量演示面使用） */
 export const mockAreas = ['工体', '望京', '五棵松', '亮马河'];
 export const AREA_OPTS = ['全部', ...mockAreas];
 
-/** 场馆名单一源：LaunchSheet 地点 chips 与上面局 seeds 的 loc、game store 的 area 推断同源
+/** 场馆名单一源：LaunchSheet 地点 chips 与上面局 seeds 的 loc 同源
     （场馆改名只动这里；「手输新场地」伪选项由 LaunchSheet 自加） */
 export const mockVenues = ['工体北路 · 京篮匹克球馆', '望京 · 花家地球馆', '五棵松 · 万事达球馆'];
 
@@ -36,17 +38,13 @@ export const DEFAULT_MOCK_CHECKIN_COUNT = 9;
 /** mock 环境基准日期（2026-10-04，用于账单等相对期间推算，将来接真实系统时钟） */
 export const MOCK_BASE_DATE_STR = '2026-10-04';
 
-/** 圈子元数据（meet 页日期行在用；原 channel 字段与跑马灯 tickerItems 随 home 页退役删除） */
+/** 圈子元数据（meet 页日期行在用） */
 export const communityMeta = {
   name: '北京匹克球圈',
 };
-/* 3.1 球局：organizer=组织者 · joined=[{u,bring}] 报名+带人（带的人也占名额）
-   tb=时间桶（tonight/tomorrow/weekend/week）· area=地区（找局打筛选用）· invitedMe=别人邀请我 */
-/* 3.2 球局：min=最少人数（截止时判成不成）· cap=最多人数（满员线，进度只讲剩几坑）
-   fee=预计费用总价 · deadline=组局截止（到点锁名单，定死不改）· dur=打多久
-   dead=未成局（自动终止·组织者可恢复）· sure=必打手动锁 · booked=订场登记的场地号（场上有号即必打，fee=订场总价）
-   locked=已到截止锁定 */
-export const games: Game[] = [
+/* 5.1 快照种子（MockGame）：organizer/joined 等口径注释见 types.ts MockGame。
+   真局 1.2 起走后端；这份快照只喂账单/登记/记录/现场演示的隔离线消费面。 */
+export const games: MockGame[] = [
   { id: 101, organizer: U.wang, t: '今晚 19:00', d: '今天', tb: 'tonight', area: '工体', dur: 2, deadline: '今天 17:00',
     loc: '工体北路 · 京篮匹克球馆 · 3 片', name: '周四夜战', min: 8, cap: 12, fee: 720, note: '老搭子局 · 新朋友走候补',
     joined: [{ u: U.wang }, { u: U.hai, bring: 2 }, { u: U.wu }, { u: U.gu }, { u: U.li }, { u: U.me }, { u: U.shi }, { u: U.yang }, { u: U.bei }, { u: U.tong }, { u: U.zhao }], wait: [],
@@ -100,11 +98,7 @@ export const games: Game[] = [
 
 /* 5.1 账单（2026-10-04 修订）：逐笔底账，date 倒序，gameId 全部指向上面存活的 done 局。
    member 行 amt = 所连局 perHead，payee = 该局组织者（待付行写明欠谁）；
-   org 行 amt = 别人摊费合计（我那份自己出了；刺客合议 #2 的「org 行=垫付总价」随 5.1 修订作废），
-   payers = 数据侧给好的按人明细（不含我自己）。数值与各局 heads/perHead 已核对：
-   98:180/4头45 · 97:200/4头50（li 带 1 人占 2 坑）· 94:720/8头90 · 93:164/4头41 · 96:720/9头80 · 95:160/4头40。
-   receivable 只剩 bill 2、6 两笔——bill 6 从 received 翻成 receivable 是为了演示「谁还欠你」的同人两场聚合
-   （li 100+90=190 · 2 场）；received 态运行期可达：一场全结清自动翻转。 */
+   org 行 amt = 别人摊费合计，payers = 数据侧给好的按人明细（不含我自己）。 */
 export const bills: Bill[] = [
   { id: 1, gameId: 98, gname: '周五夜光局', date: '10.02', amt: 45, status: 'due', role: 'member', payee: U.hai },
   { id: 2, gameId: 97, gname: '午后加场局', date: '10.01', amt: 150, status: 'receivable', role: 'org',
@@ -117,27 +111,11 @@ export const bills: Bill[] = [
               { u: U.wu, amt: 90, settled: false }, { u: U.gu, amt: 90, settled: true }, { u: U.shi, amt: 90, settled: true }, { u: U.yang, amt: 90, settled: true } ] },
 ];
 
-/* 3.1 意向：大概什么时段想打、多久打一次 —— 组局的人翻列表看中谁就邀请谁 */
-const slotDefs: Omit<Slot, 'match'>[] = [
+/* 时段词表（前端单一源，后端只存 key 串不校验；1.2 起同波段 match 数退役——
+   意向「打过」徽章改读 intent.known 定值，批4 裁决②） */
+export const slots: Slot[] = [
   { k: 'wd', n: '工作日晚间', desc: '19:00 后' },
   { k: 'ln', n: '工作日午休', desc: '12:00-14:00' },
   { k: 'we-d', n: '周末白天', desc: '09:00-18:00' },
   { k: 'we-n', n: '周末晚上', desc: '19:00 后' },
 ];
-export const slots = slotDefs as Slot[];
-export let myIntent: MyIntent | null = { slots: ['we-n'], freq: 2 };
-export const intents: Intent[] = [
-  { u: U.wang, slots: ['we-n'], freq: 2, note: '想固定打起来' },
-  { u: U.hai, slots: ['wd', 'we-n'], freq: 1, note: '夜战优先' },
-  { u: U.wu, slots: ['wd'], freq: 2, note: '只打工作日' },
-  { u: U.li, slots: ['we-d', 'we-n'], freq: 2 },
-  { u: U.shi, slots: ['wd'], freq: 1 },
-  { u: U.yang, slots: ['we-d'], freq: 0 },
-  { u: U.tong, slots: ['ln'], freq: 1, note: '午休杀两局' },
-  { u: U.ken, slots: ['we-d'], freq: 0, note: '周末白天都在河边' },
-  { u: U.zhang, slots: ['wd'], freq: 1, note: '周三晚最好' },
-];
-/* 同波段人数（alpha:826：启动时算一次；之后改意向不重算 —— alpha 原样） */
-slots.forEach((s) => {
-  s.match = intents.filter((i) => i.slots.includes(s.k)).length + (myIntent && myIntent.slots.includes(s.k) ? 1 : 0);
-});

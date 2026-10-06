@@ -26,7 +26,6 @@
    （同一局每次打开同一张图，computed 即「生成一次」，id 局内不变）。svg 不可进 uni 模板 → view 网格。 */
 import { computed } from 'vue';
 import { useLiveStore, isArrived } from '@/stores/live';
-import { venueOf } from '@/utils/format';
 
 defineProps({
   visible: { type: Boolean, default: false },
@@ -35,12 +34,11 @@ const emit = defineEmits<{ (e: 'close'): void }>();
 
 const liveStore = useLiveStore();
 
-/** 局名 + 场馆词（口径在 utils/format 的 venueOf 单一源） */
+/** 局名 + 场馆 */
 const metaName = computed(() => {
   const g = liveStore.live?.g;
   if (!g) return '';
-  const v = venueOf(g);
-  return v ? `${g.name} ${v}` : g.name;
+  return g.venueName ? `${g.name} ${g.venueName}` : g.name;
 });
 const arrived = computed(
   () => (liveStore.live?.roster ?? []).filter((p) => isArrived(p.check)).length,

@@ -7,12 +7,15 @@ function mkP(elo: number, extra: Partial<User> = {}): User {
   seq += 1;
   return { id: seq, name: `P${seq}`, elo, play: 1, win: 0, month: 0, chibi: {}, check: 'ok', skip: 0, fire: false, ...extra };
 }
-function mkLive(mode: Game['mode'], players: User[], opts: Partial<LiveState> = {}): LiveState {
+function mkLive(mode: Game['rotation'], players: User[], opts: Partial<LiveState> = {}): LiveState {
   return {
     g: {
-      id: 1, organizer: players[0] ?? mkP(1500), t: '今晚 19:00', d: '今天', tb: 'tonight', area: '工体', dur: 2,
-      deadline: '今天 17:00', loc: 'x', name: 't', min: 4, cap: 8, fee: 100,
-      joined: [], wait: [], status: 'live', score: 11, mode, lateRule: false,
+      id: 1, name: 't', organizer: { id: players[0]?.id ?? 99, nickname: players[0]?.name ?? 'P0', chibi: {} },
+      startAt: '2026-10-06T19:00:00+08:00', endAt: '2026-10-06T21:00:00+08:00', deadlineAt: '2026-10-06T17:00:00+08:00',
+      venueName: 'x', venueAddress: null, minPlayers: 4, maxPlayers: 8, visibility: 'public',
+      scoring: 11, rotation: mode, scoreRule: 'rally',
+      manualLock: false, courts: null, feeTotal: 100,
+      status: 'live', unlocked: false, joinable: true, heads: 0, slotsLeft: 8, perHead: null, forced: false,
     },
     roster: players,
     queue: players.map((p) => p.id),
@@ -43,7 +46,7 @@ describe('fillCourts（alpha:1501-1523）', () => {
   it('balance 蛇形按分降序：A=[首,末] B=[二,三]', () => {
     const ps = [1800, 1700, 1600, 1500, 1400, 1300, 1200, 1100].map((e) => mkP(e));
     const live = mkLive('balance', ps);
-    live.g.cap = 8; // <12 → 两片
+    live.g.maxPlayers = 8; // <12 → 两片
     fillCourts(live);
     expect(live.courts.map((c) => c.A)).toEqual([[ps[0].id, ps[3].id], [ps[4].id, ps[7].id]]);
     expect(live.courts.map((c) => c.B)).toEqual([[ps[1].id, ps[2].id], [ps[5].id, ps[6].id]]);
@@ -78,7 +81,7 @@ describe('fillCourts（alpha:1501-1523）', () => {
   it('cap≥12 → 最多三片（12 人恰好 3 满片）', () => {
     const ps = Array.from({ length: 12 }, (_, i) => mkP(1600 - i));
     const live = mkLive('rotate', ps);
-    live.g.cap = 12;
+    live.g.maxPlayers = 12;
     fillCourts(live);
     expect(live.courts).toHaveLength(3);
     expect(live.queue).toEqual([]);
@@ -87,7 +90,7 @@ describe('fillCourts（alpha:1501-1523）', () => {
   it('未上场的余量留在队列，且 fire（连战）优先回队', () => {
     const ps = Array.from({ length: 10 }, (_, i) => mkP(1600 - i));
     const live = mkLive('rotate', ps);
-    live.g.cap = 12;
+    live.g.maxPlayers = 12;
     fillCourts(live);
     expect(live.courts).toHaveLength(2);                    // 8 人上场
     expect(live.queue).toEqual([ps[8].id, ps[9].id]);       // 余 2 人候场

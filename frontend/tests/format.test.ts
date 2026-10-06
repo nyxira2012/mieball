@@ -1,95 +1,126 @@
 import { describe, expect, it } from 'vitest';
-import { U } from '@/api';
-import type { Game, GameEntry, User } from '@/api/types';
-import { freqName, heads, isForced, isMine, isOrg, known, myEntry, needOf, perHead, slotBig, slotName } from '@/utils/format';
+import type { Game, MockGame, Person } from '@/api/types';
+import {
+  GAME_STATUS_NAMES,
+  freqName,
+  gameTapAction,
+  isOrg,
+  mockGameCard,
+  newGameCard,
+  slotBig,
+  slotName,
+} from '@/utils/format';
+import { dayToken, toIso } from '@/utils/time';
 
-function mkGame(p: Partial<Game>): Game {
+/* 卡面时间换算（isoDay/isoHm）按设备本地墙钟走；本项目时区口径=北京时间（契约§2），
+   测试环境钉死 TZ，避免开发机时区不同导致断言漂移。 */
+process.env.TZ = 'Asia/Shanghai';
+
+/* 1.2 接线重写：人头/剩坑/人均/forced 等本地公式退役（改读后端定值），
+   本文件只测换下来的纯展示口径：状态文案表、卡面映射（真局/快照）、点卡分支、词表。 */
+
+const ken: Person = { id: 11, nickname: '亮马河 Ken', chibi: {} };
+const me: Person = { id: 0, nickname: '我', chibi: {} };
+
+function mkGame(p: Partial<Game> = {}): Game {
   return {
-    id: 1, organizer: U.ken, t: '周六 10:00', d: '10.07', tb: 'weekend', area: '亮马河', dur: 2,
-    deadline: '周五 18:00', loc: '亮马河 · 滨河球场', name: '测试局', min: 4, cap: 8, fee: 300,
-    joined: [] as GameEntry[], wait: [], status: 'open', score: 11, mode: 'balance', lateRule: false,
+    id: 1, name: '测试局', organizer: ken,
+    startAt: '2026-10-10T10:00:00+08:00', endAt: '2026-10-10T12:00:00+08:00', deadlineAt: '2026-10-10T08:00:00+08:00',
+    venueName: '亮马河 · 滨河球场', venueAddress: null,
+    minPlayers: 4, maxPlayers: 8, visibility: 'public',
+    scoring: 11, rotation: 'balance', scoreRule: 'rally',
+    manualLock: false, courts: null, feeTotal: null,
+    status: 'open', unlocked: false, joinable: true,
+    heads: 1, slotsLeft: 7, perHead: null, forced: false,
     ...p,
   };
 }
 
-describe('heads / needOf（带的人也占坑，alpha:882-883）', () => {
-  it('bring 计入坑位', () => {
-    const g = mkGame({ cap: 12, joined: [{ u: U.wang }, { u: U.hai, bring: 2 }, { u: U.wu }] });
-    expect(heads(g)).toBe(5);          // 1 + (1+2) + 1
-    expect(needOf(g)).toBe(7);
-  });
-  it('超员时剩几坑钳到 0', () => {
-    const g = mkGame({ cap: 4, joined: [{ u: U.wang, bring: 1 }, { u: U.wu, bring: 2 }] });
-    expect(heads(g)).toBe(5);
-    expect(needOf(g)).toBe(0);
+describe('GAME_STATUS_NAMES（视图 7 态文案表，单一源=后端 derive）', () => {
+  it('7 态齐全', () => {
+    expect(Object.keys(GAME_STATUS_NAMES)).toHaveLength(7);
+    expect(GAME_STATUS_NAMES.open).toBe('报名中');
+    expect(GAME_STATUS_NAMES.pending).toBe('待处置');
   });
 });
 
-describe('perHead 三口径（alpha:884 一字不差：不足最少按最少摊 / 够最少按当前摊 / sure 后最少作废按当前摊）', () => {
-  it('口径一：不足最少按最少摊（fee 300 · min 4 · heads 2 → 300/4=75）', () => {
-    const g = mkGame({ fee: 300, min: 4, joined: [{ u: U.wang }, { u: U.wu }] });
-    expect(perHead(g)).toBe(75);
+describe('newGameCard（真局 → 卡面模型：定值直读，时间现场换算）', () => {
+  it('时间/场馆/必打标/剩坑', () => {
+    const start = new Date(2026, 9, 10, 10, 0); // 本地墙钟 2026-10-10 10:00，经 toIso 往返免 TZ 抖动
+    const card = newGameCard(
+      mkGame({
+        startAt: toIso(start),
+        courts: ['3号'], forced: true, slotsLeft: 3, heads: 5,
+        entries: [
+          { account: ken, bring: 0, standing: 'formal', waitSeq: null },
+          { account: me, bring: 1, standing: 'formal', waitSeq: null },
+          { account: { id: 2, nickname: '乙', chibi: {} }, bring: 0, standing: 'waitlist', waitSeq: 1 },
+        ],
+      }),
+    );
+    expect(card.hmText).toBe('10:00'); // ISO 现场换算
+    expect(card.dayText).toBe(dayToken(start));
+    expect(card.venueText).toBe('亮马河 · 滨河球场');
+    expect(card.forcedLabel).toBe('已订场 · 必开'); // 场上有号优先于空锁文案
+    expect(card.slotsLeft).toBe(3);
+    // 候补不进头像叠层；带的人不计入头像数
+    expect(card.stackAvatars).toHaveLength(2);
+    expect(card.stackPlus).toBe('+');
   });
-  it('口径二：够最少按当前人数摊（fee 300 · min 4 · heads 5 → 60）', () => {
-    const g = mkGame({ fee: 300, min: 4, joined: [{ u: U.wang }, { u: U.wu }, { u: U.gu }, { u: U.li }, { u: U.shi }] });
-    expect(heads(g)).toBe(5);
-    expect(perHead(g)).toBe(60);
-  });
-  it('口径三：sure 后最少作废按当前摊（fee 300 · min 8 · heads 5 · sure → 60 而非 38）', () => {
-    const noSure = mkGame({ fee: 300, min: 8, joined: [{ u: U.wang }, { u: U.wu }, { u: U.gu }, { u: U.li }, { u: U.shi }] });
-    expect(heads(noSure)).toBe(5);
-    expect(perHead(noSure)).toBe(38); // 300/8=37.5 → 38
-    const sured = { ...noSure, sure: true };
-    expect(perHead(sured)).toBe(60);  // 300/5=60
-  });
-  it('口径三延伸：已订场（booked）同 sure 口径——按当前人数摊，最少保底作废', () => {
-    const g = mkGame({ fee: 300, min: 8, booked: ['3号'], joined: [{ u: U.wang }, { u: U.wu }, { u: U.gu }, { u: U.li }, { u: U.shi }] });
-    expect(perHead(g)).toBe(60); // 300/5=60，而非不足最少按 8 摊的 38
-  });
-  it('mock 局抽查：102 局人均 50（200 ÷ max(4, 4)）', () => {
-    const g = mkGame({ fee: 200, min: 4, joined: [{ u: U.me }, { u: U.li, bring: 1 }, { u: U.bei }] });
-    expect(perHead(g)).toBe(50);
+
+  it('myRole 三态 + 空锁标', () => {
+    expect(newGameCard(mkGame({ my: { isOrganizer: true, myEntry: null, invited: false } })).myRole).toBe('org');
+    expect(
+      newGameCard(mkGame({ my: { isOrganizer: false, myEntry: null, invited: true } })).myRole,
+    ).toBe('inv');
+    expect(
+      newGameCard(
+        mkGame({ my: { isOrganizer: false, myEntry: { bring: 0, standing: 'formal', waitSeq: null }, invited: false } }),
+      ).myRole,
+    ).toBe('joined');
+    expect(newGameCard(mkGame({ manualLock: true, forced: true })).forcedLabel).toBe('必开');
+    expect(newGameCard(mkGame()).forcedLabel).toBeUndefined();
   });
 });
 
-describe('isForced（3.2 订场改版：必打 = 手动锁 OR 场上有号）', () => {
-  it('sure / booked / 两者 / 皆无 四态', () => {
-    expect(isForced(mkGame({}))).toBe(false);
-    expect(isForced(mkGame({ sure: true }))).toBe(true);
-    expect(isForced(mkGame({ booked: ['3号', '5号'] }))).toBe(true);
-    expect(isForced(mkGame({ sure: true, booked: ['3号'] }))).toBe(true);
-    expect(isForced(mkGame({ booked: [] }))).toBe(false); // 空数组=没登记
+describe('mockGameCard（快照局 → 卡面模型：5.1 口径逐字）', () => {
+  it('heads 含 bring、含随行标记、done 战报透传', () => {
+    const g: MockGame = {
+      id: 102, organizer: { id: 0, name: '我', elo: 0, play: 0, win: 0, month: 0, chibi: {} },
+      t: '周六 14:00', d: '10.07', tb: 'weekend', area: '望京', dur: 2, deadline: '周五 20:00',
+      loc: '望京 · 花家地球馆 · 2 片', name: '周末午后局', min: 4, cap: 8, fee: 480,
+      joined: [
+        { u: { id: 0, name: '我', elo: 0, play: 0, win: 0, month: 0, chibi: {} } },
+        { u: { id: 5, name: '亮马河快攻', elo: 0, play: 0, win: 0, month: 0, chibi: {} }, bring: 1 },
+        { u: { id: 8, name: '北苑小钢炮', elo: 0, play: 0, win: 0, month: 0, chibi: {}, shadow: true } },
+      ],
+      wait: [], status: 'done', score: 11, mode: 'balance', lateRule: false,
+      result: { sa: 21, sb: 15, myWin: true },
+    };
+    const card = mockGameCard(g);
+    expect(card.slotsLeft).toBe(4); // cap 8 - heads 4（me1 + li带1共2 + bei1）
+    expect(card.stackPlus).toContain('含随行');
+    expect(card.myRole).toBe('org');
+    expect(card.result?.myWin).toBe(true);
+    expect(card.hmText).toBe('14:00');
+    expect(card.dayText).toBe('周六');
   });
 });
 
-describe('myEntry / isOrg / isMine（alpha:885-887）', () => {
-  it('组织者 / 已加入 / 被邀请三态', () => {
-    expect(isOrg(mkGame({ organizer: U.me }))).toBe(true);
-    expect(isOrg(mkGame({ organizer: U.wang }))).toBe(false);
-    expect(myEntry(mkGame({ joined: [{ u: U.wang }, { u: U.me, bring: 1 }] }))?.bring).toBe(1);
-    expect(myEntry(mkGame({ joined: [{ u: U.wang }] }))).toBeUndefined();
-    expect(isMine(mkGame({ organizer: U.me }))).toBe(true);
-    expect(isMine(mkGame({ joined: [{ u: U.me }] }))).toBe(true);
-    expect(isMine(mkGame({ invitedMe: true }))).toBe(true);
-    expect(isMine(mkGame({}))).toBe(false);
+describe('gameTapAction（alpha:907 点局卡分支）：被邀请未加入 → join', () => {
+  it('三态', () => {
+    expect(gameTapAction(mkGame({ my: { isOrganizer: false, myEntry: null, invited: true } }))).toBe('join');
+    expect(
+      gameTapAction(mkGame({ my: { isOrganizer: false, myEntry: { bring: 0, standing: 'formal', waitSeq: null }, invited: true } })),
+    ).toBe('detail'); // 已加入的邀请不算
+    expect(gameTapAction(mkGame())).toBe('detail');
   });
 });
 
-describe('known（alpha:888-889，同局打过 = 熟人；静态集合按启动时 mock 局算）', () => {
-  it('喜欢过 → known', () => {
-    expect(known(U.wang)).toBe(true); // liked
-  });
-  it('与我同局（101 我已加入 / 102 我组织）→ known', () => {
-    expect(known(U.wu)).toBe(true);   // 101 名单
-    expect(known(U.li)).toBe(true);   // 101/102 名单
-    expect(known(U.zhao)).toBe(true); // 101 随行也是名单里的人
-  });
-  it('无交集且未喜欢 → 不算熟人', () => {
-    // 5.1 done 局入 mock 后，我参与的 93-98 把 U 全员变成同局熟人（ken 是 95 组织者），
-    // 「无交集」fixture 只能造局外人；zhang 未进我任何一局，仍守此分支。
-    const outsider: User = { id: 99, name: '局外人', elo: 1200, play: 0, win: 0, month: 0, chibi: {} };
-    expect(known(outsider)).toBe(false);
-    expect(known(U.zhang)).toBe(false);
+describe('isOrg（viewer 块定值）', () => {
+  it('my 缺省（游客）恒 false', () => {
+    expect(isOrg(mkGame({ my: { isOrganizer: true, myEntry: null, invited: false } }))).toBe(true);
+    expect(isOrg(mkGame())).toBe(false);
   });
 });
 

@@ -20,10 +20,10 @@ export function avail(live: LiveState): number[] {
   return out;
 }
 
-/** 片数上限单一源：订场登记优先（booked 片数是花钱定下的默认值，2026-10-04 订场改版），
-    未登记回退 cap≥12 三片否则两片。发牌（fillCourts）与打球页空闲卡（还有几片可开）共用。 */
+/** 片数上限单一源：订场登记优先（courts 片数是花钱定下的默认值，2026-10-04 订场改版），
+    未登记回退 maxPlayers≥12 三片否则两片。发牌（fillCourts）与打球页空闲卡共用。 */
 export function maxCourts(g: LiveState['g']): number {
-  return g.booked?.length || (g.cap >= 12 ? 3 : 2);
+  return g.courts?.length || (g.maxPlayers >= 12 ? 3 : 2);
 }
 
 /** 已占片数（在打 1 片 + 待开片数）：maxCourts 的镜像概念——live 顶条场地输入校验
@@ -37,18 +37,18 @@ export function usedCourts(live: LiveState): number {
     片数口径见 maxCourts；发完队列重排且 fire（连战）优先回队。 */
 export function fillCourts(live: LiveState): void {
   let pool = avail(live).slice();
-  if (live.g.mode === 'balance') {
+  if (live.g.rotation === 'balance') {
     pool.sort((a, b) => (pById(live, b)?.elo || 1100) - (pById(live, a)?.elo || 1100));
   }
   const maxC = maxCourts(live.g);
   while (live.courts.length < maxC && pool.length >= 4) {
-    if (live.g.mode === 'winner' && live.courts.length === 0 && live.lastWinners && live.lastWinners.length === 2) {
+    if (live.g.rotation === 'winner' && live.courts.length === 0 && live.lastWinners && live.lastWinners.length === 2) {
       const ch = pool.splice(0, 2);
       live.courts.push({ A: [...live.lastWinners], B: ch });
       continue;
     }
     const four = pool.splice(0, 4);
-    live.courts.push(live.g.mode === 'balance'
+    live.courts.push(live.g.rotation === 'balance'
       ? { A: [four[0], four[3]], B: [four[1], four[2]] }
       : { A: [four[0], four[1]], B: [four[2], four[3]] });
   }

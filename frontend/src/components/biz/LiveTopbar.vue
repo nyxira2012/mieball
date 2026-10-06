@@ -3,12 +3,12 @@
        +地址行+组织者 chip+二维码钮）→ 遥测三格（剩余时间倒计时/场地号直填/赛制模式入口）→ 单行轮播 ticker。
        点人入口在卡与候场条，这里只出 qr/rules 两个编排事件。 -->
   <view v-if="L" class="topbar">
-    <view class="banner-top">
+      <view class="banner-top">
       <view class="banner-meta">
         <view class="kicker"><view class="live-dot" /> LIVE · 第 {{ L.round + 1 }} 轮</view>
-        <view class="brand-t">{{ L.g.name }}<text v-if="venue" class="bem"> · {{ venue }}</text></view>
+        <view class="brand-t">{{ L.g.name }}</view>
         <view class="banner-loc">
-          <text class="loc-txt">{{ L.g.loc }}</text>
+          <text class="loc-txt">{{ L.g.venueAddress || L.g.venueName }}</text>
           <text class="chip ok">{{ orgChip }}</text>
         </view>
       </view>
@@ -45,7 +45,7 @@
       </view>
       <view class="telem-cell mode-cell" @click="emit('rules')">
         <text class="telem-k">赛制模式</text>
-        <view class="telem-v mode-v">{{ L.g.score }}分 · {{ MODE_NAMES[L.g.mode] }} ▾</view>
+        <view class="telem-v mode-v">{{ L.g.scoring }}分 · {{ MODE_NAMES[L.g.rotation] }} ▾</view>
       </view>
     </view>
 
@@ -56,12 +56,10 @@
 </template>
 
 <script setup lang="ts">
-/* 块一顶条（2.1 §3）：无 props——数据全读 live store（isOrg(L.g) 判组织者），
-   emit 只留页面编排：qr（开二维码浮层）/ rules（开规则抽屉）。 */
+/* 块一顶条（2.1 §3）：无 props——数据全读 live store；emit 只留页面编排：qr / rules。 */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useLiveStore } from '@/stores/live';
-import { isOrg, MODE_NAMES, venueOf } from '@/utils/format';
-import { gameTime } from '@/utils/time';
+import { isOrg, MODE_NAMES } from '@/utils/format';
 import { pById } from '@/utils/rotate';
 import { U } from '@/api';
 
@@ -69,25 +67,18 @@ const emit = defineEmits<{ (e: 'qr'): void; (e: 'rules'): void }>();
 
 const liveStore = useLiveStore();
 const L = computed(() => liveStore.live);
-const org = computed(() => (L.value ? isOrg(L.value.g) : false));
+const org = computed(() => !!L.value?.g.my?.isOrganizer);
 
-/** brand-t 高亮场馆词（口径在 utils/format 的 venueOf 单一源）；空则连「 · 」都不拼 */
-const venue = computed(() => (L.value ? venueOf(L.value.g) : ''));
-const orgChip = computed(() => (org.value ? `组织者 · ${L.value!.g.organizer.name}` : `球友 · ${U.me.name}`));
+const orgChip = computed(() => (org.value ? `组织者 · ${L.value!.g.organizer.nickname}` : `球友 · ${U.me.name}`));
 
-/* ---------- 剩余时间倒计时：结束时刻（开打 + dur）只随局变化，拆开缓存——
-     否则每秒重算都把固定的开打时间串重新 gameTime 解析一遍 ---------- */
+/* ---------- 剩余时间倒计时：结束时刻（ISO）只随局变化，拆开缓存 ---------- */
 const now = ref(Date.now());
 let secTimer: ReturnType<typeof setInterval> | null = null;
 onMounted(() => {
   secTimer = setInterval(() => { now.value = Date.now(); }, 1000);
 });
 onUnmounted(() => { if (secTimer) clearInterval(secTimer); });
-const endAt = computed(() => {
-  const g = L.value?.g;
-  if (!g) return null;
-  return gameTime(g.t).getTime() + g.dur * 3600e3;
-});
+const endAt = computed(() => (L.value ? new Date(L.value.g.endAt).getTime() : null));
 const timerTxt = computed(() => {
   if (endAt.value == null) return '0:00:00';
   const s = Math.max(0, Math.floor((endAt.value - now.value) / 1000));
@@ -95,8 +86,8 @@ const timerTxt = computed(() => {
   return `${h}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 });
 
-/* ---------- 场地号直填（组织者）：booked 去「号」展示；blur/confirm 提交，不过回退 store 值 ---------- */
-const storeTxt = computed(() => (L.value?.g.booked ?? []).map((b) => b.replace(/号$/, '')).join('、'));
+/* ---------- 场地号直填（组织者）：courts 去「号」展示；blur/confirm 提交，不过回退 store 值 ---------- */
+const storeTxt = computed(() => (L.value?.g.courts ?? []).map((b) => b.replace(/号$/, '')).join('、'));
 const courtsText = ref(storeTxt.value);
 watch(storeTxt, (v) => { courtsText.value = v; });
 function onCourtsInput(ev: Event): void {

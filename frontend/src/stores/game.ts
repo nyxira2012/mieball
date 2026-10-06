@@ -1,262 +1,294 @@
-/* 球局 store（alpha:1107-1297 各动作 · alpha:1375-1398 发布/改局 · alpha:807-830 意向）
-   硬约束：动作只改状态与返回/弹出文案 —— 不做路由跳转、不直接调 uni.*（导航由页面层做）。 */
-import { computed, reactive, ref } from 'vue';
+/* 球局 store（1.2 接线重写）：真后端局簿+意向簿的前端业务态。
+   - api 层线上形状（snake）→ 本 store 的 Game/Intent（camel）映射收在 toGame/toIntent 单点；
+   - 写动作成功 toast 仍在 store（文案单一源），失败一律抛 ApiError 由调用方 errText；
+   - quit/cancel/invite 后端只回 {ok:true}，名单/标记的回填在 store 内补拉（refresh/loadIntents）；
+   - 硬约束：动作只改状态与弹出文案 —— 不做路由跳转、不直接调 uni.*（导航由页面层做）。 */
+import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import {
-  U,
-  delay,
-  games as seedGames,
-  intents as seedIntents,
-  mockAreas,
-  mockDemoUser,
-  myIntent as seedMyIntent,
-} from '@/api';
-import type { MyIntent, PublishInput, TimeBucket } from '@/api/types';
-import { autoGameName, heads, isOrg, isForced, myEntry } from '@/utils/format';
-import { dayOff, gameTime } from '@/utils/time';
+  apiBookCourt,
+  apiCancelGame,
+  apiClearBooking,
+  apiDeleteIntent,
+  apiEditGame,
+  apiGameDetail,
+  apiInviteUser,
+  apiJoinGame,
+  apiListGames,
+  apiListIntents,
+  apiLockGame,
+  apiMyGames,
+  apiMyIntent,
+  apiPublishGame,
+  apiQuitGame,
+  apiRestoreGame,
+  apiSaveIntent,
+  type GameViewApi,
+  type IntentViewApi,
+} from '@/api/games';
+import type { EditGameInput, Game, Intent, MyIntent, PublishGameInput } from '@/api/types';
 import { useUiStore } from './ui';
-import { useUserStore } from './user';
+
+/** game_view（线上 snake）→ Game（store camel）：唯一映射点 */
+function toGame(v: GameViewApi): Game {
+  return {
+    id: v.id,
+    name: v.name,
+    organizer: { ...v.organizer },
+    startAt: v.start_at,
+    endAt: v.end_at,
+    deadlineAt: v.deadline_at,
+    venueName: v.venue_name,
+    venueAddress: v.venue_address,
+    minPlayers: v.min_players,
+    maxPlayers: v.max_players,
+    visibility: v.visibility,
+    scoring: v.scoring,
+    rotation: v.rotation,
+    scoreRule: v.score_rule,
+    manualLock: v.manual_lock,
+    courts: v.courts,
+    feeTotal: v.fee_total,
+    status: v.status,
+    unlocked: v.unlocked,
+    joinable: v.joinable,
+    heads: v.heads,
+    slotsLeft: v.slots_left,
+    perHead: v.per_head,
+    forced: v.forced,
+    entries: v.entries?.map((e) => ({
+      account: { ...e.account },
+      bring: e.bring,
+      standing: e.standing,
+      waitSeq: e.wait_seq,
+    })),
+    my: v.my
+      ? {
+          isOrganizer: v.my.is_organizer,
+          myEntry: v.my.my_entry && { bring: v.my.my_entry.bring, standing: v.my.my_entry.standing, waitSeq: v.my.my_entry.wait_seq },
+          invited: v.my.invited,
+        }
+      : undefined,
+  };
+}
+
+/** intent_view → Intent */
+function toIntent(v: IntentViewApi): Intent {
+  return {
+    account: { ...v.account },
+    slots: [...v.slots],
+    frequency: v.frequency,
+    note: v.note,
+    updatedAt: v.updated_at,
+    invited: v.invited,
+    known: v.known,
+  };
+}
 
 export const useGameStore = defineStore('game', () => {
-  /* 数据源：mock 的同一份可变引用（alpha:781 games / 814 myIntent / 815 intents）。
-     reactive() 对同一原始对象返回同一代理 —— 与 user/live store、页面读到的完全同源。 */
-  const games = reactive(seedGames);
-  const intents = reactive(seedIntents);
-  const myIntent = ref<MyIntent | null>(seedMyIntent);
+  const ui = useUiStore();
+  /* 数据：找局打 / 我的局 / 详情页当前局（链接直达的局可能不在列表里，弹层经 findGame 统一取） */
+  const games = ref<Game[]>([]);
+  const myGames = ref<Game[]>([]);
+  const current = ref<Game | null>(null);
+  const intents = ref<Intent[]>([]);
+  const myIntent = ref<MyIntent | null>(null);
+  /** 读/写请求在途标记（A2 加载态；页面据此显示等待提示） */
+  const loading = ref(false);
 
-  /* —— 5.1 我的页登记口径（单一源）：原先 mine.vue 双卡与 signup.vue 各持一份手写 filter，
-     两处互指「同口径」却各自维护，口径漂移风险下沉到 store（消费方只做排序/筛选/展示） —— */
+  async function track<T>(fn: () => Promise<T>): Promise<T> {
+    loading.value = true;
+    try {
+      return await fn();
+    } finally {
+      loading.value = false;
+    }
+  }
 
-  /** 我的登记全集：我组织/已报名 且未终止（含 done —— 已结束局要在登记页看到签到行） */
-  const mySignups = computed(() => games.filter((g) => !g.dead && (isOrg(g) || myEntry(g))));
-  /** 签到口径：其中打完（done）且我的到场底账留了 checkIn 的局 */
-  const myCheckins = computed(() => mySignups.value.filter((g) => g.status === 'done' && g.myLog?.checkIn));
+  /** 局回填：两个列表里同 id 的行整体替换；详情页当前局同步换新（写动作后视图刷新的单一入口） */
+  function upsert(g: Game): void {
+    const put = (list: Game[]): void => {
+      const i = list.findIndex((x) => x.id === g.id);
+      if (i >= 0) list[i] = g;
+    };
+    put(games.value);
+    put(myGames.value);
+    if (current.value?.id === g.id) current.value = g;
+  }
 
-  /** 进行中的局（单一谓词源：live 入口页冷启动分发/自动接局在用，
-      1.5 灵活首页后续档位扩链也走这里，不各处重写 status === 'live' 扫描） */
-  const liveGame = computed(() => games.find((g) => g.status === 'live') ?? null);
+  /** 弹层/详情统一取局：current 优先（链接直达），再两个列表 */
+  function findGame(id: number): Game | null {
+    if (current.value?.id === id) return current.value;
+    return games.value.find((x) => x.id === id) ?? myGames.value.find((x) => x.id === id) ?? null;
+  }
 
-  /** 加入 · 可带人（alpha:1127-1138 doJoin）：满员进候补；带的人也占坑 */
-  function joinGame(id: number, bring = 0): string | null {
-    const g = games.find((x) => x.id === id);
-    if (!g) return null;
-    if (!myEntry(g)) {
-      const toWait = heads(g) >= g.cap;
-      (toWait ? g.wait : g.joined).push({ u: U.me, bring });
-      g.invitedMe = false;
-      const msg = toWait
+  /* ---- 读 ---- */
+
+  async function loadGames(): Promise<void> {
+    games.value = (await track(apiListGames)).map(toGame);
+  }
+
+  async function loadMine(): Promise<void> {
+    myGames.value = (await track(apiMyGames)).map(toGame);
+  }
+
+  /** 详情（终态照常 200；不存在抛 game_not_found 由页面转说明页） */
+  async function loadDetail(id: number): Promise<Game> {
+    const g = toGame(await track(() => apiGameDetail(id)));
+    current.value = g;
+    return g;
+  }
+
+  /** 操作后单局重拉（quit/invite 这类只回 ok 的动作靠它回填名单） */
+  async function refresh(id: number): Promise<Game> {
+    const g = toGame(await track(() => apiGameDetail(id)));
+    upsert(g);
+    return g;
+  }
+
+  async function loadIntents(): Promise<void> {
+    intents.value = (await track(apiListIntents)).map(toIntent);
+  }
+
+  async function loadMyIntent(): Promise<void> {
+    const v = await track(apiMyIntent);
+    myIntent.value = v ? { slots: [...v.slots], frequency: v.frequency, note: v.note } : null;
+  }
+
+  /* ---- 局簿写动作 ---- */
+
+  async function publishGame(input: PublishGameInput): Promise<Game> {
+    const g = toGame(await track(() => apiPublishGame(input)));
+    games.value.unshift(g); // 后端列表 id 倒序，新局排头
+    upsert(g);
+    // 4.1：默认「跟我打过的人」档冷启动靠链接，发布提示带一句引导
+    ui.toast(
+      input.visibility === 'played'
+        ? '局已发布 · 名单头一个就是你 · 这个档位下，球友主要通过你转的链接看到这个局'
+        : '局已发布 · 名单头一个就是你，点局上的 ⤴ 分享到群里拉人',
+    );
+    return g;
+  }
+
+  async function editGame(id: number, input: EditGameInput): Promise<Game> {
+    const before = findGame(id);
+    const g = toGame(await track(() => apiEditGame(id, input)));
+    upsert(g);
+    // A3 上限放宽反馈：转正人数 = 前后正式名单差，剩余候补照实说（上限没放宽就是普通改局）
+    const formal = (x: Game | null): number => x?.entries?.filter((e) => e.standing === 'formal').length ?? 0;
+    const waitN = g.entries?.filter((e) => e.standing === 'waitlist').length ?? 0;
+    const moved = Math.max(0, formal(g) - formal(before));
+    ui.toast(
+      moved
+        ? waitN
+          ? `局已改好 · 上限放宽，候补转正，仍剩 ${waitN} 人满员（建议下次再参加）`
+          : '局已改好 · 上限放宽，候补已全部转正'
+        : '局已改好 · 名单里的人看到的就是新信息',
+    );
+    return g;
+  }
+
+  async function joinGame(id: number, bring: number): Promise<Game> {
+    const g = toGame(await track(() => apiJoinGame(id, bring)));
+    upsert(g);
+    // 整行装不下时后端落候补也 200——文案按返回名单分支（4.3 候补提示）
+    ui.toast(
+      g.my?.myEntry?.standing === 'waitlist'
         ? '已进候补栏 · 有人退出即刻递补'
         : bring
           ? `已加入 · 带了 ${bring} 人（共占 ${1 + bring} 坑）`
-          : '已加入 · 这局进了「我的局」';
-      useUiStore().toast(msg);
-      return msg;
-    }
-    return null; // alpha:1137 已加入 → 只关弹层进详情
+          : '已加入 · 这局进了「我的局」',
+    );
+    return g;
   }
 
-  /** 退出局（alpha:1148-1153 doQuit）：名额立刻释放，你带的人也一起退（候补同样清）。「我」运行时读 U.me.id */
-  function quitGame(id: number): string | null {
-    const g = games.find((x) => x.id === id);
-    if (!g) return null;
-    g.joined = g.joined.filter((e) => e.u.id !== U.me.id);
-    g.wait = g.wait.filter((e) => e.u.id !== U.me.id);
-    const msg = '已退出 · 名单里少了你';
-    useUiStore().toast(msg);
-    return msg;
+  async function quitGame(id: number): Promise<void> {
+    await track(() => apiQuitGame(id));
+    ui.toast('已退出 · 名单里少了你');
+    await refresh(id); // 名额释放/候补递补回填
   }
 
-  /** 取消局（alpha:1164-1168）：局从列表整体撤下；已订场的提醒一句去场馆退订（钱已花在 app 外） */
-  function cancelGame(id: number): string | null {
-    const i = games.findIndex((x) => x.id === id);
-    if (i < 0) return null;
-    const booked = games[i].booked?.length;
-    games.splice(i, 1);
-    const msg = booked
-      ? '局已撤下 · 已订场地记得去场馆退订，报名的球友「我的局」里同步消失'
-      : '局已撤下 · 报名的球友「我的局」里同步消失';
-    useUiStore().toast(msg);
-    return msg;
+  async function cancelGame(id: number): Promise<void> {
+    await track(() => apiCancelGame(id));
+    const drop = (list: Game[]): void => {
+      const i = list.findIndex((x) => x.id === id);
+      if (i >= 0) list.splice(i, 1);
+    };
+    drop(games.value);
+    drop(myGames.value);
+    if (current.value?.id === id) current.value = null;
+    ui.toast('局已撤下 · 报名的球友「我的局」里同步消失'); // 订场退订提醒由 ConfirmSheet 的提示行负责
   }
 
-  /** 发布/改局共用的推导（alpha:1383-1387）：局名「日段 · 地点」自动起名、tb 时间桶（按真实日期算）、area 地区推断。
-      3.3 改版：time 可能是「10.06 周一 19:00」三段精确式，tb 由 gameTime 解析出的日期推导。
-      自动名与天数偏移的规则在 utils（autoGameName/dayOff），与 LaunchSheet 预览同源。 */
-  function deriveGame(p: PublishInput): { name: string; day: string; tb: TimeBucket; area: string } {
-    const name = p.name.trim() || autoGameName(p.time, p.venue);
-    const day = p.time.split(' ')[0];
-    const start = gameTime(p.time);
-    const off = dayOff(start);
-    const wd = start.getDay();
-    const tb: TimeBucket = off <= 0 ? 'tonight' : off === 1 ? 'tomorrow' : wd === 0 || wd === 6 ? 'weekend' : 'week';
-    const area = mockAreas.find((a) => p.venue.includes(a)) || '其他';
-    return { name, day, tb, area };
+  async function lockGame(id: number): Promise<Game> {
+    const g = toGame(await track(() => apiLockGame(id)));
+    upsert(g);
+    ui.toast('已锁定必打 · 到截止不再因人数不足终止，最少人数要求作废');
+    return g;
   }
 
-  /** 发布（alpha:1394-1397）：新局插到列表最前，我是名单头一个。费用表单已去 → 新局 fee=null（费用未定）；
-      3.3 规则三件（分制/轮转/迟到）由表单直选落 score/mode/lateRule */
-  function publishGame(p: PublishInput): string | null {
-    const d = deriveGame(p);
-    games.unshift({
-      id: Date.now(), organizer: U.me, t: p.time, d: d.day, dur: p.dur, deadline: p.deadline,
-      area: d.area, tb: d.tb, loc: p.venue, name: d.name, min: p.min, cap: p.cap, fee: null,
-      joined: [{ u: U.me }], wait: [], status: 'open', score: p.score, mode: p.mode, scoreRule: p.scoreRule, lateRule: false,
-    });
-    const msg = '局已发布 · 名单头一个就是你，点局上的 ⤴ 分享到群里拉人';
-    useUiStore().toast(msg);
-    return msg;
+  async function bookCourt(id: number, courts: string[], feeTotal: number): Promise<Game> {
+    const g = toGame(await track(() => apiBookCourt(id, courts, feeTotal)));
+    upsert(g);
+    ui.toast(`已订场 · ${courts.join('、')}（${courts.length} 片）· 这局必开，费用已落定`);
+    return g;
   }
 
-  /** 改信息（alpha:1388-1392）：名单不动，截止定死不改；费用与说明不在表单里 → 原 note 原样保留。
-      3.2 订场改版：加场按钮取消，上限放宽（及一切令 heads<cap 的改动）由这里统一接手——
-      候补按先后自动转正（原 addCourt alpha:1198-1206 的递补循环原样搬入）。 */
-  function editGame(id: number, p: PublishInput): string | null {
-    const ed = games.find((x) => x.id === id);
-    if (!ed) return null;
-    const d = deriveGame(p);
-    Object.assign(ed, {
-      name: d.name, t: p.time, dur: p.dur, loc: p.venue, min: p.min, cap: p.cap,
-      score: p.score, mode: p.mode, scoreRule: p.scoreRule, d: d.day, area: d.area, tb: d.tb,
-    });
-    let moved = 0;
-    while (ed.wait.length && heads(ed) < ed.cap) {
-      const e = ed.wait.shift();
-      if (e) { ed.joined.push(e); moved++; }
-    }
-    const left = ed.wait.length;
-    const msg = moved
-      ? left
-        ? `局已改好 · 上限放宽，候补转正，仍剩 ${left} 人满员（建议下次再参加）`
-        : '局已改好 · 上限放宽，候补已全部转正'
-      : '局已改好 · 名单里的人看到的就是新信息';
-    useUiStore().toast(msg);
-    return msg;
+  async function clearBooking(id: number): Promise<Game> {
+    const g = toGame(await track(() => apiClearBooking(id)));
+    upsert(g);
+    ui.toast(
+      g.manualLock
+        ? '订场登记已清空 · 手动锁定保留，这局仍必打'
+        : '订场登记已清空 · 局回到未订场，费用未定，截止照常判人数',
+    );
+    return g;
   }
 
-  /** 锁定必打 · 空锁（alpha:1171-1176）：不登记场地只上手动锁，最少人数要求作废。
-      订场（bookCourt）是必打的另一入口，带场地号与总价；两者口径统一在 isForced。 */
-  function sureGame(id: number): string | null {
-    const g = games.find((x) => x.id === id);
-    if (!g) return null;
-    g.sure = true;
-    const msg = '已锁定必打 · 到截止不再因人数不足终止，最少人数要求作废';
-    useUiStore().toast(msg);
-    return msg;
+  async function restoreGame(id: number): Promise<Game> {
+    const g = toGame(await track(() => apiRestoreGame(id)));
+    upsert(g);
+    ui.toast('局已恢复 · 待处置：决定必定开局还是撤局后回到正常列表');
+    return g;
   }
 
-  /** 订场登记（3.2 订场改版）：订场发生在 app 外（场馆/平台），这里登记结果——场地号 + 总价。
-      场上有号即必打（isForced）；费用从未定落定为总价，人均按当前人数摊（最少保底作废）。
-      可反复改：加片添号、退片删号改价，每次保存联动重算。 */
-  function bookCourt(id: number, courts: string[], fee: number): string | null {
-    const g = games.find((x) => x.id === id);
-    if (!g || !courts.length) return null;
-    g.booked = [...courts];
-    g.fee = fee;
-    const msg = `已订场 · ${courts.join('、')}（${courts.length} 片）· 这局必开，费用已落定`;
-    useUiStore().toast(msg);
-    return msg;
+  async function inviteUser(gameId: number, accountId: number): Promise<void> {
+    const name = intents.value.find((i) => i.account.id === accountId)?.account.nickname;
+    await track(() => apiInviteUser(gameId, accountId));
+    ui.toast(name ? `已邀请 ${name} · 局已出现在 ta 的「我的局」` : '已邀请 · 局已出现在 ta 的「我的局」');
+    await loadIntents(); // 已邀标记刷新（批4 先把数据对上，排序 UI 归批5）
   }
 
-  /** 清空订场登记（场地全退光）：局回到未订场原样——费用回「未定」；
-      手动锁（sure）是组织者明确点的，不跟着松。 */
-  function clearBooking(id: number): string | null {
-    const g = games.find((x) => x.id === id);
-    if (!g) return null;
-    g.booked = undefined;
-    g.fee = null;
-    const msg = g.sure
-      ? '订场登记已清空 · 手动锁定保留，这局仍必打'
-      : '订场登记已清空 · 局回到未订场，费用未定，截止照常判人数';
-    useUiStore().toast(msg);
-    return msg;
-  }
+  /* ---- 意向簿 ---- */
 
-  /** 到截止判定（alpha:1177-1189 延伸）：低于最少且未必打（手动锁 OR 已订场，isForced）→
-    自动终止（dead，组织者「我的局」可恢复）；否则名单锁定、参加者不能再退出。 */
-  function hitDeadline(id: number): string | null {
-    const g = games.find((x) => x.id === id);
-    if (!g) return null;
-    const h = heads(g);
-    if (h < g.min && !isForced(g)) {
-      g.dead = true;
-      const msg = '到截止 · 人数不足，局自动终止（组织者「我的局」留有未成局，可恢复）';
-      useUiStore().toast(msg);
-      return msg;
-    }
-    g.locked = true;
-    const msg = '到截止 · 名单锁定，参加者不能再退出';
-    useUiStore().toast(msg);
-    return msg;
-  }
-
-  /** 恢复未成局（alpha:1207-1212）：回到终止前状态，名单原样（已订场的局必打，走不到 dead，此路只属未订场局） */
-  function restoreGame(id: number): string | null {
-    const g = games.find((x) => x.id === id);
-    if (!g) return null;
-    g.dead = false;
-    const msg = '局已恢复 · 名单原样回来，再决定必定开局还是撤局';
-    useUiStore().toast(msg);
-    return msg;
-  }
-
-  /** 邀请（alpha:1249-1263 doInvite）：局出现在对方「我的局」；3.2 秒模拟对方点一下就加入（满员进候补） */
-  function inviteUser(uid: number, gid: number): string | null {
-    const g = games.find((x) => x.id === gid);
-    const u = useUserStore().findUser(uid); // alpha:1250 findUser（现场名册优先）
-    if (!g || !u) return null;
-    const msg = `已邀请 ${u.name} · 局已出现在 ta 的「我的局」`;
-    useUiStore().toast(msg);
-    delay(3200).then(() => { // alpha:1255-1262 演示模拟，文案逐字
-      if (!g.joined.some((e) => e.u.id === uid)) (heads(g) >= g.cap ? g.wait : g.joined).push({ u });
-      const it = intents.find((i) => i.u.id === uid);
-      if (it) it.done = true;
-      useUiStore().toast(`${u.name} 点了一下 · ${heads(g) >= g.cap && !g.joined.some((e) => e.u.id === uid) ? '进了「' + g.name.replace(/ ·.*/, '') + '」候补' : '加入了「' + g.name.replace(/ ·.*/, '') + '」'}`);
-    });
-    return msg;
-  }
-
-  /** 分享（alpha:1224-1237 shareGame）：toast；组织者首次分享 3 秒后模拟「小张从群里点进来 · 加入并带 1 人」 */
-  const shared: Record<number, boolean> = {};
-  function shareGame(id: number): string | null {
-    const g = games.find((x) => x.id === id);
-    if (!g) return null;
-    const msg = '分享卡片已生成 · 转到微信群里拉人';
-    useUiStore().toast(msg);
-    if (isOrg(g) && !shared[id]) {
-      shared[id] = true;
-      delay(3000).then(() => {
-        if (!g.joined.some((e) => e.u.id === mockDemoUser.id)) g.joined.push({ u: mockDemoUser, bring: 1 }); // alpha:1230
-        useUiStore().toast(`${mockDemoUser.name} 从群里点进来 · 加入并带了 1 人`);
-      });
-    }
-    return msg;
-  }
-
-  /** 留/改意向（alpha:1286-1292 saveIntent）：至少一个时段 */
-  function saveIntent(slots: string[], freq: number): string | null {
+  async function saveIntent(slots: string[], frequency: number, note: string): Promise<Intent> {
     if (!slots.length) {
-      const m = '至少选一个时段';
-      useUiStore().toast(m);
-      return m;
+      ui.toast('至少选一个时段');
+      throw new Error('intent_slots_empty'); // 调用方（表单）应先拦，此处兜底
     }
     const had = !!myIntent.value;
-    myIntent.value = { slots: [...slots], freq };
-    const msg = had ? '意向已更新 · 想改随时改' : '意向已留下 · 组局的人凑人时会看见你';
-    useUiStore().toast(msg);
-    return msg;
+    const v = await track(() => apiSaveIntent(slots, frequency, note));
+    const it = toIntent(v);
+    myIntent.value = { slots: it.slots, frequency: it.frequency, note: it.note };
+    ui.toast(had ? '意向已更新 · 想改随时改' : '意向已留下 · 组局的人凑人时会看见你');
+    return it;
   }
 
-  /** 删意向（alpha:1293-1297 delIntent） */
-  function delIntent(): string {
+  async function delIntent(): Promise<void> {
+    await track(() => apiDeleteIntent());
     myIntent.value = null;
-    const msg = '意向已删 · 随时可以再留';
-    useUiStore().toast(msg);
-    return msg;
+    ui.toast('意向已删 · 随时可以再留');
   }
+
+  /** 进行中的局（live 入口页冷启动分发在用；真局来自后端派生态） */
+  const liveGame = computed(
+    () => games.value.find((g) => g.status === 'live') ?? myGames.value.find((g) => g.status === 'live') ?? null,
+  );
 
   return {
-    games, intents, myIntent, mySignups, myCheckins, liveGame,
-    joinGame, quitGame, cancelGame, publishGame, editGame, sureGame, bookCourt, clearBooking,
-    hitDeadline, restoreGame, inviteUser, shareGame, saveIntent, delIntent,
+    games, myGames, current, intents, myIntent, loading, liveGame,
+    findGame, loadGames, loadMine, loadDetail, refresh, loadIntents, loadMyIntent,
+    publishGame, editGame, joinGame, quitGame, cancelGame, lockGame, bookCourt, clearBooking,
+    restoreGame, inviteUser, saveIntent, delIntent,
   };
 });

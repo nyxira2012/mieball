@@ -9,7 +9,7 @@
     <!-- alpha:1270 hint 逐字 -->
     <view class="sheet-hint">大概什么时段想打、多久打一次 —— 组局的人凑人时会看见你</view>
 
-    <!-- alpha:1271-1274 slotgrid：4 时段卡（on = 电青描边 + 淡青底） -->
+    <!-- alpha:1271-1274 slotgrid：4 时段卡（on = 电青描边 + 淡青底）；同波段 match 数随 mock 退役（裁决②） -->
     <view class="slotgrid">
       <view
         v-for="s in slotDefs"
@@ -20,8 +20,6 @@
       >
         <view class="snm">{{ s.n }}</view>
         <view class="cnt">{{ s.desc }}</view>
-        <!-- alpha:1274 同波段 N 人（ice 青字） -->
-        <view class="cnt ice">同波段 {{ s.match }} 人</view>
       </view>
     </view>
 
@@ -38,11 +36,10 @@
 </template>
 
 <script setup lang="ts">
-/* 留/改意向表单（alpha.html:1264-1297 · P7）。
+/* 留/改意向表单（alpha.html:1264-1297 · P7；1.2 调用点适配：frequency 改名 + note 透传，备注编辑归批5）。
    SheetHost 按 sheet.type==='intent-form' 挂载本组件（v-if，挂载即「开表」）：
-   state 初值即 alpha:1266-1268 intentForm() 打开口径 —— 已有意向全量带入，
-   无意向默认选「周末晚上」(we-n) · 频率 2。保存走 game.saveIntent（文案由 store 逐字发），
-   失败不关弹层（alpha:1287），成功 closeSheet（alpha:1290，页面意向区经 store 响应式刷新）。 */
+   已有意向全量带入，无意向默认选「周末晚上」(we-n) · 频率 2。保存走 game.saveIntent
+   （文案由 store 逐字发），失败不关弹层，成功 closeSheet。 */
 import { ref } from 'vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppField from '@/components/ui/AppField.vue';
@@ -50,14 +47,16 @@ import AppSeg from '@/components/ui/AppSeg.vue';
 import { slots as slotDefs } from '@/api';
 import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
+import { errText } from '@/api/http';
 
 const game = useGameStore();
 const ui = useUiStore();
+const busy = ref(false);
 
 /* alpha:1267 ifSlots = myIntent ? [...myIntent.slots] : ['we-n'] */
 const ifSlots = ref<string[]>(game.myIntent ? [...game.myIntent.slots] : ['we-n']);
-/* alpha:1268 ifFreq = myIntent ? myIntent.freq : 2（string|number 对齐 AppSeg v-model 联合类型） */
-const ifFreq = ref<string | number>(game.myIntent ? game.myIntent.freq : 2);
+/* alpha:1268 ifFreq = myIntent ? myIntent.frequency : 2（string|number 对齐 AppSeg v-model 联合类型） */
+const ifFreq = ref<string | number>(game.myIntent ? game.myIntent.frequency : 2);
 
 /* alpha:1276-1277 三段：按钮内容 `${v===0?'~':v}<small>${l}</small>` → AppSeg label+sub */
 const FREQ_OPTS = [
@@ -72,14 +71,22 @@ function ifTog(k: string): void {
   else ifSlots.value = [...ifSlots.value, k];
 }
 
-/* alpha:1286-1292 saveIntent：至少一个时段（toast 逐字「至少选一个时段」由 store 发，弹层不关） */
-function save(): void {
+/* alpha:1286-1292 saveIntent：至少一个时段（本地先拦，省一跳）；note 本轮原样透传 */
+async function save(): Promise<void> {
   if (!ifSlots.value.length) {
-    game.saveIntent([], Number(ifFreq.value));
+    ui.toast('至少选一个时段');
     return;
   }
-  game.saveIntent([...ifSlots.value], Number(ifFreq.value)); // alpha:1289 写入（成功 toast 由 store 发）
-  ui.closeSheet(); // alpha:1290
+  if (busy.value) return;
+  busy.value = true;
+  try {
+    await game.saveIntent([...ifSlots.value], Number(ifFreq.value), game.myIntent?.note ?? '');
+    ui.closeSheet(); // alpha:1290
+  } catch (e) {
+    ui.toast(errText(e)); // intent_slots_empty 等后端文案直出
+  } finally {
+    busy.value = false;
+  }
 }
 </script>
 
@@ -112,10 +119,6 @@ function save(): void {
   font-size: 10px;
   color: var(--dim);
   margin-top: 3px;
-}
-/* alpha:1274 同波段 N 人（内联 color:var(--ice)） */
-.slot .cnt.ice {
-  color: var(--ice);
 }
 /* alpha:1275 field 内联 margin-top:12px（.field 基础在 AppField） */
 .freq-field {

@@ -82,11 +82,11 @@ import { ApiError, clearCardDraft, errText, readCardDraft, writeCardDraft } from
 import { useSmsCountdown } from '@/composables/useSmsCountdown';
 import { isValidPhone } from '@/utils/validate';
 import { goMeet } from '@/utils/nav';
-import type { ChibiConfig, PublishInput } from '@/api/types';
+import type { ChibiConfig, PublishGameInput } from '@/api/types';
 
 const props = defineProps({
   pendingJoin: { type: Object as PropType<{ gameId: number; bring: number }>, default: undefined },
-  pendingLaunch: { type: Object as PropType<PublishInput>, default: undefined },
+  pendingLaunch: { type: Object as PropType<PublishGameInput>, default: undefined },
   /** 扫码签到（2.1·选项A）：游客在现场页点「我到了」→ 建号成功后自动签到进候场区 */
   pendingCheckin: { type: Object as PropType<{ gameId: number }>, default: undefined },
 });
@@ -227,19 +227,28 @@ async function onVerify(): Promise<void> {
   }
 }
 
-/* ---- 成功收尾：清草稿 → 接着完成挂起动作（报名/建局/扫码签到）→ 关弹层 ---- */
+/* ---- 成功收尾：清草稿 → 接着完成挂起动作（报名/建局/扫码签到）→ 关弹层。
+     挂起动作失败 toast 人话（动作入口仍在对应页面可重试），不阻断关弹层 ---- */
 function afterSuccess(msg: string): void {
   clearCardDraft();
-  if (props.pendingJoin) {
-    game.joinGame(props.pendingJoin.gameId, props.pendingJoin.bring);
-  } else if (props.pendingLaunch) {
-    game.publishGame(props.pendingLaunch);
-    goMeet(); // 建局成功回约球页（与 LaunchSheet.publish 同径）
-  } else if (props.pendingCheckin) {
-    liveStore.arriveMe(props.pendingCheckin.gameId); // 2.1 选项A：建号即球友，自动「我到了」
-  }
+  void followUp();
   ui.toast(msg);
   ui.closeSheet();
+}
+
+async function followUp(): Promise<void> {
+  try {
+    if (props.pendingJoin) {
+      await game.joinGame(props.pendingJoin.gameId, props.pendingJoin.bring);
+    } else if (props.pendingLaunch) {
+      await game.publishGame(props.pendingLaunch);
+      goMeet(); // 建局成功回约球页（与 LaunchSheet.publish 同径）
+    } else if (props.pendingCheckin) {
+      await liveStore.arriveMe(props.pendingCheckin.gameId); // 2.1 选项A：建号即球友，自动「我到了」
+    }
+  } catch (e) {
+    ui.toast(errText(e));
+  }
 }
 </script>
 

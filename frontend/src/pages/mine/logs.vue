@@ -1,6 +1,6 @@
 <template>
-  <!-- 打球记录页（5.1 子页）：done 局一场一行按时间倒序 + 期间筛选，点卡进打球详情。
-       局卡渲染完全复用 GameCard done 分支（已结束 + 比分胜/负）。 -->
+  <!-- 打球记录页（5.1 子页 · 1.2 隔离线）：done 局一场一行按时间倒序 + 期间筛选，点卡进打球详情。
+       数据直读 mock 种子（快照冻结——真局的打完记录归后端，接通前本页仍吃 5.1 演示快照）。 -->
   <PageShell>
     <!-- 子页统一返回行（BackRow） -->
     <BackRow />
@@ -17,7 +17,7 @@
     <FilterChips v-model="period" :options="PERIOD_OPTS" />
 
     <template v-if="list.length">
-      <GameCard v-for="g in list" :key="g.id" :game="g" @tap="openGame(g)" />
+      <GameCard v-for="g in list" :key="g.id" :card="mockGameCard(g)" @tap="openGame(g)" />
     </template>
     <EmptyBox v-else text="这段期间没有打过的局 · 换个筛法" />
   </PageShell>
@@ -30,14 +30,14 @@ import BackRow from '@/components/biz/BackRow.vue';
 import GameCard from '@/components/biz/GameCard.vue';
 import FilterChips from '@/components/ui/FilterChips.vue';
 import EmptyBox from '@/components/ui/EmptyBox.vue';
-import { useGameStore } from '@/stores/game';
+import { games as seedGames } from '@/api';
 import { useUserStore } from '@/stores/user';
 import { PERIOD_FROM, PERIOD_OPTS, type BillPeriod } from '@/stores/bill';
 import { dayOrd } from '@/utils/time';
+import { mockGameCard } from '@/utils/format';
 import { goGame } from '@/utils/nav';
-import type { Game } from '@/api/types';
+import type { MockGame } from '@/api/types';
 
-const game = useGameStore();
 const user = useUserStore();
 const me = computed(() => user.me);
 
@@ -45,15 +45,15 @@ const me = computed(() => user.me);
 const period = ref<BillPeriod>('all');
 
 /** 记录列表：done 局按期间过滤（dayOrd 月*100+日，月份不补零不能裸比较字符串）后 d 倒序 */
-const list = computed<Game[]>(() => {
-  const done = game.games.filter((g) => g.status === 'done');
+const list = computed<MockGame[]>(() => {
+  const done = seedGames.filter((g) => g.status === 'done');
   const from = period.value === 'all' ? null : PERIOD_FROM[String(period.value) as Exclude<BillPeriod, 'all'>];
   const hit = from ? done.filter((g) => dayOrd(g.d) >= dayOrd(from)) : done;
   return hit.sort((a, b) => dayOrd(b.d) - dayOrd(a.d));
 });
 
 /** 局卡点击进打球详情页（5.1；路径契约在 utils/nav 单一源） */
-function openGame(g: Game): void {
+function openGame(g: MockGame): void {
   goGame(g.id);
 }
 </script>

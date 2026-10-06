@@ -83,3 +83,22 @@ export function untilTxt(d: Date): string | null {
   if (mins < 1440) return `${Math.floor(mins / 60)} 小时 ${mins % 60} 分`;
   return `${Math.round(mins / 1440)} 天`;
 }
+
+/* ---- 1.2 ISO 时刻 ↔ 展示（真局的 startAt/endAt/deadlineAt 消费面） ---- */
+
+/** Date → ISO 8601 北京时刻（本机墙钟按东八区口径直拼：自用规模设备时钟即北京时间；
+    后端收 aware 值按东八区取墙钟，见 1.2 技术设计§3 时区口径）。 */
+export function toIso(d: Date): string {
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}+08:00`;
+}
+
+/** ISO → 展示日段（dayToken：今天/明天/后天/M.DD 周X）——真局卡面与详情 hero 小字共用 */
+export function isoDay(iso: string): string {
+  return dayToken(new Date(iso));
+}
+
+/** ISO → 'HH:mm'——真局卡面与详情 hero 大字共用 */
+export function isoHm(iso: string): string {
+  return hmToken(new Date(iso));
+}

@@ -1,9 +1,8 @@
 <template>
-  <!-- 未成局卡 · alpha.html:919-931 deadCard() 逐字对齐（P5a）：
+  <!-- 未成局卡 · alpha.html:919-931 deadCard 对齐：
        局到截止人数不足自动终止后，组织者「我的局」里留的记录（整体 opacity:.75）。
-       时间位固定「未成/局」两行；地点行 = 原 t · loc · 截止时 heads/min 人 · 低于最少自动终止；
-       foot =「名单 N 人原样保留」chip + 恢复/撤局两个 tbtn。
-       静态阶段只 emit：P5b 接 game.restoreGame / cancelSheet（alpha:927-928）。 -->
+       时间位固定「未成/局」两行；地点行 = 开打时刻 · 场馆 · 截止时 heads/min 人 · 低于最少自动终止；
+       foot =「名单 N 人原样保留」chip + 恢复/撤局两个 tbtn（restore/cancel 由父层接 store/弹层）。 -->
   <view class="gcard">
     <view class="gd">
       <view class="time">
@@ -15,9 +14,9 @@
           <text class="title-txt">{{ game.name }}</text>
           <AppChip kind="dim">未成局</AppChip>
         </view>
-        <view class="loc">{{ game.t }} · {{ game.loc }} · 截止时 {{ hs }}/{{ game.min }} 人 · 低于最少自动终止</view>
+        <view class="loc">{{ isoDay(game.startAt) }} {{ isoHm(game.startAt) }} · {{ game.venueName }} · 截止时 {{ game.heads }}/{{ game.minPlayers }} 人 · 低于最少自动终止</view>
         <view class="foot">
-          <AppChip>名单 {{ hs }} 人原样保留</AppChip>
+          <AppChip>名单 {{ game.heads }} 人原样保留</AppChip>
           <view class="sp" />
           <view class="tbtn on-in" @click.stop="emit('restore')">↻ 恢复</view>
           <view class="tbtn on-no" @click.stop="emit('cancel')">撤局</view>
@@ -29,18 +28,15 @@
 
 <script setup lang="ts">
 /* alpha.html:919-931 deadCard（P5a） */
-import { computed } from 'vue'
 import type { PropType } from 'vue'
 import AppChip from '@/components/ui/AppChip.vue'
 import type { Game } from '@/api/types'
-import { heads } from '@/utils/format'
+import { isoDay, isoHm } from '@/utils/time'
 
-const props = defineProps({
+defineProps({
   game: { type: Object as PropType<Game>, required: true },
 })
 const emit = defineEmits<{ (e: 'restore'): void; (e: 'cancel'): void }>()
-
-const hs = computed(() => heads(props.game))
 </script>
 
 <style lang="scss" scoped>

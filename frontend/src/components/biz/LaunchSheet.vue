@@ -1,16 +1,12 @@
 <template>
-  <!-- 组局表单（3.3 改版 · 2026-10-04 用户定：瘦身 + 拨盘选准）：
+  <!-- 组局表单（3.3 改版 + 1.2 修订面）：
        新建（无 gameId）/ 改局（带 gameId 带出原值）复用同一表单，编辑态标题「改局 · 名单不动」+ 截止只读框。
-       相对旧版（alpha:1299-1398）的变化：
-       ① 局名去标签，占位提示即自动默认名「日段 · 地点」（不填发布时用它）；
-       ② 时间+打多久合并为「日期 / 开始 / 结束」三列拨盘（24 小时制 30 分钟一格，打多久由起止得出，默认两天后 19:00–21:00）；
-       ③ 组局截止弃用 chips，改两列拨盘：默认自动=开打前 2 小时（随开打重算），手动拨过即固定、可点回自动，范围夹在 现在~开打 之间；
-       ④ 预计费用整字段去掉（新局 fee=null 费用未定；改局不动原 fee）；
-       ⑤ 说明字段去掉，改规则三件直选：分制（11/15/21）、轮转（均衡配对/赢家留场/纯粹轮转）、得分规则（每球/发球得分制），落 score/mode/scoreRule。
+       1.2 修订：新增「谁能翻到」三选（跟我打过的人/任何人/仅邀请，默认第一档——A1）；
+       提交值换算成 ISO 绝对时刻（契约§2），组局截止默认自动=开打前 2 小时、手动拨过即固定。
+       规则三件/人数/地点沿用 3.3；费用与说明不在表单（新局费用未定，改局不动原 fee）。
        入口：TabBar FAB / 详情页「改信息」都经 ui.openSheet({type:'launch'})；
        成功后只关弹层 —— toast 由 game store 的 publishGame/editGame 内置。 -->
   <view class="lc">
-    <!-- alpha:1316 标题（壳层样式同 AppSheet 的 h3/.hint） -->
     <view class="sheet-t">{{ isEd ? '改局 · 名单不动' : '组局' }}</view>
     <view class="sheet-hint">{{
       isEd
@@ -18,7 +14,7 @@
         : '从上到下拨完点发布 · 发完点局上的 ⤴ 转到群里拉人'
     }}</view>
 
-    <!-- 局名：无标签（2026-10-04 定），占位即自动默认名 -->
+    <!-- 局名：无标签，占位即自动默认名 -->
     <view class="lc-name">
       <AppInput v-model="lf.name" :placeholder="autoName" />
     </view>
@@ -37,7 +33,7 @@
 
     <!-- 组局截止：编辑态定死只读；新建两列拨盘 + 自动跟随标记 -->
     <AppField v-if="isEd" label="组局截止 · 定死不能改">
-      <view class="dl-ro">{{ lf.deadline }} · 到点名单锁定，参加者不能再退出</view>
+      <view class="dl-ro">{{ lf.deadlineTxt }} · 到点名单锁定，参加者不能再退出</view>
     </AppField>
     <AppField v-else label="组局截止 · 到点名单锁定，低于最少自动终止">
       <view class="dl-tag" :class="{ on: dlAuto }" @click="onDlTag">{{
@@ -60,6 +56,12 @@
       </view>
     </AppField>
 
+    <!-- 谁能翻到（1.2 A1 新增三选，默认跟我打过的人） -->
+    <AppField label="谁能翻到 · 只管列表，链接永远能进">
+      <OptionChips :model-value="lf.visibility" :options="VIS_OPTS" @update:model-value="lf.visibility = String($event) as Visibility" />
+      <view class="ppl-hint">{{ visHint }}</view>
+    </AppField>
+
     <!-- 人数双 stepper（照旧：min 2-12，cap min+1 至 16） -->
     <AppField label="人数 · 最少 — 最多（满员线）">
       <view class="ppl">
@@ -69,14 +71,16 @@
         <AppStepper class="ppl-st" :model-value="lf.cap" :min="lf.min + 1" :max="16" @update:model-value="lf.cap = $event" />
       </view>
       <view class="ppl-hint">{{ pplHint }}</view>
+      <!-- A3 编辑态上限改小：保存时将有 formal 人转候补的预估提示 -->
+      <view v-if="toWaitHint" class="ppl-hint ppl-warn">{{ toWaitHint }}</view>
     </AppField>
 
-    <!-- 规则三件（2026-10-04 定：说明字段去掉，改直选分制/轮转/迟到，落局的规则数据） -->
+    <!-- 规则三件（2026-10-04 定：说明字段去掉，改直选分制/轮转/得分规则） -->
     <AppField label="分制 · 先到 N 且净胜 2">
-      <OptionChips :model-value="lf.score" :options="SCORES" @update:model-value="lf.score = Number($event)" />
+      <OptionChips :model-value="lf.scoring" :options="SCORES" @update:model-value="lf.scoring = Number($event)" />
     </AppField>
     <AppField label="轮转 · 怎么排人">
-      <OptionChips :model-value="lf.mode" :options="MODES" @update:model-value="lf.mode = String($event) as CourtMode" />
+      <OptionChips :model-value="lf.rotation" :options="MODES" @update:model-value="lf.rotation = String($event) as CourtMode" />
     </AppField>
     <AppField label="得分规则 · 什么球算分">
       <OptionChips
@@ -87,15 +91,13 @@
     </AppField>
 
     <!-- 发布 / 保存修改（pri 通栏黄钮） -->
-    <AppButton variant="pri" block @click="publish">{{ isEd ? '保存修改' : '发布' }}</AppButton>
+    <AppButton variant="pri" block :disabled="busy" @click="publish">{{ busy ? '提交中…' : isEd ? '保存修改' : '发布' }}</AppButton>
   </view>
 </template>
 
 <script setup lang="ts">
-/* 组局表单 LaunchSheet（3.3 改版）。
-   拨盘受控值约定：时间为「分钟数」（30 分钟一格），下标 = 分钟/30；
-   日期列 = 今天起 14 天，日段文案用 utils/time 的 dayToken（今天/明天/后天/M.DD 周X），
-   发布时落成「日段 HH:mm」，gameTime 的精确日期分支可原样解析回来。 */
+/* 组局表单 LaunchSheet（3.3 改版 · 1.2 修订面）。
+   拨盘受控值约定：时间为「分钟数」（30 分钟一格）；发布时 toIso 落成绝对时刻（契约§2）。 */
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import AppField from '@/components/ui/AppField.vue';
 import AppInput from '@/components/ui/AppInput.vue';
@@ -107,9 +109,10 @@ import { useGameStore } from '@/stores/game';
 import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
 import { mockVenues } from '@/api';
-import type { CourtMode, PublishInput } from '@/api/types';
+import type { CourtMode, PublishGameInput, Visibility } from '@/api/types';
 import { MODE_NAMES, SCORE_RULE_NAMES, autoGameName } from '@/utils/format';
-import { dayOff, dayToken, durTxt, gameTime } from '@/utils/time';
+import { dayOff, dayToken, toIso } from '@/utils/time';
+import { errText } from '@/api/http';
 import { goMeet } from '@/utils/nav';
 
 const props = defineProps({
@@ -130,8 +133,8 @@ const GRID_LABELS: string[] = Array.from(
   { length: GRID_N },
   (_, i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${String((i % 2) * 30).padStart(2, '0')}`,
 );
-/** 规则三件（3.3：说明字段去掉，直选分制/轮转/迟到；label 引 MODE_NAMES/SCORE_RULE_NAMES
-    与 detail/live 同源） */
+/** 规则三件 + 谁能翻到（label 引 MODE_NAMES/SCORE_RULE_NAMES 与 detail/live 同源；
+    可见档文案表落本组件内——技术设计§4 知识落点） */
 const SCORES = [11, 15, 21];
 const MODES: Array<{ value: CourtMode; label: string }> = [
   { value: 'balance', label: MODE_NAMES.balance },
@@ -142,7 +145,17 @@ const SCORE_RULES = [
   { value: 'rally', label: SCORE_RULE_NAMES.rally },
   { value: 'serve', label: SCORE_RULE_NAMES.serve },
 ];
-/** 地点 chips：场馆名单一源在 mock/data（与局 seeds 的 loc、area 推断同源）+ 手输项 */
+const VIS_OPTS: Array<{ value: Visibility; label: string }> = [
+  { value: 'played', label: '跟我打过的人' },
+  { value: 'public', label: '任何人' },
+  { value: 'invite_only', label: '仅邀请' },
+];
+const visHint = computed(() => {
+  if (lf.visibility === 'played') return '只给同局打过球的人翻到 · 新球友主要靠你转的链接进来';
+  if (lf.visibility === 'public') return '任何人翻约球页都能看到这局';
+  return '列表里不出现 · 只把链接或邀请发给人';
+});
+/** 地点 chips：场馆名单一源在 mock/data + 手输项 */
 const VENS = [...mockVenues, '手输新场地'];
 
 /** 分钟 ↔ 网格下标（夹取） */
@@ -151,9 +164,11 @@ const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.m
 
 /* ---- 表单状态 ---- */
 const isEd = ref(false);
+const busy = ref(false);
 const lf = reactive({
-  gid: 0, name: '', deadline: '', min: 4, cap: 6,
-  score: 11, mode: 'balance' as CourtMode, scoreRule: 'rally' as 'rally' | 'serve',
+  gid: 0, name: '', deadlineTxt: '', min: 4, cap: 6,
+  visibility: 'played' as Visibility,
+  scoring: 11, rotation: 'balance' as CourtMode, scoreRule: 'rally' as 'rally' | 'serve',
 });
 const venOn = ref('');
 const vCustom = ref('');
@@ -192,7 +207,7 @@ const playStart = computed(() => {
 });
 const playHint = computed(
   () =>
-    `${dayLabels.value[dayI.value]} ${GRID_LABELS[m2g(startMin.value)]}–${GRID_LABELS[m2g(endMin.value)]} · 打 ${durTxt((endMin.value - startMin.value) / 60)}`,
+    `${dayLabels.value[dayI.value]} ${GRID_LABELS[m2g(startMin.value)]}–${GRID_LABELS[m2g(endMin.value)]}`,
 );
 
 /** 开打拨盘变化：夹结束时刻；截止为手动态时把越界部分收进新的可拨范围 */
@@ -204,8 +219,7 @@ function onPlayChange(v: number[]): void {
 }
 
 /* 截止拨盘：可拨范围从源头限死（日期 ≤ 开打日；同日时刻 ≤ 开打前 5 分，今天再叠「现在+5分」下限），
-   越界的值拨不出来，也就不需要「夹回」——uni 的受控回滚不可靠（见 3.3 实测）。
-   自动态 = 开打前 2 小时（随开打重算）；手动拨过即固定，点标签可回自动。 */
+   越界的值拨不出来。自动态 = 开打前 2 小时（随开打重算）；手动拨过即固定，点标签可回自动。 */
 const dlAuto = ref(true);
 const dlDayI = ref(2);
 const dlMin = ref(17 * 60);
@@ -249,7 +263,6 @@ function applyDl(d: Date): void {
   const { lo, hi } = dlBounds(dlDayI.value);
   dlMin.value = clamp(ceilStep(d.getHours() * 60 + d.getMinutes()), lo, hi);
 }
-/** 开打变化后（手动态）：日期列可能超出新的可拨范围，直接改状态值（程序化改值能正常同步滚轮） */
 function fitDlToRange(): void {
   if (dlDayI.value > dayI.value) dlDayI.value = dayI.value;
   const { lo, hi } = dlBounds(dlDayI.value);
@@ -272,10 +285,9 @@ watch([dayI, startMin], () => {
   if (dlAuto.value) applyDl(autoDlDate.value);
 });
 
-/* ---- 地点 / 人数 / 说明 ---- */
+/* ---- 地点 / 人数 ---- */
 const venueSel = computed(() => (venOn.value === '手输新场地' ? vCustom.value.trim() || venOn.value : venOn.value));
-/** 自动默认名「日段 · 地点」：占位提示与不填时的发布名同源（utils/format 的 autoGameName，
-    game store 发布/改局同消费） */
+/** 自动默认名「日段 · 地点」：占位提示与不填时的发布名同源（utils/format 的 autoGameName） */
 const autoName = computed(() => autoGameName(dayLabels.value[dayI.value], venueSel.value));
 
 function lfMin(v: number): void {
@@ -283,31 +295,45 @@ function lfMin(v: number): void {
   if (lf.cap < lf.min + 1) lf.cap = lf.min + 1;
 }
 const pplHint = computed(() => `${lf.min}-${lf.cap} 人 · 不足最少截止时自动终止 · 到最多进候补`);
+/* A3 编辑态上限改小预估：formal 人头（Σ(1+bring)）− 新上限 > 0 即提示将转候补人数；
+   后端会保组织者行，前端不做该细节模拟，超额按人头口径直说 */
+const formalHeads = computed(() => {
+  const ed = game.findGame(lf.gid);
+  return (ed?.entries ?? []).filter((e) => e.standing === 'formal').reduce((s, e) => s + 1 + (e.bring || 0), 0);
+});
+const toWaitHint = computed(() => {
+  if (!isEd.value) return '';
+  const x = Math.max(0, formalHeads.value - lf.cap);
+  return x > 0 ? `保存后有 ${x} 人将转入候补` : '';
+});
 
 /** 打开时初始化。SheetHost 的 v-if 使每次打开都重新挂载 → onMounted 即开表；watch 兜底换 gameId。 */
 function init(): void {
-  const ed = props.gameId != null ? game.games.find((x) => x.id === props.gameId) : null;
+  const ed = props.gameId != null ? game.findGame(props.gameId) : null;
   isEd.value = !!ed;
   lf.gid = ed ? ed.id : 0;
   lf.name = ed ? ed.name : '';
-  const loc = ed ? ed.loc : VENS[0];
-  lf.min = ed ? ed.min : 4;
-  lf.cap = ed ? ed.cap : 6;
-  lf.score = ed ? ed.score : 11;
-  lf.mode = ed ? ed.mode : 'balance';
-  lf.scoreRule = ed?.scoreRule ?? 'rally';
+  lf.visibility = ed ? ed.visibility : 'played';
+  const loc = ed ? ed.venueName : VENS[0];
+  lf.min = ed ? ed.minPlayers : 4;
+  lf.cap = ed ? ed.maxPlayers : 6;
+  lf.scoring = ed ? ed.scoring : 11;
+  lf.rotation = ed ? ed.rotation : 'balance';
+  lf.scoreRule = ed?.scoreRule === 'serve' ? 'serve' : 'rally';
   venOn.value = VENS.includes(loc) ? loc : '手输新场地';
   vCustom.value = venOn.value === '手输新场地' && !VENS.includes(loc) ? loc : '';
   if (ed) {
-    const sd = gameTime(ed.t);
+    const sd = new Date(ed.startAt);
     dayI.value = clamp(dayOff(sd), 0, DAY_N - 1);
-    startMin.value = m2g(sd.getHours() * 60 + sd.getMinutes()) * STEP;
+    startMin.value = clamp(sd.getHours() * 60 + sd.getMinutes(), 0, GRID_MAX);
+    const edMin = new Date(ed.endAt);
     endMin.value = clamp(
-      startMin.value + Math.round(ed.dur * 60),
+      edMin.getHours() * 60 + edMin.getMinutes(),
       startMin.value + 30,
       Math.min(startMin.value + 360, GRID_MAX),
     );
-    lf.deadline = ed.deadline; // 编辑态只读展示
+    lf.deadlineTxt = `${dayToken(new Date(ed.deadlineAt))} ${GRID_LABELS[m2g(new Date(ed.deadlineAt).getHours() * 60 + new Date(ed.deadlineAt).getMinutes())]}`;
+    dlAuto.value = false; // 编辑态截止只读，拨盘状态不参与提交
   } else {
     dayI.value = 2; // 默认两天后 19:00–21:00
     startMin.value = 19 * 60;
@@ -319,36 +345,54 @@ function init(): void {
 onMounted(init);
 watch(() => props.gameId, init);
 
-/** 发布 / 保存修改：拨盘状态落成字符串 → store（toast 在 store 内置）→ 关弹层 */
-function publish(): void {
-  const time = `${dayLabels.value[dayI.value]} ${GRID_LABELS[m2g(startMin.value)]}`;
-  const dur = (endMin.value - startMin.value) / 60;
-  const deadline = isEd.value
-    ? lf.deadline
-    : `${dayLabels.value[clamp(dlDayI.value, 0, DAY_N - 1)]} ${GRID_LABELS[m2g(dlMin.value)]}`;
-  const input: PublishInput = {
+/** 自动态截止的 Date（新建提交用） */
+const dlDate = computed(() => {
+  const d = new Date(days.value[clamp(dlDayI.value, 0, DAY_N - 1)]);
+  d.setHours(0, dlMin.value, 0, 0);
+  return d;
+});
+
+/** 发布 / 保存修改：拨盘状态落成 ISO 绝对时刻（契约§2）→ store（toast 在 store 内置）→ 关弹层；
+     失败 toast 人话留在表单（A2：已填内容不丢） */
+async function publish(): Promise<void> {
+  if (busy.value) return;
+  const endDate = new Date(playStart.value.getTime() + (endMin.value - startMin.value) * 60000);
+  const input: PublishGameInput = {
     name: lf.name.trim() || autoName.value,
-    time,
-    dur,
-    deadline,
-    venue: venueSel.value,
-    min: lf.min,
-    cap: lf.cap,
-    score: lf.score,
-    mode: lf.mode,
-    scoreRule: lf.scoreRule,
+    start_at: toIso(playStart.value),
+    end_at: toIso(endDate),
+    deadline_at: isEd.value ? '' : toIso(dlDate.value),
+    venue_name: venueSel.value,
+    venue_address: null,
+    min_players: lf.min,
+    max_players: lf.cap,
+    visibility: lf.visibility,
+    scoring: lf.scoring,
+    rotation: lf.rotation,
+    score_rule: lf.scoreRule,
   };
-  if (isEd.value) game.editGame(lf.gid, input);
-  else {
-    // 1.1 先看后报：游客建局先弹名片建号卡，建号成功由弹层接着发布（表单值随身带走不重填）
-    if (session.isGuest) {
-      ui.signupThen({ pendingLaunch: input });
-      return;
+  busy.value = true;
+  try {
+    if (isEd.value) {
+      const { deadline_at: _omit, ...edits } = input; // 截止不在改局参数表（不变承诺3）
+      void _omit;
+      await game.editGame(lf.gid, edits);
+    } else {
+      // 1.1 先看后报：游客建局先弹名片建号卡，建号成功由弹层接着发布（表单值随身带走不重填）
+      if (session.isGuest) {
+        ui.signupThen({ pendingLaunch: input });
+        busy.value = false;
+        return;
+      }
+      await game.publishGame(input);
+      goMeet(); // 发布成功回约球页（alpha:1397 go('meet')）
     }
-    game.publishGame(input);
-    goMeet(); // 发布成功回约球页（alpha:1397 go('meet')）
+    ui.closeSheet();
+  } catch (e) {
+    ui.toast(errText(e)); // deadline_inverted / range_invalid 等后端人话直出
+  } finally {
+    busy.value = false;
   }
-  ui.closeSheet();
 }
 </script>
 
@@ -408,5 +452,9 @@ function publish(): void {
   color: var(--dim);
   font-size: 11px;
   margin-top: 6px;
+}
+/* A3 转候补预估行：警示色（同 detail 剩坑为 0 的 coral 口径） */
+.ppl-warn {
+  color: var(--coral);
 }
 </style>
