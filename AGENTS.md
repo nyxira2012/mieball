@@ -15,10 +15,17 @@ cd frontend && npm run test         # vitest
 cd frontend && npm run type-check   # vue-tsc
 ```
 
+## 质量工具（已全局装在本机，直接命令可用）
+
+- prettier / eslint — 前端格式化、规范检查（`prettier --write <文件>` · `eslint <文件>`）
+- ruff — 后端格式化+规范检查一体（`ruff format .` · `ruff check .`）
+- 注意：是机器级安装，项目内暂无规则配置与 npm script；换机器需重装（npm i -g / brew install ruff）
+
 ## 文档
 
 - `docs/0号文档.md` — 产品总纲（一句话、核心循环、术语表；术语以它为准，如"球局/组织者/轮转/积分"）
 - `docs/1.1.账号与登录-后端.md` — 后端第一份业务规格（账号体系，已评审）
+- `docs/1.2.组局与报名-后端.md` — 球局域后端规格（组局/报名/可见性三档/意向与邀请，已评审）
 - `docs/1.5.灵活首页-后端.md` — 角色化动态首页规格
 - `docs/2.1 ~ 5.1.*-前端.md` — 各页面前端规格
 - temp/原型图存放处

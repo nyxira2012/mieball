@@ -15,8 +15,12 @@
       <text class="mh-t">球局</text>
       <text class="mh-n">{{ flt.length }} 个 · 我参加 / 组织的置顶</text>
       <view class="sp" />
-      <view class="mhbtn" @click="filtersOpen = !filtersOpen">{{ filtersOpen ? '筛选 ▴' : '筛选 ▾' }}</view>
-      <view class="mhbtn" @click="gamesFold = !gamesFold">{{ gamesFold ? '展开' : '收起' }}</view>
+      <view class="mhbtn" @click="filtersOpen = !filtersOpen">{{
+        filtersOpen ? "筛选 ▴" : "筛选 ▾"
+      }}</view>
+      <view class="mhbtn" @click="gamesFold = !gamesFold">{{
+        gamesFold ? "展开" : "收起"
+      }}</view>
     </view>
 
     <!-- 折叠筛选区：时间 5 chips（1.2 起只按时间筛；档位可见性归后端、地区筛随 mock 退役） -->
@@ -29,10 +33,21 @@
       球局列表已收起 · 点展开 {{ flt.length }} 个局 ▸
     </view>
     <template v-else>
-      <EmptyBox v-if="game.loading && !ordered.length" :text="slow ? '网络有点慢 · 再等等，或稍后再来' : '正在翻局 · 马上好…'" />
+      <EmptyBox
+        v-if="game.loading && !ordered.length"
+        :text="slow ? '网络有点慢 · 再等等，或稍后再来' : '正在翻局 · 马上好…'"
+      />
       <template v-else>
-        <GameCard v-for="g in ordered" :key="g.id" :card="newGameCard(g)" @tap="onGameTap(g)" />
-        <EmptyBox v-if="!flt.length" text="这里还没有能翻到的局 —— 留个意向，或点右下角 ＋ 发一个" />
+        <GameCard
+          v-for="g in ordered"
+          :key="g.id"
+          :card="newGameCard(g)"
+          @tap="onGameTap(g)"
+        />
+        <EmptyBox
+          v-if="!flt.length"
+          text="这里还没有能翻到的局 —— 留个意向，或点右下角 ＋ 发一个"
+        />
       </template>
     </template>
 
@@ -41,42 +56,81 @@
          · 参加者当日灰字行「该局已取消」（后端只在死亡当日返回，次日自动收走，前端只管渲染，4.8/4.10） -->
     <template v-if="orgPending.length">
       <SectionTitle title="待处置" more="恢复的局 · 等你锁必打或撤局" />
-      <DeadCard v-for="g in orgPending" :key="g.id" pending :game="g" @lock="onLock(g)" @cancel="onCancel(g)" />
+      <DeadCard
+        v-for="g in orgPending"
+        :key="g.id"
+        pending
+        :game="g"
+        @lock="onLock(g)"
+        @cancel="onCancel(g)"
+      />
     </template>
     <template v-if="orgDead.length">
       <SectionTitle title="未成局" more="到截止人数不足自动终止" />
-      <DeadCard v-for="g in orgDead" :key="g.id" :game="g" @restore="onRestore(g)" @cancel="onCancel(g)" />
+      <DeadCard
+        v-for="g in orgDead"
+        :key="g.id"
+        :game="g"
+        @restore="onRestore(g)"
+        @cancel="onCancel(g)"
+      />
     </template>
     <template v-if="grayMine.length">
       <SectionTitle title="已取消的局" more="只在今天可见" />
-      <view v-for="g in grayMine" :key="g.id" class="grayrow">「{{ g.name }}」 该局已取消</view>
+      <view v-for="g in grayMine" :key="g.id" class="grayrow"
+        >「{{ g.name }}」 该局已取消</view
+      >
     </template>
 
     <!-- alpha:1091-1097 意向区头：CSS 吸顶 + 贴底钉位；整头点击切换焦点，scope 两钮 stopPropagation -->
     <view class="isec-head" :style="dockStyle" @click="focusIntent">
       <text class="mh-t">意向</text>
-      <text class="mh-n">{{ scopeLabel }} {{ ipool.length }} 条 · 点击切换焦点 ⇅</text>
+      <text class="mh-n"
+        >{{ scopeLabel }} {{ ipool.length }} 条 · 点击切换焦点 ⇅</text
+      >
       <view class="sp" />
-      <view class="mhbtn" :class="{ on: intentScope === 'all' }" @click.stop="intentScope = 'all'">所有人</view>
-      <view class="mhbtn" :class="{ on: intentScope === 'known' }" @click.stop="intentScope = 'known'">打过</view>
+      <view
+        class="mhbtn"
+        :class="{ on: intentScope === 'all' }"
+        @click.stop="intentScope = 'all'"
+        >所有人</view
+      >
+      <view
+        class="mhbtn"
+        :class="{ on: intentScope === 'known' }"
+        @click.stop="intentScope = 'known'"
+        >打过</view
+      >
     </view>
 
     <!-- alpha:1098-1102 意向区内容：我的意向条（改/删）或 留意向入口 + IntentCard 列表 + 说明行 -->
     <view class="intent-sec">
       <view v-if="game.myIntent" class="idock-my">
-        <text class="my-txt">我的意向 · {{ myIntentLine }} · {{ freqName(game.myIntent.frequency) }}</text>
+        <text class="my-txt"
+          >我的意向 · {{ myIntentLine }} ·
+          {{ freqName(game.myIntent.frequency) }}</text
+        >
         <view class="my-btns">
           <view class="tbtn" @click="openIntentForm">✎ 改</view>
           <view class="tbtn on-no" @click="onDelIntent">✕</view>
         </view>
       </view>
-      <view v-else class="useentry" @click="openIntentForm">＋ 留我的意向 —— 什么时段想打 · 组局的人会看见你</view>
+      <view v-else class="useentry" @click="openIntentForm"
+        >＋ 留我的意向 —— 什么时段想打 · 组局的人会看见你</view
+      >
 
       <!-- 后端已排未邀在前、已邀靠后（updated_at 倒序），前端保持该序不再重排 -->
-      <IntentCard v-for="i in ipool" :key="i.account.id" :intent="i" @tap="onIntentTap(i)" />
+      <IntentCard
+        v-for="i in ipool"
+        :key="i.account.id"
+        :intent="i"
+        @tap="onIntentTap(i)"
+      />
       <EmptyBox v-if="!ipool.length" text="这里还没有意向" />
 
-      <view class="sub intent-note">默认只看打过球的 · 点击卡片查看球友名片</view>
+      <view class="sub intent-note"
+        >默认只看打过球的 · 点击卡片查看球友名片</view
+      >
     </view>
 
     <view class="tailpad" />
@@ -88,25 +142,31 @@
    - 数据走 game store 真接口（loadGames/loadMine/loadIntents/loadMyIntent），onShow 重拉；
    - 列表只按时间筛（档位可见性后端已滤；done 局不上找局打——裁决⑧，历史归我的局/详情）；
    - 置顶/跑马灯/点卡分支全读 my 块定值（A4 画面不自算）。 */
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { onPageScroll, onShow } from '@dcloudio/uni-app';
-import PageShell from '@/components/biz/PageShell.vue';
-import GameCard from '@/components/biz/GameCard.vue';
-import DeadCard from '@/components/biz/DeadCard.vue';
-import IntentCard from '@/components/biz/IntentCard.vue';
-import Ticker from '@/components/ui/Ticker.vue';
-import type { TickerItem } from '@/components/ui/Ticker.vue';
-import FilterChips from '@/components/ui/FilterChips.vue';
-import SectionTitle from '@/components/ui/SectionTitle.vue';
-import EmptyBox from '@/components/ui/EmptyBox.vue';
-import type { Game, Intent } from '@/api/types';
-import { communityMeta } from '@/api';
-import { useGameStore } from '@/stores/game';
-import { useUiStore } from '@/stores/ui';
-import { deadRowKind, freqName, gameTapAction, newGameCard, slotName } from '@/utils/format';
-import { dayOff, isoDay, isoHm, untilTxt } from '@/utils/time';
-import { errText } from '@/api/http';
-import { goGame } from '@/utils/nav';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { onPageScroll, onShow } from "@dcloudio/uni-app";
+import PageShell from "@/components/biz/PageShell.vue";
+import GameCard from "@/components/biz/GameCard.vue";
+import DeadCard from "@/components/biz/DeadCard.vue";
+import IntentCard from "@/components/biz/IntentCard.vue";
+import Ticker from "@/components/ui/Ticker.vue";
+import type { TickerItem } from "@/components/ui/Ticker.vue";
+import FilterChips from "@/components/ui/FilterChips.vue";
+import SectionTitle from "@/components/ui/SectionTitle.vue";
+import EmptyBox from "@/components/ui/EmptyBox.vue";
+import type { Game, Intent } from "@/api/types";
+import { communityMeta } from "@/api";
+import { useGameStore } from "@/stores/game";
+import { useUiStore } from "@/stores/ui";
+import {
+  deadRowKind,
+  freqName,
+  gameTapAction,
+  newGameCard,
+  slotName,
+} from "@/utils/format";
+import { isoDay, isoDayOff, isoHm, isoParts, untilTxt } from "@/utils/time";
+import { errText } from "@/api/http";
+import { goGame } from "@/utils/nav";
 
 const game = useGameStore();
 const ui = useUiStore();
@@ -114,34 +174,34 @@ const ui = useUiStore();
 /* ---- 头部（alpha:1072 日期行逐字） ---- */
 const dateLine = computed(() => {
   const d = new Date();
-  return `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 星期${'日一二三四五六'[d.getDay()]} · ${communityMeta.name}`;
+  return `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 星期${"日一二三四五六"[d.getDay()]} · ${communityMeta.name}`;
 });
 
 /* ---- 状态（alpha:956） ---- */
-const fTime = ref<string | number>('all');
-const intentScope = ref<'known' | 'all'>('known');
+const fTime = ref<string | number>("all");
+const intentScope = ref<"known" | "all">("known");
 const filtersOpen = ref(false);
 const gamesFold = ref(false);
 
 /* alpha:1082 时间筛选 chips（逐字；地区档随 mock 退役） */
 const TIME_OPTS = [
-  { value: 'all', label: '全部时间' },
-  { value: 'tonight', label: '今晚' },
-  { value: 'tomorrow', label: '明天' },
-  { value: 'weekend', label: '周末' },
-  { value: 'week', label: '本周' },
+  { value: "all", label: "全部时间" },
+  { value: "tonight", label: "今晚" },
+  { value: "tomorrow", label: "明天" },
+  { value: "weekend", label: "周末" },
+  { value: "week", label: "本周" },
 ];
 
-/* alpha:1082-1085 桶判定：与旧 tb 推导同口径（今天/明天/周末/其余未来），从 startAt 现算 */
+/* alpha:1082-1085 桶判定：与旧 tb 推导同口径（今天/明天/周末/其余未来），从 startAt 现算
+   （走查#1 收口：ISO 筛选也按北京墙钟取数，不再吃设备本地 getDay） */
 function inBucket(g: Game, b: string): boolean {
-  if (b === 'all') return true;
-  const d = new Date(g.startAt);
-  const off = dayOff(d);
-  if (b === 'tonight') return off <= 0;
-  if (b === 'tomorrow') return off === 1;
-  const wd = d.getDay();
-  if (b === 'weekend') return wd === 0 || wd === 6;
-  return wd !== 0 && wd !== 6;
+  if (b === "all") return true;
+  const p = isoParts(g.startAt);
+  const off = isoDayOff(g.startAt);
+  if (b === "tonight") return off <= 0;
+  if (b === "tomorrow") return off === 1;
+  if (b === "weekend") return p.wd === 0 || p.wd === 6;
+  return p.wd !== 0 && p.wd !== 6;
 }
 
 /* ---- 跑马灯（alpha:983-994）：被邀条目吃 myGames 的 my.invited 定值；
@@ -151,18 +211,25 @@ const tickerItems = computed<TickerItem[]>(() => {
   game.myGames
     .filter((g) => g.my?.invited && !g.my.myEntry)
     .forEach((g) =>
-      bits.push({ tag: '邀请', text: `${g.organizer.nickname} 邀你加入「${g.name}」· 点一下就加入` }),
+      bits.push({
+        tag: "邀请",
+        text: `${g.organizer.nickname} 邀你加入「${g.name}」· 点一下就加入`,
+      }),
     );
   const nx = game.myGames
-    .filter((g) => g.status === 'open' || g.status === 'locked')
+    .filter((g) => g.status === "open" || g.status === "locked")
     .map((g) => ({ g, t: new Date(g.startAt) }))
     .filter((x) => x.t.getTime() > Date.now())
     .sort((a, b) => a.t.getTime() - b.t.getTime())[0];
   const u = nx && untilTxt(nx.t);
   if (nx && u) {
-    bits.push({ tag: 'NEXT', text: `距离「${nx.g.name}」${isoDay(nx.g.startAt)}${isoHm(nx.g.startAt)} 开打还有 ${u}` });
+    bits.push({
+      tag: "NEXT",
+      text: `距离「${nx.g.name}」${isoDay(nx.g.startAt)}${isoHm(nx.g.startAt)} 开打还有 ${u}`,
+    });
   }
-  if (!bits.length) bits.push({ tag: 'NOW', text: '暂无要开的局 · 意向底坞里攒下一场' });
+  if (!bits.length)
+    bits.push({ tag: "NOW", text: "暂无要开的局 · 意向底坞里攒下一场" });
   return bits;
 });
 
@@ -171,20 +238,27 @@ const tickerItems = computed<TickerItem[]>(() => {
 const ftv = computed(() => String(fTime.value));
 const flt = computed(() =>
   game.games
-    .filter((g) => g.status !== 'done' && inBucket(g, ftv.value))
+    .filter((g) => g.status !== "done" && inBucket(g, ftv.value))
     .map((g) => ({ g, t: new Date(g.startAt).getTime() }))
     .sort((a, b) => a.t - b.t)
     .map((x) => x.g),
 );
 /* alpha:1056/1088 pinned = 我参加/组织/被邀的置顶（my 块定值） */
 const ordered = computed(() => {
-  const mine = (g: Game): boolean => !!g.my && (g.my.isOrganizer || !!g.my.myEntry || g.my.invited);
+  const mine = (g: Game): boolean =>
+    !!g.my && (g.my.isOrganizer || !!g.my.myEntry || g.my.invited);
   return [...flt.value.filter(mine), ...flt.value.filter((g) => !mine(g))];
 });
 /* 死局区三分（deadRowKind 单一源，4.8/4.9/4.10）：见模板注释 */
-const orgPending = computed(() => game.myGames.filter((g) => deadRowKind(g) === 'pending'));
-const orgDead = computed(() => game.myGames.filter((g) => deadRowKind(g) === 'restore'));
-const grayMine = computed(() => game.myGames.filter((g) => deadRowKind(g) === 'gray'));
+const orgPending = computed(() =>
+  game.myGames.filter((g) => deadRowKind(g) === "pending"),
+);
+const orgDead = computed(() =>
+  game.myGames.filter((g) => deadRowKind(g) === "restore"),
+);
+const grayMine = computed(() =>
+  game.myGames.filter((g) => deadRowKind(g) === "gray"),
+);
 
 /* ---- A2 加载：等待提示，超 2 秒提示网络问题 ---- */
 const slow = ref(false);
@@ -202,27 +276,33 @@ onUnmounted(() => {
 });
 
 /* ---- 意向区（alpha:1058-1061/1093）：scope 熟人=同局打过（intent.known 后端定值，裁决②） ---- */
-const ipool = computed(() => game.intents.filter((i) => intentScope.value === 'all' || i.known));
-const scopeLabel = computed(() => (intentScope.value === 'all' ? '所有人' : '打过'));
+const ipool = computed(() =>
+  game.intents.filter((i) => intentScope.value === "all" || i.known),
+);
+const scopeLabel = computed(() =>
+  intentScope.value === "all" ? "所有人" : "打过",
+);
 /* alpha:1061 我的意向摘要：slots 以「 / 」相连 */
-const myIntentLine = computed(() => (game.myIntent ? game.myIntent.slots.map(slotName).join(' / ') : ''));
+const myIntentLine = computed(() =>
+  game.myIntent ? game.myIntent.slots.map(slotName).join(" / ") : "",
+);
 
 /* ---- 点击分支 ---- */
 /* alpha:907 点球局卡分支（判定在 utils/format 的 gameTapAction 单一源）：
    被邀请未加入 → joinSheet；其余 → 详情页 */
 function onGameTap(g: Game): void {
-  if (gameTapAction(g) === 'join') {
-    ui.openSheet({ type: 'join', gameId: g.id });
+  if (gameTapAction(g) === "join") {
+    ui.openSheet({ type: "join", gameId: g.id });
     return;
   }
   goGame(g.id);
 }
 function openIntentForm(): void {
-  ui.openSheet({ type: 'intent-form' });
+  ui.openSheet({ type: "intent-form" });
 }
 /* alpha:1029 点意向卡 → 球友名片弹层 */
 function onIntentTap(i: Intent): void {
-  ui.openSheet({ type: 'profile', userId: i.account.id });
+  ui.openSheet({ type: "profile", userId: i.account.id });
 }
 /* alpha:927 恢复 / 删意向：失败 toast 人话，不打断浏览 */
 function onRestore(g: Game): void {
@@ -233,11 +313,11 @@ function onDelIntent(): void {
 }
 /* alpha:928 撤局 → cancel-confirm 弹层（已订场局带退订提醒，ConfirmSheet 分叉） */
 function onCancel(g: Game): void {
-  ui.openSheet({ type: 'cancel-confirm', gameId: g.id });
+  ui.openSheet({ type: "cancel-confirm", gameId: g.id });
 }
 /* 待处置「锁定必打」→ 订场面板（空锁二段确认 + 登记订场同一入口，4.7/4.9） */
 function onLock(g: Game): void {
-  ui.openSheet({ type: 'booking', gameId: g.id });
+  ui.openSheet({ type: "booking", gameId: g.id });
 }
 
 /* —— 意向头贴底钉位 + 焦点切换（alpha:996-1016 同构，§2.3 取数换 uni API） —— */
@@ -247,7 +327,9 @@ let headTop = 0; // .isec-head 文档自然位（head.offsetTop 等价）
 let headH = 0; // .isec-head 高
 let winH = 0; // 视口高（alpha 的 box.clientHeight 等价）
 const dockY = ref(0);
-const dockStyle = computed(() => (dockY.value ? { transform: `translateY(${dockY.value}px)` } : {}));
+const dockStyle = computed(() =>
+  dockY.value ? { transform: `translateY(${dockY.value}px)` } : {},
+);
 
 /** 量 .isec-head 文档自然位（渲染定型后调用） */
 function measureHead(): void {
@@ -255,11 +337,11 @@ function measureHead(): void {
   nextTick(() => {
     uni
       .createSelectorQuery()
-      .select('.isec-head')
+      .select(".isec-head")
       .boundingClientRect()
       .exec((res) => {
         const r = res && res[0];
-        if (!r || typeof r.top !== 'number') return;
+        if (!r || typeof r.top !== "number") return;
         headH = r.height ?? 0;
         headTop = r.top + curScroll; // 视口坐标 + 已滚距离 = 文档自然位（alpha:1008）
         dockHead();
@@ -286,7 +368,10 @@ function focusIntent(): void {
   if (headTop - stickTop - curScroll < 120) {
     uni.pageScrollTo({ scrollTop: 0, duration: 300 });
   } else {
-    uni.pageScrollTo({ scrollTop: Math.max(0, headTop - stickTop), duration: 300 });
+    uni.pageScrollTo({
+      scrollTop: Math.max(0, headTop - stickTop),
+      duration: 300,
+    });
   }
 }
 
@@ -310,7 +395,8 @@ watch(
     intentScope,
     () => game.myIntent,
     () => flt.value.length,
-    () => orgPending.value.length + orgDead.value.length + grayMine.value.length,
+    () =>
+      orgPending.value.length + orgDead.value.length + grayMine.value.length,
     () => ipool.value.length,
   ],
   () => measureHead(),
