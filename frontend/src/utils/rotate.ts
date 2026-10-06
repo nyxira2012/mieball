@@ -43,12 +43,15 @@ export function activePlayers(live: LiveState): number {
   return onCourt + waiting;
 }
 
+/** 可发判定（单一口径）：在场且非缺席早退、不在歇轮 */
+function issuable(live: LiveState, id: number): boolean {
+  const p = pById(live, id);
+  return !!p && p.check !== 'absent' && p.check !== 'left' && !p.skip;
+}
+
 /** 候场队里此刻可发人数（在场且非缺席早退、不在歇轮）——补坑前「够不够」的判定源 */
 function readyCount(live: LiveState): number {
-  return live.queue.filter((id) => {
-    const p = pById(live, id);
-    return p && p.check !== 'absent' && p.check !== 'left' && !p.skip;
-  }).length;
+  return live.queue.filter((id) => issuable(live, id)).length;
 }
 
 /** 上场登记：发上场先后序（资历并列的 tiebreak）、资历从 0 起算 */
@@ -143,7 +146,8 @@ function byTenure(live: LiveState, ids: number[]): number[] {
 
 /** 结束对局后的轮换（2.4 §4.4-4.7 五式真值）：只动这片，别片各排各的。
     次序：① 资历/连庄落账（全员 tenure+1；输家下模式胜边连庄+1——原班再战这场也赢了，照算）
-    ② 坑补不满 → 原班再战（各方式通用：谁也不下、比分清零、连庄资历不清零、队列不动）
+    ② 坑补不满 → 原班再战（各方式通用：谁也不下、比分清零、连庄资历不清零、队列不动；
+      供给口径：格式过渡含本场下场者·见②处注释，其余用下场前的候场队列）
     ③ 格式过渡（court.singles ≠ rules.singles）：全场按资历序下、按新格式凑全新一队
     ④ 按谁下处理：all/连庄到点 → 全场按资历序下+补全新一队（怎么配生效）；
     loser 未到点 → 输家边下、候场首补空边成一队（不重配、新边连庄=0）；
@@ -173,8 +177,13 @@ export function endMatch(live: LiveState, courtId: number, winner: 'A' | 'B'): v
     : rules.down === 'loser' ? court[loseSide].length
     : rules.down === 'n1' ? 1 : rules.down === 'n2' ? 2 : 3;
 
-  // ② 坑补不满：原班再战
-  if (readyCount(live) < pits) {
+  // ② 坑补不满：原班再战。供给口径分两支——格式过渡（③）判「下场者入队后」的队列
+  //    （4.7-3 无条件凑新队：双打切单打 4 下必出 2；单打切双打 queue+2<4 才真不足，
+  //    续旧格式原班再战·批1 裁定）；其余方式（④）仍用下场前的候场队列（4.4 规则①）。
+  const supply = transition
+    ? readyCount(live) + [...court.A, ...court.B].filter((id) => issuable(live, id)).length
+    : readyCount(live);
+  if (supply < pits) {
     court.sa = 0;
     court.sb = 0;
     court.last = undefined;

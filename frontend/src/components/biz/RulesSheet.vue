@@ -4,6 +4,7 @@
        （仅输家下，选 0 常驻「当前＝不限」）。点选即生效、不关抽屉、无确认弹窗（A3）；
        球友同一抽屉只读（§4.1）：选项禁用态、推荐标签与理由隐藏、switch-singles 提示可见不可点。 -->
   <AppSheet
+    class="rules-sheet"
     :visible="visible"
     title="现场规则调整"
     :hint="
@@ -162,6 +163,15 @@ function onCap(n: number): void {
 </script>
 
 <style lang="scss" scoped>
+/* F-N1 底缘让位：AppSheet 面板默认贴屏底、靠 calc(nav+20px) 内边距躲 nav——本抽屉
+   四件套内容长、面板可滚，滚动中内容仍从 nav 亮条后穿过（底缘与 TabBar 视觉重叠）。
+   只本抽屉把面板底缘抬到 nav 之上（live 页同款 --nav-total-h 让位口径，PageShell→
+   BizBackdrop 同款父覆写 :deep 手法），内边距回落常规值；不动 AppSheet 全局。 */
+.rules-sheet :deep(.sheet) {
+  bottom: var(--nav-total-h);
+  padding-bottom: 20px;
+}
+
 /* 球友只读罩层（§4.1）：禁用态观感＝整体压暗＋点击穿透；处理器/store guard 是二三层 */
 .ro {
   opacity: 0.45;

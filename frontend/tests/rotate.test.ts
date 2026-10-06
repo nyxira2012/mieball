@@ -329,12 +329,25 @@ describe('endMatch 五式真值（2.4 §4.4-4.7）', () => {
     expect(court.A).toEqual([e.id]);             // 单打补 2 人成全新一队
     expect(court.B).toEqual([f.id]);
     expect(live.queue).toEqual([g.id, h.id, a.id, b.id, c.id, d.id]); // 全场按资历序下，余额在前
-    const w = mkP(1500), x = mkP(1500);
-    const short = setup(R({ singles: false, down: 'all' }), [e, f], [w, x], { singles: true }); // 单切双只凑得 2 人
+    const w = mkP(1500);
+    const short = setup(R({ singles: false, down: 'all' }), [e, f], [w], { singles: true }); // 单切双 queue(1)+2<4 真不足
     endMatch(short.live, 0, 'A');
     expect(short.court.singles).toBe(true);      // 补不满：原班再战、格式等下一场再切
     expect(short.court.A).toEqual([e.id]);
     expect(short.court.B).toEqual([f.id]);
+    expect(short.live.queue).toEqual([w.id]);    // 队列不动
+  });
+
+  it('格式过渡供给含下场者（F-W1·4.7-3 无条件）：双切单候场 0 也全场下——4 下 2 上、片转单打、剩 2 人排队', () => {
+    const a = mkP(1500), b = mkP(1500), c = mkP(1500), d = mkP(1500);
+    vets([a], 3, 1); vets([b], 2, 2); vets([c], 1, 3); vets([d], 1, 4); // 资历序 a>b>c>d
+    const { live, court } = setup(R({ singles: true, down: 'all' }), [a, b, c, d], [], { singles: false });
+    endMatch(live, 0, 'A');
+    expect(court.singles).toBe(true);            // 候场 0 不再被②短路：判「入队后」队列 4 ≥ 2
+    expect(court.A).toEqual([a.id]);             // 全下 4 人、按资历序入队后队首 2 人上
+    expect(court.B).toEqual([b.id]);
+    expect(live.queue).toEqual([c.id, d.id]);    // 剩 2 人排队
+    expect(court.sa).toBe(0);                    // 比分清零开新场
   });
 
   it('单打输家下：输家 1 人下、候场首补 1 人', () => {
