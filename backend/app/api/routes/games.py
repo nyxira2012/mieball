@@ -1,4 +1,5 @@
-"""games 路由 —— 局簿的 HTTP 面（读链 + 报名/退局/改局）：纯参数搬运，规则全在 GameBook。
+"""games 路由 —— 局簿的 HTTP 面（读链 + 报名/退局/改局 + 组织者工具箱/邀请）：
+纯参数搬运，规则全在 GameBook。
 
 响应约定同 auth：成功体直接是 game_view（或其列表）；失败体 {"error": {code, message}}。
 时间进出 ISO 8601 +08:00，换算在服务层（契约§2）。
@@ -56,6 +57,19 @@ class EditIn(BaseModel):
     scoring: int | None = None
     rotation: str | None = None
     score_rule: str | None = None
+
+
+class BookingIn(BaseModel):
+    """订场登记表单（4.7）：场地号几片填几个 + 小票总价（免费填 0）。"""
+
+    courts: list[str]
+    fee_total: int
+
+
+class InviteIn(BaseModel):
+    """邀请表单（4.11）：邀谁（被邀不占坑，对方点不点加入随他）。"""
+
+    account_id: int
 
 
 @router.post("")
@@ -139,3 +153,72 @@ def edit_game(
 ):
     """改局（4.6）：只有组织者、开打前；上限调整与改约解锁在 book。"""
     return book.edit(game_id=game_id, organizer_id=account.id, **body.model_dump())
+
+
+@router.post("/{game_id}/lock")
+def lock_game(
+    game_id: int,
+    account: Account = Depends(require_account),
+    book: GameBook = Depends(get_game_book),
+):
+    """空锁必打（4.7）：人数不够也照开；一锁不撤、不可解锁（只能撤局）。"""
+    return book.lock(game_id=game_id, organizer_id=account.id)
+
+
+@router.post("/{game_id}/booking")
+def book_game(
+    game_id: int,
+    body: BookingIn,
+    account: Account = Depends(require_account),
+    book: GameBook = Depends(get_game_book),
+):
+    """订场登记（4.7）：最后写赢、可反复改；截止后名单已锁也只锁人。"""
+    return book.book(
+        game_id=game_id,
+        organizer_id=account.id,
+        courts=body.courts,
+        fee_total=body.fee_total,
+    )
+
+
+@router.post("/{game_id}/booking/clear")
+def clear_game_booking(
+    game_id: int,
+    account: Account = Depends(require_account),
+    book: GameBook = Depends(get_game_book),
+):
+    """清空订场登记（4.7）：费用回未定、截止照常判人数；手动锁保留。"""
+    return book.clear_booking(game_id=game_id, organizer_id=account.id)
+
+
+@router.post("/{game_id}/cancel")
+def cancel_game(
+    game_id: int,
+    account: Account = Depends(require_account),
+    book: GameBook = Depends(get_game_book),
+):
+    """撤局（4.10）：开打前；底账留档，报名者当日灰字、次日收走。"""
+    return book.cancel(game_id=game_id, organizer_id=account.id)
+
+
+@router.post("/{game_id}/restore")
+def restore_game(
+    game_id: int,
+    account: Account = Depends(require_account),
+    book: GameBook = Depends(get_game_book),
+):
+    """救回未成局（4.9）：terminated 且开打前 → pending 待处置。"""
+    return book.restore(game_id=game_id, organizer_id=account.id)
+
+
+@router.post("/{game_id}/invite")
+def invite_user(
+    game_id: int,
+    body: InviteIn,
+    account: Account = Depends(require_account),
+    book: GameBook = Depends(get_game_book),
+):
+    """邀请（4.11/4.12）：局进对方"我的局"；重复邀当没事。"""
+    return book.invite(
+        game_id=game_id, organizer_id=account.id, invitee_id=body.account_id
+    )

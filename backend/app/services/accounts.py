@@ -32,14 +32,29 @@ PHONE_RE = re.compile(r"^1[3-9]\d{9}$")
 CHIBI_RANGES = {"skin": 4, "hair": 6, "hc": 6, "shirt": 8, "face": 4, "acc": 3}
 DEFAULT_CHIBI = {"skin": 0, "hair": 0, "hc": 0, "shirt": 5, "face": 0, "acc": 0}
 CARD_BGS = {"neon", "gold", "cyber", "aurora"}
-RESERVED_NICKNAMES = {"已注销球友", "平台客服"}
+# 已注销账号的对外占位昵称——跨域单一源（保留名、view() 占位、球局域名单共用）
+ANON_NAME = "已注销球友"
+RESERVED_NICKNAMES = {ANON_NAME, "平台客服"}
 SIGNUP_RESUME_WINDOW = timedelta(minutes=10)
 NICKNAME_MAX = 16
 
 Viewer = Literal["self", "same_game", "other"]
 
-# 已注销账号的对外占位昵称——跨域展示单一源（账号域 view() 与球局域名单 _person 共用）
-ANON_NAME = "已注销球友"
+
+def person_view(account: Account | None) -> dict:
+    """名单里的一人：昵称+小人（1.1 隐私口径）；已注销/不存在 → 占位形象。
+    球局域名单（game_views）与意向列表（intents）共用的"对外一个人"形状。"""
+    if account is None or account.status != "active":
+        return {
+            "id": account.id if account else 0,
+            "nickname": ANON_NAME,
+            "chibi": dict(DEFAULT_CHIBI),
+        }
+    return {
+        "id": account.id,
+        "nickname": account.nickname,
+        "chibi": json.loads(account.chibi),
+    }
 
 
 class AccountBook:

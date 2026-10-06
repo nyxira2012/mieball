@@ -1,38 +1,46 @@
-"""GameBook —— 球局域（docs/1.2）的局簿深模块：发局、找局列表、我的局、详情、报名/退局/改局。
+"""GameBook —— 球局域（docs/1.2）的局簿深模块：发局、找局列表、我的局、详情、报名/退局/
+改局、组织者工具箱（锁必打/订场/撤局/恢复/邀请）。
 
 策略全部内聚在这里，路由只做参数搬运：
 - 懒判定（规格 4.8）：生死不靠定时器，任何入口先跑 _evaluate()——把过了截止还 open
-  的局当场判完落库（GET 里落定写库是规格明定的设计，不是副作用违规）；
-  pending 拖过开打的僵尸出口是读时派生（_derive），不落库。
-- 派生态：库存 5 态、视图 7 态；locked 按 now 对 start/end 派生 locked/live/done；
-  pending（待处置）只对组织者可见，其他人一律按 terminated 出。
+  的局当场判完落库（GET 里落定写库是规格明定的设计，不是副作用违规）；必打（手动锁
+  或已订场）人数不足也成局。pending 拖过开打的僵尸出口同在此落 terminated（批3 收口）。
+- 派生态：库存 5 态、视图 7 态，派生与 game_view 组装在 game_views（批3 拆出，
+  写路径的窗口判断也用它）。
 - 可见性：public 人人；played=组织者∨同打过∨已涉及；invite_only=已涉及。
   链接即门票——detail 不做档位拦截（4.2），档位只管列表翻不翻得到。
 - 打过（played_with）：两人同在一个 state='locked' 局的正式名单；候补/终止/撤局不算。
-- 写串行：SQLite 无行锁，模块级锁罩住全部写动作（publish/join/quit/edit 与懒判定落库），
-  check-then-act 全锁内——两人同秒抢最后坑不超线的地基（规格 B1）。
+- 写串行：SQLite 无行锁，模块级锁罩住全部写动作（含懒判定落库），check-then-act
+  全锁内——两人同秒抢最后坑不超线的地基（规格 B1）。
 - 整行进出（不变承诺 5）：报名行=1+bring 原子占坑；装不下整行落候补、退出/放宽按
   seq 试转正、收紧按 joined_at 倒序降候补——全走 _promote_waitlist/_demote_to_cap。
+- 两簿唯一来往（技术设计 §3）：invite 写 invites 行 + 给有意向者置已邀标记；
+  意向簿不反向碰局。
 """
 
 from __future__ import annotations
 
-import json
 import threading
-from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from datetime import datetime
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
 from ..core import clock, errors
-from ..db.models import Account, Entry, Game, Invite
-from .accounts import ANON_NAME, DEFAULT_CHIBI
+from ..db.models import Entry, Game, Intent, Invite
+from .game_views import (
+    JOINABLE_STATUSES,
+    death_day,
+    derive,
+    game_view,
+    masked,
+)
 
-CN_TZ = timezone(timedelta(hours=8))  # 接口进出的统一时区（契约§2：ISO 8601 +08:00）
 VISIBILITIES = ("played", "public", "invite_only")
-JOINABLE_STATUSES = ("open", "locked", "live")  # 截止后照常可加到局结束（4.14）
+# 工具箱（锁必打/订场/清空/撤局）的受理窗口：开打前；pending 是恢复后的待处置，
+# 锁/订场/撤局都是它的处置出口（4.9）
+TOOLBOX_STATUSES = ("open", "locked", "pending")
 
 # 局簿写动作全串行：SQLite 无行锁，靠它保住"正式人头 ≤ max"的不变承诺（技术设计 §3）
 _write_lock = threading.Lock()
@@ -63,9 +71,15 @@ class GameBook:
     ) -> dict:
         if visibility not in VISIBILITIES:
             raise errors.visibility_invalid()
+        if min_players < 1 or max_players < 1:
+            raise errors.range_invalid("最少和最多人数都要至少 1 人")
         if min_players > max_players:
             raise errors.range_invalid()
-        start, end, deadline = _wall(start_at), _wall(end_at), _wall(deadline_at)
+        start, end, deadline = (
+            clock.wall(start_at),
+            clock.wall(end_at),
+            clock.wall(deadline_at),
+        )
         now = clock.now()
         if not now < deadline < start:
             raise errors.deadline_inverted(
@@ -116,7 +130,7 @@ class GameBook:
         entry_ids, invite_ids = self._viewer_game_ids(viewer_id)
         out = []
         for game in games:
-            if _masked(game, viewer_id, now) not in ("open", "locked", "live", "done"):
+            if masked(game, viewer_id, now) not in ("open", "locked", "live", "done"):
                 continue
             if game.visibility == "public":
                 visible = True
@@ -160,7 +174,7 @@ class GameBook:
         )
         out = []
         for game in games:
-            status = _masked(game, account_id, now)
+            status = masked(game, account_id, now)
             if game.organizer_id == account_id:
                 # 组织者：在办局全看 + pending 未成局区；terminated 只在恢复窗口（开打前）内；
                 # cancelled 永不回来（撤局不留痕，4.10）
@@ -171,7 +185,7 @@ class GameBook:
                 # 参加者：在办局 + 终止/撤局当日灰字（pending 按 terminated 对待，次日收走，4.8）
                 keep = status in ("open", "locked", "live", "done") or (
                     status in ("terminated", "cancelled")
-                    and _death_day(game) == now.date()
+                    and death_day(game) == now.date()
                 )
             else:
                 # 被邀未加入：局还在进行中才挂"我的局"（4.12：放着不动直到截止/被撤/打完）
@@ -205,7 +219,7 @@ class GameBook:
             if existing is not None:
                 # 幂等（B1）：已有本账号行——忽略新 bring、不重复占坑，组织者再 join 同此
                 return self._view(game, viewer_id=account_id, with_entries=True)
-            if _derive(game, clock.now()) not in JOINABLE_STATUSES:
+            if derive(game, clock.now()) not in JOINABLE_STATUSES:
                 raise errors.join_closed()  # done/terminated/cancelled/pending 不可加
             if not 0 <= bring <= 3:
                 raise errors.bring_limit()
@@ -249,7 +263,7 @@ class GameBook:
                 return {"ok": True}  # 幂等（B1）：没报名/已退出，当没事
             if game.organizer_id == account_id:
                 raise errors.not_organizer("组织者不能退出，只能撤局")
-            status = _derive(game, clock.now())
+            status = derive(game, clock.now())
             # 窗口：报名中随便退；锁定局只在改约解锁窗内可退（4.6）；
             # locked 未解锁/live/done/terminated/cancelled/pending 一律拦
             unlockable = status == "locked" and game.unlocked_at is not None
@@ -282,20 +296,18 @@ class GameBook:
     ) -> dict:
         self._evaluate()
         with _write_lock:
-            game = self.db.get(Game, game_id)
-            if game is None:
-                raise errors.game_not_found()
-            if game.organizer_id != organizer_id:
-                raise errors.not_organizer()
+            game = self._owned(game_id, organizer_id)
             now = clock.now()
-            status = _derive(game, now)
+            status = derive(game, now)
             if status not in ("open", "locked"):
                 raise errors.game_not_open()  # live/done/pending/terminated/cancelled
             # None 参沿用原值；合并出"这次编辑后的完整新值"再统一判（判不许看旧值）
             new = {
                 "name": name if name is not None else game.name,
-                "start_at": _wall(start_at) if start_at is not None else game.start_at,
-                "end_at": _wall(end_at) if end_at is not None else game.end_at,
+                "start_at": clock.wall(start_at)
+                if start_at is not None
+                else game.start_at,
+                "end_at": clock.wall(end_at) if end_at is not None else game.end_at,
                 "venue_name": (
                     venue_name if venue_name is not None else game.venue_name
                 ),
@@ -321,6 +333,8 @@ class GameBook:
                 raise errors.deadline_inverted("结束时间必须晚于开打时间")
             if game.deadline_at >= new["start_at"]:  # deadline 永远取原值
                 raise errors.deadline_inverted("开打时间必须晚于截止时间")
+            if new["min_players"] < 1 or new["max_players"] < 1:
+                raise errors.range_invalid("最少和最多人数都要至少 1 人")
             if new["min_players"] > new["max_players"]:
                 raise errors.range_invalid()
             if new["visibility"] not in VISIBILITIES:
@@ -345,6 +359,114 @@ class GameBook:
             self.db.commit()
             return self._view(game, viewer_id=organizer_id, with_entries=True)
 
+    # ---- 组织者工具箱（4.7 锁必打与订场 / 4.10 撤局 / 4.9 恢复；窗口一律开打前） ----
+
+    def lock(self, *, game_id: int, organizer_id: int) -> dict:
+        """空锁必打（4.7）：不订场也锁"人数不足照开"；一锁不撤（清订场不松、无解锁）。
+        已锁再锁当没事（幂等）；pending 锁了即处置完、回正常局。"""
+        self._evaluate()
+        with _write_lock:
+            game = self._owned(game_id, organizer_id)
+            if derive(game, clock.now()) not in TOOLBOX_STATUSES:
+                raise errors.game_not_open()
+            game.manual_lock = True
+            if game.state == "pending":
+                game.state = "locked"  # 待处置的锁必打出口（4.9）
+            self.db.commit()
+            return self._view(game, viewer_id=organizer_id, with_entries=True)
+
+    def book(
+        self, *, game_id: int, organizer_id: int, courts: list[str], fee_total: int
+    ) -> dict:
+        """订场登记（4.7）：订场发生在 app 外，这里只登记结果——最后写赢、可反复改；
+        填了场地号即必打、费用落定（人均按当前人数摊，最少保底作废）。名单锁只锁人，
+        截止后（locked）仍可改——临到场场馆换号很常见。"""
+        if not courts:
+            raise errors.booking_invalid("至少填一个场地号")
+        if fee_total < 0:
+            raise errors.booking_invalid("总价不能是负数，免费的填 0")
+        self._evaluate()
+        with _write_lock:
+            game = self._owned(game_id, organizer_id)
+            if derive(game, clock.now()) not in TOOLBOX_STATUSES:
+                raise errors.game_not_open()
+            game.courts = list(courts)
+            game.fee_total = fee_total
+            if game.state == "pending":
+                game.state = "locked"  # 订场登记同为待处置出口（技术设计 §2.4）
+            self.db.commit()
+            return self._view(game, viewer_id=organizer_id, with_entries=True)
+
+    def clear_booking(self, *, game_id: int, organizer_id: int) -> dict:
+        """清空订场登记（4.7）：费用回未定、截止照常判人数；手动锁一上不撤。幂等。"""
+        self._evaluate()
+        with _write_lock:
+            game = self._owned(game_id, organizer_id)
+            if derive(game, clock.now()) not in TOOLBOX_STATUSES:
+                raise errors.game_not_open()
+            game.courts = None
+            game.fee_total = None
+            self.db.commit()
+            return self._view(game, viewer_id=organizer_id, with_entries=True)
+
+    def cancel(self, *, game_id: int, organizer_id: int) -> dict:
+        """撤局（4.10）：开打前、想清楚了的明确动作——组织者"我的局"不留痕；
+        底账留档不删（不变承诺 8），撤局时刻记 cancelled_at（灰字"当日"的锚）。"""
+        self._evaluate()
+        with _write_lock:
+            game = self._owned(game_id, organizer_id)
+            if derive(game, clock.now()) not in TOOLBOX_STATUSES:
+                raise errors.game_not_open()  # 开打后是现场的事；terminated 走恢复
+            game.state = "cancelled"
+            game.cancelled_at = clock.now()
+            self.db.commit()
+        return {"ok": True}
+
+    def restore(self, *, game_id: int, organizer_id: int) -> dict:
+        """救回未成局（4.9）：开打前的 terminated → pending 待处置——只组织者可见、
+        不再触发截止判定（球友打开也不会把它判死），锁必打/订场/撤局后才回正常列表。"""
+        self._evaluate()
+        with _write_lock:
+            game = self._owned(game_id, organizer_id)
+            now = clock.now()
+            if derive(game, now) == "pending":
+                return self._view(game, viewer_id=organizer_id, with_entries=True)
+            if game.state != "terminated" or now >= game.start_at:
+                raise errors.game_not_open()  # 恢复窗口 = 开打时刻前（裁决）
+            game.state = "pending"
+            self.db.commit()
+            return self._view(game, viewer_id=organizer_id, with_entries=True)
+
+    def invite(self, *, game_id: int, organizer_id: int, invitee_id: int) -> dict:
+        """邀请（4.11/4.12）：局直接出现在对方"我的局"，被邀不占坑；重复邀当没事
+        （不刷新、不重复记）。两簿唯一来往：invites 行永远记；已邀标记只给
+        有意向的 invitee 置位（技术设计 §3）。"""
+        self._evaluate()
+        with _write_lock:
+            game = self._owned(game_id, organizer_id)
+            if derive(game, clock.now()) not in JOINABLE_STATUSES:
+                raise errors.game_not_open()  # 终态/待处置的局不发邀约
+            seen = self.db.execute(
+                select(Invite.id).where(
+                    Invite.game_id == game_id, Invite.invitee_id == invitee_id
+                )
+            ).first()
+            if seen is None:
+                self.db.add(
+                    Invite(
+                        game_id=game_id,
+                        invitee_id=invitee_id,
+                        created_at=clock.now(),
+                    )
+                )
+            intent = self.db.execute(
+                select(Intent).where(Intent.account_id == invitee_id)
+            ).scalar_one_or_none()
+            if intent is not None and intent.invited_at is None:
+                intent.invited_at = clock.now()  # 已邀不刷新（幂等）
+            self.db.commit()
+        return {"ok": True}
+
     # ---- 打过（4.2 唯一算法；users 接缝 same_game 同源） ----
 
     def played_with(self, *, account_a: int, account_b: int) -> bool:
@@ -367,6 +489,15 @@ class GameBook:
 
     # ---- 内部 ----
 
+    def _owned(self, game_id: int, organizer_id: int) -> Game:
+        """组织者守卫：查无 → 404，非本人局 → 403（改局与工具箱动作共用）。"""
+        game = self.db.get(Game, game_id)
+        if game is None:
+            raise errors.game_not_found()
+        if game.organizer_id != organizer_id:
+            raise errors.not_organizer()
+        return game
+
     def _viewer_game_ids(self, viewer_id: int | None) -> tuple[set[int], set[int]]:
         """该账号 (报过名的局 id 集, 被邀的局 id 集)；匿名两集皆空。"""
         if viewer_id is None:
@@ -381,27 +512,36 @@ class GameBook:
 
     def _evaluate(self) -> None:
         """懒判定（4.8）：入口先跑。过期 open 局当场判生死落库，谁先打开谁触发；
-        必打（手动锁或已订场）人数不足也成局。"""
+        必打（手动锁或已订场）人数不足也成局。pending 拖过开打 = 僵尸出口，落 terminated。"""
         with _write_lock:
+            now = clock.now()
             expired = (
                 self.db.execute(
-                    select(Game).where(
-                        Game.state == "open", Game.deadline_at <= clock.now()
-                    )
+                    select(Game).where(Game.state == "open", Game.deadline_at <= now)
                 )
                 .scalars()
                 .all()
             )
-            if not expired:
-                return
             for game in expired:
                 forced = game.manual_lock or bool(game.courts)
-                game.state = (
-                    "locked"
-                    if forced or self._heads(game.id) >= game.min_players
-                    else "terminated"
+                if forced or self._heads(game.id) >= game.min_players:
+                    game.state = "locked"
+                else:
+                    game.state = "terminated"
+                    # 死于截止那一刻：判定只是迟到，不改死期（灰字"当日"锚，技术设计 §3）
+                    game.terminated_at = game.deadline_at
+            zombies = (
+                self.db.execute(
+                    select(Game).where(Game.state == "pending", Game.start_at <= now)
                 )
-            self.db.commit()
+                .scalars()
+                .all()
+            )
+            for game in zombies:
+                game.state = "terminated"
+                game.terminated_at = game.start_at  # 死于开打时刻
+            if expired or zombies:
+                self.db.commit()
 
     def _heads(self, game_id: int) -> int:
         """正式名单人头 = Σ(1+bring)——全篇数人数的唯一一把尺（规格 §4 开头）。"""
@@ -477,153 +617,11 @@ class GameBook:
     def _view(
         self, game: Game, *, viewer_id: int | None, with_entries: bool = False
     ) -> dict:
-        now = clock.now()
-        status = _masked(game, viewer_id, now)
-        heads = self._heads(game.id)
-        view: dict[str, Any] = {
-            "id": game.id,
-            "name": game.name,
-            "organizer": _person(self._account(game.organizer_id)),
-            "start_at": _iso(game.start_at),
-            "end_at": _iso(game.end_at),
-            "deadline_at": _iso(game.deadline_at),
-            "venue_name": game.venue_name,
-            "venue_address": game.venue_address,
-            "min_players": game.min_players,
-            "max_players": game.max_players,
-            "visibility": game.visibility,
-            "scoring": game.scoring,
-            "rotation": game.rotation,
-            "score_rule": game.score_rule,
-            "manual_lock": game.manual_lock,
-            "courts": list(game.courts) if game.courts is not None else None,
-            "fee_total": game.fee_total,
-            "status": status,
-            "unlocked": game.unlocked_at is not None and now < game.start_at,
-            "joinable": status in JOINABLE_STATUSES,
-            "heads": heads,
-            "slots_left": max(0, game.max_players - heads),
-            # half-up 对齐 JS Math.round（技术设计 §3），不用 Python banker's round
-            "per_head": (
-                int(game.fee_total / heads + 0.5)
-                if game.fee_total is not None and heads
-                else None
-            ),
-            "forced": game.manual_lock or bool(game.courts),
-        }
-        if with_entries:
-            view["entries"] = self._entry_rows(game.id)
-        if viewer_id is not None:
-            view["my"] = self._my_block(game, viewer_id)
-        return view
-
-    def _entry_rows(self, game_id: int) -> list[dict]:
-        """正式名单按报名先后，候补按次序跟在后面（detail 全量）。"""
-        formal = (
-            self.db.execute(
-                select(Entry)
-                .where(Entry.game_id == game_id, Entry.standing == "formal")
-                .order_by(Entry.joined_at, Entry.id)
-            )
-            .scalars()
-            .all()
+        """读视图组装在 game_views（批3 拆出）；局簿只补自己的一把尺（人头）。"""
+        return game_view(
+            self.db,
+            game,
+            viewer_id=viewer_id,
+            heads=self._heads(game.id),
+            with_entries=with_entries,
         )
-        waiting = (
-            self.db.execute(
-                select(Entry)
-                .where(Entry.game_id == game_id, Entry.standing == "waitlist")
-                .order_by(Entry.wait_seq)
-            )
-            .scalars()
-            .all()
-        )
-        return [
-            {
-                "account": _person(self._account(e.account_id)),
-                "bring": e.bring,
-                "standing": e.standing,
-                "wait_seq": e.wait_seq,
-            }
-            for e in (*formal, *waiting)
-        ]
-
-    def _my_block(self, game: Game, viewer_id: int) -> dict:
-        entry = self.db.execute(
-            select(Entry).where(Entry.game_id == game.id, Entry.account_id == viewer_id)
-        ).scalar_one_or_none()
-        invited = (
-            self.db.execute(
-                select(Invite.id).where(
-                    Invite.game_id == game.id, Invite.invitee_id == viewer_id
-                )
-            ).first()
-            is not None
-        )
-        return {
-            "is_organizer": game.organizer_id == viewer_id,
-            "my_entry": (
-                {
-                    "bring": entry.bring,
-                    "standing": entry.standing,
-                    "wait_seq": entry.wait_seq,
-                }
-                if entry
-                else None
-            ),
-            "invited": invited,
-        }
-
-    def _account(self, account_id: int) -> Account | None:
-        return self.db.get(Account, account_id)
-
-
-def _wall(dt: datetime) -> datetime:
-    """aware 入参按东八区取墙钟存 naive；naive 直接当北京墙钟（技术设计 §3 时区口径）。"""
-    return dt.astimezone(CN_TZ).replace(tzinfo=None) if dt.tzinfo is not None else dt
-
-
-def _iso(dt: datetime) -> str:
-    return dt.replace(tzinfo=CN_TZ).isoformat()
-
-
-def _derive(game: Game, now: datetime) -> str:
-    """派生视图态（技术设计 §2.4）：locked 随时刻翻 locked/live/done；
-    pending 拖过开打 = 死局（待处置没有处置价值的时刻）。"""
-    if game.state == "pending":
-        return "pending" if now < game.start_at else "terminated"
-    if game.state == "locked":
-        if now < game.start_at:
-            return "locked"
-        return "live" if now < game.end_at else "done"
-    return game.state  # open（进 _evaluate 后必未过期）/ terminated / cancelled 原样
-
-
-def _masked(game: Game, viewer_id: int | None, now: datetime) -> str:
-    status = _derive(game, now)
-    # 待处置只组织者可见（4.9），其他人按已终止出
-    return (
-        "terminated"
-        if status == "pending" and viewer_id != game.organizer_id
-        else status
-    )
-
-
-def _death_day(game: Game) -> date:
-    """灰字"当日"的锚：terminated/pending 死于截止（懒判定由截止驱动）；
-    cancelled 的精确撤局时刻无处记——批3 cancel 实现时补判。"""
-    return game.deadline_at.date()
-
-
-def _person(account: Account | None) -> dict:
-    """名单里的一人：昵称+小人（1.1 隐私口径）；已注销 → 占位形象（C3）。"""
-    if account is None or account.status != "active":
-        return {
-            "id": account.id if account else 0,
-            "nickname": ANON_NAME,
-            "chibi": dict(DEFAULT_CHIBI),
-        }
-    return {
-        "id": account.id,
-        "nickname": account.nickname,
-        "chibi": json.loads(account.chibi),
-    }

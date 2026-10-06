@@ -127,6 +127,11 @@ class Game(Base):
     )
     # 非空 = 改约解锁标记（锁定局被组织者改时间/地点时置位，到开打时刻重新锁死）
     unlocked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 终局时刻锚（灰字"当日"以各自的终局时刻记日，次日收走——技术设计 §3）：
+    # terminated 死于判定落库时刻（截止判死者=截止时刻、拖过开打的待处置者=开打时刻）；
+    # cancelled 死于撤局那一刻。底账留档不删（不变承诺 8），时刻列只记"什么时候死的"。
+    terminated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 

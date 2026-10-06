@@ -113,8 +113,9 @@ def deadline_inverted(msg: str = "开打时间必须晚于截止时间") -> ApiE
     return ApiError(422, "deadline_inverted", msg)
 
 
-def range_invalid() -> ApiError:
-    return ApiError(422, "range_invalid", "最少人数不能大于最多人数")
+def range_invalid(msg: str = "最少人数不能大于最多人数") -> ApiError:
+    # 人数范围拦截共用一个 code（min>max / min 或 max 小于 1），message 分支说清
+    return ApiError(422, "range_invalid", msg)
 
 
 def visibility_invalid() -> ApiError:
@@ -123,3 +124,11 @@ def visibility_invalid() -> ApiError:
 
 def intent_slots_empty() -> ApiError:
     return ApiError(422, "intent_slots_empty", "至少选一个时段")
+
+
+def frequency_invalid() -> ApiError:
+    return ApiError(422, "frequency_invalid", "打球频率取值不合法")
+
+
+def booking_invalid(msg: str = "订场登记没填好：场地号和总价都要填") -> ApiError:
+    return ApiError(422, "booking_invalid", msg)

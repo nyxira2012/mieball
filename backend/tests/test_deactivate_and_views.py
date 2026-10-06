@@ -1,5 +1,5 @@
-"""注销与隐私出口 —— §4.6 匿名化/手机号释放/全钥匙失效；§C2 三种身份看到的字段逐个核。
-"""
+"""注销与隐私出口 —— §4.6 匿名化/手机号释放/全钥匙失效；§C2 三种身份看到的字段逐个核。"""
+
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
@@ -15,11 +15,14 @@ def test_deactivate_anonymizes_and_releases_phone(client: TestClient, sent, fake
     r = client.post("/api/auth/sms", json={"phone": phone, "purpose": "deactivate"})
     assert r.status_code == 200
     code = next(c for p, c, pu in reversed(sent) if p == phone and pu == "deactivate")
-    r = client.post("/api/auth/deactivate", headers={"Authorization": f"Bearer {token}"},
-                    json={"phone": phone, "code": code})
+    r = client.post(
+        "/api/auth/deactivate",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"phone": phone, "code": code},
+    )
     assert r.status_code == 200, r.text
 
-    assert me(client, token) is None                    # 所有钥匙失效
+    assert me(client, token) is None  # 所有钥匙失效
 
     # 任何人（含本人旧钥匙）看这个号 → 已注销占位，无尾号无全号
     r = client.get(f"/api/users/{uid}?same_game=1")
@@ -30,17 +33,25 @@ def test_deactivate_anonymizes_and_releases_phone(client: TestClient, sent, fake
     # 同一个号重新注册 → 全新账号（历史不继承）
     again = signup(client, phone, "dev-new")
     assert again["account"]["id"] != uid
-    assert again["account"]["name"].startswith("球友")   # 新号新名片
+    assert again["account"]["name"].startswith("球友")  # 新号新名片
 
 
 def test_deactivate_requires_own_phone_and_code(client: TestClient, sent):
     phone = "13800002222"
     token = signup(client, phone, "d")["token"]
-    r = client.post("/api/auth/deactivate", headers={"Authorization": f"Bearer {token}"},
-                    json={"phone": "13800003333", "code": "123456"})
+    r = client.post(
+        "/api/auth/deactivate",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"phone": "13800003333", "code": "123456"},
+    )
     assert r.status_code == 422 and r.json()["error"]["code"] == "phone_mismatch"
     # 未带钥匙 → 401
-    assert client.post("/api/auth/deactivate", json={"phone": phone, "code": "123456"}).status_code == 401
+    assert (
+        client.post(
+            "/api/auth/deactivate", json={"phone": phone, "code": "123456"}
+        ).status_code
+        == 401
+    )
 
 
 def test_privacy_outlet_three_viewers(client: TestClient):
@@ -53,12 +64,14 @@ def test_privacy_outlet_three_viewers(client: TestClient):
     assert acc["name"] == "国贸截击手"
     assert "phone" not in acc and "phone_tail" not in acc
 
-    # 同局视角：加尾号 4 位，仍无全号
+    # 1.2 收口：same_game 自报参数废弃，服务端核名单——陌生人带老参数也拿不到尾号
     acc = client.get(f"/api/users/{uid}?same_game=1").json()["account"]
-    assert acc["phone_tail"] == "5555" and "phone" not in acc
+    assert "phone_tail" not in acc and "phone" not in acc
 
     # 本人：全号可见
-    acc = client.get(f"/api/users/{uid}", headers={"Authorization": f"Bearer {token}"}).json()["account"]
+    acc = client.get(
+        f"/api/users/{uid}", headers={"Authorization": f"Bearer {token}"}
+    ).json()["account"]
     assert acc["phone"] == phone and acc["phone_tail"] == "5555"
 
     # 查无此人 → 404 no_account
