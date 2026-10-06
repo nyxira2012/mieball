@@ -39,10 +39,25 @@ export interface User {
   skip?: number; // 剩余歇轮数：歇两轮=2（2.1 文档+原型「候场区点人可设歇两轮」）。
   // 发牌时每次递减 1（rotate.ts avail），归 0 自动归队；0=不在歇
   fire?: boolean; // 连战：排到队首，与歇互斥（alpha:1631-1633）
+  dropin?: boolean; // 空降进场：没报名扫码直入名册（§4.4 全场看得到的标记；线上名单/候补不动）
+  arriveAt?: string; // ISO · 首次到场时刻（出勤底账，time.ts toIso 落/isoHm 显）
+  leftAt?: string; // ISO · 早退离场时刻
   courtSeq?: number; // 现场态 · 上场先后序（LiveState.courtSeqNext 递增发放；2.4 资历并列时先上的先下）
   tenure?: number; // 现场态 · 连续在场场数（上场=0 起，每结束一场 +1，下场清 0——2.4 N人下按此排「待得最久」）
 }
 
+/** 出勤底账一行（§4.14 观察点：几点到/几点走/访客谁带的/移出留痕）。
+    一人一行快照式、不引用 User——人被移出名册后行必须保留（removedAt 留痕），故复制字段。 */
+export interface LedgerRow {
+  id: number;
+  name: string;
+  shadow?: boolean; // 随行访客 · 半权重不进榜
+  dropin?: boolean; // 空降进场
+  guarantor?: string; // 担保人名（访客谁带的）
+  arriveAt?: string; // ISO · 几点到（首次到场）
+  leftAt?: string; // ISO · 几点走（早退）
+  removedAt?: string; // ISO · 被移出名册时刻（行保留=留痕）
+}
 
 /** alpha:762 recentStats（我的页运动数据条） */
 export interface RecentStats {
@@ -258,6 +273,8 @@ export interface LiveState {
   last?: "a" | "b"; // 最后得分方（undoPoint 回退用，alpha:1677/1682）
   admins: number[]; // 被封管理员 id（现场态，不回写 g；isFullPower = org ∨ 本表）
   feed: string[]; // 战报事件句（unshift 新到旧；句子在动作处拼好、含操作者，LiveTopbar 轮播消费）
+  startedAt: string; // 现场点亮时刻（startLive 落 ISO；批4 底账定格/散场消费）
+  ledger: LedgerRow[]; // 出勤底账（动作处同步写：touchLedger 单点；移出/空降行留痕）
   rules?: RotationRules; // 2.4 轮换四件套（批1 过渡期可选，批2 store 重写后翻必填）
   courtSeqNext?: number; // 上场先后序发号器（courtSeq 的源——资历并列的 tiebreak）
 }

@@ -32,9 +32,6 @@ export const AREA_OPTS = ['全部', ...mockAreas];
     （场馆改名只动这里；「手输新场地」伪选项由 LaunchSheet 自加） */
 export const mockVenues = ['工体北路 · 京篮匹克球馆', '望京 · 花家地球馆', '五棵松 · 万事达球馆'];
 
-/** 现场开局演示时默认前 N 位球友已到场（alpha:1482 口径） */
-export const DEFAULT_MOCK_CHECKIN_COUNT = 9;
-
 /** mock 环境基准日期（2026-10-04，用于账单等相对期间推算，将来接真实系统时钟） */
 export const MOCK_BASE_DATE_STR = '2026-10-04';
 

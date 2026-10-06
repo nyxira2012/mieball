@@ -22,7 +22,10 @@
           <view class="nm"
             >{{ r.u.name
             }}<text v-if="r.u.shadow" class="badge guest">访客</text
-            ><text v-if="liveStore.isAdmin(r.id)" class="badge admin nm-badge"
+            ><text v-if="r.u.dropin" class="badge dropin nm-badge">空降</text
+            ><text
+              v-if="liveStore.isAdmin(r.id)"
+              class="badge admin nm-badge"
               >管理员</text
             ></view
           >

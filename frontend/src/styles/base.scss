@@ -192,6 +192,11 @@ h1.brand em,
   background: rgba(255, 212, 0, 0.15);
   color: var(--lemon);
 }
+/* 空降（2.2 批2§4.4 名册全场看得到的标记）：与歇同族冰青但更淡一档，别于访客紫 */
+.badge.dropin {
+  background: rgba(111, 231, 255, 0.14);
+  color: var(--ice);
+}
 
 /* ---------- 弹层壳层标题/说明（alpha:558-561，9 个 biz 弹层收源——原各组件 scoped 副本删；
    AppSheet 的 title/hint props 走的是同一版式） ---------- */

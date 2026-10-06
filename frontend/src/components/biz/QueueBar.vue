@@ -5,7 +5,12 @@
     <view class="q-mid" @click="emit('queue')">
       <view class="q-label">{{ L.queue.length ? '下一场' : '全员都在场上' }}</view>
       <view class="q-avs">
-        <view v-for="id in next4" :key="id" class="q-av next">
+        <view
+          v-for="id in next4"
+          :key="id"
+          class="q-av next"
+          :class="{ dropin: byId(id).dropin }"
+        >
           <ChibiAvatar :chibi="byId(id).chibi" :size="26" />
         </view>
       </view>
@@ -82,6 +87,10 @@ const meTxt = computed(() => {
 }
 .q-av.next {
   border-color: var(--lemon); /* 下几位高亮 */
+}
+/* 空降者头像换冰青描边（§4.4 全场看得到；无名字位，色环即标记） */
+.q-av.dropin {
+  border-color: var(--ice);
 }
 .q-me {
   font-size: 12px;

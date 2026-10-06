@@ -4,17 +4,21 @@
    2.2 批1（权限地基）：现场权限分级——isFullPower 单一源（组织者 ∨ 管理员）；store 是 mock 期
    总账，收权动作在入口把关（规格 B1：不指望手机端拦住），越权句式两读：「请找组织者或管理员」
    （全权动作）/「只有组织者能做」（封撤管理员）。
+   2.2 批2（到场与名册）：名册成真账本——开场全员未到、到场驱动发牌；排队位统一队尾（迟到/
+   中途加入/早退回来一律队尾，修订④）；空降扫码直入名册（不再 joinGame，线上名单/候补原样不动）；
+   出勤底账 ledger 当场落（到场/早退/移出时刻，touchLedger 单点）；移出名册对付扫码幽灵。
    硬约束：不触碰任何 uni.*；发牌引擎在 utils/rotate.ts（纯函数，live 状态作参数）。
    1.2 隔离线适配：startLive 吃重塑后的真局对象（Person→伪 User 名册 + mock 默认值补现场属性）；
    现场改规则/场地只落在 LiveState.g 浅克隆上，不回写 game store 的局（派生态归后端）。
    名册直接引用球员对象（alpha:1474）：mock U 同 id 者带出真实战绩对象（结算落回战力榜）。 */
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { DEFAULT_MOCK_CHECKIN_COUNT, U } from "@/api";
+import { U } from "@/api";
 import type {
   CheckStatus,
   CourtMode,
   Game,
+  LedgerRow,
   LiveState,
   Person,
   User,
@@ -24,7 +28,7 @@ import { DRESS_RANGES } from "@/utils/chibi";
 import { fillCourts, nextMatch, pById, usedCourts } from "@/utils/rotate";
 import { shouldEnd, undoScore } from "@/utils/score";
 import { isOrg, MODE_NAMES } from "@/utils/format";
-import { errText } from "@/api/http";
+import { toIso } from "@/utils/time";
 import { useGameStore } from "./game";
 import { useUiStore } from "./ui";
 import { useUserStore } from "./user";
@@ -36,6 +40,20 @@ let guestSeq = 0;
     ok 正常 / late 迟到已到 / join 中途加入；absent 未到、left 早退不算 */
 export const isArrived = (c?: CheckStatus): boolean =>
   c === "ok" || c === "late" || c === "join";
+
+/** 清场单点（2.2 批2：早退/移出两处 10 行块收敛；批3 替补/作废回流是可预见的下一个使用方）：
+    把人从候场队、待开片、在打局同时清掉 */
+function clearFromPlay(L: LiveState, id: number): void {
+  L.queue = L.queue.filter((x) => x !== id);
+  L.courts.forEach((c) => {
+    c.A = c.A.filter((x) => x !== id);
+    c.B = c.B.filter((x) => x !== id);
+  });
+  if (L.cur) {
+    L.cur.A = L.cur.A.filter((x) => x !== id);
+    L.cur.B = L.cur.B.filter((x) => x !== id);
+  }
+}
 
 export const useLiveStore = defineStore("live", () => {
   const ui = useUiStore();
@@ -87,31 +105,46 @@ export const useLiveStore = defineStore("live", () => {
     return Math.ceil((4 * L.courts.length + idx + 1) / 4);
   });
 
-  /** 开始打球（alpha:1471-1490 口径）：吃真局对象——
+  /** 开始打球（alpha:1471-1490 口径 · 2.2 批2§4.1 开场点亮）：吃真局对象——
     - 名册 = formal 报名行展开：成员卡（Person）优先借 mock U 同 id 者的完整属性对象
       （现场域仍吃 mock 属性；结算 Elo 落回战力榜），无则用 mock 默认值造伪 User；
-    - 「带的人」展开成随行访客（随机 chibi · 半权重不进榜）；前 9 人 ok，其余 absent。 */
+    - 「带的人」展开成随行访客（编号从 ·1 起，如「小李的球友·1」）；
+    - 全员先记「未到」谁报到谁亮（删 alpha 前 9 人自动签到演示遗产）；候场空、不发牌——
+      够一片的人数是「到场」攒出来的（setCheck 到场支线自动发牌）；
+    - ledger=出勤底账起笔（正式一人一行、随行行挂 guarantor），startedAt=点亮时刻。 */
   function startLive(g: Game): string | null {
     const lg: Game = { ...g, courts: g.courts ? [...g.courts] : null }; // 现场改动不回写局（派生态归后端）
     const src: User[] = [];
+    const ledger: LedgerRow[] = [];
     (g.entries ?? [])
       .filter((e) => e.standing === "formal")
       .forEach((e) => {
-        src.push(mkPlayer(e.account));
+        const m = mkPlayer(e.account);
+        src.push(m);
+        ledger.push({ id: m.id, name: m.name, shadow: m.shadow });
         for (let i = 0; i < (e.bring || 0); i++) {
-          src.push(mkGuest(e.account.nickname.slice(0, 2) + "的球友"));
+          const gu = mkGuest(
+            `${e.account.nickname.slice(0, 2)}的球友·${i + 1}`,
+          );
+          src.push(gu);
+          ledger.push({
+            id: gu.id,
+            name: gu.name,
+            shadow: true,
+            guarantor: e.account.nickname,
+          });
         }
       });
-    const roster = src.map((u, i) => {
-      u.check = i < DEFAULT_MOCK_CHECKIN_COUNT ? "ok" : "absent";
+    const roster = src.map((u) => {
+      u.check = "absent";
       u.skip = 0;
       u.fire = false;
       return u;
-    }); // alpha:1482
+    }); // 全员「未到」开场（§4.1 每人先记未到、谁报到谁亮）
     const L: LiveState = {
       g: lg,
       roster,
-      queue: roster.filter((p) => p.check === "ok").map((p) => p.id), // alpha:1483
+      queue: [], // 候场区空：报到的人按先后排进（到场驱动，开场不发牌不报错）
       courts: [],
       history: [],
       round: 0,
@@ -119,11 +152,11 @@ export const useLiveStore = defineStore("live", () => {
       lastWinners: null,
       admins: [], // 管理员现场封（不回写 g）
       feed: [`现场已点亮 · 组织者 ${lg.organizer.nickname}`], // 开场首句：轮播在无人动作时也有内容
+      startedAt: toIso(new Date()),
+      ledger,
     };
     live.value = L;
     settling.value = null; // 换局清残留结算窗（批1 刺客：上一局的快照不许漏进新局）
-    fillCourts(L); // alpha:1485
-    nextMatch(L); // alpha:1486
     const msg = "球局开始 · 现场已点亮";
     ui.toast(msg);
     return msg;
@@ -147,7 +180,8 @@ export const useLiveStore = defineStore("live", () => {
   }
 
   /** 确保现场开的是目标局（跳转/深链/扫码直达共用的守门口径）：
-      列表缓存没有该局（或没带全量名单）就拉详情，找不到提示后不动现场。 */
+      列表缓存没有该局（或没带全量名单）就拉详情，找不到提示后不动现场；
+      已结束的局（done/terminated/cancelled 终态）扫码禁入——散场后二维码不能用（§4.2 本批拦截）。 */
   async function ensureLive(id: number): Promise<void> {
     if (live.value && live.value.g.id === id) return;
     const gs = useGameStore();
@@ -159,6 +193,10 @@ export const useLiveStore = defineStore("live", () => {
         ui.toast("球局不存在或已结束");
         return;
       }
+    }
+    if (["done", "terminated", "cancelled"].includes(g.status)) {
+      ui.toast("球局不存在或已结束");
+      return;
     }
     startLive(g);
   }
@@ -185,14 +223,35 @@ export const useLiveStore = defineStore("live", () => {
     };
   }
 
-  /** 到场四操作（alpha:1591-1605 setCheck）：迟到自动排队尾 / 早退清队列清场上 / 中途加入进队首。
-      权限（§4.3）：代办他人收权；自己报到（扫码链路）/早退随时可 */
+  /** 出勤底账单点补笔（2.2 批2）：只按 id 合并 patch；人已移出（行被保留留痕）时不再复活字段 */
+  function touchLedger(id: number, patch: Partial<LedgerRow>): void {
+    const row = live.value?.ledger.find((r) => r.id === id);
+    if (row) Object.assign(row, patch);
+  }
+
+  /** 到场四操作（alpha:1591-1605 setCheck · 2.2 批2§4.2/4.5 口径单一源）：
+    - 「到场」请求一律传 'ok'，未到首报且已过开球时刻（局 startAt，ISO）归一成 'late'；
+    - 排队位统一队尾（修订④）：迟到排队尾、中途加入排队尾（不再插队首）、早退回来也队尾；
+    - 早退=候场队和场上同时清掉 + 落离场时刻；三种时刻当场落出勤底账；
+    - 落坑后自动发牌（与 autoDeal 同法：cur 正在打不动，只补待开片、空场顶一场）。
+    权限（§4.3）：代办他人收权；自己报到（扫码链路）/早退随时可 */
   function setCheck(id: number, st: CheckStatus): void {
     const L = live.value;
     const p = L ? pById(L, id) : undefined;
     if (!L || !p) return;
     if (id !== U.me.id && !needFull()) return;
-    if (st === "late" && p.check !== "late") {
+    const was = p.check; // 发牌只由「新到场」驱动：已在场的人重报（迟到再点/重复扫）不重发
+    if (st === "ok" || st === "late") {
+      // 「回来也是队尾」：早退者再到场走中途加入口径（§4.5 禁止回来排队首）
+      if (p.check === "left") st = "join";
+      else if (
+        st === "ok" &&
+        p.check === "absent" &&
+        Date.now() > new Date(L.g.startAt).getTime()
+      )
+        st = "late"; // 迟到口径：未到首报且已过开球时刻
+    }
+    if (st === "late") {
       p.check = "late";
       const i = L.queue.indexOf(id);
       if (i >= 0) L.queue.splice(i, 1);
@@ -200,21 +259,46 @@ export const useLiveStore = defineStore("live", () => {
       ui.toast(`${p.name} 迟到 · 自动排到队尾等一轮`);
     } else if (st === "left") {
       p.check = "left";
-      L.queue = L.queue.filter((x) => x !== id);
-      L.courts.forEach((c) => {
-        c.A = c.A.filter((x) => x !== id);
-        c.B = c.B.filter((x) => x !== id);
-      });
-      if (L.cur) {
-        L.cur.A = L.cur.A.filter((x) => x !== id);
-        L.cur.B = L.cur.B.filter((x) => x !== id);
-      }
-      ui.toast(`${p.name} 早退 · 名单已记录`);
+      clearFromPlay(L, id);
+      ui.toast(`${p.name} 早退 · 已记离场时刻`);
     } else if (st === "join") {
       p.check = "join";
-      if (!L.queue.includes(id)) L.queue.unshift(id);
-      ui.toast(`${p.name} 中途加入 · 排进队首`);
-    } else p.check = st;
+      if (!L.queue.includes(id)) L.queue.push(id); // 修订④：中途加入排到队尾
+      ui.toast(`${p.name} 中途加入 · 排到队尾`);
+    } else {
+      const first = !isArrived(p.check); // 'ok' 只在首报时进队（在场上/队里的人重报不重排）
+      p.check = st;
+      if (st === "ok") {
+        if (first && !L.queue.includes(id)) L.queue.push(id); // 按先后排进候场队=队尾
+        ui.toast(`${p.name} 已到场 · 排进候场队`);
+      }
+    }
+    if (st === "left") {
+      if (!p.leftAt) p.leftAt = toIso(new Date());
+      touchLedger(id, { leftAt: p.leftAt });
+      feedPush(`${p.name} 早退 · 已记离场时刻`);
+    } else if (st !== "absent" && !p.arriveAt) {
+      p.arriveAt = toIso(new Date()); // 几点到：首次到场落账（底账随行补笔）
+      touchLedger(id, { arriveAt: p.arriveAt });
+    }
+    if ((st === "ok" || st === "late" || st === "join") && !isArrived(was)) {
+      fillCourts(L); // 到场驱动发牌：够一片的人数就自动上片（重复报到不触发）
+      if (!L.cur) nextMatch(L);
+    }
+  }
+
+  /** 移出名册（2.2 批2§4.3 新动作，收权）：人从名册消失（对付远程扫码幽灵）——
+      候场/待开片/在打全清，底账行保留只落 removedAt（留痕）；与早退的区别：早退还留在名册 */
+  function removeFromRoster(id: number): void {
+    if (!needFull()) return;
+    const L = live.value;
+    const p = L ? pById(L, id) : undefined;
+    if (!L || !p) return;
+    L.roster = L.roster.filter((x) => x.id !== id);
+    clearFromPlay(L, id);
+    touchLedger(id, { removedAt: toIso(new Date()) });
+    feedPush(`${p.name} 被移出名册`);
+    ui.toast(`${p.name} 被移出名册`);
   }
 
   /** 歇两轮 / 连战（alpha:1629-1636）：互斥；歇两轮=2；连战排到队首。给自己随时可、给他人需全权 */
@@ -264,8 +348,11 @@ export const useLiveStore = defineStore("live", () => {
     ui.toast(`组织者收回了 ${p.name} 的管理员身份`);
   }
 
-  /** 扫码自签到（2.1·选项A）：名册没我（空降）→ 先报名进局再把人放进名册；
-      然后标「中途加入」排进队首。现场没开或开的是别局 → 先切到目标局（扫码直达场景）。 */
+  /** 扫码自签到（2.1·选项A · 2.2 批2§4.4 空降改造）：
+      名册没我（空降）→ 直接入名册（不再 joinGame——线上满员和候补都不拦、线上名单与候补原样
+      不动，名册可超线上上限），带「空降」标记+底账加行+feed 留痕；已在场幂等提示；
+      然后统一走 setCheck 到场支线（空降=中途加入排队尾；已报名者按开球时刻归一 ok/late）。
+      现场没开或开的是别局 → 先切到目标局；已结束的局被 ensureLive 拦下。 */
   async function arriveMe(gameId: number): Promise<string | null> {
     await ensureLive(gameId);
     const L = live.value;
@@ -273,22 +360,19 @@ export const useLiveStore = defineStore("live", () => {
     const myId = U.me.id;
     let p = pById(L, myId);
     if (!p) {
-      try {
-        await useGameStore().joinGame(gameId, 0); // 空降：先成为报名球友（名片建号已在前一步完成）
-      } catch (e) {
-        ui.toast(errText(e));
-        return null;
-      }
-      L.roster.push(
-        mkPlayer({ id: myId, nickname: U.me.name, chibi: U.me.chibi }),
-      ); // mkPlayer 借回 U.me 本体：战力/档案全局联动
-      p = U.me;
+      p = mkPlayer({ id: myId, nickname: U.me.name, chibi: U.me.chibi }); // 借回 U.me 本体：战力/档案全局联动
+      p.check = undefined; // mkPlayer 可能借回共享对象、残留移出前的 check——入册前先重置，防幂等闸误拦（§4.3 对手方：移出后重扫要能回候场）
+      p.dropin = true; // 空降标记全场看得到（§4.4）
+      L.roster.push(p);
+      if (!L.ledger.some((r) => r.id === myId))
+        L.ledger.push({ id: myId, name: p.name, dropin: true }); // 同一人一行：移出→重进复用原行，不累积重复行
+      feedPush(`${p.name} 空降 · 排到队尾`);
     }
-    if (p.check === "ok" || p.check === "join") {
+    if (isArrived(p.check)) {
       ui.toast("你已经在场了");
       return null;
     }
-    setCheck(myId, "join"); // setCheck 内置 toast「中途加入 · 排进队首」
+    setCheck(myId, p.dropin ? "join" : "ok"); // 到场口径（含迟到归一/队尾/自动发牌/toast）在 setCheck 单点
     return "已到场 · 进候场区";
   }
 
@@ -409,7 +493,8 @@ export const useLiveStore = defineStore("live", () => {
     ui.toast("已换人 · 对阵重排");
   }
 
-  /** 带访客（2.1 §1 组织者代办 · 收权）：与 startLive 随行访客同法 */
+  /** 带访客（2.1 §1 组织者代办 · 收权）：与 startLive 随行访客同法；编号从 ·1 起（修订：·2 起改 ·1 起）；
+      底账加行挂担保人（§4.14 访客谁带的） */
   function addGuests(count: number, name: string, introducer: User): void {
     const L = live.value;
     if (!L || count <= 0 || !needFull()) return;
@@ -418,12 +503,18 @@ export const useLiveStore = defineStore("live", () => {
         !name
           ? `${introducer.name.slice(0, 2)}的球友`
           : count > 1
-            ? `${name}·${i + 2}`
+            ? `${name}·${i + 1}`
             : name,
       );
       g.check = "join";
       L.roster.push(g);
       L.queue.push(g.id); // 队尾
+      L.ledger.push({
+        id: g.id,
+        name: g.name,
+        shadow: true,
+        guarantor: introducer.name,
+      });
     }
     ui.toast(`已带 ${count} 位访客 · 进候场区`);
   }
@@ -507,6 +598,7 @@ export const useLiveStore = defineStore("live", () => {
     setCheck,
     arriveMe,
     addGuests,
+    removeFromRoster,
     setAdmin,
     unsetAdmin,
     point,
