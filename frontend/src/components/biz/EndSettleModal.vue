@@ -26,16 +26,24 @@
         <view class="md-side">
           <view class="num a">{{ sa }}</view>
           <view class="adj">
-            <view class="adj-btn" @click="adj('a', -1)">−</view>
-            <view class="adj-btn" @click="adj('a', 1)">＋</view>
+            <view class="adj-btn" :class="{ off: !full }" @click="adj('a', -1)"
+              >−</view
+            >
+            <view class="adj-btn" :class="{ off: !full }" @click="adj('a', 1)"
+              >＋</view
+            >
           </view>
         </view>
         <view class="c">:</view>
         <view class="md-side">
           <view class="num b">{{ sb }}</view>
           <view class="adj">
-            <view class="adj-btn" @click="adj('b', -1)">−</view>
-            <view class="adj-btn" @click="adj('b', 1)">＋</view>
+            <view class="adj-btn" :class="{ off: !full }" @click="adj('b', -1)"
+              >−</view
+            >
+            <view class="adj-btn" :class="{ off: !full }" @click="adj('b', 1)"
+              >＋</view
+            >
           </view>
         </view>
         <text class="edit">比分可点改</text>
@@ -44,33 +52,47 @@
       <!-- ±积分预览（settleElo 纯函数，随胜方/比分实时变） -->
       <view v-for="(r, i) in preview" :key="i" class="elo-row">
         <text class="nm">{{ r.name }}</text>
-        <text class="d" :class="r.up ? 'up' : 'dn'">{{ r.up ? `+${r.d}` : `−${Math.abs(r.d)}` }}</text>
+        <text class="d" :class="r.up ? 'up' : 'dn'">{{
+          r.up ? `+${r.d}` : `−${Math.abs(r.d)}`
+        }}</text>
       </view>
       <view class="md-note">访客半权重 · 输家少扣的俱乐部友好制</view>
 
       <view class="md-btns">
-        <AppButton variant="pri" block @click="liveStore.confirmSettle(winA, sa, sb)">确认终局 · 排下一场</AppButton>
-        <view class="md-cancel" @click="liveStore.cancelMatch()">取消对局</view>
+        <AppButton
+          variant="pri"
+          block
+          :disabled="!full"
+          @click="liveStore.confirmSettle(winA, sa, sb)"
+          >确认终局 · 排下一场</AppButton
+        >
+        <view v-if="!full" class="md-full-tip">请组织者或管理员确认</view>
+        <view v-if="full" class="md-cancel" @click="liveStore.cancelMatch()"
+          >取消对局</view
+        >
       </view>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-/* 终局结算（2.1 §5 confirm-before-settle）：读 store.settling 快照 + cur 的 A/B；
+/* 终局结算（2.1 §5 confirm-before-settle；2.2 §4.8 确认收权）：读 store.settling 快照 + cur 的 A/B；
    本地态 winA/sa/sb 在快照开窗时重置；确认/取消直调 store（落账·排场·toast 都在 store，
-   撒花由页面 watch history 做）。预览行复用 WinChange 形状（settleElo 与落账同一入参 → 幂等一致）。 */
-import { computed, ref, watch } from 'vue';
-import AppButton from '@/components/ui/AppButton.vue';
-import { useLiveStore } from '@/stores/live';
-import { settleElo } from '@/utils/elo';
-import { courtLabel } from '@/utils/format';
-import type { WinChange } from '@/api/types';
+   撒花由页面 watch history 做）。球友只能看：确认钮与 ± 改分钮置灰+旁注，取消对局不出现（store guard 兜底）。
+   预览行复用 WinChange 形状（settleElo 与落账同一入参 → 幂等一致）。 */
+import { computed, ref, watch } from "vue";
+import AppButton from "@/components/ui/AppButton.vue";
+import { useLiveStore } from "@/stores/live";
+import { settleElo } from "@/utils/elo";
+import { courtLabel } from "@/utils/format";
+import type { WinChange } from "@/api/types";
 
-defineProps({
+const props = defineProps({
   visible: { type: Boolean, default: false },
+  /** 是否全权（组织者 ∨ 管理员，单一源在 live store）：确认/取消/± 改分的 UI 前置 */
+  full: { type: Boolean, default: false },
 });
-const emit = defineEmits<{ (e: 'close'): void }>();
+const emit = defineEmits<{ (e: "close"): void }>();
 
 const liveStore = useLiveStore();
 
@@ -92,12 +114,22 @@ watch(
 /** 当前场显示名（口径在 utils/format 的 courtLabel 单一源：playing 卡同款） */
 const courtName = computed(() => courtLabel(liveStore.live?.g.courts, 0));
 
-const namesA = computed(() => (liveStore.live?.cur?.A ?? []).map((id) => liveStore.byId(id).name).join(' / '));
-const namesB = computed(() => (liveStore.live?.cur?.B ?? []).map((id) => liveStore.byId(id).name).join(' / '));
+const namesA = computed(() =>
+  (liveStore.live?.cur?.A ?? [])
+    .map((id) => liveStore.byId(id).name)
+    .join(" / "),
+);
+const namesB = computed(() =>
+  (liveStore.live?.cur?.B ?? [])
+    .map((id) => liveStore.byId(id).name)
+    .join(" / "),
+);
 
-/** ± 改分：min 0（只改弹窗本地值，确认时随 confirmSettle 写回） */
-function adj(side: 'a' | 'b', d: number): void {
-  if (side === 'a') sa.value = Math.max(0, sa.value + d);
+/** ± 改分：min 0（只改弹窗本地值，确认时随 confirmSettle 写回）；
+    §4.8 球友只能看：± 钮置灰（off 样式）+ 此处拦截，双保险 */
+function adj(side: "a" | "b", d: number): void {
+  if (!props.full) return;
+  if (side === "a") sa.value = Math.max(0, sa.value + d);
   else sb.value = Math.max(0, sb.value + d);
 }
 
@@ -108,11 +140,13 @@ const preview = computed<WinChange[]>(() => {
   const wIds = winA.value ? c.A : c.B;
   const lIds = winA.value ? c.B : c.A;
   const users = [...wIds, ...lIds].map((id) => liveStore.byId(id));
-  return settleElo(users.slice(0, wIds.length), users.slice(wIds.length)).map((r, i) => ({
-    name: users[i].name,
-    up: r.up,
-    d: r.d,
-  }));
+  return settleElo(users.slice(0, wIds.length), users.slice(wIds.length)).map(
+    (r, i) => ({
+      name: users[i].name,
+      up: r.up,
+      d: r.d,
+    }),
+  );
 });
 </script>
 
@@ -141,7 +175,9 @@ const preview = computed<WinChange[]>(() => {
      只切透明度会把整页常驻压糊（走查实录：mmask 漏收 → 全屏发糊） */
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.22s, visibility 0.22s;
+  transition:
+    opacity 0.22s,
+    visibility 0.22s;
 }
 .mwrap.on .mmask {
   opacity: 1;
@@ -285,6 +321,11 @@ const preview = computed<WinChange[]>(() => {
   border-color: var(--lemon);
   color: var(--lemon);
 }
+/* 球友只看（§4.8）：± 置灰与确认钮（AppButton disabled）同一观感 */
+.adj-btn.off {
+  opacity: 0.35;
+  pointer-events: none;
+}
 
 /* ---------- ±积分预览行 ---------- */
 .elo-row {
@@ -325,6 +366,11 @@ const preview = computed<WinChange[]>(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.md-full-tip {
+  text-align: center;
+  font-size: 11px;
+  color: var(--dim);
 }
 .md-cancel {
   border: 1px solid rgba(255, 90, 54, 0.4);

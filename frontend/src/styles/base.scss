@@ -166,7 +166,7 @@ h1.brand em,
   animation-delay: 0.37s;
 }
 
-/* ---------- 人员徽章（live 系组件共用：访客/歇/燃/随行——2.1 改版收源，原各组件 scoped 副本删） ----------
+/* ---------- 人员徽章（live 系组件共用：访客/歇/燃/管理员——2.1 改版收源，原各组件 scoped 副本删） ----------
    只管形与色；位置性 margin（头像下方 vs 名字右侧）由使用组件自带 scoped 规则补 */
 .badge {
   display: inline-block;
@@ -187,6 +187,10 @@ h1.brand em,
 .badge.shadow {
   background: rgba(184, 169, 255, 0.16);
   color: var(--lilac);
+}
+.badge.admin {
+  background: rgba(255, 212, 0, 0.15);
+  color: var(--lemon);
 }
 
 /* ---------- 弹层壳层标题/说明（alpha:558-561，9 个 biz 弹层收源——原各组件 scoped 副本删；

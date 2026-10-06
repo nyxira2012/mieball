@@ -14,10 +14,10 @@ export interface ChibiConfig {
 }
 
 /** 我的战力卡卡背（alpha:1844 bg-neon/gold/cyber/aurora） */
-export type CardBg = 'neon' | 'gold' | 'cyber' | 'aurora';
+export type CardBg = "neon" | "gold" | "cyber" | "aurora";
 
 /** 现场签到五态（alpha:1579） */
-export type CheckStatus = 'ok' | 'late' | 'left' | 'absent' | 'join';
+export type CheckStatus = "ok" | "late" | "left" | "absent" | "join";
 
 /** 球员。U 里 13 人是同一份对象贯穿全局：名单/现场名册/榜单直接引用同一对象
     （alpha:1474「现场名单直接引用球员对象：Elo 变动实时落回战力榜」）。
@@ -29,52 +29,69 @@ export interface User {
   play: number;
   win: number;
   month: number;
-  last5?: ('W' | 'L')[];
-  liked?: boolean;       // 喜欢：静默单向（alpha:1922 toggleLike）
-  shadow?: boolean;      // 随行访客 · 半权重不进榜（alpha:774 / 1703）
+  last5?: ("W" | "L")[];
+  liked?: boolean; // 喜欢：静默单向（alpha:1922 toggleLike）
+  shadow?: boolean; // 随行访客 · 半权重不进榜（alpha:774 / 1703）
   chibi: ChibiConfig;
   cardBg?: CardBg;
   recentStats?: RecentStats;
   check?: CheckStatus;
-  skip?: number;         // 剩余歇轮数：歇两轮=2（2.1 文档+原型「候场区点人可设歇两轮」）。
-                        // 发牌时每次递减 1（rotate.ts avail），归 0 自动归队；0=不在歇
-  fire?: boolean;        // 连战：排到队首，与歇互斥（alpha:1631-1633）
+  skip?: number; // 剩余歇轮数：歇两轮=2（2.1 文档+原型「候场区点人可设歇两轮」）。
+  // 发牌时每次递减 1（rotate.ts avail），归 0 自动归队；0=不在歇
+  fire?: boolean; // 连战：排到队首，与歇互斥（alpha:1631-1633）
 }
 
 /** alpha:762 recentStats（我的页运动数据条） */
-export interface RecentStats { win: number; loss: number; hours: number; kcal: number }
+export interface RecentStats {
+  win: number;
+  loss: number;
+  hours: number;
+  kcal: number;
+}
 
 /** 报名条目（MockGame 遗留形状）：带的人也占坑（alpha:776 · heads 计入 bring） */
-export interface GameEntry { u: User; bring?: number }
+export interface GameEntry {
+  u: User;
+  bring?: number;
+}
 
 /** 时间桶（MockGame 遗留；真局列表筛选由页面从 startAt 现算） */
-export type TimeBucket = 'tonight' | 'tomorrow' | 'weekend' | 'week';
+export type TimeBucket = "tonight" | "tomorrow" | "weekend" | "week";
 
 /** 发牌模式（alpha:1404 winner 赢家留场 / rotate 纯粹轮转 / balance 均衡配对） */
-export type CourtMode = 'winner' | 'rotate' | 'balance';
+export type CourtMode = "winner" | "rotate" | "balance";
 
 /** 视图状态 7 态（单一源=后端 game_views.derive；派生态读时算：
     locked 随时刻翻 locked/live/done，pending 拖过开打=terminated） */
-export type GameStatus = 'open' | 'locked' | 'live' | 'done' | 'terminated' | 'cancelled' | 'pending';
+export type GameStatus =
+  "open" | "locked" | "live" | "done" | "terminated" | "cancelled" | "pending";
 
 /** 谁能翻到（可见档；enum 真值=后端模型，档位只管列表翻不翻得到、不管链接进出） */
-export type Visibility = 'played' | 'public' | 'invite_only';
+export type Visibility = "played" | "public" | "invite_only";
 
 /** 名单里的一人（后端 person_view 镜像）：对外只显昵称+小人（1.1 隐私口径） */
-export interface Person { id: number; nickname: string; chibi: ChibiConfig }
+export interface Person {
+  id: number;
+  nickname: string;
+  chibi: ChibiConfig;
+}
 
 /** 报名行：formal 按报名先后在前、候补按 seq 跟后（后端 entry_rows 保序，前端不再排序） */
 export interface EntryRow {
   account: Person;
   bring: number;
-  standing: 'formal' | 'waitlist';
+  standing: "formal" | "waitlist";
   waitSeq: number | null;
 }
 
 /** viewer 视角块（my_block 镜像）；匿名请求不带 my */
 export interface MyBlock {
   isOrganizer: boolean;
-  myEntry: { bring: number; standing: 'formal' | 'waitlist'; waitSeq: number | null } | null;
+  myEntry: {
+    bring: number;
+    standing: "formal" | "waitlist";
+    waitSeq: number | null;
+  } | null;
   invited: boolean;
 }
 
@@ -84,27 +101,27 @@ export interface Game {
   id: number;
   name: string;
   organizer: Person;
-  startAt: string;        // ISO 8601 +08:00（契约§2：相对表达只许待在输入框）
+  startAt: string; // ISO 8601 +08:00（契约§2：相对表达只许待在输入框）
   endAt: string;
-  deadlineAt: string;     // 截止发布即定死（不变承诺3）
+  deadlineAt: string; // 截止发布即定死（不变承诺3）
   venueName: string;
   venueAddress: string | null;
-  minPlayers: number;     // 最少人数（截止时判成不成）
-  maxPlayers: number;     // 最多人数（满员线，进度只讲剩几坑）
+  minPlayers: number; // 最少人数（截止时判成不成）
+  maxPlayers: number; // 最多人数（满员线，进度只讲剩几坑）
   visibility: Visibility;
-  scoring: number;        // 分制 target（先到 N 且净胜 2）
+  scoring: number; // 分制 target（先到 N 且净胜 2）
   rotation: CourtMode;
-  scoreRule: string;      // 后端 str 原样；非 rally/serve 的值不显示得分规则段（旧局容错）
-  manualLock: boolean;    // 必打手动锁（锁上不撤）
+  scoreRule: string; // 后端 str 原样；非 rally/serve 的值不显示得分规则段（旧局容错）
+  manualLock: boolean; // 必打手动锁（锁上不撤）
   courts: string[] | null; // 订场登记的场地号；场上有号即必打；null=未登记
   feeTotal: number | null; // 总价（整数元）；null=费用未定
   status: GameStatus;
-  unlocked: boolean;      // 改约解锁：锁定局改了时间/地点，开打前可退
-  joinable: boolean;      // 派生态 ∈ {open, locked, live}——加入按钮显隐直接读
-  heads: number;          // 人头（自己+带的人，后端定值）
-  slotsLeft: number;      // 剩几坑
+  unlocked: boolean; // 改约解锁：锁定局改了时间/地点，开打前可退
+  joinable: boolean; // 派生态 ∈ {open, locked, live}——加入按钮显隐直接读
+  heads: number; // 人头（自己+带的人，后端定值）
+  slotsLeft: number; // 剩几坑
   perHead: number | null; // 人均（half-up）；null=未定
-  forced: boolean;        // 必打 = 手动锁 ∨ 场上有号
+  forced: boolean; // 必打 = 手动锁 ∨ 场上有号
   entries?: EntryRow[];
   my?: MyBlock;
 }
@@ -114,7 +131,7 @@ export interface Game {
 export interface Intent {
   account: Person;
   slots: string[];
-  frequency: number;      // 0=随缘 / 1 / 2
+  frequency: number; // 0=随缘 / 1 / 2
   note: string | null;
   updatedAt: string;
   invited: boolean;
@@ -122,53 +139,83 @@ export interface Intent {
 }
 
 /** 我的一份意向 */
-export interface MyIntent { slots: string[]; frequency: number; note: string | null }
+export interface MyIntent {
+  slots: string[];
+  frequency: number;
+  note: string | null;
+}
 
 /** 时段定义（前端词表单一源，后端不校验词表——防两真值） */
-export interface Slot { k: string; n: string; desc: string }
+export interface Slot {
+  k: string;
+  n: string;
+  desc: string;
+}
 
 /** 局卡展示模型（批4 裁决①：GameCard props 收窄为卡面原子，组件与数据源解耦——
     meet 传真局映射 newGameCard，登记/记录页传 mock 映射 mockGameCard） */
 export interface GameCardModel {
   id: number;
   name: string;
-  dayText: string;         // 时间位小字：'今晚' / '10.06 周一'
-  hmText: string;          // 时间位大字：'19:00'
+  dayText: string; // 时间位小字：'今晚' / '10.06 周一'
+  hmText: string; // 时间位大字：'19:00'
   venueText: string;
   status: GameStatus;
   minPlayers: number;
   maxPlayers: number;
   slotsLeft: number;
-  forcedLabel?: string;    // '已订场 · 必开' / '必开'；未锁定则缺省
+  forcedLabel?: string; // '已订场 · 必开' / '必开'；未锁定则缺省
   result?: { sa: number; sb: number; myWin: boolean }; // done 战报（mock 快照域）
-  myRole?: 'org' | 'inv' | 'joined' | null;
+  myRole?: "org" | "inv" | "joined" | null;
   stackAvatars: ChibiConfig[];
-  stackPlus: string;       // 头像叠层溢出文案：'+' / '+N' / '+N · 含随行'
+  stackPlus: string; // 头像叠层溢出文案：'+' / '+N' / '+N · 含随行'
 }
 
 /** 账单状态四态（5.1 文档：待付/已付/该收/已收） */
-export type BillStatus = 'due' | 'paid' | 'receivable' | 'received';
+export type BillStatus = "due" | "paid" | "receivable" | "received";
 
 /** 该收按人明细一行——数据侧算好的每个人该摊多少、结没结，界面不自算（5.1 修订） */
-export interface BillPayer { u: User; amt: number; settled: boolean }
+export interface BillPayer {
+  u: User;
+  amt: number;
+  settled: boolean;
+}
 
 /** 账单（5.1 文档：哪局、多少钱、什么状态；垫付只属组织者，故 role=org 才有 receivable。
     member 行 amt=人均摊费、payee=该局组织者（欠谁）；org 行 amt=别人摊费合计、payers=按人明细） */
 export interface Bill {
-  id: number; gameId: number; gname: string; date: string; amt: number; status: BillStatus; role: 'org' | 'member';
-  payee?: User;         // 欠谁——member 行＝该局组织者；org 行无此字段
+  id: number;
+  gameId: number;
+  gname: string;
+  date: string;
+  amt: number;
+  status: BillStatus;
+  role: "org" | "member";
+  payee?: User; // 欠谁——member 行＝该局组织者；org 行无此字段
   payers?: BillPayer[]; // 该收按人明细，org 行才有；不含我自己
 }
 
 /** 场上待打的一片：A/B 两队（存玩家 id） */
-export interface LiveCourt { A: number[]; B: number[] }
+export interface LiveCourt {
+  A: number[];
+  B: number[];
+}
 
 /** 进行中的一场（live.cur 记分板） */
-export interface LiveMatch { A: number[]; B: number[]; sa: number; sb: number }
+export interface LiveMatch {
+  A: number[];
+  B: number[];
+  sa: number;
+  sb: number;
+}
 
 /** 已完成场次（alpha:1710）。alpha 的 txt 为含高亮的 HTML 字符串，这里存纯文本胜者名，
     页面渲染时拼「names 胜」（v-html 仅允许 ChibiAvatar 使用）。 */
-export interface MatchHistory { names: string; sa: number; sb: number }
+export interface MatchHistory {
+  names: string;
+  sa: number;
+  sb: number;
+}
 
 /** 现场状态（alpha:1483-1485 live）。g 是真局对象的浅克隆：现场改规则/场地只落在克隆上，
     不回写 game store 的局（派生态归后端）。 */
@@ -181,51 +228,64 @@ export interface LiveState {
   round: number;
   cur: LiveMatch | null;
   lastWinners: number[] | null;
-  last?: 'a' | 'b';     // 最后得分方（undoPoint 回退用，alpha:1677/1682）
+  last?: "a" | "b"; // 最后得分方（undoPoint 回退用，alpha:1677/1682）
+  admins: number[]; // 被封管理员 id（现场态，不回写 g；isFullPower = org ∨ 本表）
+  feed: string[]; // 战报事件句（unshift 新到旧；句子在动作处拼好、含操作者，LiveTopbar 轮播消费）
 }
 
 /** 分制（alpha:850 scoreMode 默认 elo） */
-export type ScoreMode = 'elo' | 'ntrp';
+export type ScoreMode = "elo" | "ntrp";
 
 /** 组局表单提交值（线上形状 snake_case，POST /games 请求体镜像；契约§1）。
     拨盘串→ISO 的换算归 LaunchSheet（utils/time.ts toIso）。 */
 export interface PublishGameInput {
-  name: string;            // LaunchSheet 自动起名后提交（契约§2 后端不产中文），提交时非空
-  start_at: string;        // ISO +08:00
+  name: string; // LaunchSheet 自动起名后提交（契约§2 后端不产中文），提交时非空
+  start_at: string; // ISO +08:00
   end_at: string;
-  deadline_at: string;     // 默认开打前 2h；手动拨过即固定
+  deadline_at: string; // 默认开打前 2h；手动拨过即固定
   venue_name: string;
   venue_address: string | null;
   min_players: number;
   max_players: number;
-  visibility: Visibility;  // 默认 'played'（熟人优先裁决）
+  visibility: Visibility; // 默认 'played'（熟人优先裁决）
   scoring: number;
   rotation: CourtMode;
   score_rule: string;
 }
 
 /** 改局输入：十参全可选；deadline_at 在类型层就挡死（不变承诺3：发布即定死不改） */
-export type EditGameInput = Partial<Omit<PublishGameInput, 'deadline_at'>> & { deadline_at?: never };
+export type EditGameInput = Partial<Omit<PublishGameInput, "deadline_at">> & {
+  deadline_at?: never;
+};
 
 /** 全局单例弹层 payload（§2.2：P2 全量预定义，后续阶段只消费不改） */
 export type SheetPayload =
-  | { type: 'profile'; userId: number }
-  | { type: 'join'; gameId: number }
-  | { type: 'quit-confirm'; gameId: number }
-  | { type: 'cancel-confirm'; gameId: number }
-  | { type: 'booking'; gameId: number }          // 订场登记 / 锁定必打（3.2 三态锁：没锁→空锁→订场锁共用的面板）
-  | { type: 'invite-to-game'; gameId: number }   // 局详情翻意向列表拉人（alpha:1213）
-  | { type: 'invite-to-slot'; userId: number }   // 球员档案选局邀请（alpha:1239）
-  | { type: 'intent-form' }                      // 留/改意向（alpha:1266）
-  | { type: 'launch'; gameId?: number }          // 组局表单：无 gid 新建（alpha:1301）
-  | { type: 'logout-confirm' }                   // 退出账号确认（5.1 弹窗：只是这台设备登出，数据都在）
-  | { type: 'delete-confirm' }                   // 注销账号确认（5.1 弹窗：后果说明 + 二次确认，两步都过才执行）
-  | { type: 'signup-card'; pendingJoin?: { gameId: number; bring: number }; pendingLaunch?: PublishGameInput; pendingCheckin?: { gameId: number } };
-  // 名片建号卡（1.1 A1）：游客点报名/建局/扫码签到时弹出；建号成功自动接着完成挂起的动作（D3 两步拆分）
-  // pendingCheckin（2.1·选项A）：扫码到场一律走名片建号，建号成功后自动「我到了」进候场区
+  | { type: "profile"; userId: number }
+  | { type: "join"; gameId: number }
+  | { type: "quit-confirm"; gameId: number }
+  | { type: "cancel-confirm"; gameId: number }
+  | { type: "booking"; gameId: number } // 订场登记 / 锁定必打（3.2 三态锁：没锁→空锁→订场锁共用的面板）
+  | { type: "invite-to-game"; gameId: number } // 局详情翻意向列表拉人（alpha:1213）
+  | { type: "invite-to-slot"; userId: number } // 球员档案选局邀请（alpha:1239）
+  | { type: "intent-form" } // 留/改意向（alpha:1266）
+  | { type: "launch"; gameId?: number } // 组局表单：无 gid 新建（alpha:1301）
+  | { type: "logout-confirm" } // 退出账号确认（5.1 弹窗：只是这台设备登出，数据都在）
+  | { type: "delete-confirm" } // 注销账号确认（5.1 弹窗：后果说明 + 二次确认，两步都过才执行）
+  | {
+      type: "signup-card";
+      pendingJoin?: { gameId: number; bring: number };
+      pendingLaunch?: PublishGameInput;
+      pendingCheckin?: { gameId: number };
+    };
+// 名片建号卡（1.1 A1）：游客点报名/建局/扫码签到时弹出；建号成功自动接着完成挂起的动作（D3 两步拆分）
+// pendingCheckin（2.1·选项A）：扫码到场一律走名片建号，建号成功后自动「我到了」进候场区
 
 /** 结算 ±积分一行（2.1 打球页改版：终局结算弹窗 EndSettleModal 的预览行复用本形状） */
-export interface WinChange { name: string; up: boolean; d: number }
+export interface WinChange {
+  name: string;
+  up: boolean;
+  d: number;
+}
 
 /** ─────────── mock 隔离线快照形状（1.2 起冻结：字段不再生长） ───────────
     账单/登记/记录/现场演示继续吃 mock/data.ts 种子（5.1 快照域）；
@@ -234,30 +294,30 @@ export interface WinChange { name: string; up: boolean; d: number }
 export interface MockGame {
   id: number;
   organizer: User;
-  t: string;            // '今晚 19:00'（utils/time.ts gameTime 解析）
-  d: string;            // 展示用日期（'今天' / '10.07'）
+  t: string; // '今晚 19:00'（utils/time.ts gameTime 解析）
+  d: string; // 展示用日期（'今天' / '10.07'）
   tb: TimeBucket;
-  area: string;         // 地区（找局打筛选用）
-  dur: number;          // 打多久（小时）
-  deadline: string;     // 组局截止：到点锁名单，定死不改
+  area: string; // 地区（找局打筛选用）
+  dur: number; // 打多久（小时）
+  deadline: string; // 组局截止：到点锁名单，定死不改
   loc: string;
   name: string;
-  min: number;          // 最少人数（截止时判成不成）
-  cap: number;          // 最多人数（满员线，进度只讲剩几坑）
-  fee: number | null;   // 预计费用总价；null=费用未定
+  min: number; // 最少人数（截止时判成不成）
+  cap: number; // 最多人数（满员线，进度只讲剩几坑）
+  fee: number | null; // 预计费用总价；null=费用未定
   note?: string;
   joined: GameEntry[];
-  wait: GameEntry[];    // 候补栏：满员加入进这里，有人退出即刻递补
+  wait: GameEntry[]; // 候补栏：满员加入进这里，有人退出即刻递补
   status: GameStatus;
-  score: number;        // 分制 target
-  scoreRule?: 'rally' | 'serve';
+  score: number; // 分制 target
+  scoreRule?: "rally" | "serve";
   mode: CourtMode;
   lateRule: boolean;
   invitedMe?: boolean;
   locked?: boolean;
-  sure?: boolean;       // 必打手动锁
-  booked?: string[];    // 订场登记的场地号
-  dead?: boolean;       // 未成局（自动终止）
+  sure?: boolean; // 必打手动锁
+  booked?: string[]; // 订场登记的场地号
+  dead?: boolean; // 未成局（自动终止）
   result?: { sa: number; sb: number; myWin: boolean }; // 已结束局的最终比分
-  myLog?: { checkIn: string; checkOut?: string };      // 我的到场底账
+  myLog?: { checkIn: string; checkOut?: string }; // 我的到场底账
 }

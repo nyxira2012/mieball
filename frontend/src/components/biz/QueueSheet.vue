@@ -1,7 +1,12 @@
 <template>
   <!-- 完整候场队列抽屉（temp/打球页原型 sh-queue 逐字）：首 4 行 .next 高亮（已排进下一场），
        每行 mono 小注（已打/ ELO）+ 右侧 tag（下一场 / 我还有 N 轮）；点行开点人抽屉（页面编排）。 -->
-  <AppSheet :visible="visible" title="候场队列" hint="下四位已排进下一场 · 点人可换人 / 歇两轮 / 连战 / 退场" @close="emit('close')">
+  <AppSheet
+    :visible="visible"
+    title="候场队列"
+    hint="下四位已排进下一场 · 点人可换人 / 歇两轮 / 连战 / 退场"
+    @close="emit('close')"
+  >
     <template v-if="rows.length">
       <view
         v-for="(r, i) in rows"
@@ -10,12 +15,24 @@
         :class="{ next: i < 4 }"
         @click="emit('person', r.id)"
       >
-        <view class="row-av"><ChibiAvatar :chibi="r.u.chibi" :size="30" /></view>
+        <view class="row-av"
+          ><ChibiAvatar :chibi="r.u.chibi" :size="30"
+        /></view>
         <view class="info">
-          <view class="nm">{{ r.u.name }}<text v-if="r.u.shadow" class="badge guest">访客</text></view>
-          <view class="meta">已打 {{ r.u.play }} 场 · ELO {{ r.u.elo || '—' }}</view>
+          <view class="nm"
+            >{{ r.u.name
+            }}<text v-if="r.u.shadow" class="badge guest">访客</text
+            ><text v-if="isAdmin(r.id)" class="badge admin nm-badge"
+              >管理员</text
+            ></view
+          >
+          <view class="meta"
+            >已打 {{ r.u.play }} 场 · ELO {{ r.u.elo || "—" }}</view
+          >
         </view>
-        <text v-if="r.id === U.me.id && myRound != null" class="tag tag-me">还有 {{ myRound }} 轮</text>
+        <text v-if="r.id === U.me.id && myRound != null" class="tag tag-me"
+          >还有 {{ myRound }} 轮</text
+        >
         <text v-else-if="i < 4" class="tag">下一场</text>
       </view>
     </template>
@@ -25,24 +42,30 @@
 
 <script setup lang="ts">
 /* 队列抽屉（2.1 §3）：无本地态，读 live store 的 queue/myRound；点行 emit person 由页面开点人抽屉。 */
-import { computed } from 'vue';
-import AppSheet from '@/components/ui/AppSheet.vue';
-import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
-import EmptyBox from '@/components/ui/EmptyBox.vue';
-import { useLiveStore } from '@/stores/live';
-import { U } from '@/api';
+import { computed } from "vue";
+import AppSheet from "@/components/ui/AppSheet.vue";
+import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import EmptyBox from "@/components/ui/EmptyBox.vue";
+import { useLiveStore } from "@/stores/live";
+import { U } from "@/api";
 
 defineProps({
   visible: { type: Boolean, default: false },
 });
 const emit = defineEmits<{
-  (e: 'close'): void;
-  (e: 'person', id: number): void;
+  (e: "close"): void;
+  (e: "person", id: number): void;
 }>();
 
 const liveStore = useLiveStore();
+/** 管理员标识（admins 单一源在 LiveState，全场看得到） */
+function isAdmin(id: number): boolean {
+  return !!liveStore.live?.admins.includes(id);
+}
 /** 行数据 computed 一次解析好（模板逐字段 byId 是每行多次名册线性扫描） */
-const rows = computed(() => (liveStore.live?.queue ?? []).map((id) => ({ id, u: liveStore.byId(id) })));
+const rows = computed(() =>
+  (liveStore.live?.queue ?? []).map((id) => ({ id, u: liveStore.byId(id) })),
+);
 const myRound = computed(() => liveStore.myRound);
 </script>
 
@@ -99,7 +122,8 @@ const myRound = computed(() => liveStore.myRound);
   color: var(--ice);
 }
 /* 访客徽章：形与色在 base.scss 全局类；此处只补名字右侧的位置 margin */
-.badge.guest {
+.badge.guest,
+.nm-badge {
   margin-left: 6px;
 }
 </style>

@@ -1,6 +1,7 @@
 <template>
-  <!-- 点人抽屉（temp/打球页原型 sh-person 逐字）：常规态 = 头像/战绩头 + 四钮（换人[org]/歇两轮/连战/退场[org]）
-       + 战力档案链接；换人二段态 = 标题换「把 X 换成谁？」列对侧池（场上↔候场），点行即换。 -->
+  <!-- 点人抽屉（temp/打球页原型 sh-person 逐字）：常规态 = 头像/战绩头 + 手柄钮（本人随时可、
+       给他人需全权：换人/歇两轮/连战/退场）+ 设为/撤掉管理员（仅组织者可见）+ 战力档案链接；
+       换人二段态 = 标题换「把 X 换成谁？」列对侧池（场上↔候场），点行即换。 -->
   <AppSheet :visible="visible" @close="emit('close')">
     <template v-if="p">
       <!-- ---------- 常规态 ---------- -->
@@ -8,33 +9,90 @@
         <view class="ps-head">
           <view class="ps-av"><ChibiAvatar :chibi="p.chibi" :size="44" /></view>
           <view class="ps-meta">
-            <view class="ps-nm">{{ p.name }}</view>
-            <view class="ps-elo"><text class="elo-b">{{ p.elo || '新' }}</text> · 已打 {{ p.play }} 场<text v-if="p.shadow" class="ps-guest"> · 访客（积分半权重）</text></view>
+            <view class="ps-nm"
+              >{{ p.name
+              }}<text v-if="isAdmin" class="badge admin ps-admin"
+                >管理员</text
+              ></view
+            >
+            <view class="ps-elo"
+              ><text class="elo-b">{{ p.elo || "新" }}</text> · 已打
+              {{ p.play }} 场<text v-if="p.shadow" class="ps-guest">
+                · 访客（积分半权重）</text
+              ></view
+            >
           </view>
         </view>
         <view class="ps-grid">
-          <view v-if="org" class="ps-act" @click="emit('swap-mode', true)">换人</view>
-          <view class="ps-act" :class="{ 'on-rest': !!p.skip }" @click="liveStore.togglePerson(p.id, 'skip')">{{ p.skip ? '已歇两轮' : '歇两轮' }}</view>
-          <view class="ps-act" :class="{ 'on-fire': !!p.fire }" @click="liveStore.togglePerson(p.id, 'fire')">{{ p.fire ? '连战中' : '连战' }}</view>
-          <view v-if="org" class="ps-act warn" @click="onLeave">退场</view>
+          <view
+            v-if="canOperate"
+            class="ps-act"
+            @click="emit('swap-mode', true)"
+            >换人</view
+          >
+          <view
+            v-if="canOperate"
+            class="ps-act"
+            :class="{ 'on-rest': !!p.skip }"
+            @click="liveStore.togglePerson(p.id, 'skip')"
+            >{{ p.skip ? "已歇两轮" : "歇两轮" }}</view
+          >
+          <view
+            v-if="canOperate"
+            class="ps-act"
+            :class="{ 'on-fire': !!p.fire }"
+            @click="liveStore.togglePerson(p.id, 'fire')"
+            >{{ p.fire ? "连战中" : "连战" }}</view
+          >
+          <view v-if="canOperate" class="ps-act warn" @click="onLeave"
+            >退场</view
+          >
+          <view
+            v-if="isOrgViewer"
+            class="ps-act"
+            :class="{ 'on-admin': isAdmin }"
+            @click="onAdminToggle"
+            >{{ isAdmin ? "撤掉管理员" : "设为管理员" }}</view
+          >
         </view>
-        <view class="ps-link" @click="emit('profile', p.id)">查看 <text class="ice">战力档案</text> ›</view>
+        <view class="ps-link" @click="emit('profile', p.id)"
+          >查看 <text class="ice">战力档案</text> ›</view
+        >
       </template>
 
       <!-- ---------- 换人二段态：列对侧池 ---------- -->
       <template v-else>
         <view class="ps-swap-t">把 {{ p.name }} 换成谁？</view>
         <view v-if="poolRows.length" class="ps-pool">
-          <view v-for="r in poolRows" :key="r.id" class="ps-row" @click="emit('swap-target', r.id)">
-            <view class="row-av"><ChibiAvatar :chibi="r.u.chibi" :size="32" /></view>
+          <view
+            v-for="r in poolRows"
+            :key="r.id"
+            class="ps-row"
+            @click="emit('swap-target', r.id)"
+          >
+            <view class="row-av"
+              ><ChibiAvatar :chibi="r.u.chibi" :size="32"
+            /></view>
             <view class="row-info">
-              <view class="row-nm">{{ r.u.name }}<text v-if="r.u.shadow" class="badge guest">访客</text></view>
-              <view class="row-meta">已打 {{ r.u.play }} 场 · ELO {{ r.u.elo || '—' }}</view>
+              <view class="row-nm"
+                >{{ r.u.name
+                }}<text v-if="r.u.shadow" class="badge guest">访客</text></view
+              >
+              <view class="row-meta"
+                >已打 {{ r.u.play }} 场 · ELO {{ r.u.elo || "—" }}</view
+              >
             </view>
             <text class="row-go">换 ‹</text>
           </view>
         </view>
-        <EmptyBox v-else :text="personOnCourt ? '候场没人可换 · 先拉人或带访客' : '场上没人可换 · 先自动排阵'" />
+        <EmptyBox
+          v-else
+          :text="
+            personOnCourt
+              ? '候场没人可换 · 先拉人或带访客'
+              : '场上没人可换 · 先自动排阵'
+          "
+        />
         <view class="ps-link" @click="emit('swap-mode', false)">返回</view>
       </template>
     </template>
@@ -42,16 +100,18 @@
 </template>
 
 <script setup lang="ts">
-/* 点人抽屉（2.1 §3-4）：歇两轮/连战/退场直调 live store（toast 在 store），
+/* 点人抽屉（2.1 §3-4；2.2 批1 权限分级）：歇两轮/连战/退场直调 live store（toast 在 store），
    换人与档案走 emit 由页面编排（swap 二段态、ProfileSheet 全局弹层）。
+   权限（§4.8/4.9）：换人/歇/连/退场本人随时可、给他人需全权（isFullPower 单一源在 store）；
+   「设为/撤掉管理员」仅组织者可见（§4.6 禁止管理员再封管理员）。
    对侧池口径：人在场上 → 列候场队列；人在队列 → 列场上全员（cur + 各待开片）。 */
-import { computed } from 'vue';
-import AppSheet from '@/components/ui/AppSheet.vue';
-import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
-import EmptyBox from '@/components/ui/EmptyBox.vue';
-import { useLiveStore } from '@/stores/live';
-import { pById } from '@/utils/rotate';
-import { isOrg } from '@/utils/format';
+import { computed } from "vue";
+import AppSheet from "@/components/ui/AppSheet.vue";
+import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import EmptyBox from "@/components/ui/EmptyBox.vue";
+import { useLiveStore } from "@/stores/live";
+import { pById } from "@/utils/rotate";
+import { isMe, isOrg } from "@/utils/format";
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -60,31 +120,50 @@ const props = defineProps({
   swap: { type: Boolean, default: false },
 });
 const emit = defineEmits<{
-  (e: 'close'): void;
-  (e: 'profile', id: number): void;
-  (e: 'swap-mode', on: boolean): void;
-  (e: 'swap-target', id: number): void;
+  (e: "close"): void;
+  (e: "profile", id: number): void;
+  (e: "swap-mode", on: boolean): void;
+  (e: "swap-target", id: number): void;
 }>();
 
 const liveStore = useLiveStore();
 
 /** 点中的人（roster 真身查不到 = 抽屉失效，内容整体不渲染；byId 的「—」占位不适合这里） */
-const p = computed(() => liveStore.live?.roster.find((x) => x.id === props.personId));
+const p = computed(() =>
+  liveStore.live?.roster.find((x) => x.id === props.personId),
+);
 
-/** 组织者判定（换人/退场仅组织者可操作，运行时读 U.me.id） */
-const org = computed(() => (liveStore.live ? isOrg(liveStore.live.g) : false));
+/** 全权（组织者 ∨ 管理员）单一源在 store */
+const full = computed(() => liveStore.isFullPower);
+/** 封撤管理员入口只给组织者本人 */
+const isOrgViewer = computed(() =>
+  liveStore.live ? isOrg(liveStore.live.g) : false,
+);
+/** 手柄钮（换人/歇/连/退场）：给自己随时可、给他人需全权 */
+const canOperate = computed(() => full.value || isMe(props.personId));
+const isAdmin = computed(
+  () => !!liveStore.live?.admins.includes(props.personId),
+);
 
 /** 退场：setCheck left（清队列清场上 + toast 在 store），随后关抽屉 */
 function onLeave(): void {
-  liveStore.setCheck(props.personId, 'left');
-  emit('close');
+  liveStore.setCheck(props.personId, "left");
+  emit("close");
+}
+/** 封/撤管理员（toast 与 feed 留痕在 store）；抽屉不关，徽章当场可见 */
+function onAdminToggle(): void {
+  if (isAdmin.value) liveStore.unsetAdmin(props.personId);
+  else liveStore.setAdmin(props.personId);
 }
 
 /** 场上全员 id（cur A/B + 各待开片 A/B） */
 const onCourtIds = computed<number[]>(() => {
   const l = liveStore.live;
   if (!l) return [];
-  return [...(l.cur ? [...l.cur.A, ...l.cur.B] : []), ...l.courts.flatMap((c) => [...c.A, ...c.B])];
+  return [
+    ...(l.cur ? [...l.cur.A, ...l.cur.B] : []),
+    ...l.courts.flatMap((c) => [...c.A, ...c.B]),
+  ];
 });
 const personOnCourt = computed(() => onCourtIds.value.includes(props.personId));
 
@@ -94,7 +173,9 @@ const personOnCourt = computed(() => onCourtIds.value.includes(props.personId));
 const poolRows = computed(() => {
   const l = liveStore.live;
   if (!l) return [];
-  const ids = (personOnCourt.value ? l.queue : onCourtIds.value).filter((id) => !!pById(l, id));
+  const ids = (personOnCourt.value ? l.queue : onCourtIds.value).filter(
+    (id) => !!pById(l, id),
+  );
   return ids.map((id) => ({ id, u: liveStore.byId(id) }));
 });
 </script>
@@ -164,8 +245,16 @@ const poolRows = computed(() => {
   border-color: var(--coral);
   color: var(--coral);
 }
+.ps-act.on-admin {
+  border-color: var(--lemon);
+  color: var(--lemon);
+}
 .ps-act.warn {
   color: var(--coral);
+}
+.ps-admin {
+  margin-left: 6px;
+  vertical-align: 1px;
 }
 .ps-link {
   text-align: center;

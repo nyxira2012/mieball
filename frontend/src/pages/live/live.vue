@@ -13,14 +13,20 @@
         <view class="brand">现<text class="bem">场</text></view>
         <EmptyBox class="et20">
           <view>还没有进行中的球局</view>
-          <AppButton variant="pri" size="sm" class="go-btn" @click="goOpenTonight">去开今晚的局 ▸</AppButton>
+          <AppButton
+            variant="pri"
+            size="sm"
+            class="go-btn"
+            @click="goOpenTonight"
+            >去开今晚的局 ▸</AppButton
+          >
         </EmptyBox>
       </view>
     </template>
 
     <template v-else-if="L">
       <view class="live-root">
-        <LiveTopbar @qr="qrOpen = true" @rules="liveSheet = { k: 'rules' }" />
+        <LiveTopbar @qr="qrOpen = true" @rules="onRules" />
 
         <!-- 块二：滚动对局区（playing cur + ready 各待开片 + 空闲卡补位） -->
         <view class="courts">
@@ -29,7 +35,7 @@
             variant="playing"
             :cur="L.cur"
             :name="courtName(0)"
-            :org="org"
+            :full="full"
             @point="liveStore.point"
             @undo="liveStore.undoPoint"
             @clear="liveStore.clearScore"
@@ -44,7 +50,7 @@
             variant="ready"
             :court="c"
             :name="courtName(i + 1)"
-            :org="org"
+            :full="full"
             @profile="openProfile"
           />
           <CourtMatchCard
@@ -52,7 +58,7 @@
             :key="`idle${idx}`"
             variant="idle"
             :name="courtName(idx)"
-            :org="org"
+            :full="full"
             @autodeal="liveStore.autoDeal"
             @pull="goPull"
           />
@@ -72,10 +78,18 @@
         @swap-target="onSwapTarget"
       />
       <CheckinSheet :visible="liveSheet?.k === 'checkin'" @close="closeLocal" />
-      <QueueSheet :visible="liveSheet?.k === 'queue'" @close="closeLocal" @person="onQueuePerson" />
+      <QueueSheet
+        :visible="liveSheet?.k === 'queue'"
+        @close="closeLocal"
+        @person="onQueuePerson"
+      />
       <RulesSheet :visible="liveSheet?.k === 'rules'" @close="closeLocal" />
       <!-- 终局结算（store.settling 驱动）与签到二维码浮层：z-110，顶替退役 WinPopup 层级 -->
-      <EndSettleModal :visible="!!liveStore.settling" @close="liveStore.closeSettle()" />
+      <EndSettleModal
+        :visible="!!liveStore.settling"
+        :full="full"
+        @close="liveStore.closeSettle()"
+      />
       <QrOverlay :visible="qrOpen" @close="qrOpen = false" />
     </template>
   </PageShell>
@@ -84,34 +98,34 @@
 <script setup lang="ts">
 /* 打球页编排层（2.1 改版批2 重写）：数据与动作全在 live store / 组件内，页面只管
    卡片名映射、弹层次序（liveSheet 单槽）、跨页跳转（档案/拉人/深链）、撒花。 */
-import { computed, ref, watch } from 'vue';
-import { onHide, onLoad, onShow } from '@dcloudio/uni-app';
-import PageShell from '@/components/biz/PageShell.vue';
-import AppButton from '@/components/ui/AppButton.vue';
-import EmptyBox from '@/components/ui/EmptyBox.vue';
-import LiveTopbar from '@/components/biz/LiveTopbar.vue';
-import CourtMatchCard from '@/components/biz/CourtMatchCard.vue';
-import QueueBar from '@/components/biz/QueueBar.vue';
-import PersonSheet from '@/components/biz/PersonSheet.vue';
-import CheckinSheet from '@/components/biz/CheckinSheet.vue';
-import QueueSheet from '@/components/biz/QueueSheet.vue';
-import RulesSheet from '@/components/biz/RulesSheet.vue';
-import EndSettleModal from '@/components/biz/EndSettleModal.vue';
-import QrOverlay from '@/components/biz/QrOverlay.vue';
-import { useLiveStore } from '@/stores/live';
-import { useGameStore } from '@/stores/game';
-import { useSessionStore } from '@/stores/session';
-import { useUiStore } from '@/stores/ui';
-import { courtLabel } from '@/utils/format';
-import { maxCourts, usedCourts } from '@/utils/rotate';
-import { goMeet } from '@/utils/nav';
+import { computed, ref, watch } from "vue";
+import { onHide, onLoad, onShow } from "@dcloudio/uni-app";
+import PageShell from "@/components/biz/PageShell.vue";
+import AppButton from "@/components/ui/AppButton.vue";
+import EmptyBox from "@/components/ui/EmptyBox.vue";
+import LiveTopbar from "@/components/biz/LiveTopbar.vue";
+import CourtMatchCard from "@/components/biz/CourtMatchCard.vue";
+import QueueBar from "@/components/biz/QueueBar.vue";
+import PersonSheet from "@/components/biz/PersonSheet.vue";
+import CheckinSheet from "@/components/biz/CheckinSheet.vue";
+import QueueSheet from "@/components/biz/QueueSheet.vue";
+import RulesSheet from "@/components/biz/RulesSheet.vue";
+import EndSettleModal from "@/components/biz/EndSettleModal.vue";
+import QrOverlay from "@/components/biz/QrOverlay.vue";
+import { useLiveStore } from "@/stores/live";
+import { useGameStore } from "@/stores/game";
+import { useSessionStore } from "@/stores/session";
+import { useUiStore } from "@/stores/ui";
+import { courtLabel } from "@/utils/format";
+import { maxCourts, usedCourts } from "@/utils/rotate";
+import { goMeet } from "@/utils/nav";
 
 /** 本地弹层槽（单槽替换语义：开新的自动顶旧的；与全局 SheetPayload 互不相干） */
 type LocalSheet =
-  | { k: 'person'; id: number; swap?: boolean }
-  | { k: 'checkin' }
-  | { k: 'queue' }
-  | { k: 'rules' };
+  | { k: "person"; id: number; swap?: boolean }
+  | { k: "checkin" }
+  | { k: "queue" }
+  | { k: "rules" };
 
 const liveStore = useLiveStore();
 const gameStore = useGameStore();
@@ -119,45 +133,62 @@ const session = useSessionStore();
 const ui = useUiStore();
 
 const L = computed(() => liveStore.live);
-const org = computed(() => !!L.value?.g.my?.isOrganizer); // viewer 块定值（游客无 my 恒 false）
+/** 现场权限单一源在 store（组织者 ∨ 管理员，2.2 §4.7）：页面只消费，不再内联 isOrganizer */
+const full = computed(() => liveStore.isFullPower);
 
 const liveSheet = ref<LocalSheet | null>(null);
 const qrOpen = ref(false);
 
-const personOpen = computed(() => liveSheet.value?.k === 'person');
-const personId = computed(() => (liveSheet.value?.k === 'person' ? liveSheet.value.id : 0));
-const personSwap = computed(() => (liveSheet.value?.k === 'person' ? !!liveSheet.value.swap : false));
+const personOpen = computed(() => liveSheet.value?.k === "person");
+const personId = computed(() =>
+  liveSheet.value?.k === "person" ? liveSheet.value.id : 0,
+);
+const personSwap = computed(() =>
+  liveSheet.value?.k === "person" ? !!liveSheet.value.swap : false,
+);
 
 function closeLocal(): void {
   liveSheet.value = null;
 }
 function onSwapMode(on: boolean): void {
-  if (liveSheet.value?.k === 'person') liveSheet.value = { ...liveSheet.value, swap: on };
+  if (liveSheet.value?.k === "person")
+    liveSheet.value = { ...liveSheet.value, swap: on };
 }
 /** 换人落子：swapPlayers 后关抽屉（toast 在 store） */
 function onSwapTarget(t: number): void {
-  if (liveSheet.value?.k === 'person') {
+  if (liveSheet.value?.k === "person") {
     liveStore.swapPlayers(liveSheet.value.id, t);
     liveSheet.value = null;
   }
 }
 /** 队列抽屉点行 → 顶替为点人抽屉 */
 function onQueuePerson(id: number): void {
-  liveSheet.value = { k: 'person', id };
+  liveSheet.value = { k: "person", id };
 }
 
 /** 战力档案：先关本地抽屉再开全局 ProfileSheet（全局单例只留一个弹层） */
 function openProfile(id: number): void {
   liveSheet.value = null;
-  ui.openSheet({ type: 'profile', userId: id });
+  ui.openSheet({ type: "profile", userId: id });
 }
 
-/** ＋到场：游客先名片建号（选项A 扫码自签到链路保留），球友直接开签到抽屉 */
+/** ＋到场：游客先名片建号（选项A 扫码自签到链路保留）；抽屉是代办工具（§4.3 代办到场/带访客），
+    非全权不开（A3 入口即拦，needFull 单一源）——球友自己报到走扫码 arriveMe */
 function onCheckin(): void {
   const g = L.value?.g;
   if (!g) return;
-  if (session.isGuest) ui.signupThen({ pendingCheckin: { gameId: g.id } });
-  else liveSheet.value = { k: 'checkin' };
+  if (session.isGuest) {
+    ui.signupThen({ pendingCheckin: { gameId: g.id } });
+    return;
+  }
+  if (!liveStore.needFull()) return;
+  liveSheet.value = { k: "checkin" };
+}
+
+/** 规则抽屉入口 gate（§4.7 收权：改分制/轮换模式是全权动作；needFull 单一源把关） */
+function onRules(): void {
+  if (!liveStore.needFull()) return;
+  liveSheet.value = { k: "rules" };
 }
 
 /** 空闲卡「去拉人」→ 约球页找球友 */

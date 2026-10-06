@@ -1,16 +1,16 @@
 <template>
   <!-- 块二对局卡三态（temp/打球页原型 .court-matchcard 逐字）：
-       playing = 正在打（对阵 + 卡底记分框「比分即按钮」+ 组织者工具行）；
+       playing = 正在打（对阵 + 卡底记分框「比分即按钮」+ 全权工具行）；
        ready = 待开（同对阵、半透明，NEXT · 待开打，中缝提示上一场终局即开打）；
        idle = 空闲虚线卡（候场人数提示 + 自动排阵/去拉人双钮）。
-       点数字记分；非组织者点数字 toast 拦截（卡内直调 ui store，同项目先例）。 -->
+       点数字记分对所有人开放（2.2 §4.8）；撤分/清零/终局/取消是全权手柄，非全权不渲染。 -->
   <view class="court-matchcard" :class="variant">
     <!-- ---------- playing / ready：对阵区 ---------- -->
     <template v-if="variant !== 'idle'">
       <view class="match-header">
         <view class="court-title">
           <text class="court-name">{{ name }}</text>
-          <text class="court-no">{{ A.length >= 2 ? '双打' : '单打' }}</text>
+          <text class="court-no">{{ A.length >= 2 ? "双打" : "单打" }}</text>
         </view>
         <text v-if="variant === 'ready'" class="chip ice">NEXT · 待开打</text>
       </view>
@@ -20,10 +20,17 @@
           <view class="arena-side">
             <view class="side-label" :class="s.team">{{ s.label }}</view>
             <view class="players-duo">
-              <view v-for="pl in s.players" :key="`${s.k}${pl.id}`" class="player-unit" @click="emit('profile', pl.id)">
-                <view class="avatar-wrap"><ChibiAvatar :chibi="pl.p.chibi" :size="44" /></view>
+              <view
+                v-for="pl in s.players"
+                :key="`${s.k}${pl.id}`"
+                class="player-unit"
+                @click="emit('profile', pl.id)"
+              >
+                <view class="avatar-wrap"
+                  ><ChibiAvatar :chibi="pl.p.chibi" :size="44"
+                /></view>
                 <text class="pname">{{ pl.p.name }}</text>
-                <text class="pelo">{{ pl.p.elo || '新' }}</text>
+                <text class="pelo">{{ pl.p.elo || "新" }}</text>
                 <text v-if="pl.p.shadow" class="badge guest">访客</text>
                 <text v-else-if="pl.p.skip" class="badge rest">歇</text>
               </view>
@@ -31,7 +38,9 @@
           </view>
           <view v-if="si === 0" class="scoreboard-center">
             <view class="vs-big">VS</view>
-            <view v-if="variant === 'ready'" class="score-rule-tip">上一场终局即开打</view>
+            <view v-if="variant === 'ready'" class="score-rule-tip"
+              >上一场终局即开打</view
+            >
           </view>
         </template>
       </view>
@@ -39,7 +48,12 @@
       <!-- 卡底记分框（原型 .score-plate）：点左数字 = A +1，点右 = B +1；领先侧 .lead 高亮 -->
       <view v-if="variant === 'playing'" class="score-plate">
         <view class="sp-num a-side" @click="onPoint('a')">
-          <view :key="`a${bumpTick}`" class="sp-v" :class="{ bump: bumpSide === 'a', lead: sa > sb }">{{ sa }}</view>
+          <view
+            :key="`a${bumpTick}`"
+            class="sp-v"
+            :class="{ bump: bumpSide === 'a', lead: sa > sb }"
+            >{{ sa }}</view
+          >
           <text class="sp-t">TEAM A · 记分</text>
         </view>
         <view class="sp-mid">
@@ -47,13 +61,18 @@
           <text class="sp-tip">点数字记分</text>
         </view>
         <view class="sp-num b-side" @click="onPoint('b')">
-          <view :key="`b${bumpTick}`" class="sp-v" :class="{ bump: bumpSide === 'b', lead: sb > sa }">{{ sb }}</view>
+          <view
+            :key="`b${bumpTick}`"
+            class="sp-v"
+            :class="{ bump: bumpSide === 'b', lead: sb > sa }"
+            >{{ sb }}</view
+          >
           <text class="sp-t">TEAM B · 记分</text>
         </view>
       </view>
 
-      <!-- 组织者工具行（非 org 不渲染；换人不设独立入口，走「点人」抽屉） -->
-      <view v-if="variant === 'playing' && org" class="match-card-tools">
+      <!-- 全权工具行（非 full 不渲染；换人不设独立入口，走「点人」抽屉） -->
+      <view v-if="variant === 'playing' && full" class="match-card-tools">
         <text class="tool-link" @click="emit('undo')">撤一分</text>
         <text class="tool-link" @click="emit('clear')">清零</text>
         <text class="tool-link" @click="emit('settle')">终局结算</text>
@@ -69,63 +88,82 @@
         </view>
         <text class="chip">空闲待开</text>
       </view>
-      <view class="idle-hint">{{ waiting >= 4 ? `候场 ${waiting} 人 · 够开 1 片` : `还差 ${4 - waiting} 人 · 候场 ${waiting} / 需 4 人` }}</view>
+      <view class="idle-hint">{{
+        waiting >= 4
+          ? `候场 ${waiting} 人 · 够开 1 片`
+          : `还差 ${4 - waiting} 人 · 候场 ${waiting} / 需 4 人`
+      }}</view>
       <view class="idle-sub">按积分蛇形均衡派单 · 上场次数少者优先</view>
       <view class="idle-btns">
-        <AppButton variant="pri" class="flex1" :disabled="waiting < 4" @click="emit('autodeal')">⚡ 自动排阵</AppButton>
-        <AppButton variant="ghost" class="flex1" @click="emit('pull')">📢 去拉人</AppButton>
+        <AppButton
+          variant="pri"
+          class="flex1"
+          :disabled="waiting < 4 || !full"
+          @click="emit('autodeal')"
+          >⚡ 自动排阵</AppButton
+        >
+        <AppButton variant="ghost" class="flex1" @click="emit('pull')"
+          >📢 去拉人</AppButton
+        >
       </view>
     </template>
   </view>
 </template>
 
 <script setup lang="ts">
-/* 对局卡（2.1 §2-4）：数据读 live store（byId/queue），动作走 emit 由页面接 store——
-   只有非组织者记分拦截的 toast 留在卡内（原型口径「第一版仅组织者记分」）。
-   bump 弹跳 = Scoreboard 的 watch+key 方案移植（连点同侧重触发）。 */
-import { computed, onUnmounted, ref, watch } from 'vue';
-import type { PropType } from 'vue';
-import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
-import AppButton from '@/components/ui/AppButton.vue';
-import type { LiveCourt, LiveMatch } from '@/api/types';
-import { useLiveStore } from '@/stores/live';
-import { useUiStore } from '@/stores/ui';
+/* 对局卡（2.1 §2-4；2.2 批1 记分开放/工具行 full 化）：数据读 live store（byId/queue），
+   动作走 emit 由页面接 store。bump 弹跳 = Scoreboard 的 watch+key 方案移植（连点同侧重触发）。 */
+import { computed, onUnmounted, ref, watch } from "vue";
+import type { PropType } from "vue";
+import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AppButton from "@/components/ui/AppButton.vue";
+import type { LiveCourt, LiveMatch } from "@/api/types";
+import { useLiveStore } from "@/stores/live";
 
 const props = defineProps({
   /** 卡态：playing=正在打（cur）/ ready=待开（courts[i]）/ idle=空闲待开 */
-  variant: { type: String as PropType<'playing' | 'ready' | 'idle'>, required: true },
+  variant: {
+    type: String as PropType<"playing" | "ready" | "idle">,
+    required: true,
+  },
   /** playing 用：live.cur */
   cur: { type: Object as PropType<LiveMatch>, default: undefined },
   /** ready 用：live.courts[i] */
   court: { type: Object as PropType<LiveCourt>, default: undefined },
   /** 显示名（页面算好，如「3号场」） */
   name: { type: String, required: true },
-  /** 是否组织者（工具行渲染与记分权限） */
-  org: { type: Boolean, default: false },
+  /** 是否全权（组织者 ∨ 管理员，单一源在 live store）：工具行渲染与自动排阵可用性 */
+  full: { type: Boolean, default: false },
 });
 const emit = defineEmits<{
-  (e: 'point', side: 'a' | 'b'): void;
-  (e: 'undo'): void;
-  (e: 'clear'): void;
-  (e: 'settle'): void;
-  (e: 'cancel'): void;
-  (e: 'autodeal'): void;
-  (e: 'pull'): void;
-  (e: 'profile', id: number): void;
+  (e: "point", side: "a" | "b"): void;
+  (e: "undo"): void;
+  (e: "clear"): void;
+  (e: "settle"): void;
+  (e: "cancel"): void;
+  (e: "autodeal"): void;
+  (e: "pull"): void;
+  (e: "profile", id: number): void;
 }>();
 
 const liveStore = useLiveStore();
-const ui = useUiStore();
 
 /** 队伍 id 列表：playing 读 cur，ready 读 court */
-const A = computed<number[]>(() => (props.variant === 'playing' ? props.cur?.A : props.court?.A) ?? []);
-const B = computed<number[]>(() => (props.variant === 'playing' ? props.cur?.B : props.court?.B) ?? []);
+const A = computed<number[]>(
+  () => (props.variant === "playing" ? props.cur?.A : props.court?.A) ?? [],
+);
+const B = computed<number[]>(
+  () => (props.variant === "playing" ? props.cur?.B : props.court?.B) ?? [],
+);
 /** A/B 两队一并解析球员（computed 一次算好，模板只读数组——逐字段 byId 是每格一次名册线性扫描） */
 const sides = computed(() =>
   [
-    { k: 'a', label: 'TEAM A', team: 'team-a', ids: A.value },
-    { k: 'b', label: 'TEAM B', team: 'team-b', ids: B.value },
-  ].map((s) => ({ ...s, players: s.ids.map((id) => ({ id, p: liveStore.byId(id) })) })),
+    { k: "a", label: "TEAM A", team: "team-a", ids: A.value },
+    { k: "b", label: "TEAM B", team: "team-b", ids: B.value },
+  ].map((s) => ({
+    ...s,
+    players: s.ids.map((id) => ({ id, p: liveStore.byId(id) })),
+  })),
 );
 const sa = computed(() => props.cur?.sa ?? 0);
 const sb = computed(() => props.cur?.sb ?? 0);
@@ -133,34 +171,34 @@ const sb = computed(() => props.cur?.sb ?? 0);
 /** idle 卡的候场人数（够不够开一片的判定口径） */
 const waiting = computed(() => liveStore.live?.queue.length ?? 0);
 
-/** 记分：数字即按钮；非组织者 toast 拦截（同项目先例：卡内直调 ui store） */
-function onPoint(side: 'a' | 'b'): void {
-  if (!props.org) {
-    ui.toast('第一版仅组织者记分');
-    return;
-  }
-  emit('point', side);
+/** 记分：数字即按钮，所有人可点（§4.8 球友记分）；收权动作不设卡内拦截——工具行已按 full 隐藏 */
+function onPoint(side: "a" | "b"): void {
+  emit("point", side);
 }
 
 /* 得分数字弹跳（Scoreboard 同法）：watch sa/sb，上涨侧挂 .bump（撤回回落不弹）；
    :key 自增重挂载，连点同侧也能重触发 */
-const bumpSide = ref<'a' | 'b' | null>(null);
+const bumpSide = ref<"a" | "b" | null>(null);
 const bumpTick = ref(0);
 let bumpTimer: ReturnType<typeof setTimeout> | null = null;
 watch(
   () => [sa.value, sb.value] as const,
   ([na, nb], [oa, ob]) => {
-    if (na > oa) setBump('a');
-    else if (nb > ob) setBump('b');
+    if (na > oa) setBump("a");
+    else if (nb > ob) setBump("b");
   },
 );
-function setBump(s: 'a' | 'b'): void {
+function setBump(s: "a" | "b"): void {
   bumpSide.value = s;
   bumpTick.value++;
   if (bumpTimer) clearTimeout(bumpTimer);
-  bumpTimer = setTimeout(() => { bumpSide.value = null; }, 300);
+  bumpTimer = setTimeout(() => {
+    bumpSide.value = null;
+  }, 300);
 }
-onUnmounted(() => { if (bumpTimer) clearTimeout(bumpTimer); });
+onUnmounted(() => {
+  if (bumpTimer) clearTimeout(bumpTimer);
+});
 </script>
 
 <style lang="scss" scoped>
@@ -179,7 +217,7 @@ onUnmounted(() => { if (bumpTimer) clearTimeout(bumpTimer); });
   margin-top: 12px;
 }
 .court-matchcard::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
@@ -350,7 +388,9 @@ onUnmounted(() => { if (bumpTimer) clearTimeout(bumpTimer); });
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  transition: background 0.15s, transform 0.1s;
+  transition:
+    background 0.15s,
+    transform 0.1s;
 }
 .sp-v {
   font-family: var(--disp);
