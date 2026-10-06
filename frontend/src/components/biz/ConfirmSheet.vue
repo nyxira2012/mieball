@@ -45,6 +45,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
 import { heads } from '@/utils/format';
+import { goMeet } from '@/utils/nav';
 
 const props = defineProps({
   kind: { type: String as PropType<'quit' | 'cancel'>, required: true },
@@ -58,15 +59,6 @@ const ui = useUiStore();
 const g = computed(() => game.games.find((x) => x.id === props.gameId) ?? null);
 /** alpha:1159 已报名人数（heads 口径，带的人也算） */
 const hs = computed(() => (g.value ? heads(g.value) : 0));
-
-/** P11（alpha:1152/1168 doQuit/doCancel 末尾的 go('meet')）：确认成功后切到约球页。
-    已在约球页时跳过（uni.switchTab 到当前 tab 会重触发 onShow/重排，
-    alpha 同页 go() 只是原地重渲染，语义等价「不动」）。 */
-function goMeet(): void {
-  const pages = getCurrentPages();
-  const cur = pages[pages.length - 1];
-  if (!cur || cur.route !== 'pages/meet/meet') uni.switchTab({ url: '/pages/meet/meet' });
-}
 
 /** alpha:1148-1152 doQuit */
 function onQuit(): void {

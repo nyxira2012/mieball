@@ -32,6 +32,10 @@ export const useGameStore = defineStore('game', () => {
   /** 签到口径：其中打完（done）且我的到场底账留了 checkIn 的局 */
   const myCheckins = computed(() => mySignups.value.filter((g) => g.status === 'done' && g.myLog?.checkIn));
 
+  /** 进行中的局（单一谓词源：live 入口页冷启动分发/自动接局在用，
+      1.5 灵活首页后续档位扩链也走这里，不各处重写 status === 'live' 扫描） */
+  const liveGame = computed(() => games.find((g) => g.status === 'live') ?? null);
+
   /** 加入 · 可带人（alpha:1127-1138 doJoin）：满员进候补；带的人也占坑 */
   function joinGame(id: number, bring = 0): string | null {
     const g = games.find((x) => x.id === id);
@@ -251,7 +255,7 @@ export const useGameStore = defineStore('game', () => {
   }
 
   return {
-    games, intents, myIntent, mySignups, myCheckins,
+    games, intents, myIntent, mySignups, myCheckins, liveGame,
     joinGame, quitGame, cancelGame, publishGame, editGame, sureGame, bookCourt, clearBooking,
     hitDeadline, restoreGame, inviteUser, shareGame, saveIntent, delIntent,
   };

@@ -52,6 +52,7 @@ page {
   --disp: 'Anton', 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', sans-serif;
   --sans: 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Source Han Sans SC', system-ui, sans-serif;
   --nav-h: 64px;
+  --nav-total-h: calc(var(--nav-h) + env(safe-area-inset-bottom)); /* nav 总高（含底部安全区）：TabBar 高度与页面让高统一口径 */
   --r-lg: 22px;
   --r-md: 16px;
   --r-sm: 10px;

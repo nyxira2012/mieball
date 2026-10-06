@@ -81,6 +81,7 @@ import { useUiStore } from '@/stores/ui';
 import { ApiError, clearCardDraft, errText, readCardDraft, writeCardDraft } from '@/api/http';
 import { useSmsCountdown } from '@/composables/useSmsCountdown';
 import { isValidPhone } from '@/utils/validate';
+import { goMeet } from '@/utils/nav';
 import type { ChibiConfig, PublishInput } from '@/api/types';
 
 const props = defineProps({
@@ -233,7 +234,7 @@ function afterSuccess(msg: string): void {
     game.joinGame(props.pendingJoin.gameId, props.pendingJoin.bring);
   } else if (props.pendingLaunch) {
     game.publishGame(props.pendingLaunch);
-    uni.switchTab({ url: '/pages/meet/meet' }); // 建局成功回约球页（与 LaunchSheet.publish 同径）
+    goMeet(); // 建局成功回约球页（与 LaunchSheet.publish 同径）
   } else if (props.pendingCheckin) {
     liveStore.arriveMe(props.pendingCheckin.gameId); // 2.1 选项A：建号即球友，自动「我到了」
   }

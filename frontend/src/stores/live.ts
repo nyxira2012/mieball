@@ -72,6 +72,13 @@ export const useLiveStore = defineStore('live', () => {
     return msg;
   }
 
+  /** 确保现场开的是目标局（跳转/深链/扫码直达共用的守门口径）：
+      未开或正打的是别的局都（重）开目标局——goLive/arriveMe/现场页 onShow 三处共用，
+      换局重开的名册/队列/结算残留清理都在 startLive 里，不在这里另做。 */
+  function ensureLive(id: number): void {
+    if (!live.value || live.value.g.id !== id) startLive(id);
+  }
+
   /** 造一位随行访客（startLive 报名展开与组织者「带访客」addGuests 同法）：
       shadow · elo 1200 计入期望 · 随机 chibi 引用 chibi.ts 单一源 DRESS_RANGES */
   function mkGuest(name: string): User {
@@ -140,7 +147,7 @@ export const useLiveStore = defineStore('live', () => {
       useUiStore().toast('球局不存在或已结束');
       return null;
     }
-    if (!live.value || live.value.g.id !== gameId) startLive(gameId);
+    ensureLive(gameId);
     const L = live.value!;
     const myId = U.me.id;
     let p = pById(L, myId);
@@ -343,7 +350,7 @@ export const useLiveStore = defineStore('live', () => {
   return {
     live, hasLive, settling, myRound,
     byId,
-    startLive, setCheck, arriveMe, addGuests,
+    startLive, ensureLive, setCheck, arriveMe, addGuests,
     point, undoPoint, clearScore,
     openSettle, closeSettle, confirmSettle, cancelMatch,
     togglePerson, swapPlayers,

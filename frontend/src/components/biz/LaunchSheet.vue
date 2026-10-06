@@ -110,6 +110,7 @@ import { mockVenues } from '@/api';
 import type { CourtMode, PublishInput } from '@/api/types';
 import { MODE_NAMES, SCORE_RULE_NAMES, autoGameName } from '@/utils/format';
 import { dayOff, dayToken, durTxt, gameTime } from '@/utils/time';
+import { goMeet } from '@/utils/nav';
 
 const props = defineProps({
   /** 有 gameId = 改局（带原值）；无/查不到 = 新建（查不到按新建兜底） */
@@ -345,7 +346,7 @@ function publish(): void {
       return;
     }
     game.publishGame(input);
-    uni.switchTab({ url: '/pages/meet/meet' }); // 发布成功回约球页（alpha:1397 go('meet')）
+    goMeet(); // 发布成功回约球页（alpha:1397 go('meet')）
   }
   ui.closeSheet();
 }

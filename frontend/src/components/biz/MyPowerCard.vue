@@ -10,8 +10,8 @@
         <view class="rk">{{ played ? '#' + rank : '—' }}</view>
         <view class="rl">MY RANK</view>
       </view>
-      <!-- alpha:1847 av：event.stopPropagation();go('mine') → uni.switchTab 到我的页 -->
-      <view class="av" @click.stop="goMine">
+      <!-- alpha:1847 av：event.stopPropagation();go('mine') → goTab 切我的页（nav 单一源） -->
+      <view class="av" @click.stop="goTab('mine')">
         <ChibiAvatar :chibi="me.chibi" :size="76" />
       </view>
       <!-- alpha:1848 -->
@@ -47,6 +47,7 @@ import TierBadge from '@/components/ui/TierBadge.vue';
 import { useUserStore } from '@/stores/user';
 import { useUiStore } from '@/stores/ui';
 import { fmtScore, tier } from '@/utils/elo';
+import { goTab } from '@/utils/nav';
 
 defineProps({
   /** 我的排名（alpha:1826 myRank=rows.findIndex(u=>u.id===0)+1；未开局时组件内不展示） */
@@ -69,11 +70,6 @@ const telemetry = computed(() =>
     ? `${rs.value.win} 胜 ${rs.value.loss} 负 · 运动 ${rs.value.hours} 小时 · 消耗 ${rs.value.kcal} 大卡 · 积分 ${me.month >= 0 ? '+' : ''}${me.month}`
     : '待第一局校准 · 自评起步分',
 );
-
-/** alpha:1847 点头像区域：stopPropagation + go('mine')（跳转在页面层做，TabBar 同款 switchTab） */
-function goMine(): void {
-  uni.switchTab({ url: '/pages/mine/mine' });
-}
 </script>
 
 <style lang="scss" scoped>

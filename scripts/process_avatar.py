@@ -16,24 +16,26 @@ mieball 项目 - 人物头像自动抠图与 WebP 规范压缩工具 (单文件�
    - 提供 --to-app 选项，直接同步至 frontend/src/static/avatars/ 供前端直接消费。
 """
 
-import os
-import sys
 import argparse
-from pathlib import Path
+import sys
 from collections import deque
+from pathlib import Path
+
 from PIL import Image, ImageFilter
 
+# 蓝幕色彩距离容差（平方比较口径）：像素与参考色的欧氏距离小于它即视为背景
+SKY_TOLERANCE = 65
 
-def is_sky_blue(r: int, g: int, b: int, ref_rgb: tuple[int, int, int] = (74, 144, 226), tolerance: int = 65) -> bool:
-    """判断像素是否属于天蓝色背景色系"""
+
+def is_sky_blue(r: int, g: int, b: int, ref_rgb: tuple[int, int, int]) -> bool:
+    """判断像素是否属于天蓝色背景色系（参考色与 rhpic.py 生图规范的蓝幕色 #4A90E2 同一色）"""
     # 典型天蓝特征: B 通道显著大于 R 通道，且 G/B 较高
     if b > r + 30 and g > r + 15:
-        # 欧氏色彩距离
+        # 欧氏色彩距离（平方比较，免逐像素开方）
         dr = r - ref_rgb[0]
         dg = g - ref_rgb[1]
         db = b - ref_rgb[2]
-        dist = (dr * dr + dg * dg + db * db) ** 0.5
-        if dist < tolerance:
+        if dr * dr + dg * dg + db * db < SKY_TOLERANCE * SKY_TOLERANCE:
             return True
         # 稍微泛化判断色系
         if b > 140 and r < 140:
@@ -44,10 +46,16 @@ def is_sky_blue(r: int, g: int, b: int, ref_rgb: tuple[int, int, int] = (74, 144
 def is_white_outline(r: int, g: int, b: int, threshold: int = 210) -> bool:
     """判断是否为粗白色描边保护层"""
     # 只要三通道都很高且色差较小即视为白色描边
-    return r >= threshold and g >= threshold and b >= threshold and abs(r - g) < 25 and abs(r - b) < 25
+    return (
+        r >= threshold
+        and g >= threshold
+        and b >= threshold
+        and abs(r - g) < 25
+        and abs(r - b) < 25
+    )
 
 
-def remove_sky_blue_background(img: Image.Image, tolerance: int = 65) -> Image.Image:
+def remove_sky_blue_background(img: Image.Image) -> Image.Image:
     """
     使用边缘连通泛洪 (FloodFill) 算法剥离天蓝色背景：
     仅从图像四周边沿向内部扩散，遇到白色轮廓自然停止，生成高质量透明图层。
@@ -64,28 +72,19 @@ def remove_sky_blue_background(img: Image.Image, tolerance: int = 65) -> Image.I
     avg_b = sum(c[2] for c in corner_colors) // 4
     ref_rgb = (avg_r, avg_g, avg_b)
 
-    # 2. 从边缘四个边框进行 BFS 扩散标记背景
+    # 2. 从四条边框的全部边缘像素注入 BFS 种子（角点由 visited 守卫去重）
     visited = bytearray(width * height)
     queue = deque()
-
-    # 注入四条边缘的所有外围像素
-    for x in range(width):
-        for y in (0, height - 1):
-            idx = y * width + x
-            if not visited[idx]:
-                visited[idx] = 1
-                r, g, b, _ = pixels[x, y]
-                if is_sky_blue(r, g, b, ref_rgb, tolerance):
-                    queue.append((x, y))
-
-    for y in range(height):
-        for x in (0, width - 1):
-            idx = y * width + x
-            if not visited[idx]:
-                visited[idx] = 1
-                r, g, b, _ = pixels[x, y]
-                if is_sky_blue(r, g, b, ref_rgb, tolerance):
-                    queue.append((x, y))
+    border = [(x, y) for x in range(width) for y in (0, height - 1)] + [
+        (x, y) for y in range(height) for x in (0, width - 1)
+    ]
+    for x, y in border:
+        idx = y * width + x
+        if not visited[idx]:
+            visited[idx] = 1
+            r, g, b, _ = pixels[x, y]
+            if is_sky_blue(r, g, b, ref_rgb):
+                queue.append((x, y))
 
     # BFS 扩散
     bg_mask = bytearray(width * height)
@@ -103,14 +102,16 @@ def remove_sky_blue_background(img: Image.Image, tolerance: int = 65) -> Image.I
                     visited[nidx] = 1
                     nr, ng, nb, _ = pixels[nx, ny]
                     # 如果不是白色描边，且属于天蓝背景，则继续向内扩散
-                    if not is_white_outline(nr, ng, nb) and is_sky_blue(nr, ng, nb, ref_rgb, tolerance):
+                    if not is_white_outline(nr, ng, nb) and is_sky_blue(
+                        nr, ng, nb, ref_rgb
+                    ):
                         queue.append((nx, ny))
 
     # 3. 创建 Alpha 蒙版，并对边缘进行轻微柔化防生硬毛刺
     mask_img = Image.frombytes("L", (width, height), bytes(bg_mask))
     # 将背景(255)转为主体(255)，背景(0)
     fg_mask = Image.eval(mask_img, lambda v: 0 if v == 255 else 255)
-    
+
     # 柔和羽化边缘 (半径 1)
     soft_mask = fg_mask.filter(ImageFilter.GaussianBlur(radius=0.8))
 
@@ -182,11 +183,28 @@ def main():
 """,
     )
     parser.add_argument("input_path", help="输入图片文件路径或目录路径")
-    parser.add_argument("--output-dir", "-o", default="", help="输出目录 (默认: 输入目录下的 webp/ 文件夹)")
-    parser.add_argument("--size", "-s", type=int, default=512, help="规范输出分辨率 (默认 512，即 512x512)")
-    parser.add_argument("--quality", "-q", type=int, default=90, help="WebP 压缩质量 1-100 (默认 90)")
-    parser.add_argument("--padding", "-p", type=float, default=0.08, help="四周安全留白比例 (默认 0.08)")
-    parser.add_argument("--to-app", action="store_true", help="直接同步至前端 static/avatars/ 目录")
+    parser.add_argument(
+        "--output-dir",
+        "-o",
+        default="",
+        help="输出目录 (默认: 输入目录下的 webp/ 文件夹)",
+    )
+    parser.add_argument(
+        "--size",
+        "-s",
+        type=int,
+        default=512,
+        help="规范输出分辨率 (默认 512，即 512x512)",
+    )
+    parser.add_argument(
+        "--quality", "-q", type=int, default=90, help="WebP 压缩质量 1-100 (默认 90)"
+    )
+    parser.add_argument(
+        "--padding", "-p", type=float, default=0.08, help="四周安全留白比例 (默认 0.08)"
+    )
+    parser.add_argument(
+        "--to-app", action="store_true", help="直接同步至前端 static/avatars/ 目录"
+    )
 
     args = parser.parse_args()
     # 确定项目根目录 (脚本位于 scripts/ 下，项目根目录为父级的父级)
@@ -202,7 +220,13 @@ def main():
         file_list = [in_path]
         base_dir = in_path.parent
     else:
-        file_list = sorted([p for p in in_path.iterdir() if p.suffix.lower() in (".png", ".jpg", ".jpeg")])
+        file_list = sorted(
+            [
+                p
+                for p in in_path.iterdir()
+                if p.suffix.lower() in (".png", ".jpg", ".jpeg")
+            ]
+        )
         base_dir = in_path
 
     if not file_list:

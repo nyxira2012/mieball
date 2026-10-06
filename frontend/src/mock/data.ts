@@ -36,10 +36,9 @@ export const DEFAULT_MOCK_CHECKIN_COUNT = 9;
 /** mock 环境基准日期（2026-10-04，用于账单等相对期间推算，将来接真实系统时钟） */
 export const MOCK_BASE_DATE_STR = '2026-10-04';
 
-/** 圈子元数据（meet 页日期行在用；原首页跑马灯 tickerItems 随 home 页退役删除） */
+/** 圈子元数据（meet 页日期行在用；原 channel 字段与跑马灯 tickerItems 随 home 页退役删除） */
 export const communityMeta = {
   name: '北京匹克球圈',
-  channel: 'ALPHA',
 };
 /* 3.1 球局：organizer=组织者 · joined=[{u,bring}] 报名+带人（带的人也占名额）
    tb=时间桶（tonight/tomorrow/weekend/week）· area=地区（找局打筛选用）· invitedMe=别人邀请我 */
@@ -142,4 +141,3 @@ export const intents: Intent[] = [
 slots.forEach((s) => {
   s.match = intents.filter((i) => i.slots.includes(s.k)).length + (myIntent && myIntent.slots.includes(s.k) ? 1 : 0);
 });
-/* alpha:827 waveCount —— 依赖运行时 myIntent，归 stores/game.ts 的 computed */

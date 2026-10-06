@@ -13,20 +13,21 @@ mieball 项目 - RunningHub 生图客户端 (单文件脚本)
 3. 纯 Python 标准库编写，零三方包依赖，支持 --dry-run 免费预览。
 """
 
+import argparse
+import json
 import os
 import sys
-import json
 import time
-import argparse
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 # ==========================================
 # 1. 规范提示词模版 (固定规范)
 # ==========================================
 
-# 人物形象规范：2D 二头身动漫大头、1024x1024、粗白色描边、纯天蓝背景（便于蓝幕抠图）
+# 人物形象规范：2D 二头身动漫大头、1024x1024、粗白色描边、纯天蓝背景
+# （蓝幕色 #4A90E2 是 process_avatar.py 角点采样抠图的期望底色，改色两处需同步）
 AVATAR_SPEC_PREFIX = (
     "2D anime chibi sticker style, 2-head-tall big head cute character, "
     "bold thick crisp white outline contour surrounding the entire character, "
@@ -48,40 +49,22 @@ CARDBG_SPEC_PREFIX = (
     "stylish lighting and soft glow, sports aesthetic, pickleball court dynamic atmosphere, "
     "1024x1024, clean composition"
 )
-CARDBG_SPEC_SUFFIX = (
-    "smooth visual gradient, premium dark and neon mood, 8k resolution, graphic design backdrop"
-)
+CARDBG_SPEC_SUFFIX = "smooth visual gradient, premium dark and neon mood, 8k resolution, graphic design backdrop"
 CARDBG_NEGATIVE_PROMPT = (
     "human, person, characters, face, text, letters, words, logo, typography, watermark, "
     "noisy, messy, photographic human, cluttered"
 )
-
-# 常见中文特征词到英文的标准翻译提示词对照（辅助 CLI 中文输入时生成更地道的 Prompt）
-QUICK_TRANSLATIONS = {
-    "阿拉斯加犬": "an adorable fluffy Alaskan Malamute puppy",
-    "围兜": "wearing a cute red bib bandana",
-    "写着凶字": "with cute funny angry character motif on the bib",
-    "匹克球": "holding a pickleball paddle",
-    "棒球帽": "wearing a backwards baseball cap",
-    "发带": "wearing an athletic sweatband",
-    "墨镜": "wearing cool black sunglasses",
-    "丸子头": "hair tied into a cute topknot bun",
-    "刺头": "short spiky athletic hairstyle",
-    "球衣": "wearing a sporty athletic jersey",
-}
 
 
 def build_prompt(item_type: str, content: str) -> tuple[str, str]:
     """拼装规范部分与内容部分，生成最终提交给 RunningHub 的提示词"""
     content = content.strip()
 
-    # 简易拼装与润色：如果包含常见中文，附加上地道英文语义助词
-    enhanced_content = content
     if item_type == "avatar":
-        prompt = f"{AVATAR_SPEC_PREFIX}, subject: {enhanced_content}, {AVATAR_SPEC_SUFFIX}"
+        prompt = f"{AVATAR_SPEC_PREFIX}, subject: {content}, {AVATAR_SPEC_SUFFIX}"
         neg_prompt = AVATAR_NEGATIVE_PROMPT
     else:
-        prompt = f"{CARDBG_SPEC_PREFIX}, theme: {enhanced_content}, {CARDBG_SPEC_SUFFIX}"
+        prompt = f"{CARDBG_SPEC_PREFIX}, theme: {content}, {CARDBG_SPEC_SUFFIX}"
         neg_prompt = CARDBG_NEGATIVE_PROMPT
 
     return prompt, neg_prompt
@@ -123,10 +106,8 @@ class RunningHubClient:
         neg_prompt: str = "",
         prompt_node_id: str = "6",
         prompt_field: str = "text",
-        neg_node_id: str = "7",
-        neg_field: str = "text",
     ) -> str:
-        """调用 ComfyUI 工作流任务端点"""
+        """调用 ComfyUI 工作流任务端点（负向提示词固定写节点 7 的 text 字段）"""
         node_info_list = [
             {
                 "nodeId": str(prompt_node_id),
@@ -134,11 +115,11 @@ class RunningHubClient:
                 "fieldValue": prompt,
             }
         ]
-        if neg_prompt and neg_node_id:
+        if neg_prompt:
             node_info_list.append(
                 {
-                    "nodeId": str(neg_node_id),
-                    "fieldName": neg_field,
+                    "nodeId": "7",
+                    "fieldName": "text",
                     "fieldValue": neg_prompt,
                 }
             )
@@ -151,7 +132,9 @@ class RunningHubClient:
         res = self._http_post("/task/openapi/create", payload)
         code = res.get("code")
         if code != 0:
-            raise RuntimeError(f"创建生图任务失败 (code {code}): {res.get('msg', '未知错误')}")
+            raise RuntimeError(
+                f"创建生图任务失败 (code {code}): {res.get('msg', '未知错误')}"
+            )
         data = res.get("data") or {}
         task_id = data.get("taskId") if isinstance(data, dict) else data
         if not task_id:
@@ -174,12 +157,16 @@ class RunningHubClient:
         res = self._http_post("/task/openapi/ai-app/run", payload)
         code = res.get("code")
         if code != 0:
-            raise RuntimeError(f"AI App 启动失败 (code {code}): {res.get('msg', '未知错误')}")
+            raise RuntimeError(
+                f"AI App 启动失败 (code {code}): {res.get('msg', '未知错误')}"
+            )
         data = res.get("data") or {}
         task_id = data.get("taskId") if isinstance(data, dict) else data
         return str(task_id)
 
-    def wait_for_output(self, task_id: str, poll_interval: int = 3, timeout_sec: int = 180) -> str:
+    def wait_for_output(
+        self, task_id: str, poll_interval: int = 3, timeout_sec: int = 180
+    ) -> str:
         """轮询查询生图结果"""
         payload = {"apiKey": self.api_key, "taskId": task_id}
         start_time = time.time()
@@ -227,7 +214,9 @@ class RunningHubClient:
     @staticmethod
     def download_image(img_url: str, save_path: Path):
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        req = urllib.request.Request(img_url, headers={"User-Agent": "Mieball-Downloader/1.0"})
+        req = urllib.request.Request(
+            img_url, headers={"User-Agent": "Mieball-Downloader/1.0"}
+        )
         with urllib.request.urlopen(req, timeout=60) as resp:
             content = resp.read()
         with open(save_path, "wb") as f:
@@ -340,11 +329,15 @@ def main():
     final_prompt, neg_prompt = build_prompt(item_type, args.content)
 
     print("=" * 68)
-    print(f"【rhpic.py - 生图任务配置】")
+    print("【rhpic.py - 生图任务配置】")
     print("=" * 68)
-    print(f"  模式分类: {'人物形象 (avatar)' if item_type == 'avatar' else '卡片背景 (card_bg)'}")
+    print(
+        f"  模式分类: {'人物形象 (avatar)' if item_type == 'avatar' else '卡片背景 (card_bg)'}"
+    )
     print(f"  传入内容: {args.content}")
-    print(f"  目标落盘: {save_path.relative_to(workspace_root) if save_path.is_relative_to(workspace_root) else save_path}")
+    print(
+        f"  目标落盘: {save_path.relative_to(workspace_root) if save_path.is_relative_to(workspace_root) else save_path}"
+    )
     print(f"\n[拼装后的正向 Prompt (规范+内容)]:\n  {final_prompt}")
     print(f"\n[负向 Prompt (规范约束)]:\n  {neg_prompt}")
     print("=" * 68)
@@ -356,10 +349,14 @@ def main():
 
     # 正式调用参数校验
     if not args.api_key:
-        print("\n[错误] 未检测到 API Key！请使用 --api-key 传入，或设置环境变量 export RUNNINGHUB_API_KEY='你的Key'")
+        print(
+            "\n[错误] 未检测到 API Key！请使用 --api-key 传入，或设置环境变量 export RUNNINGHUB_API_KEY='你的Key'"
+        )
         sys.exit(1)
     if not args.workflow_id and not args.webapp_id:
-        print("\n[错误] 请提供 --workflow-id (工作流模式) 或 --webapp-id (AI App 模式)！")
+        print(
+            "\n[错误] 请提供 --workflow-id (工作流模式) 或 --webapp-id (AI App 模式)！"
+        )
         sys.exit(1)
 
     client = RunningHubClient(api_key=args.api_key, host=args.host)
@@ -381,11 +378,13 @@ def main():
             )
 
         img_url = client.wait_for_output(task_id)
-        print(f"正在下载图片至本地...")
+        print("正在下载图片至本地...")
         client.download_image(img_url, save_path)
         print(f"\n√ 生成成功！已落盘至: {save_path}")
         if item_type == "avatar":
-            print(f"提示: 可使用 python3 process_avatar.py \"{save_path}\" 进行自动抠图与 WebP 压缩。")
+            print(
+                f'提示: 可使用 python3 process_avatar.py "{save_path}" 进行自动抠图与 WebP 压缩。'
+            )
 
     except Exception as e:
         print(f"\n× 生图失败: {e}")

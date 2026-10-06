@@ -29,10 +29,11 @@ import ToastHost from './ToastHost.vue';
 import ConfettiHost from './ConfettiHost.vue';
 import SheetHost from './SheetHost.vue';
 import { useUiStore } from '@/stores/ui';
+import type { TabKey } from '@/utils/nav';
 
 defineProps({
   /** 当前 tab 键；不传 = 非 tab 页（detail，无 TabBar）。live 传键时配 bare（全屏三块 + 导航） */
-  tab: { type: String as PropType<'live' | 'meet' | 'power' | 'mine'>, default: undefined },
+  tab: { type: String as PropType<TabKey>, default: undefined },
   /** 裸页模式：壳层 padding 清零，页面自管边距（2.1 打球页三块全屏布局用；默认行为不变） */
   bare: { type: Boolean, default: false },
 });
@@ -57,7 +58,7 @@ onHide(() => ui.closeSheet());
   min-height: 100vh;
   /* alpha.html:75-76（去掉 alpha SPA 页签的 opacity/transform 过渡，uni 路由自带转场） */
   padding: calc(env(safe-area-inset-top) + 14px) 18px
-    calc(var(--nav-h) + env(safe-area-inset-bottom) + 86px);
+    calc(var(--nav-total-h) + 86px);
 }
 /* bare：全屏自管布局页专用（其余样式/宿主/层级不动） */
 .page-bare {

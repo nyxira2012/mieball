@@ -12,7 +12,7 @@
         :key="t.k"
         class="nbtn"
         :class="{ on: current === t.k }"
-        @click="go(t.k)"
+        @click="goTab(t.k)"
       >
         <view class="ico" v-html="ICONS[t.k]" />
         <text class="lbl">{{ t.label }}</text>
@@ -28,7 +28,7 @@
         :key="t.k"
         class="nbtn"
         :class="{ on: current === t.k }"
-        @click="go(t.k)"
+        @click="goTab(t.k)"
       >
         <view class="ico" v-html="ICONS[t.k]" />
         <text class="lbl">{{ t.label }}</text>
@@ -41,6 +41,8 @@
 import type { PropType } from 'vue';
 import { useUiStore } from '@/stores/ui';
 import { useLiveStore } from '@/stores/live';
+import { goTab } from '@/utils/nav';
+import type { TabKey } from '@/utils/nav';
 
 /* 图标 SVG：alpha.html:681-694 逐字（stroke/fill 线型由下方 :deep(svg) 统一给）；
    live 球场图标为本轮新画（球场+中网，对齐 1.7 线型） */
@@ -52,10 +54,8 @@ const ICONS = {
   mine: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6"/></svg>',
 } as const;
 
-/** 4 个 tab 键（与 pages.json tabBar 顺序一致，home 页已退役、现场为首 tab） */
-type TabKey = 'live' | 'meet' | 'power' | 'mine';
-
-/** tab 配置（label/键单一来源；FAB 夹在 meet 与 power 之间，故拆左右两组渲染） */
+/** tab 配置（label/键单一来源；键与路径契约在 utils/nav 的 TabKey/TAB_ROUTES，
+    FAB 夹在 meet 与 power 之间，故拆左右两组渲染） */
 const TABS = [
   { k: 'live', label: '现场' },
   { k: 'meet', label: '约球' },
@@ -65,26 +65,13 @@ const TABS = [
 const TABS_L = TABS.slice(0, 2);
 const TABS_R = TABS.slice(2);
 
-const props = defineProps({
-  /** 当前所在 tab（由页面壳传入）；不传 = 非 tab 页挂公共导航（live 入口页），
-      无高亮且所有按钮可跳（go 的原地拦截 current===k 永不成立） */
-  current: { type: String as PropType<TabKey | undefined>, default: undefined },
+defineProps({
+  /** 当前所在 tab 键（由页面壳传入，仅高亮用；点击切换与原地拦截由 nav.goTab 统一管） */
+  current: { type: String as PropType<TabKey>, required: true },
 });
 
 const ui = useUiStore();
 const live = useLiveStore();
-
-const ROUTES: Record<TabKey, string> = {
-  live: '/pages/live/live',
-  meet: '/pages/meet/meet',
-  power: '/pages/power/power',
-  mine: '/pages/mine/mine',
-};
-
-function go(k: TabKey): void {
-  if (k === props.current) return; // 原地不跳
-  uni.switchTab({ url: ROUTES[k] });
-}
 
 /** alpha:686 onclick="openLaunch()"：FAB 开全局组局抽屉 */
 function openLaunch(): void {
@@ -100,7 +87,7 @@ function openLaunch(): void {
   right: 0;
   bottom: 0;
   z-index: 100;
-  height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+  height: var(--nav-total-h);
   padding-bottom: env(safe-area-inset-bottom);
   background: rgba(14, 14, 18, 0.96); /* alpha:137，即 --ink 的 96% 不透明 */
   backdrop-filter: blur(16px);

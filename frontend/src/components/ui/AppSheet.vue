@@ -52,7 +52,7 @@ const emit = defineEmits<{ (e: 'close'): void }>()
   background: var(--ink2);
   border-radius: 26px 26px 0 0;
   border-top: 1px solid rgba(255, 212, 0, 0.25);
-  padding: 10px 20px calc(var(--nav-h) + 20px + env(safe-area-inset-bottom));
+  padding: 10px 20px calc(var(--nav-total-h) + 20px);
   transform: translateY(105%);
   transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
   max-height: 86%;

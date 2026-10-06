@@ -206,10 +206,9 @@ import NoteCard from '@/components/ui/NoteCard.vue';
 import { useGameStore } from '@/stores/game';
 import { useUserStore } from '@/stores/user';
 import { useUiStore } from '@/stores/ui';
-import { useLiveStore } from '@/stores/live';
 import { heads, needOf, perHead, perBaseOf, myEntry, isOrg, isForced, MODE_NAMES, SCORE_RULE_NAMES } from '@/utils/format';
 import { durTxt, splitGameTime } from '@/utils/time';
-import { goGame, goLive } from '@/utils/nav';
+import { goGame, goLive, goMeet } from '@/utils/nav';
 
 const store = useGameStore();
 
@@ -290,7 +289,6 @@ const perNote = computed(() => {
 const ui = useUiStore();
 /** 响应式「我」id（1.1 会话接管 U.me 后联动） */
 const meId = computed(() => useUserStore().me.id);
-const liveStore = useLiveStore();
 
 /** alpha:1418 shareGame（组织者首享 3 秒后模拟小张加入，store 内逐字） */
 const onShare = () => {
@@ -302,7 +300,7 @@ const onDeadline = () => {
   const id = game.value.id;
   store.hitDeadline(id);
   // alpha:1183 dead 分支 go('meet')：未成局自动终止后落回约球页（组织者可恢复）
-  if (store.games.find((g) => g.id === id)?.dead) uni.switchTab({ url: '/pages/meet/meet' });
+  if (store.games.find((g) => g.id === id)?.dead) goMeet();
 };
 /** alpha:1441/1452 joinSheet → JoinSheet 弹层 */
 const onJoin = () => {
@@ -328,11 +326,10 @@ const onCancel = () => {
 const onInvite = () => {
   if (game.value) ui.openSheet({ type: 'invite-to-game', gameId: game.value.id });
 };
-/** alpha:1468 startLive：live store 初始化（status→live · 随行展开 · 发牌）→ 跳现场页 */
+/** alpha:1468 startLive → 跳现场页（live store 初始化 status→live · 随行展开 · 发牌，
+    由 goLive 内 ensureLive 统一守门，与下方 onLive 回现场同径） */
 const onStart = () => {
-  if (!game.value) return;
-  liveStore.startLive(game.value.id);
-  goLive(game.value.id);
+  if (game.value) goLive(game.value.id);
 };
 /** alpha:1465 go('live')：已 live 的局回现场页（路径契约与 detail 跳转同归 utils/nav） */
 const onLive = () => {
