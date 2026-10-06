@@ -67,7 +67,7 @@
           >确认终局 · 排下一场</AppButton
         >
         <view v-if="!full" class="md-full-tip">请组织者或管理员确认</view>
-        <view v-if="full" class="md-cancel" @click="liveStore.cancelMatch(courtId)"
+        <view v-if="full" class="md-cancel" @click="emit('cancel')"
           >取消对局</view
         >
       </view>
@@ -76,9 +76,10 @@
 </template>
 
 <script setup lang="ts">
-/* 终局结算（2.1 §5 confirm-before-settle · 2.4 批2 按片；2.2 §4.8 确认收权）：
+/* 终局结算（2.1 §5 confirm-before-settle · 2.4 批2 按片；2.2 §4.8 确认收权 · 批3b 取消走确认槽）：
    读 store.settling 快照 + 该片（courtId）的 A/B；本地态 winA/sa/sb 在快照开窗时重置；
-   确认/取消直调 store（落账·排场·toast 都在 store，撒花由页面 watch history 做）。
+   确认直调 store（落账·排场·toast 都在 store，撒花由页面 watch history 做）；
+   「取消对局」emit 由页面确认槽接（A3 危险动作先确认），courtId 从 settling 取。
    球友只能看：确认钮与 ± 改分钮置灰+旁注，取消对局不出现（store guard 兜底）。
    预览行复用 WinChange 形状（settleElo 与落账同一入参 → 幂等一致）。 */
 import { computed, ref, watch } from "vue";
@@ -95,7 +96,7 @@ const props = defineProps({
   /** 结算中的片（settling.courtId 透传；对阵与片名读该片） */
   courtId: { type: Number, required: true },
 });
-const emit = defineEmits<{ (e: "close"): void }>();
+const emit = defineEmits<{ (e: "close"): void; (e: "cancel"): void }>();
 
 const liveStore = useLiveStore();
 

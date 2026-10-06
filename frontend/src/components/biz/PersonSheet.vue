@@ -37,7 +37,13 @@
             class="ps-act"
             :class="{ 'on-rest': !!p.skip }"
             @click="liveStore.togglePerson(p.id, 'skip')"
-            >{{ p.skip ? "已歇两轮" : "歇两轮" }}</view
+            >{{ p.skip ? `再歇一轮 · 将跳 ${p.skip} 轮` : "休息一轮" }}</view
+          >
+          <view
+            v-if="canOperate && !!p.skip"
+            class="ps-act"
+            @click="liveStore.togglePerson(p.id, 'unskip')"
+            >取消休息</view
           >
           <view
             v-if="canOperate"
@@ -104,9 +110,10 @@
 </template>
 
 <script setup lang="ts">
-/* 点人抽屉（2.1 §3-4；2.2 批1 权限分级）：歇两轮/连战/退场直调 live store（toast 在 store），
-   换人与档案走 emit 由页面编排（swap 二段态、ProfileSheet 全局弹层）。
-   权限（§4.8/4.9）：换人/歇/连/退场本人随时可、给他人需全权（isFullPower 单一源在 store）；
+/* 点人抽屉（2.1 §3-4；2.2 批1 权限分级 · 批3b 休息叠加）：休息/取消休息/连战/退场直调 live store
+   （toast 在 store），换人与档案走 emit 由页面编排（swap 二段态、ProfileSheet 全局弹层）。
+   休息可连按叠加（按钮示「将跳 N 轮」——skip 还没消耗，将跳非已跳），「取消休息」随时清 0（§4.10 修订⑨）；
+   权限（§4.8/4.9/4.10）：换人/歇/连/退场本人随时可、给他人需全权（isFullPower 单一源在 store）；
    「设为/撤掉管理员」仅组织者可见（§4.6 禁止管理员再封管理员）。
    对侧池口径：人在场上 → 列候场队列；人在队列 → 列场上全员（cur + 各待开片）。 */
 import { computed } from "vue";

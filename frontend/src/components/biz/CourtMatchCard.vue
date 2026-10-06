@@ -4,7 +4,8 @@
        idle = 空片差人卡（还差 N 人 · courtSize-aware + 自动排阵/去拉人双钮）。
        卡头 = 场地号 + 单双打标识（读 court.singles，选了什么显什么）+ 分制 +
        连庄 chip（仅 down=loser 且该边 streak>0 显示，2.4 新增显示）。
-       点数字记分对所有人开放（2.2 §4.8）；撤分/清零/终局/取消是全权手柄，非全权不渲染。 -->
+       点数字记分与撤回对所有人开放（2.2 §4.8）；清零/终局/取消/找替补是全权手柄，
+       其中清零/取消先弹后果确认（A3，确认槽在页面层）。 -->
   <view class="court-matchcard" :class="{ idle: !playing }">
     <!-- ---------- playing：对阵区 ---------- -->
     <template v-if="playing">
@@ -63,6 +64,8 @@
         <view class="sp-mid">
           <view class="sp-colon">:</view>
           <text class="sp-tip">点数字记分</text>
+          <!-- 撤回对所有人可见（§4.8：记分±1 是球友手柄，撤回同族；store 本就无 guard） -->
+          <text class="sp-undo" @click="emit('undo', court.id)">撤回</text>
         </view>
         <view class="sp-num b-side" @click="emit('point', court.id, 'b')">
           <view
@@ -75,9 +78,13 @@
         </view>
       </view>
 
-      <!-- 全权工具行（非 full 不渲染；换人不设独立入口，走「点人」抽屉） -->
+      <!-- 全权工具行（非 full 不渲染；换人不设独立入口，走「点人」抽屉）：
+          找替补只在缺人且候场有人时出现（§4.11）；清零/取消先确认由页面接（A3）；
+          撤回已挪记分行对所有人开放（§4.8），不再占工具行 -->
       <view v-if="full" class="match-card-tools">
-        <text class="tool-link" @click="emit('undo', court.id)">撤一分</text>
+        <text v-if="needSub" class="tool-link" @click="emit('sub', court.id)"
+          >找替补</text
+        >
         <text class="tool-link" @click="emit('clear', court.id)">清零</text>
         <text class="tool-link" @click="emit('settle', court.id)"
           >终局结算</text
@@ -128,7 +135,7 @@ import AppButton from "@/components/ui/AppButton.vue";
 import type { LiveCourt } from "@/api/types";
 import { courtSize } from "@/utils/rotate";
 import { courtDisplayName } from "@/utils/format";
-import { useLiveStore } from "@/stores/live";
+import { perSide, useLiveStore } from "@/stores/live";
 
 const props = defineProps({
   /** 本片（playing/idle 由 A/B 空否自判） */
@@ -142,6 +149,7 @@ const emit = defineEmits<{
   (e: "clear", courtId: number): void;
   (e: "settle", courtId: number): void;
   (e: "cancel", courtId: number): void;
+  (e: "sub", courtId: number): void;
   (e: "autodeal"): void;
   (e: "pull"): void;
   (e: "profile", id: number): void;
@@ -150,7 +158,9 @@ const emit = defineEmits<{
 const liveStore = useLiveStore();
 
 /** playing/idle 自判：A/B 任一半边有人即在打（补满即打，无待开态） */
-const playing = computed(() => !!props.court.A.length || !!props.court.B.length);
+const playing = computed(
+  () => !!props.court.A.length || !!props.court.B.length,
+);
 
 /** 显示名（court.name 存场地号 '3号' → '3号场'，单一源 format.courtDisplayName）与分制 */
 const label = computed(() => courtDisplayName(props.court.name));
@@ -175,10 +185,15 @@ const sides = computed(() =>
 );
 
 /** idle 差人卡：还差几人按当前格式每片人数算（双打 4 / 单打 2） */
-const size = computed(() =>
-  courtSize(liveStore.live?.rules.singles ?? false),
-);
+const size = computed(() => courtSize(liveStore.live?.rules.singles ?? false));
 const waiting = computed(() => liveStore.live?.queue.length ?? 0);
+
+/** 找替补入口（§4.11）：该片任一队缺人且候场有人才亮（每边满员=每片人数的一半） */
+const needSub = computed(() => {
+  const c = props.court;
+  const per = perSide(c.singles);
+  return (c.A.length < per || c.B.length < per) && waiting.value > 0;
+});
 
 /* 得分数字弹跳（Scoreboard 同法）：watch sa/sb，上涨侧挂 .bump（撤回回落不弹）；
    :key 自增重挂载，连点同侧也能重触发 */
@@ -445,6 +460,18 @@ onUnmounted(() => {
   color: var(--dim);
   letter-spacing: 0.06em;
   white-space: nowrap;
+}
+/* 撤回入口（§4.8）：记分行内小字链接，对所有人可见 */
+.sp-undo {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--dim);
+  margin-top: 3px;
+  cursor: pointer;
+  text-decoration: underline dotted rgba(245, 241, 232, 0.3);
+}
+.sp-undo:active {
+  color: var(--lemon);
 }
 .sp-v.bump {
   animation: scoreBump 0.28s ease-out;

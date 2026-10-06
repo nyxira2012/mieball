@@ -1,7 +1,8 @@
 <template>
   <!-- 打球页（2.1 改版 · 2.4 批2 多片并行）：一屏三块——顶条（LiveTopbar）/ 滚动对局区
        （CourtMatchCard 一片一卡，playing/idle 卡自判）/ 置底候场条（QueueBar）
-       + 四抽屉一弹窗一浮层（本页本地弹层，liveSheet 单槽替换语义，不走全局 SheetPayload）。
+       + 五抽屉一弹窗一浮层（本页本地弹层，liveSheet 单槽替换语义，不走全局 SheetPayload；
+       confirm 槽=危险动作先确认，A3）。
        页面只做编排：卡片/抽屉的数据与动作全在 live store 与各组件内，这里接打开次序与跨页跳转。
        url query 的 id：onShow 时若现场未开则自动 startLive（深链/刷新兜底；hasLive 已开不重复，避免重置名册）。
        扫码签到深链（2.1·选项A）：二维码编码 {origin}/#/pages/live/live?id=<球局id>，
@@ -39,9 +40,10 @@
             :full="full"
             @point="liveStore.point"
             @undo="liveStore.undoPoint"
-            @clear="liveStore.clearScore"
+            @clear="onClearScore"
             @settle="liveStore.openSettle"
-            @cancel="liveStore.cancelMatch"
+            @cancel="onCancelMatch"
+            @sub="liveStore.subFirst"
             @autodeal="liveStore.autoDeal"
             @pull="goPull"
             @profile="openProfile"
@@ -74,7 +76,27 @@
         :full="full"
         :court-id="liveStore.settling?.courtId ?? -1"
         @close="liveStore.closeSettle()"
+        @cancel="onCancelMatch"
       />
+      <!-- 危险动作先确认（A3）：后果句+双纽，本地确认槽不走全局 union；叠在结算窗之上 -->
+      <AppSheet
+        class="confirm-sheet"
+        :visible="confirmOpen"
+        @close="closeLocal"
+      >
+        <view v-if="liveSheet?.k === 'confirm'" class="cf">
+          <view class="sheet-t">确定要这么做？</view>
+          <view class="sheet-hint">{{ liveSheet.msg }}</view>
+          <view class="cf-btns">
+            <AppButton variant="ghost" class="flex1" @click="closeLocal"
+              >再想想</AppButton
+            >
+            <AppButton variant="burn" class="flex1" @click="confirmGo"
+              >确认</AppButton
+            >
+          </view>
+        </view>
+      </AppSheet>
       <QrOverlay :visible="qrOpen" @close="qrOpen = false" />
     </template>
   </PageShell>
@@ -87,6 +109,7 @@ import { computed, ref, watch } from "vue";
 import { onHide, onLoad, onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import AppButton from "@/components/ui/AppButton.vue";
+import AppSheet from "@/components/ui/AppSheet.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import LiveTopbar from "@/components/biz/LiveTopbar.vue";
 import CourtMatchCard from "@/components/biz/CourtMatchCard.vue";
@@ -103,12 +126,14 @@ import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import { goMeet } from "@/utils/nav";
 
-/** 本地弹层槽（单槽替换语义：开新的自动顶旧的；与全局 SheetPayload 互不相干） */
+/** 本地弹层槽（单槽替换语义：开新的自动顶旧的；与全局 SheetPayload 互不相干）。
+    confirm=危险动作确认（A3）：后果句 + 执行动作，确认后才跑 */
 type LocalSheet =
   | { k: "person"; id: number; swap?: boolean }
   | { k: "checkin" }
   | { k: "queue" }
-  | { k: "rules" };
+  | { k: "rules" }
+  | { k: "confirm"; msg: string; action: () => void };
 
 const liveStore = useLiveStore();
 const gameStore = useGameStore();
@@ -132,6 +157,32 @@ const personSwap = computed(() =>
 
 function closeLocal(): void {
   liveSheet.value = null;
+}
+const confirmOpen = computed(() => liveSheet.value?.k === "confirm");
+
+/** 危险动作先确认（A3）：先弹后果句，确认才执行——取消对局（卡上/结算窗两入口）与清零比分；
+    动作本体与权限把关都在 store（needFull 兜底），这里只管「先确认」 */
+function askConfirm(msg: string, action: () => void): void {
+  liveSheet.value = { k: "confirm", msg, action };
+}
+/** 取消对局：卡上带 courtId；结算窗不带（从 settling 快照取） */
+function onCancelMatch(courtId?: number): void {
+  const id = courtId ?? liveStore.settling?.courtId;
+  if (id == null) return;
+  askConfirm("这场将不计分，场上的人回候场队最前面", () =>
+    liveStore.cancelMatch(id),
+  );
+}
+function onClearScore(courtId: number): void {
+  askConfirm("比分将清零重开一盘，已得的分不算了", () =>
+    liveStore.clearScore(courtId),
+  );
+}
+function confirmGo(): void {
+  if (liveSheet.value?.k !== "confirm") return;
+  const { action } = liveSheet.value;
+  liveSheet.value = null;
+  action();
 }
 function onSwapMode(on: boolean): void {
   if (liveSheet.value?.k === "person")
@@ -245,5 +296,20 @@ function goOpenTonight(): void {
 }
 .go-btn {
   margin-top: 20px;
+}
+
+/* 危险动作确认槽：叠在所有本地弹层之上（EndSettleModal z-110 也在其下；confetti 115 / toast 120 仍在上） */
+.confirm-sheet :deep(.mask) {
+  z-index: 111;
+}
+.confirm-sheet :deep(.sheet) {
+  z-index: 112;
+}
+.cf-btns {
+  display: flex;
+  gap: 10px;
+}
+.flex1 {
+  flex: 1;
 }
 </style>
