@@ -359,3 +359,240 @@ export interface MockGame {
   result?: { sa: number; sb: number; myWin: boolean }; // 已结束局的最终比分
   myLog?: { checkIn: string; checkOut?: string }; // 我的到场底账
 }
+
+/* ─────────── 2.3 现场总账读链（批4 阶段1·类型层） ───────────
+   与上面的 mock 期现场族（LiveState/LiveCourt/MatchHistory）并存不动——阶段2 接线后删旧。
+   snake 线上形状（…Api 族）逐字镜像 backend/app/services/live.py 的 view 输出（契约唯一真源）；
+   camel 业务形状由 api/live.ts 的 toLiveView 单点映射（沿 1.2 stores/game.ts toGame 先例）。 */
+
+/** 半场标识：记分 side / 场上 court_side / 胜方 winner_side 共用同一枚 */
+export type LiveSide = "a" | "b";
+
+/** 片状态机（后端单一源）：idle 空闲 / playing 在打 / pending 待确认（整片冻结） */
+export type LiveCourtStatus = "idle" | "playing" | "pending";
+
+/** 待确认窗来源（§4.3/4.4）：auto=到分自动弹 / manual=提前结算人工开；null=不在窗 */
+export type PendingOrigin = "auto" | "manual";
+
+/** 歇连动作（2.2 §4.10）：skip 叠一轮 / fire 连战（再按取消）/ unskip 清零 */
+export type TempoAction = "skip" | "fire" | "unskip";
+
+/** 报到可写四态（2.2 §4.2/4.3/4.5）；absent 只出不进——开账全员起笔态，不可报回 */
+export type CheckInAction = "ok" | "late" | "join" | "left";
+
+/** 名册行（view.players 元素镜像）。考勤分权（裁决 Q2）：arrive_at/left_at 只有
+    组织者与本人见，其他人一律 null——拿到 null 不代表没到。 */
+export interface LivePlayerApi {
+  id: number; // 名册行 id——check/swap/tempo/封撤管理员写动作按它定靶
+  account_id: number | null; // 访客 null
+  name: string; // 开账定格名（注销者占位名；访客=担保人前两字+编号）
+  guest: boolean; // 随行访客：代入 1500 算分但不落积分账
+  guarantor_account_id: number | null; // 访客挂谁名下（考勤底账「谁带的」）
+  dropin: boolean; // 空降进场（没报名扫码直入名册）
+  check: CheckStatus; // ok/late/join/left/absent 五态
+  arrive_at: string | null; // ISO · 几点到（首次到场落账）
+  left_at: string | null; // ISO · 几点走（早退原时刻，不覆写）
+  court_no: number | null; // 在片上=片号；null=不在片
+  court_side: LiveSide | null; // 'a'/'b'；null=候场/不在片
+  skip: number; // 剩余歇轮数（轮到发牌给他时递减）
+  fire: boolean; // 连战：排到队首，与歇互斥
+  queue_pos: number | null; // 候场序（升序即队列序）；null=场上/不在队
+}
+
+/** 片行（view.courts 元素镜像） */
+export interface LiveCourtApi {
+  court_no: number; // 片号，1 起
+  status: LiveCourtStatus;
+  seq: number; // 该片今天第几场（开新场 +1）
+  score_a: number;
+  score_b: number;
+  last_winner_side: LiveSide | null; // 本片最后得分方（undo 撤分基准）
+  court_seq: number; // 片号版本：该片记分类写 +1（写动作带它作 base_court_seq）
+  pending_origin: PendingOrigin | null; // 待确认窗来源；非 pending 恒 null
+  preselect: LiveSide | null; // 窗内预选胜方定值：领先方 / 平分与非 pending 均 null（A4 不自算）
+}
+
+/** 战报人员快照（winners/losers 元素镜像）：落账时定格，id 是名册行 id */
+export interface MatchPersonApi {
+  id: number;
+  name: string;
+  guest: boolean; // 访客标识：战报/预览「访客 · 不计积分」同款（§4.11）
+}
+
+/** 结算行（elo_rows 元素镜像）：每人一行、胜队在前；访客有 delta 展示值但不落账 */
+export interface EloRowApi {
+  account_id: number | null; // 访客 null（与 guest 同真值）
+  name: string;
+  guest: boolean;
+  rating_before: number;
+  rating_after: number; // 地板 400
+  delta: number; // 胜 +delta / 败 -delta（败方只扣胜方涨分六成）
+}
+
+/** 战报行（view.matches 元素镜像）：确认落账即冻结不可改（积分可信的地基） */
+export interface LiveMatchApi {
+  court_no: number;
+  seq: number; // 该片第几场
+  winners: MatchPersonApi[];
+  losers: MatchPersonApi[];
+  score_a: number;
+  score_b: number;
+  winner_side: LiveSide;
+  ended_at: string; // ISO
+  elo_rows: EloRowApi[];
+}
+
+/** 战报事件句（view.feed 元素镜像，2.2 §4.6/§4.9 留痕）：结构化事件行、按发生序追加，
+    句式拼装归前端（契约§2 后端不产中文文案） */
+export type FeedEventApi =
+  | { kind: "swap"; actor: string; out: string; in: string; at: string }
+  | { kind: "set_admin" | "unset_admin"; actor: string; target: string; at: string };
+
+/** 规则块（view.rules 镜像）：全场统一；scoring 复用局列（裁决 Q1，不另存第二份） */
+export interface LiveRulesApi {
+  scoring: number; // 分制 target（先到 N 且净胜 2）
+  doubles: boolean; // true=双打
+  down: DownMode; // 谁下（枚举沿用 2.4 定稿）
+  pairing: PairingMode; // 怎么配
+  streak_max: number; // 连庄上限
+}
+
+/** 总账读视图（GET /games/{id}/live 响应镜像）：进行中与散场后同一形状（散场=只读回看） */
+export interface LiveViewApi {
+  game_id: number;
+  started_at: string; // ISO · 开账时刻
+  ended: boolean; // 已散场（games.ended_at 有值）
+  ended_at: string | null; // ISO · 散场时刻
+  total_seq: number; // 全场总号：任何现场写 +1（轮询对表与写动作 base_total_seq 的基准）
+  round: number; // 全场第几场（散场时收口定总数）
+  admins: number[]; // 管理员 account_id 表（组织者 ∨ 本表 = 全权）
+  feed: FeedEventApi[];
+  courts_count: number; // 场地片数真值（缩片先撤空闲片）
+  rules: LiveRulesApi;
+  players: LivePlayerApi[];
+  queue: number[]; // 候场队名册行 id（队首在前，发牌从这里取）
+  courts: LiveCourtApi[];
+  matches: LiveMatchApi[]; // 战报（按结束时刻序）
+}
+
+/** 名册行（camel）：LivePlayerApi 的映射产物 */
+export interface LivePlayer {
+  id: number;
+  accountId: number | null;
+  name: string;
+  guest: boolean;
+  guarantorAccountId: number | null;
+  dropin: boolean;
+  check: CheckStatus;
+  arriveAt: string | null;
+  leftAt: string | null;
+  courtNo: number | null;
+  courtSide: LiveSide | null;
+  skip: number;
+  fire: boolean;
+  queuePos: number | null;
+}
+
+/** 片行（camel；不叫 LiveCourt 是避让上面 mock 期的旧类型，阶段2 删旧后不复名） */
+export interface LiveCourtView {
+  courtNo: number;
+  status: LiveCourtStatus;
+  seq: number;
+  scoreA: number;
+  scoreB: number;
+  lastWinnerSide: LiveSide | null;
+  courtSeq: number;
+  pendingOrigin: PendingOrigin | null;
+  preselect: LiveSide | null;
+}
+
+/** 战报人员快照（camel）：键与线上同形，不另建映射 */
+export interface MatchPerson extends MatchPersonApi {}
+
+/** 结算行（camel） */
+export interface EloRow {
+  accountId: number | null;
+  name: string;
+  guest: boolean;
+  ratingBefore: number;
+  ratingAfter: number;
+  delta: number;
+}
+
+/** 战报事件句（camel）：键与值都是后端短词，与 FeedEventApi 同形 */
+export type FeedEvent = FeedEventApi;
+
+/** 规则块（camel） */
+export interface LiveRules {
+  scoring: number;
+  doubles: boolean;
+  down: DownMode;
+  pairing: PairingMode;
+  streakMax: number;
+}
+
+/** 战报新结构（2.3）：片号/第几场/双方名单快照/比分/胜方是否 A/时刻/结算行。
+    与旧 MatchHistory 并存（阶段2 换树时删旧）；sa/sb/winA 沿旧树短名。 */
+export interface MatchReport {
+  courtNo: number;
+  seq: number;
+  winners: MatchPerson[];
+  losers: MatchPerson[];
+  sa: number;
+  sb: number;
+  winA: boolean; // winner_side === 'a'
+  endedAt: string;
+  eloRows: EloRow[];
+}
+
+/** 总账读视图（camel，store/页面消费）：toLiveView 映射产物，画面一个字不自算（A4）。
+    isOrganizer/isFullPower 是映射时按 viewer 上下文派生（view 本身不带身份块——
+    组织者 id 在局簿、本人在 session，两块都在 store 手里）。 */
+export interface LiveView {
+  gameId: number;
+  startedAt: string;
+  ended: boolean;
+  endedAt: string | null;
+  totalSeq: number; // 轮询对表基准：变了才换画面（§4.8 几秒内全场同步）
+  round: number;
+  admins: number[];
+  feed: FeedEvent[];
+  courtsCount: number;
+  rules: LiveRules;
+  players: LivePlayer[];
+  queue: number[]; // 候场队（名册行 id，队首在前）
+  courts: LiveCourtView[];
+  courtSeqs: Record<number, number>; // 片号→court_seq（片级写的 base_court_seq 直取处）
+  matches: MatchReport[];
+  isOrganizer: boolean; // viewer 是组织者
+  isFullPower: boolean; // 组织者 ∨ 管理员：收权动作入口把关（沿 2.2 越权前置拦截）
+}
+
+/* ---- 写动作载荷（镜像 routes/live.py 请求模型，camel 参数形；snake 线上体在 api/live.ts 逐端点内联） ---- */
+
+/** 排阵上报的一片（DealCourtIn 镜像）：a/b 是名册行 id，发牌算法在前端（rotate.ts） */
+export interface DealCourt {
+  courtNo: number; // 片号，1 起
+  a: number[]; // 非空（A 半边）
+  b: number[];
+}
+
+/** 确认结束（SettleConfirmIn 镜像）：窗内可能调过比分——最终比分与胜方由确认窗定死送来 */
+export interface SettleConfirmInput {
+  courtNo: number;
+  winnerSide: LiveSide; // 必须分高方（平分双方均可）
+  scoreA: number;
+  scoreB: number;
+  noRedeal?: boolean; // 散场清扫态：回流定格、不排下一场不补位（§4.9-1）
+  baseTotalSeq: number;
+  baseCourtSeq: number;
+}
+
+/** 规则四件套+片数（RulesIn 镜像）：全可选，只动显式给的字段（undefined 不进 JSON 体） */
+export interface LiveRulesInput {
+  doubles?: boolean;
+  down?: DownMode;
+  pairing?: PairingMode;
+  streakMax?: number;
+  courtsCount?: number; // 不得少于在用片数（缩片先撤空闲片）
+}

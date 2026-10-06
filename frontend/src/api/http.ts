@@ -2,15 +2,20 @@
    - 页面与 store 不直接碰 uni.request，一律经 request()；钥匙只在请求头出现。
    - 错误统一抛 ApiError（带后端 error.code），调用方按 code 分支，不解析中文文案。
    - 网络层细节（H5 走 /api 相对路径、开发期由 vite 代理到 16588）藏在这里。 */
+import type { LiveViewApi } from './types';
 
 export class ApiError extends Error {
   code: string;
   status: number;
+  /** 两级号防线 409（live_stale_total/court）随错误体带的最新总账视图（2.3 附录 B1）——
+      拿它直接对表，不用再拉一次读；其余错误恒缺省 */
+  view?: LiveViewApi;
 
-  constructor(code: string, message: string, status = 0) {
+  constructor(code: string, message: string, status = 0, view?: LiveViewApi) {
     super(message);
     this.code = code;
     this.status = status;
+    this.view = view;
   }
 }
 
@@ -127,10 +132,17 @@ function getRequestHeader(): Record<string, string> {
 
 export async function request<T>(method: Method, path: string, data?: unknown): Promise<T> {
   const res = await rawRequest(method, path, data);
-  const body = res.data as { error?: { code?: string; message?: string } } | T;
+  const body = res.data as
+    | { error?: { code?: string; message?: string }; view?: LiveViewApi }
+    | T;
   if (res.statusCode >= 400) {
     const err = (body as { error?: { code?: string; message?: string } })?.error;
-    throw new ApiError(err?.code ?? 'http_error', err?.message ?? '出错了，请稍后再试', res.statusCode);
+    throw new ApiError(
+      err?.code ?? 'http_error',
+      err?.message ?? '出错了，请稍后再试',
+      res.statusCode,
+      (body as { view?: LiveViewApi })?.view,
+    );
   }
   return body as T;
 }
