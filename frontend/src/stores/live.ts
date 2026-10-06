@@ -18,7 +18,6 @@ import { defineStore } from "pinia";
 import { U } from "@/api";
 import type {
   CheckStatus,
-  CourtMode,
   Game,
   LedgerRow,
   LiveCourt,
@@ -41,7 +40,7 @@ import {
 } from "@/utils/rotate";
 import { recommend } from "@/utils/recommend";
 import { shouldEnd, undoScore } from "@/utils/score";
-import { isOrg, MODE_NAMES } from "@/utils/format";
+import { isOrg } from "@/utils/format";
 import { toIso } from "@/utils/time";
 import { useGameStore } from "./game";
 import { useUiStore } from "./ui";
@@ -668,21 +667,6 @@ export const useLiveStore = defineStore("live", () => {
     ui.toast("规则已更新 · 下一场起按新规");
   }
 
-  /** 旧三模式过渡桥（2.4 §0.4 映射，批2 保留旧 RulesSheet 可用、批3 随新抽屉删）：
-      赢家留场=输家下+队序 / 纯粹轮转=全上全下 / 均衡配对=全上全下+均衡分边 */
-  function setRuleMode(m: CourtMode): void {
-    const L = live.value;
-    if (!L || !needFull()) return;
-    L.g.rotation = m; // 旧抽屉 seg 显示位（g.rotation 契约不动，3.2 修订时废）
-    const patch: Partial<RotationRules> =
-      m === "winner"
-        ? { down: "loser", pairing: "queue" }
-        : m === "balance"
-          ? { down: "all", pairing: "balance" }
-          : { down: "all" };
-    setRules(patch); // toast/冻结/连庄清零都在 setRules 单点
-  }
-
   /** 场地输入（2.1 顶条 · 2.4 并行口径）：校验至少 1 片且 ≥ 非空片数（在打的片不能收）；
       过 → 写 g.courts + syncCourts（补空片/删空片/重挂场地名）+ 补满（收权动作） */
   function setCourtsInput(text: string): boolean {
@@ -763,7 +747,6 @@ export const useLiveStore = defineStore("live", () => {
     swapPlayers,
     setRuleScore,
     setRules,
-    setRuleMode,
     setCourtsInput,
     autoDeal,
   };

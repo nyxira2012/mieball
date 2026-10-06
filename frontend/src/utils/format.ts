@@ -5,15 +5,16 @@ import type { ChibiConfig, CourtMode, DownMode, Game, GameCardModel, GameStatus,
 import { U, slots } from '@/mock/data';
 import { isoDay, isoHm, splitGameTime } from '@/utils/time';
 
-/** 发牌模式名单一源（原 live.vue/detail.vue 内联 MODE_NAMES 挪出：live 页顶条/规则抽屉与
-    live store 的 setRuleMode toast、detail 规则牌、LaunchSheet 规则三件共用一份） */
+/** 发牌模式名单一源（原 live.vue/detail.vue 内联 MODE_NAMES 挪出）。2.4 批3 清账：现场域
+    （live 顶条/规则抽屉/store 过渡桥）已停消费，剩 detail 规则牌与 LaunchSheet 规则三件——
+    随 3.2 修订「建局表单废除轮换模式选择」一并退役 */
 export const MODE_NAMES: Record<CourtMode, string> = { winner: '赢家留场', rotate: '纯粹轮转', balance: '均衡配对' };
 
 /** 得分规则名单一源（MODE_NAMES 同族）：LaunchSheet 规则三件与 detail 规则牌共用 */
 export const SCORE_RULE_NAMES: Record<'rally' | 'serve', string> = { rally: '每球得分制', serve: '发球得分制' };
 
 /** 谁下五式名单一源（2.4 §4.1 四件套之二；单打只有 all/loser）。
-    与 MODE_NAMES 并列新表、不并入——3.2 面仍消费 MODE_NAMES，批3 旧抽屉删后再清账 */
+    RulesSheet 谁下段与 LiveTopbar 赛制 chip 消费；与 MODE_NAMES 并列不并入（3.2 面仍消费旧表） */
 export const DOWN_NAMES: Record<DownMode, string> = {
   all: '全上全下',
   loser: '输家下',

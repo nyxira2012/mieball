@@ -168,9 +168,9 @@ function onCheckin(): void {
   liveSheet.value = { k: "checkin" };
 }
 
-/** 规则抽屉入口 gate（§4.7 收权：改分制/轮换模式是全权动作；needFull 单一源把关） */
+/** 规则抽屉入口（2.4 §4.1 推翻 2.2 批1 入口拦截）：球友照开、抽屉内只读化
+    （RulesSheet full=false 罩层）；改规则动作的 store guard 仍在——双保险 */
 function onRules(): void {
-  if (!liveStore.needFull()) return;
   liveSheet.value = { k: "rules" };
 }
 

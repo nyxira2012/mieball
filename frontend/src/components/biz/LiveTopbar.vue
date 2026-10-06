@@ -51,8 +51,11 @@
       </view>
       <view class="telem-cell mode-cell" @click="emit('rules')">
         <text class="telem-k">赛制模式</text>
+        <!-- 2.4：读 rules 四件套（选了什么显什么），不再按 g.rotation 旧三模式显示；
+             分制不进 chip（遥测格窄，对局卡头已有「双打 · 11分」） -->
         <view class="telem-v mode-v"
-          >{{ L.g.scoring }}分 · {{ MODE_NAMES[L.g.rotation] }} ▾</view
+          >{{ L.rules.singles ? "单打" : "双打" }} ·
+          {{ DOWN_NAMES[L.rules.down] }} ▾</view
         >
       </view>
     </view>
@@ -70,7 +73,7 @@
 /* 块一顶条（2.1 §3）：无 props——数据全读 live store；emit 只留页面编排：qr / rules。 */
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useLiveStore } from "@/stores/live";
-import { isOrg, MODE_NAMES } from "@/utils/format";
+import { isOrg, DOWN_NAMES } from "@/utils/format";
 import { pById } from "@/utils/rotate";
 import { U } from "@/api";
 
@@ -357,9 +360,14 @@ const curTick = computed(
   font-size: 14px;
 }
 .mode-v {
+  display: block; /* 覆写 telem-v 的 flex：省略号截断需要块级盒 */
   font-family: var(--sans);
   font-size: 13px;
   font-weight: 700;
+  /* 遥测格窄（≈117px），「双打 · 全上全下 ▾」满宽时截断不折行 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* 场号直填（原型 .telem-v input：虚线下划线，focus 变实线）；非 org 纯文本同位 */
 .courts-inp {

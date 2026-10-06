@@ -7,7 +7,8 @@ import type { EntryRow, Game, LiveCourt, User } from "@/api/types";
    两组真局 fixture 做确定性推演。
    2.4 批2（多片并行）：无 cur/lastWinners——每片自带记分板（courts[i].sa/sb），记分族动作
    全部带 courtId；confirmSettle 幂等闸（两端并发确认只落一次账）；轮换四件套 rules 挂
-   LiveState（自选前 down 跟推荐走、自选起冻结）；g.rotation 只作旧抽屉过渡桥的显示位。
+   LiveState（自选前 down 跟推荐走、自选起冻结）。批3 删 setRuleMode 过渡桥——现场域
+   不再消费 g.rotation（LaunchSheet/detail 建局面仍用，3.2 修订才废）。
    1.2 隔离线：startLive 吃重塑后的真局对象；2.2 批2：开场全员「未到」不发牌——需要场上态
    的用例经 arrive() 搭（真实代码路径：代办到场 → 到场支线自动补片）；fixture 开球时刻定格
    在过去，到场按口径归一为「迟到队尾」。 */
@@ -575,20 +576,34 @@ describe("轮换四件套：setRules / 推荐跟随 / 过渡桥 / 组合回落 /
     expect(L.queue).toEqual([0, 5]); // 输家 me,li 排队尾
     expect(L.courts[0].streakA).toBe(0);
   });
-  it("setRuleMode 过渡桥（旧 RulesSheet 批3 才删）：三映射转 setRules，rotation 照写显示位", async () => {
+  it("连庄上限 0=不限（§4.1/§4.6）：setRules({champCap:0}) 落值 0（「当前＝不限」文案由组件层呈现），到点判定读现值——0 之下连赢照留", async () => {
     const { live } = await load();
     live.startLive(g102());
     const L = live.live!;
-    live.setRuleMode("winner"); // 赢家留场 = 输家下 + 队序
-    expect(L.g.rotation).toBe("winner");
-    expect(L.rules).toMatchObject({ down: "loser", pairing: "queue" });
-    expect(L.rules.downChosen).toBe(true); // 桥映射含 down → 视为自选冻结
-    live.setRuleMode("rotate"); // 纯粹轮转 = 全上全下
-    expect(L.g.rotation).toBe("rotate");
-    expect(L.rules.down).toBe("all");
-    live.setRuleMode("balance"); // 均衡配对 = 全上全下 + 均衡分边
-    expect(L.g.rotation).toBe("balance");
-    expect(L.rules).toMatchObject({ down: "all", pairing: "balance" });
+    arrive(live); // 4 人到场 → 片 0=[me,li|访客,bei]
+    live.setRules({ down: "loser", champCap: 0 });
+    expect(L.rules.champCap).toBe(0); // store 侧落值：0 原样存，不折成默认 3
+    live.openSettle(0);
+    live.confirmSettle(0, true, 11, 9); // A 胜（候场空 → 原班再战，连庄照算）
+    expect(L.courts[0].streakA).toBe(1);
+    live.openSettle(0);
+    live.confirmSettle(0, true, 11, 9); // 再赢一场：上限 0 → 永不到点，赢家照留
+    expect(L.courts[0].streakA).toBe(2);
+    expect(L.courts[0].A).toEqual([0, 5]); // me,li 仍在场上
+  });
+  it("setRuleMode 过渡桥已删（批3）：src 全仓零引用——旧三模式只剩 g.rotation 契约本体", async () => {
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const walk = (dir: string): string[] =>
+      readdirSync(dir).flatMap((f) => {
+        const p = `${dir}/${f}`;
+        return statSync(p).isDirectory()
+          ? walk(p)
+          : /\.(ts|vue)$/.test(f) && readFileSync(p, "utf8").includes("setRuleMode")
+            ? [p]
+            : [];
+      });
+    expect(walk(fileURLToPath(new URL("../src", import.meta.url)))).toEqual([]);
   });
 });
 
@@ -903,7 +918,7 @@ describe("2.2 批1 权限地基：isFullPower / store 总账 guard / setAdmin-un
     expect(ui.toastMsg).toBe("只有组织者能做");
     expect(L.feed).toHaveLength(1); // 无留痕
   });
-  it("球友碰收权动作一律拒且回同一句（B1 总账把关）：清零/改分制/改模式/改四件套/开结算/确认终局/带访客/自动排阵/场号", async () => {
+  it("球友碰收权动作一律拒且回同一句（B1 总账把关）：清零/改分制/改四件套/开结算/确认终局/带访客/自动排阵/场号", async () => {
     const { live, ui } = await load();
     live.startLive(g101());
     const L = live.live!;
@@ -913,10 +928,7 @@ describe("2.2 批1 权限地基：isFullPower / store 总账 guard / setAdmin-un
     expect(L.courts[0].sa).toBe(1); // 未清
     live.setRuleScore(21);
     expect(L.g.scoring).toBe(11);
-    live.setRuleMode("rotate");
-    expect(L.g.rotation).toBe("winner"); // 未改
-    expect(L.rules.down).toBe("all");
-    live.setRules({ down: "n1" });
+    live.setRules({ down: "n1" }); // 球友改四件套被拒同句（抽屉只读化的 store 双保险）
     expect(L.rules.down).toBe("all"); // 未改
     expect(L.rules.downChosen).toBe(false);
     live.openSettle(0);
