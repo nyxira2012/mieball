@@ -14,18 +14,26 @@
    换人/作废/替补 feed 留名句（§4.13 访客同规终裁后无「访客让位」句）；先确认在页面层。
    2.2 批4（散场与底账）：endLive 收局（权限两读=org 独占/admin 代收兜底+在打防线）；
    底账定格（在场者 leftAt=endedAt）；散场后同局扫码/空降一并拦（§4.2）。
+   2.3 批4 阶段2（读链·store 重建层）纯增量：liveView/recap 持有总账视图，
+   applyLiveView 把视图幂等重建成本地 LiveState（适配旧形状），pollLiveView 拉读对表
+   （totalSeq 变才换画面）+ 3s 轮询器 + applyStaleView（409 携视图对表）——
+   写动作与 ensureLive 旧路零改，组件不消费本节（接线归批5）。
    硬约束：不触碰任何 uni.*；1.2 隔离线：startLive 吃真局对象（Person→伪 User 名册），
    现场改规则/场地只落在 LiveState.g 浅克隆上，不回写 game store 的局。
    名册直接引用球员对象：mock U 同 id 者带出真实战绩对象（结算落回战力榜）。 */
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { U } from "@/api";
+import { ApiError } from "@/api/http";
+import { apiLiveView, toLiveView, type LiveViewer } from "@/api/live";
 import type {
   CheckStatus,
+  FeedEvent,
   Game,
   LedgerRow,
   LiveCourt,
   LiveState,
+  LiveView,
   Person,
   RotationRules,
   User,
@@ -33,6 +41,7 @@ import type {
 import { settleElo } from "@/utils/elo";
 import { DRESS_RANGES } from "@/utils/chibi";
 import {
+  RANK_INIT,
   activePlayers,
   courtCount,
   courtSize,
@@ -76,6 +85,51 @@ function clearFromPlay(L: LiveState, id: number): void {
   }
 }
 
+/** 总账结构化事件句 → 中文句（契约§2 后端不产文案；句式与 2.2 动作处留痕同款）：
+    view 按发生序追加、旧 feed 新到旧——reverse 适配（批5 换视图消费面后删） */
+function feedSentences(events: FeedEvent[]): string[] {
+  return events
+    .map((e) =>
+      e.kind === "swap"
+        ? `${e.actor} 把 ${e.out} 换下 · ${e.in} 上`
+        : e.kind === "set_admin"
+          ? `组织者封 ${e.target} 为管理员`
+          : `组织者收回了 ${e.target} 的管理员身份`,
+    )
+    .reverse();
+}
+
+/** 冷扫兜底局（现场态与局簿都没有时的最小 Game，applyLiveView 重建用）：
+    组织者未知给 -1——viewer 两旗降级 false；批5 接线 ensureLive 先行后此路罕见 */
+function stubGame(v: LiveView): Game {
+  return {
+    id: v.gameId,
+    name: "现场",
+    organizer: { id: -1, nickname: "—", chibi: {} },
+    startAt: v.startedAt,
+    endAt: "",
+    deadlineAt: "",
+    venueName: "",
+    venueAddress: null,
+    minPlayers: 0,
+    maxPlayers: 0,
+    visibility: "public",
+    scoring: v.rules.scoring,
+    rotation: "winner",
+    scoreRule: "",
+    manualLock: false,
+    courts: null,
+    feeTotal: null,
+    status: "live",
+    unlocked: false,
+    joinable: false,
+    heads: v.players.length,
+    slotsLeft: 0,
+    perHead: null,
+    forced: false,
+  };
+}
+
 export const useLiveStore = defineStore("live", () => {
   const ui = useUiStore();
   /** alpha:805 let live=null —— 进行中的现场状态；TabBar 的 LIVE 红点（alpha:1487 #live-dot-nav） */
@@ -87,6 +141,15 @@ export const useLiveStore = defineStore("live", () => {
   const settling = ref<{ courtId: number; sa: number; sb: number } | null>(
     null,
   );
+
+  /** 2.3 批4 阶段2（读链）：最近一次总账视图——轮询/409 对表共用的最近真值，
+      totalSeq 是「变了才换画面」的对表基准（§4.8 几秒内全场同步） */
+  const liveView = ref<LiveView | null>(null);
+  /** 散场后回看视图持有（ended 视图定格；批6 LiveRecap 只读回看消费） */
+  const recap = ref<LiveView | null>(null);
+  /** settling 单值降级警示位：多片同时待确认旧形状装不下（true=画面只呈现了片号
+      最小那片，批5 换按片多值后删） */
+  const multiPending = ref(false);
 
   /** 管理员谓词单一源（id ∈ L.admins）：PersonSheet/CheckinSheet/QueueSheet 徽章与全权判定共用 */
   function isAdmin(id: number): boolean {
@@ -847,6 +910,187 @@ export const useLiveStore = defineStore("live", () => {
     );
   }
 
+  /* ─────── 2.3 批4 阶段2：读链（总账视图 → 本地重建 · 轮询 · 409 对表）─────── */
+
+  /** viewer 上下文（批4a 裁定：view 不带身份块，toLiveView 映射时派生两旗）：
+      本人在 session（过渡期写到 U.me 位）、组织者在局簿——现场态或局缓存先找，
+      都没有给 -1（游客/冷扫降级：两旗 false） */
+  function viewerCtx(gameId: number): LiveViewer {
+    const L = live.value;
+    const org =
+      L && L.g.id === gameId
+        ? L.g.organizer.id
+        : (useGameStore().findGame(gameId)?.organizer.id ?? -1);
+    return { myId: U.me.id, organizerId: org };
+  }
+
+  /** 总账视图 → 本地 LiveState 重建器（幂等、纯重建：不落牌不发 toast 不自动补片——
+      发牌/轮换真值已归后端）。降级口径（批5 换树后逐一删）：
+      - roster 整拷 mock U 同 accountId 者的展示位（chibi/elo/战绩）——不借引用：
+        总账时代 elo 真值在后端，不往 mock U 回写（startLive 借本体是 mock 期联动）；
+        访客/查无者按 mkPlayer 先例补默认位（elo 对齐后端初始 1500，1200 双轨清归批5）；
+      - g 只局部重建（现场克隆不回写局簿的旧约不变）：scoring/片名回填，片数吃
+        courts_count 真值（courtCount 单一源读到即对表）；
+      - history/feed 适配旧形状（view 升序 → 旧新到旧）；
+      - settling 单值降级：恰一片 pending 按旧形状填；多片取片号最小者 + multiPending
+        警示位；streak/资历（courtSeq/tenure）视图不带——旧引擎值位留 0/空。 */
+  function applyLiveView(v: LiveView): void {
+    const old = live.value;
+    const src =
+      old && old.g.id === v.gameId ? old.g : useGameStore().findGame(v.gameId);
+    const base = src ?? stubGame(v);
+    const names = Array.from(
+      { length: v.courtsCount },
+      (_, i) => base.courts?.[i] ?? `${i + 1}号`,
+    );
+    const users = Object.values(useUserStore().users);
+    const roster: User[] = v.players.map((p) => {
+      const known =
+        p.accountId != null
+          ? users.find((u) => u.id === p.accountId)
+          : undefined;
+      const u: User = known
+        ? { ...known }
+        : {
+            id: p.id,
+            name: p.name,
+            elo: RANK_INIT,
+            play: 0,
+            win: 0,
+            month: 0,
+            chibi: {},
+          };
+      u.id = p.id; // 名册行 id（写动作靶位），与 queue/片位同键
+      u.name = p.name; // 开账定格名（注销者占位名/访客编号名照显）
+      if (p.guest) u.shadow = true;
+      if (p.dropin) u.dropin = true;
+      u.check = p.check;
+      u.skip = p.skip;
+      if (p.fire) u.fire = true;
+      u.arriveAt = p.arriveAt ?? undefined;
+      u.leftAt = p.leftAt ?? undefined;
+      u.courtSeq = undefined;
+      u.tenure = 0;
+      return u;
+    });
+    const onSide = (no: number, side: "a" | "b"): number[] =>
+      v.players
+        .filter((p) => p.courtNo === no && p.courtSide === side)
+        .map((p) => p.id);
+    const L: LiveState = {
+      g: { ...base, courts: names, scoring: v.rules.scoring },
+      roster,
+      queue: [...v.queue],
+      courts: v.courts.map((c) => ({
+        id: c.courtNo - 1, // 视片段号 1 起 ↔ 旧片序 0 起（记分族动作按旧键定位）
+        name: names[c.courtNo - 1] ?? `${c.courtNo}号`,
+        singles: !v.rules.doubles,
+        A: onSide(c.courtNo, "a"),
+        B: onSide(c.courtNo, "b"),
+        sa: c.scoreA,
+        sb: c.scoreB,
+        last: c.lastWinnerSide ?? undefined,
+        streakA: 0,
+        streakB: 0,
+      })),
+      history: v.matches
+        .map((m) => ({
+          names: m.winners.map((w) => w.name).join(" & "),
+          sa: m.sa,
+          sb: m.sb,
+        }))
+        .reverse(),
+      round: v.round,
+      admins: [...v.admins],
+      feed: feedSentences(v.feed),
+      startedAt: v.startedAt,
+      endedAt: v.endedAt ?? undefined,
+      ledger: v.players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        ...(p.guest ? { shadow: true } : {}),
+        ...(p.dropin ? { dropin: true } : {}),
+        ...(p.guarantorAccountId != null
+          ? {
+              guarantor: v.players.find(
+                (x) => x.accountId === p.guarantorAccountId,
+              )?.name,
+            }
+          : {}),
+        ...(p.arriveAt ? { arriveAt: p.arriveAt } : {}),
+        ...(p.leftAt ? { leftAt: p.leftAt } : {}),
+      })),
+      rules: {
+        singles: !v.rules.doubles,
+        down: v.rules.down,
+        downChosen: true, // 冻结本地推荐跟随：down 是总账定值，不被 syncRules 改写
+        pairing: v.rules.pairing,
+        champCap: v.rules.streakMax,
+      },
+      courtSeqNext: 0,
+    };
+    while (L.courts.length < v.courtsCount)
+      L.courts.push(mkCourt(L, L.courts.length)); // 视图片行缺额补空片（差人卡口径）
+    const pend = v.courts
+      .filter((c) => c.status === "pending")
+      .sort((a, b) => a.courtNo - b.courtNo);
+    multiPending.value = pend.length > 1;
+    settling.value = pend.length
+      ? { courtId: pend[0].courtNo - 1, sa: pend[0].scoreA, sb: pend[0].scoreB }
+      : null;
+    live.value = L;
+    liveView.value = v;
+    if (v.ended) recap.value = v;
+  }
+
+  /** 拉总账读对表（§4.8）：totalSeq 没变不重建（画面零漂移），返回是否更新供上层
+      决定 toast「现场已更新」。拉读失败静默 false——轮询下一拍再试，写链的 409
+      对表另走 applyStaleView */
+  async function pollLiveView(gameId: number): Promise<boolean> {
+    try {
+      const view = toLiveView(await apiLiveView(gameId), viewerCtx(gameId));
+      if (
+        liveView.value?.gameId === view.gameId &&
+        view.totalSeq === liveView.value.totalSeq
+      )
+        return false;
+      applyLiveView(view);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let pollGameId: number | null = null;
+
+  /** 轮询器（3s 一拍）：幂等启动、换局重起；页面 onHide/onUnload 停由批5 接线
+      （进页首拍建议直调 pollLiveView，不靠计时器等 3s） */
+  function startPolling(gameId: number): void {
+    if (pollTimer && pollGameId === gameId) return;
+    if (pollTimer) clearInterval(pollTimer);
+    pollGameId = gameId;
+    pollTimer = setInterval(() => {
+      void pollLiveView(gameId);
+    }, 3000);
+  }
+
+  function stopPolling(): void {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+    pollGameId = null;
+  }
+
+  /** 409 两码对表件（附录 B1）：错误体自带最新视图——映射+重建一步到位、返回 true
+      供上层 toast「现场已更新」；其余错误（非 ApiError / 他码 / 不带视图）不动现场返 false */
+  function applyStaleView(e: unknown): boolean {
+    if (!(e instanceof ApiError) || !e.view) return false;
+    if (e.code !== "live_stale_total" && e.code !== "live_stale_court")
+      return false;
+    applyLiveView(toLiveView(e.view, viewerCtx(e.view.game_id)));
+    return true;
+  }
+
   return {
     live,
     hasLive,
@@ -882,5 +1126,13 @@ export const useLiveStore = defineStore("live", () => {
     setCourtsInput,
     autoDeal,
     endLive,
+    liveView,
+    recap,
+    multiPending,
+    applyLiveView,
+    pollLiveView,
+    startPolling,
+    stopPolling,
+    applyStaleView,
   };
 });

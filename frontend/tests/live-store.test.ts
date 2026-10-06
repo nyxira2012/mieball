@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { U } from "@/api";
-import type { EntryRow, Game, LiveCourt, User } from "@/api/types";
+import type {
+  EntryRow,
+  Game,
+  LiveCourt,
+  LiveCourtApi,
+  LiveViewApi,
+  User,
+} from "@/api/types";
 
 /* 每个用例重置模块图 → 全新 mock 数据；102（2 片 · 我组织）与 101（未订场 3 片 · wang 组织）
    两组真局 fixture 做确定性推演。
@@ -622,7 +629,8 @@ describe("轮换四件套：setRules / 推荐跟随 / 过渡桥 / 组合回落 /
         const p = `${dir}/${f}`;
         return statSync(p).isDirectory()
           ? walk(p)
-          : /\.(ts|vue)$/.test(f) && readFileSync(p, "utf8").includes("setRuleMode")
+          : /\.(ts|vue)$/.test(f) &&
+              readFileSync(p, "utf8").includes("setRuleMode")
             ? [p]
             : [];
       });
@@ -1287,5 +1295,371 @@ describe("2.2 批4 散场与底账：endLive / 底账定格 / 扫码拦（§4.14
     expect(L.admins).toEqual([li.id]); // 定格不动
     expect(ui.toastMsg).toBe("现场已散 · 不能再操作");
     expect(L.feed).toHaveLength(feedLen); // 无新留痕
+  });
+});
+
+/* ─────────── 2.3 批4 阶段2：读链·store 重建层（applyLiveView / pollLiveView / 409 对表 / 轮询器） ───────────
+   api/live 只换 apiLiveView（toLiveView 保留真实现——store 对表链吃同一映射）；用例喂
+   crafted live_view（snake 形状与后端 services/live.py view 输出逐字对齐），测 store 侧
+   重建/对表/降级逻辑。写动作与 ensureLive 旧路零改（批5 接写链）。 */
+const liveApi = vi.hoisted(() => ({ apiLiveView: vi.fn() }));
+
+vi.mock("@/api/live", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  ...liveApi,
+}));
+
+let viewSeq = 800;
+function mkLiveView(p: Partial<LiveViewApi> = {}): LiveViewApi {
+  viewSeq += 1;
+  return {
+    game_id: viewSeq,
+    started_at: "2026-10-07T19:00:00+08:00",
+    ended: false,
+    ended_at: null,
+    total_seq: 1,
+    round: 0,
+    admins: [],
+    feed: [],
+    courts_count: 1,
+    rules: {
+      scoring: 11,
+      doubles: true,
+      down: "all",
+      pairing: "queue",
+      streak_max: 3,
+    },
+    players: [],
+    queue: [],
+    courts: [],
+    matches: [],
+    ...p,
+  };
+}
+
+/** 中场快照（900 局）：li(101) 与访客(102) 在 1 号片在打 3:2、我(103) 候场队首；
+    已落一场战报 + 两条 feed（swap → set_admin 按发生序） */
+function vMid(seq = 7): LiveViewApi {
+  return mkLiveView({
+    game_id: 900,
+    total_seq: seq,
+    round: 2,
+    admins: [5],
+    courts_count: 2,
+    rules: {
+      scoring: 11,
+      doubles: true,
+      down: "loser",
+      pairing: "balance",
+      streak_max: 2,
+    },
+    players: [
+      {
+        id: 101,
+        account_id: 5,
+        name: "亮马河快攻",
+        guest: false,
+        guarantor_account_id: null,
+        dropin: false,
+        check: "ok",
+        arrive_at: "2026-10-07T19:02:00+08:00",
+        left_at: null,
+        court_no: 1,
+        court_side: "a",
+        skip: 0,
+        fire: false,
+        queue_pos: null,
+      },
+      {
+        id: 102,
+        account_id: null,
+        name: "亮的球友·1",
+        guest: true,
+        guarantor_account_id: 5,
+        dropin: false,
+        check: "join",
+        arrive_at: null,
+        left_at: null,
+        court_no: 1,
+        court_side: "b",
+        skip: 0,
+        fire: false,
+        queue_pos: null,
+      },
+      {
+        id: 103,
+        account_id: 0,
+        name: "我",
+        guest: false,
+        guarantor_account_id: null,
+        dropin: true,
+        check: "ok",
+        arrive_at: null,
+        left_at: null,
+        court_no: null,
+        court_side: null,
+        skip: 0,
+        fire: false,
+        queue_pos: 0,
+      },
+    ],
+    queue: [103],
+    courts: [
+      {
+        court_no: 1,
+        status: "playing",
+        seq: 2,
+        score_a: 3,
+        score_b: 2,
+        last_winner_side: "a",
+        court_seq: 5,
+        pending_origin: null,
+        preselect: null,
+      },
+    ],
+    matches: [
+      {
+        court_no: 1,
+        seq: 1,
+        winners: [
+          { id: 101, name: "亮马河快攻", guest: false },
+          { id: 102, name: "亮的球友·1", guest: true },
+        ],
+        losers: [{ id: 103, name: "我", guest: false }],
+        score_a: 11,
+        score_b: 9,
+        winner_side: "a",
+        ended_at: "2026-10-07T19:40:00+08:00",
+        elo_rows: [],
+      },
+    ],
+    feed: [
+      {
+        kind: "swap",
+        actor: "我",
+        out: "小张",
+        in: "老赵",
+        at: "2026-10-07T19:30:00+08:00",
+      },
+      {
+        kind: "set_admin",
+        actor: "我",
+        target: "亮马河快攻",
+        at: "2026-10-07T19:35:00+08:00",
+      },
+    ],
+  });
+}
+
+/** 片行速造 */
+const ct = (
+  no: number,
+  status: "playing" | "pending",
+  sa = 0,
+  sb = 0,
+): LiveCourtApi => ({
+  court_no: no,
+  status,
+  seq: 1,
+  score_a: sa,
+  score_b: sb,
+  last_winner_side: null,
+  court_seq: 1,
+  pending_origin: status === "pending" ? "auto" : null,
+  preselect: null,
+});
+
+describe("applyLiveView（2.3 批4 阶段2：总账视图 → 本地 LiveState 幂等重建）", () => {
+  it("roster 借 mock U 同 accountId 者的展示位（整拷不回写）、访客 shadow+默认位、片/队列/战报/feed/规则/底账全回填", async () => {
+    const { toLiveView } = await import("@/api/live");
+    const { live } = await load();
+    live.applyLiveView(toLiveView(vMid()));
+    const L = live.live!;
+    expect(L.g.id).toBe(900); // 局簿没有 → 冷扫兜底局仍可重建
+    expect(L.g.scoring).toBe(11); // 分制回填 L.g
+    expect(L.g.courts).toEqual(["1号", "2号"]); // 片数吃 courts_count 真值
+    const [li, guest, me] = L.roster;
+    expect(li.id).toBe(101); // User.id = 名册行 id（写动作靶位，与 queue/片位同键）
+    expect(li.elo).toBe(1574); // accountId 5 → 借 U.li 展示位
+    expect(li.chibi).toEqual(U.li.chibi);
+    expect(li.check).toBe("ok");
+    expect(li.arriveAt).toBe("2026-10-07T19:02:00+08:00");
+    expect(guest.shadow).toBe(true); // 访客 shadow 标记
+    expect(guest.elo).toBe(1500); // 查无者默认展示位＝后端初始等第（RANK_INIT）
+    expect(guest.chibi).toEqual({});
+    expect(me.elo).toBe(1518); // accountId 0 → 借 U.me
+    expect(me.dropin).toBe(true);
+    expect(L.queue).toEqual([103]); // 候场队序
+    expect(L.courts).toHaveLength(2); // 视图只带 1 片 → 按片数补空片（差人卡）
+    expect(L.courts[0]).toMatchObject({
+      id: 0, // 视图 1 起片号 → 旧 0 起片序
+      name: "1号",
+      A: [101],
+      B: [102],
+      sa: 3,
+      sb: 2,
+      last: "a",
+    });
+    expect(L.courts[1]).toMatchObject({ id: 1, name: "2号", A: [], B: [] });
+    expect(L.history).toEqual([
+      { names: "亮马河快攻 & 亮的球友·1", sa: 11, sb: 9 }, // 胜者名拼接（旧形状适配）
+    ]);
+    expect(L.feed).toEqual([
+      "组织者封 亮马河快攻 为管理员",
+      "我 把 小张 换下 · 老赵 上", // view 发生序 → 旧 feed 新到旧
+    ]);
+    expect(L.rules).toEqual({
+      singles: false,
+      down: "loser",
+      downChosen: true, // 总账定值：冻结本地推荐跟随
+      pairing: "balance",
+      champCap: 2,
+    });
+    expect(L.admins).toEqual([5]);
+    expect(L.round).toBe(2);
+    expect(L.ledger.find((r) => r.id === 102)!.guarantor).toBe(
+      "亮马河快攻", // guarantorAccountId → 册内行名解析（底账「谁带的」）
+    );
+    expect(live.settling).toBeNull();
+    expect(live.multiPending).toBe(false);
+    expect(live.liveView?.totalSeq).toBe(7); // 最近视图持有
+    expect(live.recap).toBeNull(); // 未散场不持有回看
+    expect(U.li.elo).toBe(1574); // 整拷：mock U 不被重建污染
+    // 幂等：同视图重放不漂移（空片不重复补、队列不重排）
+    live.applyLiveView(toLiveView(vMid()));
+    expect(L.courts).toHaveLength(2);
+    expect(L.queue).toEqual([103]);
+  });
+  it("settling 单值降级：恰一片 pending 按旧形状填（片号-1）；多片 pending 取片号最小者并置 multiPending 警示位", async () => {
+    const { toLiveView } = await import("@/api/live");
+    const { live } = await load();
+    live.applyLiveView(
+      toLiveView(
+        mkLiveView({
+          game_id: 900,
+          courts_count: 2,
+          courts: [ct(1, "playing"), ct(2, "pending", 11, 9)],
+        }),
+      ),
+    );
+    expect(live.settling).toEqual({ courtId: 1, sa: 11, sb: 9 });
+    expect(live.multiPending).toBe(false);
+    live.applyLiveView(
+      toLiveView(
+        mkLiveView({
+          game_id: 900,
+          courts_count: 2,
+          courts: [ct(1, "pending", 9, 9), ct(2, "pending", 11, 5)],
+        }),
+      ),
+    );
+    expect(live.settling).toEqual({ courtId: 0, sa: 9, sb: 9 }); // 片号最小者
+    expect(live.multiPending).toBe(true); // 旧单值装不下——警示位亮起（批5 换按片）
+  });
+  it("散场视图：endedAt 落封存位、recap 持有回看视图", async () => {
+    const { toLiveView } = await import("@/api/live");
+    const { live } = await load();
+    live.applyLiveView(
+      toLiveView(
+        mkLiveView({
+          game_id: 900,
+          ended: true,
+          ended_at: "2026-10-07T21:30:00+08:00",
+        }),
+      ),
+    );
+    expect(live.live!.endedAt).toBe("2026-10-07T21:30:00+08:00");
+    expect(live.recap?.ended).toBe(true);
+  });
+});
+
+describe("pollLiveView（拉读对表：totalSeq 变才重建 · 返回是否更新）", () => {
+  it("首拉重建返 true；同号不重建返 false（roster 引用不动）；变号重建返 true；拉读失败静默 false 不动现场", async () => {
+    const { live } = await load();
+    liveApi.apiLiveView.mockReset();
+    liveApi.apiLiveView.mockResolvedValue(vMid(7));
+    await expect(live.pollLiveView(900)).resolves.toBe(true);
+    expect(live.live!.g.id).toBe(900);
+    const before = live.live!.roster;
+    liveApi.apiLiveView.mockResolvedValue(vMid(7)); // 同号
+    await expect(live.pollLiveView(900)).resolves.toBe(false);
+    expect(live.live!.roster).toBe(before); // 没换画面
+    liveApi.apiLiveView.mockResolvedValue(vMid(8));
+    await expect(live.pollLiveView(900)).resolves.toBe(true);
+    expect(live.live!.roster).not.toBe(before);
+    expect(live.liveView!.totalSeq).toBe(8);
+    // ApiError 与 store 同一模块图取（resetModules 后静态导入是另一个类实例，instanceof 会假阴性）
+    const { ApiError } = await import("@/api/http");
+    liveApi.apiLiveView.mockRejectedValue(
+      new ApiError("network", "网络不给力，请稍后再试"),
+    );
+    await expect(live.pollLiveView(900)).resolves.toBe(false);
+    expect(live.liveView!.totalSeq).toBe(8); // 失败不动现场（下一拍再试）
+  });
+  it("viewer 两旗随视图派生：admins 含我 → isFullPower；组织者未知（局簿没有）→ isOrganizer 降级 false", async () => {
+    const { live } = await load();
+    liveApi.apiLiveView.mockReset();
+    liveApi.apiLiveView.mockResolvedValue(
+      mkLiveView({ game_id: 900, admins: [U.me.id, 5] }),
+    );
+    await live.pollLiveView(900);
+    expect(live.liveView!.isFullPower).toBe(true); // 管理员表含我
+    expect(live.liveView!.isOrganizer).toBe(false); // 组织者 -1 降级
+  });
+});
+
+describe("applyStaleView（409 两码携视图对表）", () => {
+  it("live_stale_total / live_stale_court 带 view → 映射重建返 true；他码、不带 view、非 ApiError → false 不动现场", async () => {
+    const { toLiveView } = await import("@/api/live");
+    // ApiError 与 store 同一模块图取（resetModules 后静态导入是另一个类实例，instanceof 会假阴性）
+    const { ApiError } = await import("@/api/http");
+    const { live } = await load();
+    live.applyLiveView(toLiveView(vMid(7)));
+    expect(
+      live.applyStaleView(
+        new ApiError("live_stale_total", "现场已更新", 409, vMid(9)),
+      ),
+    ).toBe(true);
+    expect(live.liveView!.totalSeq).toBe(9);
+    expect(
+      live.applyStaleView(
+        new ApiError("live_stale_court", "现场已更新", 409, vMid(10)),
+      ),
+    ).toBe(true);
+    expect(live.liveView!.totalSeq).toBe(10);
+    expect(
+      live.applyStaleView(
+        new ApiError("live_ended", "球局已结束", 409, vMid(11)),
+      ),
+    ).toBe(false); // 他码不对表
+    expect(
+      live.applyStaleView(new ApiError("live_stale_total", "x", 409)),
+    ).toBe(false); // 不带视图
+    expect(live.applyStaleView(new Error("boom"))).toBe(false); // 非 ApiError
+    expect(live.liveView!.totalSeq).toBe(10); // 现场原样
+  });
+});
+
+describe("startPolling / stopPolling（3s 轮询器）", () => {
+  it("3s 一拍拉读对表、幂等启动不双开、stop 清计时器", async () => {
+    vi.useFakeTimers();
+    try {
+      const { live } = await load();
+      liveApi.apiLiveView.mockReset();
+      liveApi.apiLiveView.mockResolvedValue(vMid(7));
+      live.startPolling(900);
+      live.startPolling(900); // 幂等：同局再调不开第二只计时器
+      expect(liveApi.apiLiveView).not.toHaveBeenCalled(); // 到点才拉（首拍归批5 直调）
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(liveApi.apiLiveView).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(liveApi.apiLiveView).toHaveBeenCalledTimes(3); // 3s 一拍
+      expect(live.liveView!.totalSeq).toBe(7); // 拉到的视图已对表
+      live.stopPolling();
+      await vi.advanceTimersByTimeAsync(9000);
+      expect(liveApi.apiLiveView).toHaveBeenCalledTimes(3); // 停后不再拉
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
