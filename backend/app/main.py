@@ -3,13 +3,14 @@
 账号域（docs/1.1）路由挂在 /api 下；球局等后续业务按规格另行加路由文件，
 不要往本文件堆业务。
 """
+
 from __future__ import annotations
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api.routes import auth, users
+from .api.routes import auth, games, users
 from .core.config import Settings, get_settings
 from .core.errors import ApiError
 from .db.engine import Base, make_session_factory
@@ -44,6 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth.router, prefix="/api")
     app.include_router(users.router, prefix="/api")
+    app.include_router(games.router, prefix="/api")
 
     @app.get("/")
     def root():

@@ -9,6 +9,7 @@
 - 隐私出口：对外只有昵称+小人；同局加尾号 4 位；本人见全号；已注销统一占位。
   全产品展示他人一律经 view()，别处不得直读 Account。
 """
+
 from __future__ import annotations
 
 import json
@@ -37,7 +38,8 @@ NICKNAME_MAX = 16
 
 Viewer = Literal["self", "same_game", "other"]
 
-_ANON_NAME = "已注销球友"
+# 已注销账号的对外占位昵称——跨域展示单一源（账号域 view() 与球局域名单 _person 共用）
+ANON_NAME = "已注销球友"
 
 
 class AccountBook:
@@ -116,7 +118,9 @@ class AccountBook:
             self.keys.revoke_all(account.id)
             if card:
                 if card.get("nickname_set"):
-                    account.nickname = _resolve_nickname(str(card.get("nickname") or ""))
+                    account.nickname = _resolve_nickname(
+                        str(card.get("nickname") or "")
+                    )
                 if card.get("chibi_set"):
                     account.chibi = json.dumps(_validate_chibi(card.get("chibi")))
         else:
@@ -140,7 +144,7 @@ class AccountBook:
         self.keys.revoke_all(account.id)
         account.phone = None  # 释放：同一号将来可注册全新账号（历史不继承）
         account.phone_verified = False
-        account.nickname = _ANON_NAME
+        account.nickname = ANON_NAME
         account.chibi = json.dumps(DEFAULT_CHIBI)
         account.card_bg = None
         account.status = "deactivated"
@@ -200,7 +204,7 @@ class AccountBook:
             # 已注销：任何人（含旧设备）都只见占位形象，尾号也不给
             return {
                 "id": account.id,
-                "name": _ANON_NAME,
+                "name": ANON_NAME,
                 "chibi": dict(DEFAULT_CHIBI),
                 "deactivated": True,
             }

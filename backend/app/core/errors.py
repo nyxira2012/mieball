@@ -1,5 +1,6 @@
 """业务错误 —— 服务层只抛 ApiError(code, message)，路由层统一映射成
 HTTP {\"error\": {code, message}}；前端按 code 分支，不解析中文文案。"""
+
 from __future__ import annotations
 
 from fastapi import HTTPException
@@ -52,7 +53,11 @@ def sms_cooldown(retry_after: int) -> ApiError:
 
 
 def sms_phone_daily() -> ApiError:
-    return ApiError(429, "sms_phone_daily", "这个手机号今天收码次数到上限了，明天再试；收不到码且发码不是你本人操作的，联系平台客服")
+    return ApiError(
+        429,
+        "sms_phone_daily",
+        "这个手机号今天收码次数到上限了，明天再试；收不到码且发码不是你本人操作的，联系平台客服",
+    )
 
 
 def sms_ip_daily() -> ApiError:
@@ -73,3 +78,47 @@ def sms_code_invalid() -> ApiError:
 
 def sms_code_expired() -> ApiError:
     return ApiError(400, "sms_code_expired", "验证码已过期，请重新获取")
+
+
+# ---- 球局域（docs/1.2 技术设计 §2.3；账号域旧码一律不动） ----
+
+
+def game_not_found() -> ApiError:
+    return ApiError(404, "game_not_found", "局不存在")
+
+
+def not_organizer() -> ApiError:
+    return ApiError(403, "not_organizer", "只有组织者能做这个操作")
+
+
+def game_locked() -> ApiError:
+    return ApiError(409, "game_locked", "名单已锁定，不能退出")
+
+
+def join_closed() -> ApiError:
+    return ApiError(422, "join_closed", "这个局已结束或已取消，不能报名")
+
+
+def game_not_open() -> ApiError:
+    return ApiError(422, "game_not_open", "已开打，不能撤局/恢复/修改")
+
+
+def bring_limit() -> ApiError:
+    return ApiError(422, "bring_limit", "最多带 3 人")
+
+
+def deadline_inverted(msg: str = "开打时间必须晚于截止时间") -> ApiError:
+    # 发局的时间拦截共用一个 code（截止不在(现在,开打)内 / 结束早于开打），message 分支说清
+    return ApiError(422, "deadline_inverted", msg)
+
+
+def range_invalid() -> ApiError:
+    return ApiError(422, "range_invalid", "最少人数不能大于最多人数")
+
+
+def visibility_invalid() -> ApiError:
+    return ApiError(422, "visibility_invalid", "可见档取值非法")
+
+
+def intent_slots_empty() -> ApiError:
+    return ApiError(422, "intent_slots_empty", "至少选一个时段")

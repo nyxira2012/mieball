@@ -1,4 +1,5 @@
 """依赖注入 —— 路由与服务之间的薄胶水：会话、服务装配、Bearer 钥匙、客户端 IP。"""
+
 from __future__ import annotations
 
 from fastapi import Depends, Header, Request
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from ..core import errors
 from ..db.models import Account
 from ..services.accounts import AccountBook
+from ..services.games import GameBook
 from ..services.keys import KeyVault
 from ..services.sms import SmsGate
 
@@ -24,9 +26,13 @@ def get_account_book(request: Request, db: Session = Depends(get_db)) -> Account
     return AccountBook(db, SmsGate(db, settings), KeyVault(db))
 
 
+def get_game_book(db: Session = Depends(get_db)) -> GameBook:
+    return GameBook(db)
+
+
 def bearer_token(authorization: str | None = Header(default=None)) -> str | None:
     if authorization and authorization.startswith("Bearer "):
-        return authorization[len("Bearer "):]
+        return authorization[len("Bearer ") :]
     return None
 
 
