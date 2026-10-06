@@ -46,11 +46,17 @@ export const useLiveStore = defineStore("live", () => {
   /** 终局结算待确认快照（2.1 §5）：非空 = EndSettleModal 开着；cur 保持不动 */
   const settling = ref<{ sa: number; sb: number } | null>(null);
 
+  /** 管理员谓词单一源（id ∈ L.admins）：PersonSheet/CheckinSheet/QueueSheet 徽章与全权判定共用 */
+  function isAdmin(id: number): boolean {
+    const L = live.value;
+    return !!L && L.admins.includes(id);
+  }
+
   /** 现场权限单一源（2.2 §4.7）：组织者 ∨ 被封管理员 = 全权（同一套手柄）；
       球友只开放记分/撤分/换人/自己的报到早退与歇连 */
   const isFullPower = computed(() => {
     const L = live.value;
-    return !!L && (isOrg(L.g) || L.admins.includes(U.me.id));
+    return !!L && (isOrg(L.g) || isAdmin(U.me.id));
   });
 
   /** 越权拦截（规格 B1 总账把关）：收权动作入口统一走这里，UI 置灰只是前置 */
@@ -493,6 +499,7 @@ export const useLiveStore = defineStore("live", () => {
     settling,
     myRound,
     isFullPower,
+    isAdmin,
     needFull,
     byId,
     startLive,

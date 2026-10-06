@@ -20,7 +20,9 @@
             <view class="nm"
               >{{ row.name
               }}<text v-if="row.id === U.me.id" class="me-badge">我</text
-              ><text v-if="isAdmin(row.id)" class="badge admin nm-badge"
+              ><text
+                v-if="liveStore.isAdmin(row.id)"
+                class="badge admin nm-badge"
                 >管理员</text
               ></view
             >
@@ -41,7 +43,9 @@
             <view class="nm"
               >{{ row.name
               }}<text v-if="row.id === U.me.id" class="me-badge">我</text
-              ><text v-if="isAdmin(row.id)" class="badge admin nm-badge"
+              ><text
+                v-if="liveStore.isAdmin(row.id)"
+                class="badge admin nm-badge"
                 >管理员</text
               ></view
             >
@@ -98,11 +102,6 @@ defineProps({
 const emit = defineEmits<{ (e: "close"): void }>();
 
 const liveStore = useLiveStore();
-
-/** 管理员标识（admins 单一源在 LiveState，全场看得到） */
-function isAdmin(id: number): boolean {
-  return !!liveStore.live?.admins.includes(id);
-}
 
 /** 未到/迟到的迟到分钟数：floor((now − 开场)/60000)，≤0 显示「未到」（2.1 §2 口径） */
 const lateTxt = computed(() => {

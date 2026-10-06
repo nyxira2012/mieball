@@ -11,7 +11,9 @@
           <view class="ps-meta">
             <view class="ps-nm"
               >{{ p.name
-              }}<text v-if="isAdmin" class="badge admin ps-admin"
+              }}<text
+                v-if="liveStore.isAdmin(personId)"
+                class="badge admin ps-admin"
                 >管理员</text
               ></view
             >
@@ -50,9 +52,11 @@
           <view
             v-if="isOrgViewer"
             class="ps-act"
-            :class="{ 'on-admin': isAdmin }"
+            :class="{ 'on-admin': liveStore.isAdmin(personId) }"
             @click="onAdminToggle"
-            >{{ isAdmin ? "撤掉管理员" : "设为管理员" }}</view
+            >{{
+              liveStore.isAdmin(personId) ? "撤掉管理员" : "设为管理员"
+            }}</view
           >
         </view>
         <view class="ps-link" @click="emit('profile', p.id)"
@@ -141,9 +145,6 @@ const isOrgViewer = computed(() =>
 );
 /** 手柄钮（换人/歇/连/退场）：给自己随时可、给他人需全权 */
 const canOperate = computed(() => full.value || isMe(props.personId));
-const isAdmin = computed(
-  () => !!liveStore.live?.admins.includes(props.personId),
-);
 
 /** 退场：setCheck left（清队列清场上 + toast 在 store），随后关抽屉 */
 function onLeave(): void {
@@ -152,7 +153,7 @@ function onLeave(): void {
 }
 /** 封/撤管理员（toast 与 feed 留痕在 store）；抽屉不关，徽章当场可见 */
 function onAdminToggle(): void {
-  if (isAdmin.value) liveStore.unsetAdmin(props.personId);
+  if (liveStore.isAdmin(props.personId)) liveStore.unsetAdmin(props.personId);
   else liveStore.setAdmin(props.personId);
 }
 

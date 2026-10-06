@@ -22,7 +22,7 @@
           <view class="nm"
             >{{ r.u.name
             }}<text v-if="r.u.shadow" class="badge guest">访客</text
-            ><text v-if="isAdmin(r.id)" class="badge admin nm-badge"
+            ><text v-if="liveStore.isAdmin(r.id)" class="badge admin nm-badge"
               >管理员</text
             ></view
           >
@@ -58,10 +58,6 @@ const emit = defineEmits<{
 }>();
 
 const liveStore = useLiveStore();
-/** 管理员标识（admins 单一源在 LiveState，全场看得到） */
-function isAdmin(id: number): boolean {
-  return !!liveStore.live?.admins.includes(id);
-}
 /** 行数据 computed 一次解析好（模板逐字段 byId 是每行多次名册线性扫描） */
 const rows = computed(() =>
   (liveStore.live?.queue ?? []).map((id) => ({ id, u: liveStore.byId(id) })),
