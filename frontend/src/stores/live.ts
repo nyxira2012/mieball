@@ -12,6 +12,8 @@
    两端并发确认只落一次账（B2）；访客同规（2026-10-07 终裁，无 shadow 留场过滤）。
    2.2 批3b（移植）：休息 skip+=1 叠加可取消；作废按片回队首+feed；找替补 subFirst（按片）；
    换人/作废/替补 feed 留名句（§4.13 访客同规终裁后无「访客让位」句）；先确认在页面层。
+   2.2 批4（散场与底账）：endLive 收局（权限两读=org 独占/admin 代收兜底+在打防线）；
+   底账定格（在场者 leftAt=endedAt）；散场后同局扫码/空降一并拦（§4.2）。
    硬约束：不触碰任何 uni.*；1.2 隔离线：startLive 吃真局对象（Person→伪 User 名册），
    现场改规则/场地只落在 LiveState.g 浅克隆上，不回写 game store 的局。
    名册直接引用球员对象：mock U 同 id 者带出真实战绩对象（结算落回战力榜）。 */
@@ -100,19 +102,45 @@ export const useLiveStore = defineStore("live", () => {
     return !!L && (isOrg(L.g) || isAdmin(U.me.id));
   });
 
+  /** 封存闸（§4.14 现场封存 · 底账定格）：endedAt 有值=已散场，收权动作一律拒——
+      所有 needFull 检查处与 setCheck/togglePerson 的自报免检路径共用；
+      LedgerSheet/closeSettle 等只读动作不拦、endLive 自身幂等不重放 */
+  function sealGate(): boolean {
+    if (live.value?.endedAt) {
+      ui.toast("现场已散 · 不能再操作");
+      return false;
+    }
+    return true;
+  }
+
   /** 越权拦截（规格 B1 总账把关）：收权动作入口统一走这里，UI 置灰只是前置 */
   function needFull(): boolean {
+    if (!sealGate()) return false; // 散场封存先于权限：底账定格后全权也不开写入口
     if (isFullPower.value) return true;
     ui.toast("请找组织者或管理员");
     return false;
   }
-  /** 组织者独占（§4.6 禁止：管理员自己也不能再封管理员） */
+  /** 组织者独占（§4.6 禁止：管理员自己也不能再封管理员）；封存先于组织者权限——
+      散场后底账定格，封/撤管理员也不可再做（§4.14） */
   function needOrg(): boolean {
+    if (!sealGate()) return false;
     const L = live.value;
     if (L && isOrg(L.g)) return true;
     ui.toast("只有组织者能做");
     return false;
   }
+
+  /** 散场权（§4.14 组织者独占 + 兜底）：组织者已标「早退」离场时管理员可代收——
+      否则没人能收局。判的是名册里组织者本人在不在「早退」态（isOrg 只认 viewer 视角，
+      代收场景两者不是同一人）；组织者被移出名册不算早退，不给代收（规格只授了 left 态） */
+  const canEndLive = computed(() => {
+    const L = live.value;
+    if (!L) return false;
+    return (
+      isOrg(L.g) ||
+      (isAdmin(U.me.id) && pById(L, L.g.organizer.id)?.check === "left")
+    );
+  });
 
   /** 战报 feed（unshift 新到旧）：句子在动作处拼好（含操作者），LiveTopbar 轮播消费 */
   function feedPush(sentence: string): void {
@@ -270,7 +298,11 @@ export const useLiveStore = defineStore("live", () => {
       列表缓存没有该局（或没带全量名单）就拉详情，找不到提示后不动现场；
       已结束的局（done/terminated/cancelled 终态）扫码禁入——散场后二维码不能用（§4.2 本批拦截）。 */
   async function ensureLive(id: number): Promise<void> {
-    if (live.value && live.value.g.id === id) return;
+    if (live.value && live.value.g.id === id) {
+      // 已散场的同局扫码也拦（§4.2：现场封存二维码失效）；live 态保留，不重建不重进
+      if (live.value.endedAt) ui.toast("球局不存在或已结束");
+      return;
+    }
     const gs = useGameStore();
     let g = gs.findGame(id);
     if (!g || !g.entries?.length) {
@@ -327,6 +359,7 @@ export const useLiveStore = defineStore("live", () => {
     const L = live.value;
     const p = L ? pById(L, id) : undefined;
     if (!L || !p) return;
+    if (!sealGate()) return; // 散场后自己也不能报到/早退（自报免 needFull 的路径同受封存闸）
     if (id !== U.me.id && !needFull()) return;
     const was = p.check; // 发牌只由「新到场」驱动：已在场的人重报（迟到再点/重复扫）不重发
     if (st === "ok" || st === "late") {
@@ -398,6 +431,7 @@ export const useLiveStore = defineStore("live", () => {
     const L = live.value;
     const p = L ? pById(L, id) : undefined;
     if (!L || !p) return;
+    if (!sealGate()) return; // 散场后歇/连也封：自报免 needFull 的路径同受封存闸
     if (id !== U.me.id && !needFull()) return;
     if (k === "unskip") {
       p.skip = 0;
@@ -457,7 +491,8 @@ export const useLiveStore = defineStore("live", () => {
   async function arriveMe(gameId: number): Promise<string | null> {
     await ensureLive(gameId);
     const L = live.value;
-    if (!L || L.g.id !== gameId) return null; // ensureLive 已 toast 兜底
+    // 散场后 live 态保留（g.id 仍同局）——endedAt 有值即封存，扫码链路到此也拦（§4.2）
+    if (!L || L.g.id !== gameId || L.endedAt) return null; // ensureLive 已 toast 兜底
     const myId = U.me.id;
     let p = pById(L, myId);
     if (!p) {
@@ -778,6 +813,40 @@ export const useLiveStore = defineStore("live", () => {
     ui.toast("牌已发 · 按当前规则排好");
   }
 
+  /** 散场两道闸（§4.14，页面按钮与执行共用同一道——防线必须在确认与执行之前）：
+      ①权限（canEndLive：org 独占 / admin 代收兜底）先于②防线（任一片 A/B 非空=在打先拦）；
+      拦下即 toast 说明，过闸才放行确认弹层与执行 */
+  function endGate(): boolean {
+    const L = live.value;
+    if (!L || !canEndLive.value) {
+      ui.toast("只有组织者能收局");
+      return false;
+    }
+    if (L.courts.some((c) => c.A.length || c.B.length)) {
+      ui.toast("还有片在打 · 先收局或作废");
+      return false;
+    }
+    return true;
+  }
+
+  /** 散场收局（§4.14）：endGate 过闸 → endedAt 落 → 底账定格——已到未走者 leftAt=endedAt
+      （几点到几点走齐了，摊钱有据；早退者保留自己的离场时刻，未到者 arriveAt 本就空，
+      被移出者不在名册不碰、removedAt 留痕原样）→ feed 留封存句。live 态保留（LedgerSheet 要查），
+      endedAt 有值 = 封存：ensureLive/arriveMe 据此拦、散场钮隐藏。已封存直调不重放 */
+  function endLive(): void {
+    const L = live.value;
+    if (!L || L.endedAt || !endGate()) return;
+    const at = toIso(new Date());
+    L.endedAt = at;
+    for (const p of L.roster)
+      if (isArrived(p.check) && !p.leftAt) {
+        p.leftAt = at;
+        touchLedger(p.id, { leftAt: at });
+      }
+    feedPush("现场已散 · 二维码失效");
+    ui.toast("已散场 · 底账定格");
+  }
+
   /** 名册按找（视图层 byId 的共享口径） */
   function byId(id: number): User {
     const L = live.value;
@@ -803,6 +872,8 @@ export const useLiveStore = defineStore("live", () => {
     isFullPower,
     isAdmin,
     needFull,
+    canEndLive,
+    endGate,
     byId,
     startLive,
     ensureLive,
@@ -827,5 +898,6 @@ export const useLiveStore = defineStore("live", () => {
     setRuleMode,
     setCourtsInput,
     autoDeal,
+    endLive,
   };
 });

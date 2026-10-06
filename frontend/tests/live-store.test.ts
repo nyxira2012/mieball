@@ -1139,3 +1139,141 @@ describe("2.2 批3b 移植：找替补 subFirst / 换人 feed 留名句", () => 
     expect(L.feed[0]).toBe("我 把 亮马河快攻 换下 · 帮手·1 上");
   });
 });
+
+describe("2.2 批4 散场与底账：endLive / 底账定格 / 扫码拦（§4.14 · §4.2）", () => {
+  it("endLive guard 矩阵：球友拒、组织者在场时管理员拒（「只有组织者能收局」）；组织者已早退 → 管理员代收可", async () => {
+    const { live, ui } = await load();
+    live.startLive(g101()); // 我非组织者（wang 组织），三片全空
+    const L = live.live!;
+    const orgId = L.g.organizer.id;
+    expect(live.canEndLive).toBe(false);
+    live.endLive(); // 球友
+    expect(L.endedAt).toBeUndefined();
+    expect(ui.toastMsg).toBe("只有组织者能收局");
+    L.admins.push(U.me.id);
+    live.endLive(); // 管理员 · 组织者还在场（absent）
+    expect(L.endedAt).toBeUndefined();
+    expect(ui.toastMsg).toBe("只有组织者能收局");
+    live.setCheck(orgId, "left"); // 组织者标早退（管理员代办）
+    expect(live.canEndLive).toBe(true);
+    live.endLive(); // 代收兜底：否则没人能收局
+    expect(L.endedAt).toBeTruthy();
+    expect(ui.toastMsg).toBe("已散场 · 底账定格");
+  });
+  it("防线（§4.14 禁止还有片在打直接散）：在打时拦「还有片在打 · 先收局或作废」不出 endedAt；作废后过闸收局", async () => {
+    const { live, ui } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    arrive(live); // 片 0 在打
+    live.endLive();
+    expect(L.endedAt).toBeUndefined();
+    expect(ui.toastMsg).toBe("还有片在打 · 先收局或作废");
+    for (const p of L.roster) live.setCheck(p.id, "left"); // 全员早退清片（作废会原地重发、空不出片）
+    live.endLive(); // 过两道闸（权限+防线）→ 执行（确认流的执行步）
+    expect(L.endedAt).toBeTruthy();
+  });
+  it("底账定格（§4.14）：已到未走者 leftAt=endedAt、早退者保留自己时刻、移出留痕不复活、未到者空着；访客挂担保人", async () => {
+    const { live, ui } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    const [me, li, guest, bei] = L.roster;
+    for (const p of [me, li, guest]) live.setCheck(p.id, "ok"); // 3 人到场（<4 不开片）
+    live.setCheck(li.id, "left"); // li 早退（我是组织者，代办合法）
+    const liLeftAt = li.leftAt!;
+    live.removeFromRoster(bei.id); // 未到的 bei 被移出 → 底账行留痕
+    live.endLive();
+    expect(L.endedAt).toBeTruthy();
+    expect(L.feed[0]).toBe("现场已散 · 二维码失效");
+    expect(ui.toastMsg).toBe("已散场 · 底账定格");
+    const row = (id: number) => L.ledger.find((r) => r.id === id)!;
+    expect(me.leftAt).toBe(L.endedAt); // 几点到几点走齐了
+    expect(row(me.id).leftAt).toBe(L.endedAt);
+    expect(row(guest.id).leftAt).toBe(L.endedAt);
+    expect(row(guest.id).guarantor).toBe(U.li.name); // 访客是谁带的
+    expect(row(li.id).leftAt).toBe(liLeftAt); // 早退时刻不被覆盖
+    expect(li.leftAt).toBe(liLeftAt);
+    expect(row(bei.id).removedAt).toBeTruthy(); // 移出留痕
+    expect(row(bei.id).leftAt).toBeUndefined(); // 移出者不落离场
+    expect(row(bei.id).arriveAt).toBeUndefined(); // 未到者到时刻空着
+  });
+  it("散场后扫码拦（§4.2）：ensureLive 同局 toast「球局不存在或已结束」、arriveMe 拦回 null；现场态保留可查、重复收局不重放", async () => {
+    const { live, ui } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    live.setCheck(U.me.id, "ok"); // 1 人到场，无片在打
+    live.endLive();
+    const feedLen = L.feed.length;
+    await live.ensureLive(102); // 散场后同局再扫
+    expect(ui.toastMsg).toBe("球局不存在或已结束");
+    expect(L.endedAt).toBeTruthy(); // live 态保留：底账抽屉还查得到
+    expect(L.ledger).toHaveLength(4);
+    expect(await live.arriveMe(102)).toBeNull(); // 扫码进场同链路被拦
+    live.endLive(); // 已封存直调不重放
+    expect(L.feed).toHaveLength(feedLen);
+  });
+  it("封存闸（§4.14 底账定格）：散场后自报 setCheck（报到/早退）与歇连被拒「现场已散 · 不能再操作」——定格时刻不被改写", async () => {
+    const { live, ui } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    live.setCheck(U.me.id, "ok"); // 过开球归一迟到 · 我 1 人候场，无片在打
+    live.endLive();
+    const endedAt = L.endedAt!;
+    expect(endedAt).toBeTruthy();
+    const meP = L.roster.find((p) => p.id === U.me.id)!;
+    live.setCheck(U.me.id, "left"); // 散场后自己也不能早退
+    expect(meP.check).toBe("late"); // 未改成
+    expect(meP.leftAt).toBe(endedAt); // 定格的离场时刻不被改写
+    live.setCheck(U.me.id, "ok"); // 散场后自己也不能再报到
+    expect(meP.check).toBe("late");
+    expect(L.queue).toEqual([U.me.id]); // 队位不动
+    live.togglePerson(U.me.id, "skip"); // 歇连同封（同一自报免检路径）
+    expect(meP.skip).toBeFalsy();
+    expect(ui.toastMsg).toBe("现场已散 · 不能再操作");
+  });
+  it("封存闸（§4.14）：散场后收权动作（带访客/自动排阵/改规则/改分制）一律拒——全权在手也封", async () => {
+    const { live, ui } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    live.setCheck(U.me.id, "ok"); // 我候场（无片在打才能收局）
+    live.addGuests(2, "帮手", U.me); // 候场 3 人，不够一片不开打
+    live.endLive(); // 收局 → 底账定格
+    const ledgerLen = L.ledger.length;
+    live.addGuests(1, "散场客", U.me);
+    expect(L.roster).toHaveLength(6); // 无人进册
+    expect(L.ledger).toHaveLength(ledgerLen); // 底账不加行
+    live.autoDeal(); // 自动排阵重发牌
+    expect(L.courts.every((c) => !c.A.length && !c.B.length)).toBe(true); // 不重发
+    expect(L.queue).toHaveLength(3); // 候场不被吞
+    live.setRules({ champCap: 5 });
+    expect(L.rules.champCap).toBe(3); // 四件套不动
+    live.setRuleScore(21);
+    expect(L.g.scoring).toBe(11); // 分制不动
+    expect(ui.toastMsg).toBe("现场已散 · 不能再操作");
+  });
+  it("底账入口散场后可查（§4.14 底账留给事后摊钱）：isFullPower 不含封存——live.vue onLedger 走纯权限闸不被拦", async () => {
+    const { live } = await load();
+    live.startLive(g102());
+    live.setCheck(U.me.id, "ok"); // 候场无片在打，可收局
+    live.endLive();
+    expect(live.live!.endedAt).toBeTruthy(); // 已封存
+    expect(live.isFullPower).toBe(true); // 权限单一源不被封存改写 → onLedger 的 full 闸仍可过
+    expect(live.live!.ledger.length).toBeGreaterThan(0); // 底账定格留现场态可查
+  });
+  it("封存闸（§4.14）：散场后组织者封/撤管理员被拒「现场已散 · 不能再操作」——admins 名单定格", async () => {
+    const { live, ui } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    const [, li, , bei] = L.roster;
+    live.setCheck(U.me.id, "ok"); // 候场无片在打，可收局
+    live.setAdmin(li.id); // 散场前封得上
+    expect(L.admins).toEqual([li.id]);
+    live.endLive();
+    const feedLen = L.feed.length;
+    live.setAdmin(bei.id); // 散场后再封被拒
+    expect(L.admins).toEqual([li.id]);
+    live.unsetAdmin(li.id); // 散场后再撤也被拒
+    expect(L.admins).toEqual([li.id]); // 定格不动
+    expect(ui.toastMsg).toBe("现场已散 · 不能再操作");
+    expect(L.feed).toHaveLength(feedLen); // 无新留痕
+  });
+});

@@ -14,16 +14,27 @@
           <text class="chip ok">{{ orgChip }}</text>
         </view>
       </view>
-      <!-- 签到二维码（原型 qrbtn：三个角框 + 三粒点；svg 不可进 uni 模板 → view 绘制） -->
-      <view class="qrbtn" @click="emit('qr')">
-        <view class="qr-ic">
-          <view class="qr-box tl" /><view class="qr-box tr" /><view
-            class="qr-box bl"
-          />
-          <view class="qr-dot d1" /><view class="qr-dot d2" /><view
-            class="qr-dot d3"
-          />
+      <!-- 右侧动作列：签到二维码（原型 qrbtn）＋ 底账/散场（2.2 批4：散场钮全权可见——
+           管理员点它得「只有组织者能收局」（§5 验收），组织者已早退时管理员靠它代收；
+           散场后现场封存，钮隐藏，底账仍可查） -->
+      <view class="top-acts">
+        <view class="qrbtn" @click="emit('qr')">
+          <view class="qr-ic">
+            <view class="qr-box tl" /><view class="qr-box tr" /><view
+              class="qr-box bl"
+            />
+            <view class="qr-dot d1" /><view class="qr-dot d2" /><view
+              class="qr-dot d3"
+            />
+          </view>
         </view>
+        <view v-if="full" class="mini-act" @click="emit('ledger')">底账</view>
+        <view
+          v-if="full && !L.endedAt"
+          class="mini-act danger"
+          @click="emit('end')"
+          >散场</view
+        >
       </view>
     </view>
 
@@ -74,7 +85,12 @@ import { isOrg, MODE_NAMES } from "@/utils/format";
 import { pById } from "@/utils/rotate";
 import { U } from "@/api";
 
-const emit = defineEmits<{ (e: "qr"): void; (e: "rules"): void }>();
+const emit = defineEmits<{
+  (e: "qr"): void;
+  (e: "rules"): void;
+  (e: "ledger"): void;
+  (e: "end"): void;
+}>();
 
 const liveStore = useLiveStore();
 const L = computed(() => liveStore.live);
@@ -248,6 +264,36 @@ const curTick = computed(
   box-shadow: 0 0 0 0 rgba(255, 90, 54, 0.6);
   animation: pulse 1.6s infinite;
 }
+/* 右侧动作列：qrbtn 下方叠 底账/散场 小钮（mono 小字胶囊，同徽章语言） */
+.top-acts {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.mini-act {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  color: var(--dim);
+  border: 1px solid rgba(245, 241, 232, 0.16);
+  border-radius: 9px;
+  padding: 4px 8px;
+  text-align: center;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.mini-act:active {
+  transform: scale(0.94);
+}
+/* 散场=危险动作位：珊瑚色示警（确认流在页面层，A3） */
+.mini-act.danger {
+  color: var(--coral);
+  border-color: rgba(255, 90, 54, 0.4);
+  background: rgba(255, 90, 54, 0.08);
+}
+
 /* 二维码钮（原型 qrbtn svg 的 view 等价：3 角框 + 3 粒点） */
 .qrbtn {
   flex: none;

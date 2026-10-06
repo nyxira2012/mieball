@@ -265,6 +265,7 @@ export interface LiveState {
   admins: number[]; // 被封管理员 id（现场态，不回写 g；isFullPower = org ∨ 本表）
   feed: string[]; // 战报事件句（unshift 新到旧；句子在动作处拼好、含操作者，LiveTopbar 轮播消费）
   startedAt: string; // 现场点亮时刻（startLive 落 ISO；批4 底账定格/散场消费）
+  endedAt?: string; // 散场时刻（endLive 落 ISO）：有值=现场封存、二维码失效（§4.14）；live 态保留供底账查
   ledger: LedgerRow[]; // 出勤底账（动作处同步写：touchLedger 单点；移出/空降行留痕）
   rules: RotationRules; // 2.4 轮换四件套（startLive 起必挂：自选前 down 跟推荐走）
   courtSeqNext: number; // 上场先后序发号器（courtSeq 的源——资历并列的 tiebreak）

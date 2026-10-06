@@ -3,19 +3,36 @@
        码图为前端演示图（真码后端接）——照原型 drawQr 的伪随机图案，rand 混入 g.id 作 seed 确定性渲染。 -->
   <view class="qrwrap" :class="{ on: visible }" @click="emit('close')">
     <view class="qr-card" @click.stop="emit('close')">
-      <view class="qr-box">
+      <!-- 散场后不出示码（§4.2/§4.14：现场封存二维码失效），原位换失效句 -->
+      <view v-if="ended" class="qr-dead">现场已散 · 二维码失效</view>
+      <view v-else class="qr-box">
         <!-- 三个定位角（7 格外框深 / 5 格奶油 / 3 格深，原型 finder 逐字） -->
-        <view v-for="(f, i) in finders" :key="`f${i}`" class="finder" :style="{ left: f.l + 'px', top: f.t + 'px' }">
+        <view
+          v-for="(f, i) in finders"
+          :key="`f${i}`"
+          class="finder"
+          :style="{ left: f.l + 'px', top: f.t + 'px' }"
+        >
           <view class="f2"><view class="f3" /></view>
         </view>
         <!-- 数据点：非定位角区 rand>0.52 落深格 -->
-        <view v-for="(d, i) in dots" :key="`d${i}`" class="cell" :style="{ left: d.l + 'px', top: d.t + 'px' }" />
+        <view
+          v-for="(d, i) in dots"
+          :key="`d${i}`"
+          class="cell"
+          :style="{ left: d.l + 'px', top: d.t + 'px' }"
+        />
       </view>
     </view>
     <view class="qr-meta">
       <view class="n">{{ metaName }}</view>
-      <view class="s">已到场 {{ arrived }} 人 · LIVE</view>
-      <view class="hint">扫码签到进场 · <text class="hi">没报名的空降也扫这码</text></view>
+      <view v-if="ended" class="s">扫码无效 · 球局不存在或已结束</view>
+      <template v-else>
+        <view class="s">已到场 {{ arrived }} 人 · LIVE</view>
+        <view class="hint"
+          >扫码签到进场 · <text class="hi">没报名的空降也扫这码</text></view
+        >
+      </template>
       <view class="s s2">点一下关闭</view>
     </view>
   </view>
@@ -24,25 +41,27 @@
 <script setup lang="ts">
 /* 二维码浮层（2.1 §2 扫码签到）：无本地态——已到场人数实时读 roster，码图 seed=g.id 确定性
    （同一局每次打开同一张图，computed 即「生成一次」，id 局内不变）。svg 不可进 uni 模板 → view 网格。 */
-import { computed } from 'vue';
-import { useLiveStore, isArrived } from '@/stores/live';
+import { computed } from "vue";
+import { useLiveStore, isArrived } from "@/stores/live";
 
 defineProps({
   visible: { type: Boolean, default: false },
 });
-const emit = defineEmits<{ (e: 'close'): void }>();
+const emit = defineEmits<{ (e: "close"): void }>();
 
 const liveStore = useLiveStore();
 
 /** 局名 + 场馆 */
 const metaName = computed(() => {
   const g = liveStore.live?.g;
-  if (!g) return '';
+  if (!g) return "";
   return g.venueName ? `${g.name} ${g.venueName}` : g.name;
 });
 const arrived = computed(
   () => (liveStore.live?.roster ?? []).filter((p) => isArrived(p.check)).length,
 );
+/** 散场封存态：endedAt 有值即不再出示码（§4.14 现场封存） */
+const ended = computed(() => !!liveStore.live?.endedAt);
 
 /* ---------- 假码图案（原型 drawQr：n=25 cell=8 pad=2；rand 混入 g.id 作 seed） ---------- */
 const N = 25;
@@ -62,8 +81,10 @@ const dots = computed<{ l: number; t: number }[]>(() => {
   const out: { l: number; t: number }[] = [];
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
-      const inFinder = (x < 8 && y < 8) || (x > N - 9 && y < 8) || (x < 8 && y > N - 9);
-      if (!inFinder && rand(x, y) > 0.52) out.push({ l: (PAD + x) * CELL, t: (PAD + y) * CELL });
+      const inFinder =
+        (x < 8 && y < 8) || (x > N - 9 && y < 8) || (x < 8 && y > N - 9);
+      if (!inFinder && rand(x, y) > 0.52)
+        out.push({ l: (PAD + x) * CELL, t: (PAD + y) * CELL });
     }
   }
   return out;
@@ -86,7 +107,9 @@ const dots = computed<{ l: number; t: number }[]>(() => {
   opacity: 0;
   visibility: hidden; /* backdrop-filter 对 opacity:0 照样生效，须连 visibility 一起收（同 EndSettleModal mmask） */
   pointer-events: none;
-  transition: 0.22s, visibility 0.22s;
+  transition:
+    0.22s,
+    visibility 0.22s;
   cursor: pointer;
 }
 .qrwrap.on {
@@ -105,6 +128,20 @@ const dots = computed<{ l: number; t: number }[]>(() => {
   height: 232px;
   background: var(--cream);
   overflow: hidden;
+}
+/* 失效态：码原位换一句（同码面尺寸，卡片不跳形） */
+.qr-dead {
+  width: 232px;
+  height: 232px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+  opacity: 0.7;
 }
 /* 定位角：7×7 深外框 → 5×5 奶油 → 3×3 深（嵌套缩进 1 格） */
 .finder {
