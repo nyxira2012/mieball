@@ -39,7 +39,10 @@ export interface User {
   skip?: number; // 剩余歇轮数：歇两轮=2（2.1 文档+原型「候场区点人可设歇两轮」）。
   // 发牌时每次递减 1（rotate.ts avail），归 0 自动归队；0=不在歇
   fire?: boolean; // 连战：排到队首，与歇互斥（alpha:1631-1633）
+  courtSeq?: number; // 现场态 · 上场先后序（LiveState.courtSeqNext 递增发放；2.4 资历并列时先上的先下）
+  tenure?: number; // 现场态 · 连续在场场数（上场=0 起，每结束一场 +1，下场清 0——2.4 N人下按此排「待得最久」）
 }
+
 
 /** alpha:762 recentStats（我的页运动数据条） */
 export interface RecentStats {
@@ -195,10 +198,34 @@ export interface Bill {
   payers?: BillPayer[]; // 该收按人明细，org 行才有；不含我自己
 }
 
-/** 场上待打的一片：A/B 两队（存玩家 id） */
+/** 谁下（2.4 §4.1 四件套之二）：全上全下 / 输家下 / 1、2、3人下（单打只有 all/loser） */
+export type DownMode = "all" | "loser" | "n1" | "n2" | "n3";
+
+/** 怎么配（仅双打）：按候场队序 / 均衡配对（2.4 §4.5） */
+export type PairingMode = "queue" | "balance";
+
+/** 现场轮换四件套（2.4 §4.1）：谁能改=全权者（2.2 已定），点选即生效、在打对局照旧打完 */
+export interface RotationRules {
+  singles: boolean; // 全场统一单双打（true=单打）；默认双打
+  down: DownMode; // 谁下；未自选时跟推荐走，「不荐」时挂 'all' 占位
+  downChosen: boolean; // 组织者自选过「谁下」即 true，此后推荐只亮标签不替改
+  pairing: PairingMode; // 怎么配；默认按候场队序
+  champCap: number; // 连庄上限（仅输家下显示/生效）；默认 3，0=不限
+}
+
+/** 场上待打的一片：A/B 两队（存玩家 id）。
+    2.4 批1 起新引擎追加可选字段（新旧引擎共存期全加法式，批2 删旧引擎后翻必填）：
+    id/name 归 store 建片，singles/sa/sb/streak 归并行引擎。 */
 export interface LiveCourt {
   A: number[];
   B: number[];
+  id?: number; // 片序 0..n-1（并行模型键，endMatch 按此定位）
+  name?: string; // 场地号（'3号'；未登记回退序号场）
+  singles?: boolean; // 本片当前对局格式（换单双打过渡期可 ≠ rules.singles）
+  sa?: number;
+  sb?: number;
+  streakA?: number; // 连庄数——跟半边不跟人（手动换人不动连庄，2.4 §4.9）
+  streakB?: number;
 }
 
 /** 进行中的一场（live.cur 记分板） */
@@ -231,6 +258,8 @@ export interface LiveState {
   last?: "a" | "b"; // 最后得分方（undoPoint 回退用，alpha:1677/1682）
   admins: number[]; // 被封管理员 id（现场态，不回写 g；isFullPower = org ∨ 本表）
   feed: string[]; // 战报事件句（unshift 新到旧；句子在动作处拼好、含操作者，LiveTopbar 轮播消费）
+  rules?: RotationRules; // 2.4 轮换四件套（批1 过渡期可选，批2 store 重写后翻必填）
+  courtSeqNext?: number; // 上场先后序发号器（courtSeq 的源——资历并列的 tiebreak）
 }
 
 /** 分制（alpha:850 scoreMode 默认 elo） */

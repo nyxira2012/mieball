@@ -1,7 +1,7 @@
 /* 球局基础工具（alpha:881-892 · 意向卡 slotBig alpha:1023-1024）
    1.2 接线清账：人头/剩坑/人均/forced/名单谓词全改读后端定值（A4 画面不自算），
    本文件只剩文案表、卡面映射（newGameCard/mockGameCard）与少量无数据可依的纯展示口径。 */
-import type { ChibiConfig, CourtMode, Game, GameCardModel, GameStatus, MockGame } from '@/api/types';
+import type { ChibiConfig, CourtMode, DownMode, Game, GameCardModel, GameStatus, MockGame, PairingMode } from '@/api/types';
 import { U, slots } from '@/mock/data';
 import { isoDay, isoHm, splitGameTime } from '@/utils/time';
 
@@ -11,6 +11,19 @@ export const MODE_NAMES: Record<CourtMode, string> = { winner: '赢家留场', r
 
 /** 得分规则名单一源（MODE_NAMES 同族）：LaunchSheet 规则三件与 detail 规则牌共用 */
 export const SCORE_RULE_NAMES: Record<'rally' | 'serve', string> = { rally: '每球得分制', serve: '发球得分制' };
+
+/** 谁下五式名单一源（2.4 §4.1 四件套之二；单打只有 all/loser）。
+    与 MODE_NAMES 并列新表、不并入——3.2 面仍消费 MODE_NAMES，批3 旧抽屉删后再清账 */
+export const DOWN_NAMES: Record<DownMode, string> = {
+  all: '全上全下',
+  loser: '输家下',
+  n1: '1人下',
+  n2: '2人下',
+  n3: '3人下',
+};
+
+/** 怎么配名单一源（仅双打显示，2.4 §4.5） */
+export const PAIRING_NAMES: Record<PairingMode, string> = { queue: '按候场队序', balance: '均衡配对' };
 
 /** 视图 7 态 ↔ 文案（单一源=后端 derive；先例 MODE_NAMES/BILL_STATUS_NAMES） */
 export const GAME_STATUS_NAMES: Record<GameStatus, string> = {
