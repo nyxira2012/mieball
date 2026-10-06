@@ -1,9 +1,11 @@
 <template>
-  <!-- 订场登记 / 锁定必打（3.2 订场改版）：三态锁共用的面板——
-       没锁 →「锁定必打（不订场）」上手动空锁（今天的行为）；
+  <!-- 订场登记 / 锁定必打（3.2 订场改版 · 4.7）：三态锁共用的面板——
+       没锁 →「锁定必打（不订场）」上手动空锁，二段确认（人数不够也照开、不可解锁）后才落；
        填了场地号+总价 → 保存即订场锁（必开 + 费用落定 + 场地号告诉大家），不用再点一次锁定；
-       已订场 → 面板可重开改登记（退一片删一个号、总价改成退完后实际花的钱）或清空。
-       组装全用公共件（AppField/AppInput/AppButton）；动作走 game store（bookCourt/clearBooking/lockGame，toast 在 store 内）。 -->
+       已订场 → 面板随时可重开改登记（退一片删一个号、总价改成退完后实际花的钱）或清空；
+       截止后名单已锁面板仍可改——临到场场馆换号很常见，锁名单只锁人。
+       组装全用公共件（AppField/AppInput/AppButton）；动作走 game store（bookCourt/clearBooking/lockGame，toast 在 store 内）。
+       人均口径：输入中的 ¥ 预览是现场换算（Math.round=后端 half-up 同口径），保存后以回填 game.perHead 定值为准（A4）。 -->
   <view v-if="g" class="bks">
     <view class="sheet-t">锁定必打 · 订场登记</view>
     <view class="sheet-hint">订了场这局就必开 · 场地号和总价随时可改，退一片就删一个号、照小票改总价</view>
@@ -23,19 +25,27 @@
       <view class="sub fh">{{ feeHint }}</view>
     </AppField>
 
+    <!-- 空锁二段确认的第一段提示（4.7 原话：一锁不撤、不可解锁，只能撤局） -->
+    <view v-if="sureArmed && !courts.length" class="sub sure-warn">
+      锁上后人数不够也照开，且不能解锁（只能撤局）
+    </view>
+
     <view class="btns">
       <!-- 有登记才有清空（全退光：局回未订场原样，手动锁不跟着松） -->
       <AppButton v-if="hasBooking" variant="ghost" class="flex1 clear-btn" @click="onClear">清空登记</AppButton>
-      <AppButton v-if="courts.length" variant="pri" class="flex1" @click="onSave">保存 · 已订场必开</AppButton>
-      <!-- 空锁：已手动锁定则不再出现 -->
-      <AppButton v-else-if="!g.manualLock" variant="pri" class="flex1" @click="onSure">🔒 锁定必打（不订场）</AppButton>
+      <AppButton v-if="courts.length" variant="pri" class="flex1" :disabled="busy" @click="onSave">保存 · 已订场必开</AppButton>
+      <!-- 空锁：已手动锁定则不再出现；点第一下只出确认，再点才落锁 -->
+      <template v-else-if="!g.manualLock">
+        <AppButton v-if="sureArmed" variant="ghost" class="flex1" :disabled="busy" @click="sureArmed = false">再想想</AppButton>
+        <AppButton variant="pri" class="flex1" :disabled="busy" @click="onSureTap">{{ busy ? '锁定中…' : '确认锁定必打' }}</AppButton>
+      </template>
     </view>
     <view v-if="!courts.length && g.manualLock" class="sub sure-note">已手动锁定必打 · 填场地号和总价可升级为「已订场」</view>
   </view>
 </template>
 
 <script setup lang="ts">
-/* 订场登记 BookingSheet（3.2 订场改版；1.2 调用点适配：async + lockGame 改名，面板重排归批5）。
+/* 订场登记 BookingSheet（3.2 订场改版 · 1.2 调用点适配：async + lockGame 改名 + 空锁二段确认）。
    场地号解析：顿号/逗号/空格/斜杠分隔，去空格去重保序——片数不单独填，就是识别出的个数。
    每次打开按当前登记带出原值（SheetHost 按 type 分发，关闭即卸载重挂）。 */
 import { computed, ref } from 'vue';
@@ -109,9 +119,16 @@ async function onSave(): Promise<void> {
   }
 }
 
-/** 空锁：store.lockGame（对齐后端 /lock） */
-async function onSure(): Promise<void> {
+/** 空锁二段确认（4.7：点空锁先确认一句，直落太重——锁上一锁不撤）：第一下只点亮确认态 */
+const sureArmed = ref(false);
+
+/** 空锁第二段才真落锁（store.lockGame，对齐后端 /lock） */
+async function onSureTap(): Promise<void> {
   if (!g.value || busy.value) return;
+  if (!sureArmed.value) {
+    sureArmed.value = true;
+    return;
+  }
   busy.value = true;
   try {
     await game.lockGame(g.value.id);
@@ -167,5 +184,11 @@ async function onClear(): Promise<void> {
   color: var(--ice);
   font-size: 11px;
   margin-top: 10px;
+}
+/* 空锁二段确认的警示行（4.7 原话；coral 小字同 ConfirmSheet warnline 家族） */
+.sure-warn {
+  color: var(--coral);
+  font-size: 12px;
+  margin-bottom: 10px;
 }
 </style>

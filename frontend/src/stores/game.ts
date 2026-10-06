@@ -256,7 +256,7 @@ export const useGameStore = defineStore('game', () => {
     const name = intents.value.find((i) => i.account.id === accountId)?.account.nickname;
     await track(() => apiInviteUser(gameId, accountId));
     ui.toast(name ? `已邀请 ${name} · 局已出现在 ta 的「我的局」` : '已邀请 · 局已出现在 ta 的「我的局」');
-    await loadIntents(); // 已邀标记刷新（批4 先把数据对上，排序 UI 归批5）
+    await loadIntents(); // 已邀标记与排序刷新（排序单一源=后端：未邀在前、已邀靠后，前端保持该序）
   }
 
   /* ---- 意向簿 ---- */

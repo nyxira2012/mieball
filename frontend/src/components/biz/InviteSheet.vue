@@ -3,7 +3,8 @@
        · mode='to-game'（alpha.html:1213-1220 inviteFromGame）：局详情翻意向列表挑人邀请进该局；
        · mode='to-slot'（alpha.html:1239-1247 inviteSheet）：球员档案翻我发起的局挑一个邀请该用户。
        选中 → game.inviteUser(gameId, accountId)（toast 在 store）→ 关弹层。
-       1.2 调用点适配：意向吃真接口新形状（known 打过徽章/已邀标），已邀靠后排序归批5。 -->
+       1.2 调用点适配：意向吃真接口新形状（known 打过徽章/已邀标）；
+       已邀靠后排序单一源=后端（未邀在前、已邀靠后，各自 updated_at 倒序），前端保持该序不重排。 -->
   <view v-if="bodyOk" class="iv">
     <!-- ===== to-game：翻意向列表（alpha:1216-1220） ===== -->
     <template v-if="mode === 'to-game' && g">

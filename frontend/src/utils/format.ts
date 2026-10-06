@@ -36,6 +36,17 @@ export const isOrg = (g: Game): boolean => !!g.my?.isOrganizer;
 export const gameTapAction = (g: Game): 'join' | 'detail' =>
   !!g.my?.invited && !g.my?.myEntry ? 'join' : 'detail';
 
+/** 我的局里终局行的显示分派（meet 死局区三分，4.8/4.9/4.10）：
+    pending=组织者待处置卡（锁必打/撤局两出口）；terminated=组织者未成局卡（恢复/撤局）或
+    参加者当日灰字行；cancelled=参加者灰字行（组织者撤局不留痕，后端本就不回，防御）。
+    「当日」口径在后端 mine（读时过滤、次日不返回），前端只管渲染不判日期。 */
+export const deadRowKind = (g: Game): 'pending' | 'restore' | 'gray' | null => {
+  if (g.status === 'pending') return isOrg(g) ? 'pending' : null;
+  if (g.status === 'terminated') return isOrg(g) ? 'restore' : 'gray';
+  if (g.status === 'cancelled') return isOrg(g) ? null : 'gray';
+  return null;
+};
+
 /** 自动局名「日段 · 场馆末段」单一源（不填名时的兜底名）：LaunchSheet 占位/发布共用，
     改规则只动这里，预览名与落库名不会劈叉 */
 export const autoGameName = (time: string, venue: string): string =>

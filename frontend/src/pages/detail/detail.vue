@@ -206,6 +206,7 @@ onShow(() => {
     .finally(() => {
       loading.value = false;
       if (slowTimer) clearTimeout(slowTimer);
+      slow.value = false; // 复位毛刺：上一轮慢网点亮的 slow 不能带进下一轮加载
     });
 });
 onUnmounted(() => {

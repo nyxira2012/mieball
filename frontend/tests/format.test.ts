@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Game, MockGame, Person } from '@/api/types';
 import {
   GAME_STATUS_NAMES,
+  deadRowKind,
   freqName,
   gameTapAction,
   isOrg,
@@ -121,6 +122,30 @@ describe('isOrg（viewer 块定值）', () => {
   it('my 缺省（游客）恒 false', () => {
     expect(isOrg(mkGame({ my: { isOrganizer: true, myEntry: null, invited: false } }))).toBe(true);
     expect(isOrg(mkGame())).toBe(false);
+  });
+});
+
+describe('deadRowKind（我的局终局行分派：4.8/4.9/4.10）', () => {
+  const org = (p: Partial<Game> = {}) =>
+    mkGame({ my: { isOrganizer: true, myEntry: null, invited: false }, ...p });
+  const joiner = (p: Partial<Game> = {}) =>
+    mkGame({
+      my: { isOrganizer: false, myEntry: { bring: 0, standing: 'formal', waitSeq: null }, invited: false },
+      ...p,
+    });
+
+  it('组织者：pending→待处置卡、terminated→未成局卡、cancelled 不留痕', () => {
+    expect(deadRowKind(org({ status: 'pending' }))).toBe('pending');
+    expect(deadRowKind(org({ status: 'terminated' }))).toBe('restore');
+    expect(deadRowKind(org({ status: 'cancelled' }))).toBeNull(); // 撤局不留痕（4.10）
+  });
+
+  it('参加者：terminated/cancelled→当日灰字行；在办局与 pending 不进死局区', () => {
+    expect(deadRowKind(joiner({ status: 'terminated' }))).toBe('gray');
+    expect(deadRowKind(joiner({ status: 'cancelled' }))).toBe('gray');
+    expect(deadRowKind(joiner({ status: 'open' }))).toBeNull();
+    // pending 后端只发给组织者（球友打开也不触发判死，4.9）；防御面不亮任何处置入口
+    expect(deadRowKind(joiner({ status: 'pending' }))).toBeNull();
   });
 });
 

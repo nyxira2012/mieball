@@ -36,10 +36,20 @@
       </template>
     </template>
 
-    <!-- 未成局区（组织者的 terminated/待处置恢复入口；灰字次日收走归批5） -->
-    <template v-if="deadMine.length">
+    <!-- 死局区三分（分派单一源 deadRowKind）：组织者 pending 待处置卡（锁必打/撤局出口，4.9）
+         · 组织者 terminated 未成局卡（恢复窗内可恢复，4.8）
+         · 参加者当日灰字行「该局已取消」（后端只在死亡当日返回，次日自动收走，前端只管渲染，4.8/4.10） -->
+    <template v-if="orgPending.length">
+      <SectionTitle title="待处置" more="恢复的局 · 等你锁必打或撤局" />
+      <DeadCard v-for="g in orgPending" :key="g.id" pending :game="g" @lock="onLock(g)" @cancel="onCancel(g)" />
+    </template>
+    <template v-if="orgDead.length">
       <SectionTitle title="未成局" more="到截止人数不足自动终止" />
-      <DeadCard v-for="g in deadMine" :key="g.id" :game="g" @restore="onRestore(g)" @cancel="onCancel(g)" />
+      <DeadCard v-for="g in orgDead" :key="g.id" :game="g" @restore="onRestore(g)" @cancel="onCancel(g)" />
+    </template>
+    <template v-if="grayMine.length">
+      <SectionTitle title="已取消的局" more="只在今天可见" />
+      <view v-for="g in grayMine" :key="g.id" class="grayrow">「{{ g.name }}」 该局已取消</view>
     </template>
 
     <!-- alpha:1091-1097 意向区头：CSS 吸顶 + 贴底钉位；整头点击切换焦点，scope 两钮 stopPropagation -->
@@ -93,7 +103,7 @@ import type { Game, Intent } from '@/api/types';
 import { communityMeta } from '@/api';
 import { useGameStore } from '@/stores/game';
 import { useUiStore } from '@/stores/ui';
-import { freqName, gameTapAction, newGameCard, slotName } from '@/utils/format';
+import { deadRowKind, freqName, gameTapAction, newGameCard, slotName } from '@/utils/format';
 import { dayOff, isoDay, isoHm, untilTxt } from '@/utils/time';
 import { errText } from '@/api/http';
 import { goGame } from '@/utils/nav';
@@ -171,8 +181,10 @@ const ordered = computed(() => {
   const mine = (g: Game): boolean => !!g.my && (g.my.isOrganizer || !!g.my.myEntry || g.my.invited);
   return [...flt.value.filter(mine), ...flt.value.filter((g) => !mine(g))];
 });
-/* 未成局区：组织者的 terminated（后端只把恢复窗内的发给组织者；待处置是 pending 不在此列） */
-const deadMine = computed(() => game.myGames.filter((g) => g.status === 'terminated'));
+/* 死局区三分（deadRowKind 单一源，4.8/4.9/4.10）：见模板注释 */
+const orgPending = computed(() => game.myGames.filter((g) => deadRowKind(g) === 'pending'));
+const orgDead = computed(() => game.myGames.filter((g) => deadRowKind(g) === 'restore'));
+const grayMine = computed(() => game.myGames.filter((g) => deadRowKind(g) === 'gray'));
 
 /* ---- A2 加载：等待提示，超 2 秒提示网络问题 ---- */
 const slow = ref(false);
@@ -219,9 +231,13 @@ function onRestore(g: Game): void {
 function onDelIntent(): void {
   game.delIntent().catch((e) => ui.toast(errText(e)));
 }
-/* alpha:928 撤局 → cancel-confirm 弹层 */
+/* alpha:928 撤局 → cancel-confirm 弹层（已订场局带退订提醒，ConfirmSheet 分叉） */
 function onCancel(g: Game): void {
   ui.openSheet({ type: 'cancel-confirm', gameId: g.id });
+}
+/* 待处置「锁定必打」→ 订场面板（空锁二段确认 + 登记订场同一入口，4.7/4.9） */
+function onLock(g: Game): void {
+  ui.openSheet({ type: 'booking', gameId: g.id });
 }
 
 /* —— 意向头贴底钉位 + 焦点切换（alpha:996-1016 同构，§2.3 取数换 uni API） —— */
@@ -294,7 +310,7 @@ watch(
     intentScope,
     () => game.myIntent,
     () => flt.value.length,
-    () => deadMine.value.length,
+    () => orgPending.value.length + orgDead.value.length + grayMine.value.length,
     () => ipool.value.length,
   ],
   () => measureHead(),
@@ -367,6 +383,18 @@ watch(
 }
 .foldrow:active {
   color: var(--lemon);
+}
+/* 参加者的当日灰字行（4.8/4.10「该局已取消」）：一行 dim 字，次日随 mine 不再返回而消失 */
+.grayrow {
+  border: 1px dashed rgba(245, 241, 232, 0.14);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  color: var(--dim);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* alpha:387-389 意向区头：CSS 吸顶 + JS 贴底钉位双通道 */
 .isec-head {

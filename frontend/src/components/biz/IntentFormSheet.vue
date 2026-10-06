@@ -28,6 +28,11 @@
       <AppSeg v-model="ifFreq" :options="FREQ_OPTS" />
     </AppField>
 
+    <!-- 4.13 备注：一句话可空，随保存透传（被邀人改意向即清已邀标记由后端管） -->
+    <AppField label="备注 · 一句话，可不填" class="note-field">
+      <AppInput v-model="ifNote" :maxlength="30" placeholder="如：只想约晚场 · 免费场优先" />
+    </AppField>
+
     <!-- alpha:1278 保存/留下 -->
     <AppButton variant="pri" block class="save" @click="save">
       {{ game.myIntent ? '保存修改' : '留下意向' }}
@@ -36,13 +41,14 @@
 </template>
 
 <script setup lang="ts">
-/* 留/改意向表单（alpha.html:1264-1297 · P7；1.2 调用点适配：frequency 改名 + note 透传，备注编辑归批5）。
+/* 留/改意向表单（alpha.html:1264-1297 · P7；1.2 调用点适配：frequency 改名 + 4.13 备注编辑透传）。
    SheetHost 按 sheet.type==='intent-form' 挂载本组件（v-if，挂载即「开表」）：
-   已有意向全量带入，无意向默认选「周末晚上」(we-n) · 频率 2。保存走 game.saveIntent
+   已有意向全量带入（含备注），无意向默认选「周末晚上」(we-n) · 频率 2。保存走 game.saveIntent
    （文案由 store 逐字发），失败不关弹层，成功 closeSheet。 */
 import { ref } from 'vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppField from '@/components/ui/AppField.vue';
+import AppInput from '@/components/ui/AppInput.vue';
 import AppSeg from '@/components/ui/AppSeg.vue';
 import { slots as slotDefs } from '@/api';
 import { useGameStore } from '@/stores/game';
@@ -57,6 +63,8 @@ const busy = ref(false);
 const ifSlots = ref<string[]>(game.myIntent ? [...game.myIntent.slots] : ['we-n']);
 /* alpha:1268 ifFreq = myIntent ? myIntent.frequency : 2（string|number 对齐 AppSeg v-model 联合类型） */
 const ifFreq = ref<string | number>(game.myIntent ? game.myIntent.frequency : 2);
+/* 4.13 备注：一句话可空，编辑后随保存透传 */
+const ifNote = ref(game.myIntent?.note ?? '');
 
 /* alpha:1276-1277 三段：按钮内容 `${v===0?'~':v}<small>${l}</small>` → AppSeg label+sub */
 const FREQ_OPTS = [
@@ -71,7 +79,7 @@ function ifTog(k: string): void {
   else ifSlots.value = [...ifSlots.value, k];
 }
 
-/* alpha:1286-1292 saveIntent：至少一个时段（本地先拦，省一跳）；note 本轮原样透传 */
+/* alpha:1286-1292 saveIntent：至少一个时段（本地先拦，省一跳）；note 随保存透传（trim 去手滑空格） */
 async function save(): Promise<void> {
   if (!ifSlots.value.length) {
     ui.toast('至少选一个时段');
@@ -80,7 +88,7 @@ async function save(): Promise<void> {
   if (busy.value) return;
   busy.value = true;
   try {
-    await game.saveIntent([...ifSlots.value], Number(ifFreq.value), game.myIntent?.note ?? '');
+    await game.saveIntent([...ifSlots.value], Number(ifFreq.value), ifNote.value.trim());
     ui.closeSheet(); // alpha:1290
   } catch (e) {
     ui.toast(errText(e)); // intent_slots_empty 等后端文案直出
@@ -127,5 +135,9 @@ async function save(): Promise<void> {
 /* alpha:1278 保存钮内联 margin-top:4px */
 .save {
   margin-top: 4px;
+}
+/* 4.13 备注字段（同 freq-field 的内联间距） */
+.note-field {
+  margin-top: 12px;
 }
 </style>
