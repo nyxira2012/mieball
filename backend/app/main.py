@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import inspect, text
 
-from .api.routes import auth, games, intents, users
+from .api.routes import auth, games, intents, live, users
 from .core.config import Settings, get_settings
 from .core.errors import ApiError
 from .db.engine import Base, make_session_factory
@@ -69,15 +69,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(ApiError)
     async def on_api_error(_: Request, exc: ApiError) -> JSONResponse:
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={"error": {"code": exc.code, "message": str(exc.detail)}},
-        )
+        content = {"error": {"code": exc.code, "message": str(exc.detail)}}
+        if exc.view is not None:  # 两级号 409 携最新总账视图（2.3 附录 B1）
+            content["view"] = exc.view
+        return JSONResponse(status_code=exc.status_code, content=content)
 
     app.include_router(auth.router, prefix="/api")
     app.include_router(users.router, prefix="/api")
     app.include_router(games.router, prefix="/api")
     app.include_router(intents.router, prefix="/api")
+    app.include_router(live.router, prefix="/api")
 
     @app.get("/")
     def root():

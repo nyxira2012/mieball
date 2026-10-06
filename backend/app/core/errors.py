@@ -7,9 +7,11 @@ from fastapi import HTTPException
 
 
 class ApiError(HTTPException):
-    def __init__(self, status: int, code: str, message: str):
+    def __init__(self, status: int, code: str, message: str, view: dict | None = None):
         super().__init__(status_code=status, detail=message)
         self.code = code
+        # 409 两级号防线退回时随错误体带上最新总账视图（2.3 附录 B1），其余 None
+        self.view = view
 
 
 def phone_taken() -> ApiError:
@@ -163,6 +165,12 @@ def live_stale_court() -> ApiError:
 
 def court_idle() -> ApiError:
     return ApiError(422, "court_idle", "这片还没开打")
+
+
+def live_invalid(msg: str) -> ApiError:
+    # 现场写动作的事实把关不成立（发牌名单不在候场队首 / 胜方比分更低等）——
+    # 与权限（live_forbidden）、状态机（court_idle/court_frozen）各管一道
+    return ApiError(422, "live_invalid", msg)
 
 
 def court_frozen() -> ApiError:

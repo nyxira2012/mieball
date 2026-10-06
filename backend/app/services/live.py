@@ -1,6 +1,7 @@
-"""LiveBook —— 现场总账深模块（docs/2.3）：开账、总账读视图、两级号并发防线。
+"""LiveBook —— 现场总账深模块（docs/2.3）：开账、总账读视图、记分链、两级号并发防线。
 
-批1 只落骨架（start/view + 两级号机制），记分/确认/散场等动作批2/3 逐批入住。
+批1 落骨架（start/view + 两级号机制），批2 记分链入住（deal/point/undo/clear/
+settle-open/settle-confirm/cancel），check/swap/tempo/rules/sweep/end 批3。
 策略内聚在这里，路由只做参数搬运：
 - 现场是"另一本账"：locked 局之上由 start 展开（正式球友一人一行 + 随行访客一行），
   散场后 games.ended_at 落库即封存，view 同一形状 = 只读回看（2.3 §4.10）。
@@ -14,6 +15,8 @@
 from __future__ import annotations
 
 import threading
+from contextlib import contextmanager
+from math import floor
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -29,6 +32,7 @@ from ..db.models import (
     LivePlayer,
     LiveState,
 )
+from . import live_rotation
 from .accounts import person_view
 
 # 开账起笔的 rules 快照默认值（镜像前端 startLive 起笔，2.2 批2 §4.1）：
@@ -36,6 +40,26 @@ from .accounts import person_view
 _DEFAULT_RULES = {"doubles": True, "down": "all", "pairing": "queue", "streak_max": 3}
 # 新人初始等级单一源（2.4 §8 定值；对齐前端 ui「Elo 默认 1500 起」）
 RATING_INIT = 1500
+
+# 算到场（镜像前端 isArrived 单一源）：absent 未到 / left 早退不算
+_ARRIVED = ("ok", "late", "join")
+# Elo 镜像源 frontend/src/utils/elo.ts：K=24（alpha:1697）、地板 400（alpha:1704）、
+# 败方只扣胜方涨分六成（alpha:1698）；访客按 1500 代入当正常玩家算——去半折（2.3 修订②）
+_ELO_K = 24.0
+_ELO_FLOOR = 400
+# 防线 409 退回时要在错误体里带最新视图的两个码（附录 B1：最新画面送来，前端对表用）
+_STALE_CODES = frozenset({"live_stale_total", "live_stale_court"})
+
+
+def _js_round(x: float) -> int:
+    # JS Math.round 半向上取整；Python round 是银行家舍入，镜像公式要绕开
+    return floor(x + 0.5)
+
+
+def _snapshot(p: LivePlayer) -> dict:
+    """战报名单快照（LiveMatch.winners/losers 元素）：id 是名册行 id。"""
+    return {"id": p.id, "name": p.display_name, "guest": p.guest}
+
 
 # 现场写动作全串行：SQLite 无行锁，靠它保住"账只有一本"（2.3 附录 B1）
 _write_lock = threading.Lock()
@@ -90,7 +114,7 @@ class LiveBook:
                         check="absent",
                     )
                 )
-                self._ensure_elo(entry.account_id)
+                self._elo_row(entry.account_id)
                 for i in range(entry.bring):
                     self.db.add(
                         LivePlayer(
@@ -106,6 +130,345 @@ class LiveBook:
             self.db.commit()
         return self.view(game_id=game_id, viewer_id=organizer_id)
 
+    # ---- 记分链（批2）：发牌上报 → 记分/撤分/清零 → 待确认 → 确认/取消 ----
+
+    def deal(
+        self,
+        *,
+        game_id: int,
+        actor_id: int,
+        courts: list[dict],
+        base_total_seq: int,
+    ) -> dict:
+        """排阵上报（技术设计 §3：发牌算法在前端，总账只把关事实）：各片 A/B
+        名单必须是候场队头顺位那拨（fillAllCourts 按片号先后取队首）；过关即
+        落片行 status=playing、seq+1 开打，人从候场队摘下。"""
+        with self._write(game_id=game_id, actor_id=actor_id):
+            state, _game = self._open_write(game_id)
+            self._require_arrived(game_id, actor_id)
+            self._check_total(state, base_total_seq)
+            rows = self._roster(game_id)
+            by_id = {r.id: r for r in rows}
+            queue = self._queue_ids(rows)
+            dealt: list[int] = []
+            seen: set[int] = set()
+            picked: list[tuple[LiveCourt, dict]] = []
+            for c in courts:
+                if c["court_no"] in seen:
+                    raise errors.live_invalid("同一片发了两手牌")
+                seen.add(c["court_no"])
+                court = self._court_or_none(game_id, c["court_no"])
+                if court is None:
+                    court = LiveCourt(game_id=game_id, court_no=c["court_no"])
+                    self.db.add(court)
+                elif court.status == "pending":
+                    raise errors.court_frozen()
+                elif court.status == "playing":
+                    raise errors.live_invalid("这片还在打，不能重复发牌")
+                ids = list(c["a"]) + list(c["b"])
+                if any(i not in by_id for i in ids):
+                    raise errors.live_invalid("发牌名单里有不在名册的人")
+                picked.append((court, c))
+                dealt += ids
+            # 队首把关：报上来的人必须正好是候场队头这拨（跳位/凑不齐都退）
+            if len(set(dealt)) != len(dealt) or set(dealt) != set(queue[: len(dealt)]):
+                raise errors.live_invalid("发牌的人不在候场队首")
+            rest = queue[len(dealt) :]
+            for court, c in picked:
+                fresh = court.id is None  # 列 default 在 INSERT 才生效，新行显式起笔
+                court.status = "playing"
+                court.seq = 1 if fresh else court.seq + 1
+                court.sa = 0
+                court.sb = 0
+                court.last_winner_side = None
+                court.pending_origin = None
+                court.court_seq = 1 if fresh else court.court_seq + 1
+                for pid in c["a"] + c["b"]:
+                    r = by_id[pid]
+                    r.court_no = court.court_no
+                    r.court_side = "a" if pid in c["a"] else "b"
+                    r.queue_pos = None
+            for pos, pid in enumerate(rest):
+                by_id[pid].queue_pos = pos
+            self._bump_total(state)
+            self.db.commit()
+        return self.view(game_id=game_id, viewer_id=actor_id)
+
+    def point(
+        self,
+        *,
+        game_id: int,
+        actor_id: int,
+        court_no: int,
+        side: str,
+        base_total_seq: int,
+        base_court_seq: int,
+    ) -> dict:
+        """记一分（§4.1）：点哪边哪边 +1、片行自记最后得分方；记分落账时当即判
+        到分（分制数且净胜 2，§4.3）——够线该片转 pending(origin='auto')，别片照打。"""
+        with self._write(game_id=game_id, actor_id=actor_id):
+            state, game = self._open_write(game_id)
+            self._require_arrived(game_id, actor_id)
+            self._check_total(state, base_total_seq)
+            court = self._court_writable(game_id, court_no)
+            self._check_court(court, base_court_seq)
+            if side == "a":
+                court.sa += 1
+            else:
+                court.sb += 1
+            court.last_winner_side = side
+            if self._reached(court.sa, court.sb, game.scoring):
+                court.status = "pending"
+                court.pending_origin = "auto"
+            self._bump_court(court)
+            self._bump_total(state)
+            self.db.commit()
+        return self.view(game_id=game_id, viewer_id=actor_id)
+
+    def undo(
+        self,
+        *,
+        game_id: int,
+        actor_id: int,
+        court_no: int,
+        base_total_seq: int,
+        base_court_seq: int,
+    ) -> dict:
+        """撤一分（§4.1/§4.5）：只撤该片最后一次得分方那 1 分、撤不成负；last
+        保持在得分方（连撤连减）。playing 态任意到场者可写；pending 态是确认窗内
+        的全权撤分——auto 窗撤后重判：够分线保窗、不够自动关窗回 playing，
+        manual 窗只改比分不关窗（人工开的窗收不收由人再决定）。"""
+        with self._write(game_id=game_id, actor_id=actor_id):
+            state, game = self._open_write(game_id)
+            court = self._court_writable(
+                game_id, court_no, statuses=("playing", "pending")
+            )
+            if court.status == "pending":
+                self._require_full_power(game, actor_id)
+            else:
+                self._require_arrived(game_id, actor_id)
+            self._check_total(state, base_total_seq)
+            self._check_court(court, base_court_seq)
+            applied = False
+            if court.last_winner_side == "a" and court.sa > 0:
+                court.sa -= 1
+                applied = True
+            elif court.last_winner_side == "b" and court.sb > 0:
+                court.sb -= 1
+                applied = True
+            # last 为空或该边已是 0 分（0:0）：无可撤——原样回视图，不动账不进号
+            if applied:
+                if (
+                    court.status == "pending"
+                    and court.pending_origin == "auto"
+                    and not self._reached(court.sa, court.sb, game.scoring)
+                ):
+                    court.status = "playing"  # auto 窗撤到分线下：窗自动关（§4.5）
+                    court.pending_origin = None
+                self._bump_court(court)
+                self._bump_total(state)
+                self.db.commit()
+        return self.view(game_id=game_id, viewer_id=actor_id)
+
+    def clear(
+        self,
+        *,
+        game_id: int,
+        actor_id: int,
+        court_no: int,
+        base_total_seq: int,
+        base_court_seq: int,
+    ) -> dict:
+        """清零重开（§4.2，全权）：比分归 0:0、last 清掉、pending 作废回 playing；
+        人不下场——同一批人这盘重打（待确认时入口收在确认窗里）。"""
+        with self._write(game_id=game_id, actor_id=actor_id):
+            state, game = self._open_write(game_id)
+            court = self._court_writable(
+                game_id, court_no, statuses=("playing", "pending")
+            )
+            self._require_full_power(game, actor_id)
+            self._check_total(state, base_total_seq)
+            self._check_court(court, base_court_seq)
+            court.sa = 0
+            court.sb = 0
+            court.last_winner_side = None
+            court.status = "playing"
+            court.pending_origin = None
+            self._bump_court(court)
+            self._bump_total(state)
+            self.db.commit()
+        return self.view(game_id=game_id, viewer_id=actor_id)
+
+    def settle_open(
+        self,
+        *,
+        game_id: int,
+        actor_id: int,
+        court_no: int,
+        base_total_seq: int,
+        base_court_seq: int,
+    ) -> dict:
+        """提前结算（§4.4，全权）：不到分线也能收——playing 转 pending(origin='manual')，
+        与到分自动触发同一条路；胜方预选由视图 preselect 定值给出（领先方/平分不预选）。"""
+        with self._write(game_id=game_id, actor_id=actor_id):
+            state, game = self._open_write(game_id)
+            self._require_full_power(game, actor_id)
+            self._check_total(state, base_total_seq)
+            court = self._court_writable(game_id, court_no)
+            self._check_court(court, base_court_seq)
+            court.status = "pending"
+            court.pending_origin = "manual"
+            self._bump_court(court)
+            self._bump_total(state)
+            self.db.commit()
+        return self.view(game_id=game_id, viewer_id=actor_id)
+
+    def settle_confirm(
+        self,
+        *,
+        game_id: int,
+        actor_id: int,
+        court_no: int,
+        winner_side: str,
+        score_a: int,
+        score_b: int,
+        no_redeal: bool,
+        base_total_seq: int,
+        base_court_seq: int,
+    ) -> dict:
+        """确认结束（§4.6，全权）：一本账原子——战报行落账（此后不可改）+ EloRating
+        结算 + 人回流补位重排，同一事务要么全成要么全不成。胜方必须分高方（平分双方
+        均可）；幂等：重复确认（重放刚落账那场）回当前视图 200，不重落。
+        no_redeal（散场清扫态）：回流定格、不排下一场不补位（§4.9-1）。"""
+        with self._write(game_id=game_id, actor_id=actor_id):
+            state, game = self._open_write(game_id)
+            self._require_full_power(game, actor_id)
+            court = self._court_or_none(game_id, court_no)
+            if court is None:
+                raise errors.court_idle()
+            if court.status != "pending":
+                if self._is_replay(game_id, court_no, winner_side, score_a, score_b):
+                    return self.view(game_id=game_id, viewer_id=actor_id)
+                self._check_total(state, base_total_seq)
+                self._check_court(court, base_court_seq)
+                raise errors.live_invalid("这片没有待确认的对局")
+            self._check_total(state, base_total_seq)
+            self._check_court(court, base_court_seq)
+            if (winner_side == "a" and score_a < score_b) or (
+                winner_side == "b" and score_b < score_a
+            ):
+                raise errors.live_invalid("分低的一方当不了胜方")
+            # —— 一本账（§4.6-2）：战报 + 积分 + 回流，一个 commit ——
+            rows = self._roster(game_id)
+            by_id = {r.id: r for r in rows}
+            oncourt = [
+                r for r in rows if r.court_no == court_no and r.court_side in ("a", "b")
+            ]
+            winners = [r for r in oncourt if r.court_side == winner_side]
+            losers = [r for r in oncourt if r.court_side != winner_side]
+            elo_rows = self._elo_settle(winners, losers)
+            self.db.add(
+                LiveMatch(
+                    game_id=game_id,
+                    court_no=court_no,
+                    seq=court.seq,
+                    winners=[_snapshot(r) for r in winners],
+                    losers=[_snapshot(r) for r in losers],
+                    sa=score_a,
+                    sb=score_b,
+                    winner_side=winner_side,
+                    ended_at=clock.now(),
+                    elo_rows=elo_rows,
+                )
+            )
+            self._apply_elo(elo_rows, len(winners))
+            queue = self._queue_ids(rows)
+            if no_redeal:
+                # 清扫态：人只回流定格——不排下一场不补位，场上的人按行序接队尾
+                for r in oncourt:
+                    r.court_no = None
+                    r.court_side = None
+                    queue.append(r.id)
+                court.status = "idle"
+            else:
+                dicts = [
+                    {"id": r.id, "court_no": r.court_no, "court_side": r.court_side}
+                    for r in rows
+                ]
+                live_rotation.requeue_after_confirm(
+                    dicts,
+                    court_no,
+                    winner_side,
+                    {
+                        "down": state.down,
+                        "pairing": state.pairing,
+                        "doubles": state.doubles,
+                    },
+                    queue,
+                )
+                for d in dicts:
+                    r = by_id[d["id"]]
+                    r.court_no = d["court_no"]
+                    r.court_side = d["court_side"]
+                court.status = "playing"
+                court.seq += 1
+            for r in rows:
+                if r.court_side is not None:
+                    r.queue_pos = None
+            for pos, pid in enumerate(queue):
+                by_id[pid].queue_pos = pos
+            court.sa = 0
+            court.sb = 0
+            court.last_winner_side = None
+            court.pending_origin = None
+            self._bump_court(court)
+            self._bump_total(state)
+            self.db.commit()
+        return self.view(game_id=game_id, viewer_id=actor_id)
+
+    def cancel(
+        self,
+        *,
+        game_id: int,
+        actor_id: int,
+        court_no: int,
+        no_redeal: bool,
+        base_total_seq: int,
+        base_court_seq: int,
+    ) -> dict:
+        """取消对局（§4.7，全权）：整场作废——不计分不进战绩；场上的人原样回流
+        候场队首（补偿没打成的，沿 2.2 §4.12）；该片腾出来（idle）等重新发牌。
+        no_redeal 与确认同参数只为清扫链路统一——取消本就不补位，带不带一个行为。"""
+        with self._write(game_id=game_id, actor_id=actor_id):
+            state, game = self._open_write(game_id)
+            court = self._court_writable(
+                game_id, court_no, statuses=("playing", "pending")
+            )
+            self._require_full_power(game, actor_id)
+            self._check_total(state, base_total_seq)
+            self._check_court(court, base_court_seq)
+            rows = self._roster(game_id)
+            oncourt = [
+                r for r in rows if r.court_no == court_no and r.court_side in ("a", "b")
+            ]
+            by_id = {r.id: r for r in rows}
+            # 原样回流队首：场上的人保行序插到候场队最前面，其他人整体后移
+            queue = [r.id for r in oncourt] + self._queue_ids(rows)
+            for r in oncourt:
+                r.court_no = None
+                r.court_side = None
+            for pos, pid in enumerate(queue):
+                by_id[pid].queue_pos = pos
+            court.status = "idle"
+            court.sa = 0
+            court.sb = 0
+            court.last_winner_side = None
+            court.pending_origin = None
+            self._bump_court(court)
+            self._bump_total(state)
+            self.db.commit()
+        return self.view(game_id=game_id, viewer_id=actor_id)
+
     # ---- 总账读视图（进行中与散场后同一形状：散场后 = 只读回看） ----
 
     def view(self, *, game_id: int, viewer_id: int | None) -> dict:
@@ -117,18 +480,9 @@ class LiveBook:
             raise errors.live_not_found()
         game = self.db.get(Game, game_id)
         is_organizer = viewer_id is not None and game.organizer_id == viewer_id
-        players = (
-            self.db.execute(
-                select(LivePlayer)
-                .where(LivePlayer.game_id == game_id)
-                .order_by(LivePlayer.id)
-            )
-            .scalars()
-            .all()
-        )
         rows = [
             self._player_row(p, is_organizer=is_organizer, viewer_id=viewer_id)
-            for p in players
+            for p in self._roster(game_id)
         ]
         courts = (
             self.db.execute(
@@ -179,6 +533,7 @@ class LiveBook:
                     "last_winner_side": c.last_winner_side,
                     "court_seq": c.court_seq,
                     "pending_origin": c.pending_origin,
+                    "preselect": self._preselect(c),
                 }
                 for c in courts
             ],
@@ -198,7 +553,165 @@ class LiveBook:
             ],
         }
 
-    # ---- 内部：两级号机制（写动作批2/3 消费；全部在 _write_lock 内调用） ----
+    # ---- 内部：写动作公共件与两级号机制（全部在 _write_lock 内调用） ----
+
+    @contextmanager
+    def _write(self, *, game_id: int, actor_id: int):
+        """记分链写动作公共外壳：模块锁内跑业务；防线退回的旧号 409 在错误体里
+        补上最新视图（附录 B1——前端拿它直接对表，不用再拉一次读）。"""
+        with _write_lock:
+            try:
+                yield
+            except errors.ApiError as e:
+                if e.code in _STALE_CODES and e.view is None:
+                    e.view = self.view(game_id=game_id, viewer_id=actor_id)
+                raise
+
+    def _open_write(self, game_id: int) -> tuple[LiveState, Game]:
+        """写动作开门三查：账在、没散场（散场后旧画面的写动作一律拒收，§4.10）。"""
+        state = self._state_or_none(game_id)
+        if state is None:
+            raise errors.live_not_found()
+        game = self.db.get(Game, game_id)
+        if game.ended_at is not None:
+            raise errors.live_ended()
+        return state, game
+
+    def _roster(self, game_id: int) -> list[LivePlayer]:
+        return (
+            self.db.execute(
+                select(LivePlayer)
+                .where(LivePlayer.game_id == game_id)
+                .order_by(LivePlayer.id)
+            )
+            .scalars()
+            .all()
+        )
+
+    def _queue_ids(self, rows: list[LivePlayer]) -> list[int]:
+        """候场队（队首在前）——queue_pos 升序即队列序（技术设计 §2）。"""
+        return [
+            r.id
+            for r in sorted(
+                (r for r in rows if r.queue_pos is not None),
+                key=lambda r: r.queue_pos,
+            )
+        ]
+
+    def _court_or_none(self, game_id: int, court_no: int) -> LiveCourt | None:
+        return self.db.execute(
+            select(LiveCourt).where(
+                LiveCourt.game_id == game_id, LiveCourt.court_no == court_no
+            )
+        ).scalar_one_or_none()
+
+    def _court_writable(
+        self, game_id: int, court_no: int, *, statuses: tuple[str, ...] = ("playing",)
+    ) -> LiveCourt:
+        """片状态机校验：没开打 → court_idle；pending 而该动作不是出口 → court_frozen
+        （§4.3 冻结的出口只有清零/取消/确认，undo 是窗的能力）。"""
+        court = self._court_or_none(game_id, court_no)
+        if court is None or court.status == "idle":
+            raise errors.court_idle()
+        if court.status not in statuses:
+            raise errors.court_frozen()
+        return court
+
+    @staticmethod
+    def _reached(sa: int, sb: int, scoring: int) -> bool:
+        """到分判定（§4.3）：分制数且净胜 2——记分落账时当即判。"""
+        return max(sa, sb) >= scoring and abs(sa - sb) >= 2
+
+    @staticmethod
+    def _preselect(c: LiveCourt) -> str | None:
+        """待确认窗的胜方预选定值（§4.3/§4.4，附录 A4 画面不自算）：领先方；
+        平分不预选（手点胜方后才能确认）。"""
+        if c.status != "pending":
+            return None
+        if c.sa > c.sb:
+            return "a"
+        return "b" if c.sb > c.sa else None
+
+    def _require_arrived(self, game_id: int, actor_id: int) -> None:
+        """记分类写的资格（§4.1）：名册行且算到场（absent/left 不算）。"""
+        row = self.db.execute(
+            select(LivePlayer).where(
+                LivePlayer.game_id == game_id, LivePlayer.account_id == actor_id
+            )
+        ).scalar_one_or_none()
+        if row is None or row.check not in _ARRIVED:
+            raise errors.live_forbidden()
+
+    @staticmethod
+    def _require_full_power(game: Game, actor_id: int) -> None:
+        """结束对局类动作收权（§4.2-4.7）：组织者与管理员同权——管理员名册批3
+        随 check/swap 一起落地，本批先组织者。"""
+        if game.organizer_id != actor_id:
+            raise errors.live_forbidden()
+
+    def _is_replay(
+        self, game_id: int, court_no: int, winner_side: str, sa: int, sb: int
+    ) -> bool:
+        """重复确认判定（§5 出错/断网重发）：该片最新一条战报与这笔确认完全一致
+        ——当重放回 200 幂等不重落（重放的旧号对不上防线，所以这里先于号检查）。"""
+        m = self.db.execute(
+            select(LiveMatch)
+            .where(LiveMatch.game_id == game_id, LiveMatch.court_no == court_no)
+            .order_by(LiveMatch.seq.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        return (
+            m is not None and m.winner_side == winner_side and m.sa == sa and m.sb == sb
+        )
+
+    def _rating_of(self, account_id: int) -> int:
+        row = self.db.execute(
+            select(EloRating).where(EloRating.account_id == account_id)
+        ).scalar_one_or_none()
+        return RATING_INIT if row is None else row.rating
+
+    def _elo_settle(
+        self, winners: list[LivePlayer], losers: list[LivePlayer]
+    ) -> list[dict]:
+        """结算每人一行、胜队在前（§4.6-2/§4.11）——镜像 utils/elo.ts settleElo：
+        双打按两队人均分算期望落到个人、delta=max(1,K*(1-exp))、败方只扣涨分六成、
+        地板 400；访客代入 1500 当正常玩家算（去半折口径），行内记 delta 但不落账。"""
+
+        def eff(p: LivePlayer) -> int:
+            return RATING_INIT if p.guest else self._rating_of(p.account_id)
+
+        w_avg = sum(eff(p) for p in winners) / len(winners)
+        l_avg = sum(eff(p) for p in losers) / len(losers)
+        exp = 1 / (1 + 10 ** ((l_avg - w_avg) / 400))
+        delta = max(1, _js_round(_ELO_K * (1 - exp)))
+        loss = max(1, _js_round(delta * 0.6))
+        return [
+            {
+                "account_id": p.account_id,
+                "name": p.display_name,
+                "guest": p.guest,
+                "rating_before": before,
+                "rating_after": max(_ELO_FLOOR, before + d),
+                "delta": d,
+            }
+            for p, before, d in [
+                *[(p, eff(p), delta) for p in winners],
+                *[(p, eff(p), -loss) for p in losers],
+            ]
+        ]
+
+    def _apply_elo(self, elo_rows: list[dict], winner_count: int) -> None:
+        """正式球友落账（访客不落账不进榜，2.3 裁决）：rating 前进、play+1、胜者
+        win+1；行序前 winner_count 个是胜队（_elo_settle 的返回序）。"""
+        for i, row in enumerate(elo_rows):
+            if row["guest"] or row["account_id"] is None:
+                continue
+            # 开账后不该走到（start 已首见建行）；空降者由此兜底
+            er = self._elo_row(row["account_id"])
+            er.rating = row["rating_after"]
+            er.play += 1
+            if i < winner_count:
+                er.win += 1
 
     def _state_or_none(self, game_id: int) -> LiveState | None:
         return self.db.execute(
@@ -222,20 +735,16 @@ class LiveBook:
     def _bump_court(self, court: LiveCourt) -> None:
         court.court_seq += 1  # 该片记分类改动往前进一
 
-    def _ensure_elo(self, account_id: int) -> None:
-        """首见建行：积分账一人一行，起笔 1500（访客不建行，2.3 裁决访客不进账）。"""
-        seen = self.db.execute(
-            select(EloRating.id).where(EloRating.account_id == account_id)
-        ).first()
-        if seen is None:
-            self.db.add(
-                EloRating(
-                    account_id=account_id,
-                    rating=RATING_INIT,
-                    play=0,
-                    win=0,
-                )
-            )
+    def _elo_row(self, account_id: int) -> EloRating:
+        """积分账一人一行：查无则建（起笔 1500、play/win 归零）、有则返——
+        start 首见建行与空降兜底共用（访客不建行不进账，2.3 裁决）。"""
+        er = self.db.execute(
+            select(EloRating).where(EloRating.account_id == account_id)
+        ).scalar_one_or_none()
+        if er is None:
+            er = EloRating(account_id=account_id, rating=RATING_INIT, play=0, win=0)
+            self.db.add(er)
+        return er
 
     def _player_row(
         self, p: LivePlayer, *, is_organizer: bool, viewer_id: int | None

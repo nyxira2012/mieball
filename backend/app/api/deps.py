@@ -11,6 +11,7 @@ from ..services.accounts import AccountBook
 from ..services.games import GameBook
 from ..services.intents import IntentBook
 from ..services.keys import KeyVault
+from ..services.live import LiveBook
 from ..services.sms import SmsGate
 
 
@@ -33,6 +34,10 @@ def get_game_book(db: Session = Depends(get_db)) -> GameBook:
 
 def get_intent_book(db: Session = Depends(get_db)) -> IntentBook:
     return IntentBook(db)
+
+
+def get_live_book(db: Session = Depends(get_db)) -> LiveBook:
+    return LiveBook(db)
 
 
 def bearer_token(authorization: str | None = Header(default=None)) -> str | None:
