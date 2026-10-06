@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Game, MockGame, Person } from '@/api/types';
 import {
   GAME_STATUS_NAMES,
+  courtDisplayName,
   deadRowKind,
   freqName,
   gameTapAction,
@@ -165,5 +166,13 @@ describe('slotName / freqName / slotBig（alpha:890-891, 1023-1024）', () => {
     expect(slotBig('ln')).toEqual(['午休', '工作日']);
     expect(slotBig('we-d')).toEqual(['白天', '周末']);
     expect(slotBig('we-n')).toEqual(['晚上', '周末']);
+  });
+});
+
+describe('courtDisplayName（场地显示名单一源：对局卡/空闲卡/终局弹窗 kicker）', () => {
+  it('登记的场地号补「场」后缀；已带「场」不重复加', () => {
+    expect(courtDisplayName('3号')).toBe('3号场');
+    expect(courtDisplayName('5号')).toBe('5号场');
+    expect(courtDisplayName('中央场')).toBe('中央场');
   });
 });

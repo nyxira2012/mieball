@@ -1,10 +1,11 @@
 <template>
-  <!-- 完整候场队列抽屉（temp/打球页原型 sh-queue 逐字）：首 4 行 .next 高亮（已排进下一场），
-       每行 mono 小注（已打/ ELO）+ 右侧 tag（下一场 / 我还有 N 轮）；点行开点人抽屉（页面编排）。 -->
+  <!-- 完整候场队列抽屉（temp/打球页原型 sh-queue 逐字）：首 N 行 .next 高亮（已排进下一场，
+       N=每片人数，双打 4 / 单打 2——2.4 批2 size-aware），每行 mono 小注（已打/ ELO）+
+       右侧 tag（下一场 / 我还有 N 轮）；点行开点人抽屉（页面编排）。 -->
   <AppSheet
     :visible="visible"
     title="候场队列"
-    hint="下四位已排进下一场 · 点人可换人 / 歇两轮 / 连战 / 退场"
+    :hint="`下${nextN}位已排进下一场 · 点人可换人 / 歇两轮 / 连战 / 退场`"
     @close="emit('close')"
   >
     <template v-if="rows.length">
@@ -12,7 +13,7 @@
         v-for="(r, i) in rows"
         :key="r.id"
         class="qs-row"
-        :class="{ next: i < 4 }"
+        :class="{ next: i < nextN }"
         @click="emit('person', r.id)"
       >
         <view class="row-av"
@@ -36,7 +37,7 @@
         <text v-if="r.id === U.me.id && myRound != null" class="tag tag-me"
           >还有 {{ myRound }} 轮</text
         >
-        <text v-else-if="i < 4" class="tag">下一场</text>
+        <text v-else-if="i < nextN" class="tag">下一场</text>
       </view>
     </template>
     <EmptyBox v-else text="全员都在场上" />
@@ -44,12 +45,14 @@
 </template>
 
 <script setup lang="ts">
-/* 队列抽屉（2.1 §3）：无本地态，读 live store 的 queue/myRound；点行 emit person 由页面开点人抽屉。 */
+/* 队列抽屉（2.1 §3 · 2.4 批2 size-aware）：无本地态，读 live store 的 queue/myRound/rules；
+   点行 emit person 由页面开点人抽屉。 */
 import { computed } from "vue";
 import AppSheet from "@/components/ui/AppSheet.vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
+import { courtSize } from "@/utils/rotate";
 import { U } from "@/api";
 
 defineProps({
@@ -64,6 +67,10 @@ const liveStore = useLiveStore();
 /** 行数据 computed 一次解析好（模板逐字段 byId 是每行多次名册线性扫描） */
 const rows = computed(() =>
   (liveStore.live?.queue ?? []).map((id) => ({ id, u: liveStore.byId(id) })),
+);
+/** 「下一场」高亮位数 = 每片人数（双打 4 / 单打 2，单一源在引擎） */
+const nextN = computed(() =>
+  courtSize(liveStore.live?.rules.singles ?? false),
 );
 const myRound = computed(() => liveStore.myRound);
 </script>

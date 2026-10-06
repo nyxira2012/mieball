@@ -157,18 +157,15 @@ function onAdminToggle(): void {
   else liveStore.setAdmin(props.personId);
 }
 
-/** 场上全员 id（cur A/B + 各待开片 A/B） */
+/** 场上全员 id（各片 A/B 并起来——2.4 批2 起无 cur，多片各打各的） */
 const onCourtIds = computed<number[]>(() => {
   const l = liveStore.live;
   if (!l) return [];
-  return [
-    ...(l.cur ? [...l.cur.A, ...l.cur.B] : []),
-    ...l.courts.flatMap((c) => [...c.A, ...c.B]),
-  ];
+  return l.courts.flatMap((c) => [...c.A, ...c.B]);
 });
 const personOnCourt = computed(() => onCourtIds.value.includes(props.personId));
 
-/** 对侧池：person 在场上 → 列队列全员；person 在队列 → 列场上全员。
+/** 对侧池：person 在场上 → 列候场队全员；person 在队 → 列各片场上全员。
     过滤名册查不到的 id（建号换 id 后场上残留旧 id 的 mock 路径），不出「—」行。
     行数据 computed 一次解析好（模板逐字段 byId 是每行多次名册线性扫描）。 */
 const poolRows = computed(() => {

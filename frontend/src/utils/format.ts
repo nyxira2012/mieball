@@ -31,12 +31,11 @@ export const GAME_STATUS_NAMES: Record<GameStatus, string> = {
   terminated: '已终止', cancelled: '已取消', pending: '待处置',
 };
 
-/** 场地显示名（登记的「3号」→「3号场」；无登记回退序号场）——
-    打球页对局卡/空闲卡与终局结算弹窗 kicker 共用 */
-export const courtLabel = (courts: string[] | null | undefined, idx: number): string => {
-  const n = courts?.[idx] ?? `${idx + 1}号`;
-  return n.endsWith('场') ? n : `${n}场`;
-};
+/** 场地显示名单一源（登记的「3号」→「3号场」；已带「场」不重复加）——
+    打球页对局卡/空闲卡与终局结算弹窗 kicker 共用。
+    原 courtLabel(courts, idx)（另含序号兜底语义）自诞生起零消费，随 2.4 批2 删除，「+场」语义收编至此。 */
+export const courtDisplayName = (name: string): string =>
+  name.endsWith('场') ? name : `${name}场`;
 
 /** 是否当前登录用户（运行时读 U.me.id：真账号接管「我」位后 id 非 0，快照常量会认错人） */
 export const isMe = (id?: number): boolean => id === U.me.id;

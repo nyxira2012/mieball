@@ -1,6 +1,7 @@
 <template>
-  <!-- 打球页（2.1 改版）：一屏三块——顶条（LiveTopbar）/ 滚动对局区（CourtMatchCard 三态）/ 置底候场条
-       （QueueBar）+ 四抽屉一弹窗一浮层（本页本地弹层，liveSheet 单槽替换语义，不走全局 SheetPayload）。
+  <!-- 打球页（2.1 改版 · 2.4 批2 多片并行）：一屏三块——顶条（LiveTopbar）/ 滚动对局区
+       （CourtMatchCard 一片一卡，playing/idle 卡自判）/ 置底候场条（QueueBar）
+       + 四抽屉一弹窗一浮层（本页本地弹层，liveSheet 单槽替换语义，不走全局 SheetPayload）。
        页面只做编排：卡片/抽屉的数据与动作全在 live store 与各组件内，这里接打开次序与跨页跳转。
        url query 的 id：onShow 时若现场未开则自动 startLive（深链/刷新兜底；hasLive 已开不重复，避免重置名册）。
        扫码签到深链（2.1·选项A）：二维码编码 {origin}/#/pages/live/live?id=<球局id>，
@@ -28,39 +29,22 @@
       <view class="live-root">
         <LiveTopbar @qr="qrOpen = true" @rules="onRules" />
 
-        <!-- 块二：滚动对局区（playing cur + ready 各待开片 + 空闲卡补位） -->
+        <!-- 块二：滚动对局区（2.4 批2 起多片并行：一片一卡，playing/idle 由卡自判；
+             记分/终局/取消 emit 带 courtId，页面直连 store 同签名动作） -->
         <view class="courts">
           <CourtMatchCard
-            v-if="L.cur"
-            variant="playing"
-            :cur="L.cur"
-            :name="courtName(0)"
+            v-for="c in L.courts"
+            :key="c.id"
+            :court="c"
             :full="full"
             @point="liveStore.point"
             @undo="liveStore.undoPoint"
             @clear="liveStore.clearScore"
             @settle="liveStore.openSettle"
             @cancel="liveStore.cancelMatch"
-            @pull="goPull"
-            @profile="openProfile"
-          />
-          <CourtMatchCard
-            v-for="(c, i) in L.courts"
-            :key="`ready${i}`"
-            variant="ready"
-            :court="c"
-            :name="courtName(i + 1)"
-            :full="full"
-            @profile="openProfile"
-          />
-          <CourtMatchCard
-            v-for="idx in idleIdx"
-            :key="`idle${idx}`"
-            variant="idle"
-            :name="courtName(idx)"
-            :full="full"
             @autodeal="liveStore.autoDeal"
             @pull="goPull"
+            @profile="openProfile"
           />
         </view>
 
@@ -84,10 +68,11 @@
         @person="onQueuePerson"
       />
       <RulesSheet :visible="liveSheet?.k === 'rules'" @close="closeLocal" />
-      <!-- 终局结算（store.settling 驱动）与签到二维码浮层：z-110，顶替退役 WinPopup 层级 -->
+      <!-- 终局结算（store.settling 驱动，按片开窗）与签到二维码浮层：z-110，顶替退役 WinPopup 层级 -->
       <EndSettleModal
         :visible="!!liveStore.settling"
         :full="full"
+        :court-id="liveStore.settling?.courtId ?? -1"
         @close="liveStore.closeSettle()"
       />
       <QrOverlay :visible="qrOpen" @close="qrOpen = false" />
@@ -116,8 +101,6 @@ import { useLiveStore } from "@/stores/live";
 import { useGameStore } from "@/stores/game";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
-import { courtLabel } from "@/utils/format";
-import { maxCourts, usedCourts } from "@/utils/rotate";
 import { goMeet } from "@/utils/nav";
 
 /** 本地弹层槽（单槽替换语义：开新的自动顶旧的；与全局 SheetPayload 互不相干） */
@@ -195,20 +178,6 @@ function onRules(): void {
 function goPull(): void {
   goMeet();
 }
-
-/* ---------- 卡片名映射（口径在 utils/format 的 courtLabel 单一源） ---------- */
-function courtName(idx: number): string {
-  return courtLabel(L.value?.g.courts, idx);
-}
-
-/** 空闲卡：片数上限在 utils/rotate 的 maxCourts 单一源，已占片数用镜像口径 usedCourts；
-    只出「下一片可开」一张（原型口径单张空闲卡：候场够了点自动排阵，不逐片刷屏）；候场有人时才出。 */
-const idleIdx = computed<number[]>(() => {
-  const l = L.value;
-  if (!l) return [];
-  const dealt = usedCourts(l);
-  return maxCourts(l.g) - dealt > 0 && l.queue.length ? [dealt] : [];
-});
 
 /** 撒花：落一场撒一波 56 粒（store 不管撒花的约定；初始/换局不触发） */
 watch(

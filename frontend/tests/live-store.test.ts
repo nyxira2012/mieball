@@ -1,15 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { U } from "@/api";
-import type { EntryRow, Game, User } from "@/api/types";
+import type { EntryRow, Game, LiveCourt, User } from "@/api/types";
 
-/* 每个用例重置模块图 → 全新 mock 数据；102（balance · 8 上限）与 101（winner · 12 上限）
+/* 每个用例重置模块图 → 全新 mock 数据；102（2 片 · 我组织）与 101（未订场 3 片 · wang 组织）
    两组真局 fixture 做确定性推演。
-   2.1 打球页改版（批1）：终局从「到分自动落账」改为 point→settling 快照→confirmSettle 确认落账。
-   1.2 隔离线：startLive 吃重塑后的真局对象（形状与后端 game_view 镜像），名册从 formal
-   报名行展开、mock U 同 id 者借真实战绩对象（结算落回战力榜）。
-   2.2 批2：开场全员「未到」不发牌——需要场上态的用例经 arrive() 搭（真实代码路径：
-   代办到场 → 到场支线自动发牌）；fixture 开球时刻定格在过去，到场按口径归一为「迟到队尾」。 */
+   2.4 批2（多片并行）：无 cur/lastWinners——每片自带记分板（courts[i].sa/sb），记分族动作
+   全部带 courtId；confirmSettle 幂等闸（两端并发确认只落一次账）；轮换四件套 rules 挂
+   LiveState（自选前 down 跟推荐走、自选起冻结）；g.rotation 只作旧抽屉过渡桥的显示位。
+   1.2 隔离线：startLive 吃重塑后的真局对象；2.2 批2：开场全员「未到」不发牌——需要场上态
+   的用例经 arrive() 搭（真实代码路径：代办到场 → 到场支线自动补片）；fixture 开球时刻定格
+   在过去，到场按口径归一为「迟到队尾」。 */
 beforeEach(async () => {
   vi.resetModules();
   setActivePinia(createPinia());
@@ -22,7 +23,7 @@ async function load() {
 }
 
 /** 到场搭态：借管理员身份代办到场（102 我是组织者、外挂无副作用）；过开球 → 归一迟到队尾，
-    逐人触发到场支线的自动发牌（4 人即上片顶 cur）。 */
+    逐人触发到场支线的自动补片（4 人即上片，片号先后供给）。 */
 function arrive(
   live: ReturnType<typeof import("@/stores/live").useLiveStore>,
   ids?: number[],
@@ -32,6 +33,19 @@ function arrive(
   for (const id of ids ?? L.roster.map((p) => p.id)) live.setCheck(id, "ok");
   L.admins.pop();
 }
+
+/** 直造一片在打（球友身份攒不出场上态时的 guard/开放用例搭态用） */
+const mkCourt = (a: number[], b: number[]): LiveCourt => ({
+  id: 0,
+  name: "1号",
+  singles: false,
+  A: a,
+  B: b,
+  sa: 0,
+  sb: 0,
+  streakA: 0,
+  streakB: 0,
+});
 
 const person = (u: User) => ({ id: u.id, nickname: u.name, chibi: u.chibi });
 const entry = (u: User, bring = 0): EntryRow => ({
@@ -77,7 +91,7 @@ function g102(): Game {
   };
 }
 
-/** 101 同构：11 人报名（hai 带 2 · zhao 随行在 mock U 带阴影标）· winner 模式 · 未订场 */
+/** 101 同构：11 人报名（hai 带 2 · zhao 随行在 mock U 带阴影标）· winner 模式 · 未订场（→3 片兜底） */
 function g101(): Game {
   return {
     ...g102(),
@@ -136,22 +150,53 @@ function gFull8(): Game {
   };
 }
 
-/** 把 102 局 4 人全部到场（自动发牌上 cur），再打到 11:9（到分，settling 已开未落账）。
-    返回句柄 + 访客 id（roster[2]） */
+/** 12 人 2 片局（多片并行主 fixture）：8 上两片 + 4 候场——全上全下/N人下的落牌都可观测 */
+function g12(): Game {
+  return {
+    ...g102(),
+    id: 112,
+    name: "十二人双片局",
+    organizer: person(U.me),
+    maxPlayers: 16,
+    courts: ["3号", "5号"],
+    entries: [
+      entry(U.li),
+      entry(U.bei),
+      entry(U.wu),
+      entry(U.gu),
+      entry(U.shi),
+      entry(U.yang),
+      entry(U.tong),
+      entry(U.zhang),
+      entry(U.hai),
+      entry(U.wang),
+      entry(U.ken),
+      entry(U.me),
+    ],
+    my: {
+      isOrganizer: true,
+      myEntry: { bring: 0, standing: "formal", waitSeq: null },
+      invited: false,
+    },
+  };
+}
+
+/** 把 102 局 4 人全部到场（自动补片上片 0），再打到 11:9（到分，settling 已开未落账）。
+    返回句柄 + 访客 id（roster[2]）。片 0 首发按队序：A=[me,li] B=[访客,bei]。 */
 async function setupSettling() {
   const h = await load();
   h.live.startLive(g102());
   const L = h.live.live!;
-  arrive(h.live); // 4 人到场 → 到场支线自动发牌上 cur
-  for (let i = 0; i < 9; i++) h.live.point("a");
-  for (let i = 0; i < 9; i++) h.live.point("b");
-  h.live.point("a");
-  h.live.point("a"); // 11:9
+  arrive(h.live); // 4 人到场 → 到场支线自动补片 0
+  for (let i = 0; i < 9; i++) h.live.point(0, "a");
+  for (let i = 0; i < 9; i++) h.live.point(0, "b");
+  h.live.point(0, "a");
+  h.live.point(0, "a"); // 11:9
   return { ...h, L, guest: L.roster[2].id };
 }
 
-describe("startLive（2.2 批2§4.1 开场点亮）", () => {
-  it("全员「未到」开场：候场空、不发牌不报错；随行展开成编号访客（·1 起）、底账起笔挂担保人", async () => {
+describe("startLive（2.2 批2§4.1 开场点亮 · 2.4 批2 建片+四件套起笔）", () => {
+  it("全员「未到」开场：候场空、按片数建空片（差人卡）、四件套起笔；随行展开成编号访客（·1 起）、底账起笔挂担保人", async () => {
     const { live } = await load();
     expect(live.hasLive).toBe(false);
     const msg = live.startLive(g102()); // entries: me + li(bring 1) + bei → 4 人
@@ -169,8 +214,18 @@ describe("startLive（2.2 批2§4.1 开场点亮）", () => {
     expect(L.roster.every((p) => p.skip === 0)).toBe(true);
     expect(L.startedAt).toBeTruthy(); // 点亮时刻落账
     expect(L.queue).toEqual([]); // 候场区空：报到的人按先后排进
-    expect(L.courts).toEqual([]); // 不发牌——够一片的人数是到场攒出来的
-    expect(L.cur).toBeNull();
+    expect(L.courts.map((c) => [c.id, c.name, c.A, c.B])).toEqual([
+      [0, "3号", [], []],
+      [1, "5号", [], []],
+    ]); // 按片数建空片：人不够的片差人卡呈现（2.4 §4.3 空状态）
+    expect(L.rules).toEqual({
+      singles: false,
+      down: "all", // 无人 → 推荐「不荐」→ 挂全上全下占位（§4.2）
+      downChosen: false,
+      pairing: "queue",
+      champCap: 3,
+    });
+    expect(L.courtSeqNext).toBe(0);
     expect(L.ledger).toEqual([
       { id: 0, name: "我" },
       { id: 5, name: "亮马河快攻" },
@@ -183,7 +238,7 @@ describe("startLive（2.2 批2§4.1 开场点亮）", () => {
       { id: 8, name: "北苑小钢炮" },
     ]); // 正式一人一行、随行行挂担保人名
   });
-  it("101 开场 13 人（3 随行）全员未到：底账 13 行、候场空不发牌", async () => {
+  it("101 开场 13 人（3 随行）全员未到：底账 13 行、未订场按人数兜底 3 片", async () => {
     const { live } = await load();
     live.startLive(g101());
     const L = live.live!;
@@ -191,156 +246,430 @@ describe("startLive（2.2 批2§4.1 开场点亮）", () => {
     expect(L.roster.filter((p) => p.shadow)).toHaveLength(3); // hai 带 2 访客 + zhao 本就是随行
     expect(L.roster.every((p) => p.check === "absent")).toBe(true);
     expect(L.queue).toEqual([]);
-    expect(L.cur).toBeNull();
+    expect(L.courts).toHaveLength(3); // maxPlayers 12 → 三片兜底（courtCount 单一源）
+    expect(L.courts.every((c) => !c.A.length && !c.B.length)).toBe(true);
     expect(L.ledger).toHaveLength(13);
     expect(L.ledger.filter((r) => r.shadow)).toHaveLength(3);
     expect(L.ledger.filter((r) => r.guarantor === "海淀吊小球")).toHaveLength(
       2,
     );
   });
-  it("到场攒局（§4.1「够一片的人数就自动发牌上片」）：4 人到场即上 cur", async () => {
+  it("到场攒局（§4.1「够一片的人数就自动发牌上片」）：4 人到场即补满片 0，队序分边", async () => {
     const { live } = await load();
     live.startLive(g102());
     const L = live.live!;
     live.setCheck(0, "ok"); // 1 人：亮已到、进候场，不够一片
-    expect(L.cur).toBeNull();
+    expect(L.courts[0].A).toEqual([]);
     expect(L.queue).toEqual([0]);
     arrive(
       live,
       L.roster.slice(1).map((p) => p.id),
     ); // 其余 3 人到场 → 够一片
-    expect(L.cur).toEqual({ A: [5, L.roster[2].id], B: [0, 8], sa: 0, sb: 0 }); // balance 蛇形按分降序
+    expect(L.courts[0]).toMatchObject({
+      A: [0, 5],
+      B: [L.roster[2].id, 8],
+      sa: 0,
+      sb: 0,
+    }); // 怎么配默认按候场队序：第 1、2 位一队，第 3、4 位一队（2.4 §4.5）
     expect(L.queue).toEqual([]); // 全部上场
+    expect(L.courts[1].A).toEqual([]); // 片 1 差人卡
   });
 });
 
-describe("point → settling → confirmSettle（2.1 §5 结算流 · alpha:1688-1728 数值口径）：K=24 / 败方六成 / 随行半权重", () => {
-  it("11:9 到点开 settling（cur 不动），confirmSettle(true,11,9) 落账 + 自动排下一场，战力榜联动", async () => {
+describe("多片并行（2.4 §4.3：够几片开几片、各打各的、各排各的）", () => {
+  /** 12 人到场：片 0=[li,bei|wu,gu]、片 1=[shi,yang|tong,zhang]、候场 [hai,wang,ken,me] */
+  async function setup12() {
+    const h = await load();
+    h.live.startLive(g12());
+    const L = h.live.live!;
+    arrive(h.live);
+    return { ...h, L };
+  }
+  it("8 人 2 片双打开局：两片各有记分板同时开打，互不等待", async () => {
+    const { live, L } = await setup12();
+    expect(L.courts.map((c) => [c.A, c.B])).toEqual([
+      [[5, 8], [3, 4]], // 片 0：li,bei vs wu,gu
+      [[6, 7], [9, 12]], // 片 1：shi,yang vs tong,zhang
+    ]);
+    expect(L.courts.every((c) => c.sa === 0 && c.sb === 0)).toBe(true);
+    expect(L.queue).toEqual([2, 1, 11, 0]); // hai,wang,ken,me 候场
+    for (let i = 0; i < 3; i++) live.point(1, "a"); // 只记片 1
+    expect(L.courts[0].sa).toBe(0); // 片 0 记分板不动
+    expect(L.courts[1].sa).toBe(3);
+  });
+  it("一片结束对局另一片不受影响：片 0 落账重排，片 1 比分阵容原样；并发二次确认 no-op（幂等）", async () => {
+    const { live } = await load();
+    live.startLive(g12());
+    const L = live.live!;
+    arrive(live);
+    live.point(1, "a"); // 片 1 先记一分
+    for (let i = 0; i < 9; i++) live.point(0, "a");
+    for (let i = 0; i < 9; i++) live.point(0, "b");
+    live.point(0, "a");
+    live.point(0, "a"); // 片 0 到 11:9 → settling 开在片 0
+    expect(live.settling).toEqual({ courtId: 0, sa: 11, sb: 9 });
+    live.point(1, "a"); // 别片照打（guard 只拦同片）
+    expect(L.courts[1].sa).toBe(2);
+    live.confirmSettle(0, true, 11, 9); // 全上全下（12 人 ≥ 满片+4 → 推荐 all，未自选跟推荐）
+    expect(live.settling).toBeNull();
+    expect(L.courts[0]).toMatchObject({ A: [2, 1], B: [11, 0] }); // 候场首 4 人补全新一队
+    expect(L.courts[1]).toMatchObject({ A: [6, 7], B: [9, 12], sa: 2, sb: 0 }); // 片 1 原样（4.4 各片独立）
+    expect(L.queue).toEqual([5, 8, 3, 4]); // 片 0 原班按资历序排队尾（先下的排前面）
+    expect(L.round).toBe(1);
+    expect(L.history[0]).toEqual({
+      names: "亮马河快攻 & 北苑小钢炮",
+      sa: 11,
+      sb: 9,
+    });
+    // 二次确认（两端并发模拟）：幂等闸直接 return——history/elo/round 都不再动
+    const eloAfter = L.roster.find((p) => p.id === 5)!.elo;
+    live.confirmSettle(0, true, 11, 9);
+    expect(L.history).toHaveLength(1);
+    expect(L.round).toBe(1);
+    expect(L.courts[0].A).toEqual([2, 1]);
+    expect(L.roster.find((p) => p.id === 5)!.elo).toBe(eloAfter);
+  });
+  it("各谁下方式 store 级落牌——2人下：资历最久的 2 人下、候场首逐个原位顶坑", async () => {
+    const { live } = await load();
+    live.startLive(g12());
+    const L = live.live!;
+    arrive(live);
+    live.setRules({ down: "n2" }); // 自选 2 人下（冻结推荐跟随）
+    live.openSettle(0);
+    live.confirmSettle(0, true, 11, 9);
+    // 首场四人资历并列按上场先后（seq 1-4）：li、bei 最久先下——候场首 hai、wang 顶 A 坑，
+    // wu、gu 保住自己半边不被重新分队（谁下补谁的坑）
+    expect(L.courts[0]).toMatchObject({ A: [2, 1], B: [3, 4] });
+    expect(L.courts[1]).toMatchObject({ A: [6, 7], B: [9, 12] }); // 别片不动
+    expect(L.queue).toEqual([11, 0, 5, 8]); // ken、me 候场余额在前，先下的 li 在 bei 前
+    // 第二场：留下的 wu、gu 资历最深（连打两场 tenure 2）——这回他们下、候场首 ken、me 顶 B 坑
+    live.setRules({ down: "n2" }); // 已是 n2，重复自选幂等
+    live.openSettle(0);
+    live.confirmSettle(0, true, 11, 9);
+    expect(L.courts[0]).toMatchObject({ A: [2, 1], B: [11, 0] }); // hai、wang 留住半边
+    expect(L.queue).toEqual([5, 8, 3, 4]);
+  });
+});
+
+describe("point → settling → confirmSettle（2.1 §5 · 按片）：K=24 / 败方六成 / 访客同规", () => {
+  it("11:9 到点开 settling（片不动），confirmSettle 落账 + 原班再战（候场空坑补不满），战力榜联动", async () => {
     const { live } = await load();
     live.startLive(g102());
     const L = live.live!;
     const guest = L.roster[2].id;
-    arrive(live); // 4 人到场 → 到场支线自动发牌上 cur
-    for (let i = 0; i < 9; i++) live.point("a");
-    for (let i = 0; i < 9; i++) live.point("b"); // 9:9（先到 11 前不收局）
+    arrive(live); // 4 人到场 → 片 0=[me,li | 访客,bei]
+    for (let i = 0; i < 9; i++) live.point(0, "a");
+    for (let i = 0; i < 9; i++) live.point(0, "b"); // 9:9（先到 11 前不收局）
     expect(live.settling).toBeNull();
-    live.point("a");
-    live.point("a"); // 11:9 → 到点转结算弹窗（不落账）
-    expect(live.settling).toEqual({ sa: 11, sb: 9 });
-    expect(L.cur).not.toBeNull(); // cur 保持不动，等弹窗确认
-    expect(L.cur!.sa).toBe(11);
-    live.confirmSettle(true, 11, 9);
-    // A=[li,访客] vs B=[me,bei]：人均 1387 vs 1485 → delta=15，loss=9，访客 ceil(15/2)=8
+    live.point(0, "a");
+    live.point(0, "a"); // 11:9 → 到点转结算弹窗（不落账）
+    expect(live.settling).toEqual({ courtId: 0, sa: 11, sb: 9 });
+    expect(L.courts[0].sa).toBe(11); // 片保持不动，等弹窗确认
+    live.confirmSettle(0, true, 11, 9);
+    // A=[me,li] 人均 1546 胜 B=[访客(1200 计入期望),bei] 人均 1326 → delta=5，loss=3，访客 floor(-3/2)=-2
     expect(live.settling).toBeNull();
     expect(L.history[0]).toEqual({
-      names: "亮马河快攻 & 亮马的球友·1",
+      names: "我 & 亮马河快攻",
       sa: 11,
       sb: 9,
     });
     const { U } = await import("@/api");
-    expect(U.li.elo).toBe(1589); // 1574+15 —— roster 与 mock U 同一对象
-    expect(U.li.month).toBe(29); // 14+15
+    expect(U.me.elo).toBe(1523); // 1518+5
+    expect(U.li.elo).toBe(1579); // 1574+5
+    expect(U.li.month).toBe(19); // 14+5
     expect(U.li.win).toBe(30); // 29+1
-    expect(U.me.elo).toBe(1509); // 1518-9
-    expect(U.bei.elo).toBe(1443); // 1452-9
-    expect(U.me.last5).toEqual(["L", "W", "W", "L", "L"]); // 输球 L 入尾（仅我滚动，alpha:1707）
+    expect(U.bei.elo).toBe(1449); // 1452-3
+    expect(U.me.last5).toEqual(["L", "W", "W", "L", "W"]); // 赢球 W 入尾（仅我滚动）
     expect(guest >= 9000).toBe(true);
-    expect(L.roster[2].elo).toBe(1208); // 访客 1200+8
-    expect(L.lastWinners).toEqual([5]); // 随行不进胜者留场名单
-    // 队列口径同旧 endMatch：败者回队尾 + balance ≠ winner 胜者也回队（[0,8,5,guest]），
-    // 但 confirmSettle 紧接着 fillCourts+nextMatch —— 4 人正好重排成 1 片上 cur（中间态不可观测）
+    expect(L.roster[2].elo).toBe(1198); // 访客 1200-2（同规落账）
     expect(L.round).toBe(1);
+    // 候场空、全上全下补不满 4 人 → 原班再战（4.4 坑补不满通用规矩）
+    expect(L.courts[0]).toMatchObject({ A: [0, 5], B: [guest, 8], sa: 0, sb: 0 });
     expect(L.queue).toEqual([]);
-    expect(L.cur).toEqual({ A: [5, guest], B: [0, 8], sa: 0, sb: 0 });
+    expect(L.feed[0]).toBe("我 & 亮马河快攻 拿下 11:9"); // feed 留痕
   });
   it("弹窗改胜方：confirmSettle(false, 9, 11) 按新胜方（B 队）结算，改过的比分写回", async () => {
     const { live, L } = await setupSettling();
-    live.confirmSettle(false, 9, 11); // 组织者改判 B 胜、比分倒转
-    // B=[me,bei] 人均 1485 胜 A=[li,访客] 人均 1387 → delta=9，loss=5，访客 floor(-5/2)=-3
-    expect(L.history[0]).toEqual({ names: "我 & 北苑小钢炮", sa: 9, sb: 11 });
-    expect(L.lastWinners).toEqual([0, 8]);
+    live.confirmSettle(0, false, 9, 11); // 组织者改判 B 胜、比分倒转
+    // B=[访客,bei] 人均 1326 胜 A 人均 1546 → delta=19，loss=11，访客 ceil(19/2)=10
+    expect(L.history[0]).toEqual({
+      names: "亮马的球友·1 & 北苑小钢炮",
+      sa: 9,
+      sb: 11,
+    });
     const { U } = await import("@/api");
-    expect(U.me.elo).toBe(1527); // 1518+9
-    expect(U.bei.elo).toBe(1461); // 1452+9
-    expect(U.li.elo).toBe(1569); // 1574-5
-    expect(L.roster[2].elo).toBe(1197); // 访客 1200-3（半权重 floor）
-    expect(U.me.last5).toEqual(["L", "W", "W", "L", "W"]); // 赢球 W 入尾
+    expect(U.me.elo).toBe(1507); // 1518-11
+    expect(U.li.elo).toBe(1563); // 1574-11
+    expect(U.bei.elo).toBe(1471); // 1452+19
+    expect(L.roster[2].elo).toBe(1210); // 访客 1200+10（半权重 ceil）
+    expect(U.me.last5).toEqual(["L", "W", "W", "L", "L"]); // 输球 L 入尾
   });
-  it("closeSettle 不落账：比分保留在 cur，可继续计分重新到点", async () => {
+  it("closeSettle 不落账：比分保留在片，可继续计分重新到点", async () => {
     const { live, L } = await setupSettling();
     live.closeSettle();
     expect(live.settling).toBeNull();
-    expect(L.cur).not.toBeNull();
-    expect(L.cur!.sa).toBe(11); // 比分保留
-    expect(L.cur!.sb).toBe(9);
+    expect(L.courts[0].sa).toBe(11); // 比分保留
+    expect(L.courts[0].sb).toBe(9);
     expect(L.history).toHaveLength(0); // 未落账
     const { U } = await import("@/api");
     expect(U.li.elo).toBe(1574); // elo 原封
-    live.point("b"); // 继续计分：11:10 净胜 1 不收
+    live.point(0, "b"); // 继续计分：11:10 净胜 1 不收
     expect(live.settling).toBeNull();
-    expect(L.cur!.sb).toBe(10);
-    live.point("b"); // 11:11
-    live.point("b"); // 11:12
-    live.point("b"); // 11:13 → 净胜 2 到点，弹窗重开
-    expect(live.settling).toEqual({ sa: 11, sb: 13 });
+    expect(L.courts[0].sb).toBe(10);
+    live.point(0, "b"); // 11:11
+    live.point(0, "b"); // 11:12
+    live.point(0, "b"); // 11:13 → 净胜 2 到点，弹窗重开
+    expect(live.settling).toEqual({ courtId: 0, sa: 11, sb: 13 });
   });
-  it("11:10 不收局，undoPoint 按最后得分方回退，12:10 到点开弹窗、确认后入史", async () => {
+  it("11:10 不收局，undoPoint 按该片最后得分方回退，12:10 到点开弹窗、确认后入史", async () => {
     const { live } = await load();
     live.startLive(g102());
     const L = live.live!;
-    arrive(live); // 4 人到场 → cur
-    for (let i = 0; i < 10; i++) live.point("a");
-    for (let i = 0; i < 10; i++) live.point("b");
-    expect(L.cur).not.toBeNull(); // 10:10
-    live.point("a");
-    expect(L.cur!.sa).toBe(11);
+    arrive(live); // 4 人到场 → 片 0
+    for (let i = 0; i < 10; i++) live.point(0, "a");
+    for (let i = 0; i < 10; i++) live.point(0, "b");
+    expect(L.courts[0].sa).toBe(10); // 10:10
+    live.point(0, "a");
+    expect(L.courts[0].sa).toBe(11);
     expect(live.settling).toBeNull(); // 11:10 净胜 1 → 继续
-    live.undoPoint();
-    expect(L.cur!.sa).toBe(10); // 撤回 A 的分
-    live.point("a");
-    live.point("a"); // 12:10 → 到点
-    expect(live.settling).toEqual({ sa: 12, sb: 10 });
-    expect(L.cur).not.toBeNull(); // cur 还在，等确认
-    live.confirmSettle(true, 12, 10);
+    live.undoPoint(0);
+    expect(L.courts[0].sa).toBe(10); // 撤回 A 的分
+    live.point(0, "a");
+    live.point(0, "a"); // 12:10 → 到点
+    expect(live.settling).toEqual({ courtId: 0, sa: 12, sb: 10 });
+    live.confirmSettle(0, true, 12, 10);
     expect(L.history[0].sa).toBe(12);
     expect(L.history[0].sb).toBe(10);
   });
-  it("openSettle：手动入口快照当前比分；无 cur 时静默不开", async () => {
+  it("openSettle：手动入口快照当前比分；空片静默不开", async () => {
     const { live } = await load();
     live.startLive(g102());
     const L = live.live!;
-    arrive(live); // 4 人到场 → cur
-    live.point("a");
-    live.point("a"); // 2:0 未到分
+    arrive(live); // 4 人到场 → 片 0
+    live.point(0, "a");
+    live.point(0, "a"); // 2:0 未到分
     expect(live.settling).toBeNull();
-    live.openSettle(); // 卡上「终局结算」钮
-    expect(live.settling).toEqual({ sa: 2, sb: 0 });
-    live.confirmSettle(true, 2, 0); // 手动终局也走同一落账口径
+    live.openSettle(0); // 卡上「终局结算」钮
+    expect(live.settling).toEqual({ courtId: 0, sa: 2, sb: 0 });
+    live.confirmSettle(0, true, 2, 0); // 手动终局也走同一落账口径
     expect(L.history[0]).toEqual({
-      names: "亮马河快攻 & 亮马的球友·1",
+      names: "我 & 亮马河快攻",
       sa: 2,
       sb: 0,
     });
     expect(live.settling).toBeNull();
-    live.openSettle(); // 下一场已自动排好（cur 在）→ 可开
-    expect(live.settling).toEqual({ sa: 0, sb: 0 });
-    live.cancelMatch(); // 取消对局 → 结算弹窗随对局一并关
+    live.openSettle(0); // 原班再战（候场空补不满）→ 片还在，可开
+    expect(live.settling).toEqual({ courtId: 0, sa: 0, sb: 0 });
+    live.cancelMatch(0); // 取消对局 → 结算弹窗随对局一并关
     expect(live.settling).toBeNull();
-    live.openSettle(); // 无 cur → 静默不开
+    live.openSettle(1); // 空片（差人卡）→ 静默不开
     expect(live.settling).toBeNull();
+  });
+  it("clearScore：比分与该片最后得分方一起清零（undo 不再误撤）", async () => {
+    const { live } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    arrive(live); // 4 人到场 → 片 0
+    live.point(0, "a");
+    live.point(0, "b");
+    live.point(0, "a"); // 2:1，last='a'
+    live.clearScore(0);
+    expect(L.courts[0].sa).toBe(0);
+    expect(L.courts[0].sb).toBe(0);
+    expect(L.courts[0].last).toBeUndefined();
+    live.undoPoint(0); // last 已清 → 0:0 原地不动
+    expect(L.courts[0].sa).toBe(0);
+    expect(L.courts[0].sb).toBe(0);
   });
 });
 
-describe("setCheck / togglePerson / cancelMatch / clearScore / autoDeal（2.1 §2-4）", () => {
-  /** 打完收局再取消：4 人全回候场（queue=[li,访客,me,bei]），从干净队列出发 */
-  async function setupQueue() {
-    const h = await setupSettling();
-    h.live.confirmSettle(true, 11, 9); // 落账 + 自动排下一场 → cur={A:[li,访客],B:[me,bei]}
-    h.live.cancelMatch(); // 人回流 → 队列 [li,访客,me,bei]
-    return { live: h.live, L: h.L, guest: h.guest };
+describe("轮换四件套：setRules / 推荐跟随 / 过渡桥 / 组合回落 / 连庄清零（2.4 §4.1-4.2/4.7）", () => {
+  it("推荐跟随：人数变 → down 变（8 人 all → 9 人 n1）；自选后冻结（推荐只亮标签不替改）", async () => {
+    const { live } = await load();
+    live.startLive(g102());
+    const L = live.live!; // 2 片
+    arrive(live); // 4 人上场 → 可打 4 人：够单打铺满、双打铺不满 → 提示换单打（非 down）→ 占位 all
+    expect(L.rules.down).toBe("all");
+    live.addGuests(4, "帮手", U.me); // 可打 8 人 = 铺满 → all
+    expect(L.rules.down).toBe("all");
+    expect(L.rules.downChosen).toBe(false);
+    live.addGuests(1, "第九人", U.me); // 可打 9 人 = 满片+1 → n1
+    expect(L.rules.down).toBe("n1");
+    live.setRules({ down: "loser" }); // 组织者自选输家下 → 冻结
+    expect(L.rules.downChosen).toBe(true);
+    live.addGuests(2, "再两人", U.me); // 可打 11 人（本应 n3）→ 冻结不动
+    expect(L.rules.down).toBe("loser");
+    expect(live.advice).toMatchObject({ kind: "down", down: "n3" }); // 推荐照算、只亮标签
+  });
+  it("组合回落：单打×1/2/3人下自动落回全上全下（如实显示、不算自选）；双打自选 n1 后切单打同样回落", async () => {
+    const { live } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    live.setRules({ singles: true, down: "n1" }); // 并发拼出的非法组合
+    expect(L.rules.singles).toBe(true);
+    expect(L.rules.down).toBe("all");
+    expect(L.rules.downChosen).toBe(false); // 自动回落不算自选（推荐继续跟随）
+    live.setRules({ singles: false, down: "n1" }); // 双打下合法自选
+    expect(L.rules.down).toBe("n1");
+    expect(L.rules.downChosen).toBe(true);
+    live.setRules({ singles: true }); // 只换单双打：n1 回落 all，自选状态保留（组织者动过谁下）
+    expect(L.rules.down).toBe("all");
+    expect(L.rules.downChosen).toBe(true);
+  });
+  it("换单双打空片格式传导（§5 边界）：一片在打一片空改单打 → 空片 2 人即开、在打片不动", async () => {
+    const { live } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    arrive(live); // 4 人到场 → 片 0 开打，片 1 双打差 2 人（差人卡）
+    live.addGuests(2, "挑战", U.me); // 候场 2 人（addGuests 不自动补片）
+    const c1 = L.roster[4]!.id;
+    const c2 = L.roster[5]!.id;
+    live.setRules({ singles: true });
+    expect(L.courts[0]).toMatchObject({ singles: false, A: [0, 5], B: [L.roster[2].id, 8] }); // 在打片照旧打完（4 人双打、阵容不动）
+    expect(L.courts[1]).toMatchObject({ singles: true, A: [c1], B: [c2] }); // 空片当场转新格式、2 人开赛
+    expect(L.queue).toEqual([]);
+  });
+  it("两片全空换单打（§5 边界：2 片 6 人改单打）→ 两片各 2 人开赛、剩 2 人候场", async () => {
+    const { live } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    live.addGuests(6, "帮手", U.me); // 6 人候场、两片全空（开场未到不发牌、带人也不自动补片）
+    const ids = L.roster.slice(4).map((p) => p.id);
+    live.setRules({ singles: true });
+    expect(L.courts[0]).toMatchObject({ singles: true, A: [ids[0]], B: [ids[1]] });
+    expect(L.courts[1]).toMatchObject({ singles: true, A: [ids[2]], B: [ids[3]] });
+    expect(L.queue).toEqual([ids[4], ids[5]]);
+  });
+  it("切到输家下 → 全片连庄清零重算；已在输家下重复点不清（他们不是赢上来的才清）", async () => {
+    const { live } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    arrive(live); // 片 0
+    live.addGuests(2, "挑战", U.me); // 候场 2 人——输家下补坑有人
+    live.setRules({ down: "loser" });
+    live.openSettle(0);
+    live.confirmSettle(0, true, 11, 9); // A=[me,li] 胜：streakA=1、B 下来两位挑战者补
+    expect(L.courts[0].streakA).toBe(1);
+    expect(L.courts[0].A).toEqual([0, 5]); // 赢家留场
+    expect(L.courts[0].streakB).toBe(0); // 新挑战者连庄从零
+    live.setRules({ down: "loser" }); // 已在输家下：重复点不清连庄
+    expect(L.courts[0].streakA).toBe(1);
+    live.setRules({ down: "all" }); // 切走
+    live.setRules({ down: "loser" }); // 切回 → 清零重算（4.7-2）
+    expect(L.courts[0].streakA).toBe(0);
+    expect(L.courts[0].streakB).toBe(0);
+  });
+  it("输家下落牌：赢家留场连庄+1、输家排队尾、候场首 2 人成一队挑战（不重配）", async () => {
+    const { live } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    arrive(live);
+    live.addGuests(2, "挑战", U.me);
+    const c1 = L.roster[4]!.id;
+    const c2 = L.roster[5]!.id;
+    live.setRules({ down: "loser", pairing: "balance" }); // 输家下：均衡只在凑全新一队时生效——挑战两人按队序
+    live.openSettle(0);
+    live.confirmSettle(0, false, 9, 11); // B=[访客,bei] 胜：A 下
+    expect(L.courts[0].streakB).toBe(1); // 赢家边连庄+1
+    expect(L.courts[0].A).toEqual([c1, c2]); // 候场首 2 人按队序成一队（不重配）
+    expect(L.queue).toEqual([0, 5]); // 输家 me,li 排队尾
+    expect(L.courts[0].streakA).toBe(0);
+  });
+  it("setRuleMode 过渡桥（旧 RulesSheet 批3 才删）：三映射转 setRules，rotation 照写显示位", async () => {
+    const { live } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    live.setRuleMode("winner"); // 赢家留场 = 输家下 + 队序
+    expect(L.g.rotation).toBe("winner");
+    expect(L.rules).toMatchObject({ down: "loser", pairing: "queue" });
+    expect(L.rules.downChosen).toBe(true); // 桥映射含 down → 视为自选冻结
+    live.setRuleMode("rotate"); // 纯粹轮转 = 全上全下
+    expect(L.g.rotation).toBe("rotate");
+    expect(L.rules.down).toBe("all");
+    live.setRuleMode("balance"); // 均衡配对 = 全上全下 + 均衡分边
+    expect(L.g.rotation).toBe("balance");
+    expect(L.rules).toMatchObject({ down: "all", pairing: "balance" });
+  });
+});
+
+describe("换人 / 取消对局 / 自动排阵（2.1 §2/§4 · 2.4 §4.9 手动换人接管）", () => {
+  /** 输家下打完一场的片 0：A=[me,li] streakA=1、B=两位挑战者、queue=[访客,bei] */
+  async function setupLoser() {
+    const h = await load();
+    h.live.startLive(g102());
+    const L = h.live.live!;
+    arrive(h.live);
+    h.live.addGuests(2, "挑战", h.live.byId(U.me.id));
+    h.live.setRules({ down: "loser" });
+    h.live.openSettle(0);
+    h.live.confirmSettle(0, true, 11, 9);
+    return { ...h, L };
   }
-  /** 队位观察稳态（101）：11 人到场 → cur + 待开片两片全占、3 人候场——
-      片满则到场只排队不发牌，统一队尾的次序才可观测 */
+  it("swapPlayers：换下排队尾、换上者原位顶坑资历从换上起算、该半边连庄不动", async () => {
+    const { live, L } = await setupLoser();
+    const c1 = L.roster.find((p) => p.name === "挑战·1")!;
+    const li = L.roster.find((p) => p.id === 5)!;
+    expect(li.courtSeq).toBeTruthy(); // li 是首发出场序在身
+    live.addGuests(1, "老赵", live.byId(U.me.id));
+    const lao = L.roster.find((p) => p.name === "老赵")!;
+    expect(L.queue).toEqual([L.roster[2].id, 8, lao.id]);
+    live.swapPlayers(5, lao.id); // 场上的 li ↔ 候场队尾的老赵
+    expect(L.courts[0].A).toEqual([0, lao.id]); // 原位顶坑（A[1]）
+    expect(L.courts[0].streakA).toBe(1); // 手动换人不动该队连庄（4.9）
+    expect(L.queue).toEqual([L.roster[2].id, 8, 5]); // 换下的 li 排队尾
+    expect(li.courtSeq).toBeUndefined(); // 资历注销
+    expect(li.tenure).toBe(0);
+    expect(lao.courtSeq).toBeTruthy(); // 新发上场序
+    expect(lao.tenure).toBe(0); // 资历从换上起算
+  });
+  it("cancelMatch：人回流队尾、不计积分；候场够人则该片立刻重发（候场首顶上）", async () => {
+    const { live } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    arrive(live); // 片 0=[me,li|访客,bei]
+    for (let i = 0; i < 5; i++) live.point(0, "a"); // 5:0 未打完
+    live.cancelMatch(0);
+    expect(L.courts[0]).toMatchObject({ A: [0, 5], B: [L.roster[2].id, 8], sa: 0 }); // 回流 4 人正好重发回片 0（中间态不可观测）
+    expect(L.queue).toEqual([]);
+    expect(L.history).toHaveLength(0); // 不计积分
+    expect(L.round).toBe(0);
+    const { U } = await import("@/api");
+    expect(U.li.elo).toBe(1574); // elo 原封
+  });
+  it("autoDeal：补所有空片（多片同时要人按片号先后），在打片不动", async () => {
+    const { live } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    arrive(live); // 片 0 已自动补满
+    live.addGuests(4, "帮手", U.me); // 候场 4 人（带访客不自动发牌）
+    expect(L.courts[1].A).toEqual([]);
+    live.autoDeal();
+    const g = (i: number) => L.roster[4 + i]!.id;
+    expect(L.courts[1]).toMatchObject({ A: [g(0), g(1)], B: [g(2), g(3)] });
+    expect(L.courts[0].A).toEqual([0, 5]); // 在打片不动
+    expect(L.queue).toEqual([]);
+  });
+  it("myRound：swap 下场后我排队 idx0 无空片 → 1；有空片 → 随空片放大", async () => {
+    const { live } = await load();
+    live.startLive(g102());
+    expect(live.myRound).toBeNull(); // 全员未到：我不在队不在场
+    const L = live.live!;
+    live.setCourtsInput("3号"); // 收成 1 片
+    arrive(live); // 4 人到场 → 片 0（我在场上）
+    expect(live.myRound).toBeNull();
+    live.addGuests(1, "小陈", live.byId(U.me.id));
+    const xin = L.roster.find((p) => p.name === "小陈")!;
+    live.swapPlayers(0, xin.id); // 我被换下排队
+    expect(L.queue).toEqual([0]);
+    expect(live.myRound).toBe(1); // ceil((4*0 + 0 + 1)/4)——无空片
+    live.setCourtsInput("3号、5号"); // 放回 2 片（片 1 空着=差人卡）
+    expect(live.myRound).toBe(2); // ceil((4*1 + 0 + 1)/4)——空片算进轮次
+  });
+});
+
+describe("setCheck / togglePerson（2.1 §2-3 · 2.2 批2 队位统一队尾）", () => {
+  /** 队位观察稳态（101）：11 人到场 → 两片全占、第三片差 1 人、3 人候场——
+      片满则到场只排队不补片，统一队尾的次序才可观测 */
   async function setupTails() {
     const h = await load();
     h.live.startLive(g101());
@@ -354,8 +683,11 @@ describe("setCheck / togglePerson / cancelMatch / clearScore / autoDeal（2.1 §
   }
   it("setCheck：迟到重排队尾 / 早退出列 / 中途加入队尾——排队位统一队尾（修订④）", async () => {
     const { live, L } = await setupTails();
-    expect(L.queue).toEqual([6, 7, 8]); // shi/yang/bei 候场（winner 顺序按报名序发牌）
-    live.setCheck(7, "late"); // 已迟到者重复报到 → 重排队尾，不触发发牌（新到场才发）
+    expect(L.courts[0].A).toEqual([1, 2]); // 片 0：wang,hai vs 两位随行访客
+    expect(L.courts[1]).toMatchObject({ A: [3, 4], B: [5, 0] }); // 片 1：wu,gu vs li,me
+    expect(L.courts[2].A).toEqual([]); // 片 2 差 1 人
+    expect(L.queue).toEqual([6, 7, 8]); // shi/yang/bei 候场（按报名序供给）
+    live.setCheck(7, "late"); // 已迟到者重复报到 → 重排队尾，不触发补片（新到场才补）
     expect(L.queue).toEqual([6, 8, 7]);
     live.setCheck(8, "left"); // 早退 → 出列
     const beiRow = L.roster.find((p) => p.id === 8)!;
@@ -373,6 +705,18 @@ describe("setCheck / togglePerson / cancelMatch / clearScore / autoDeal（2.1 §
     expect(L.queue[L.queue.length - 1]).toBe(8);
     expect(L.queue[0]).toBe(6);
   });
+  it("早退清片（2.4 批2）：人在片上早退 → 该片半边过滤打短（补人归手动换人），资历注销", async () => {
+    const { live } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    arrive(live); // 片 0=[me,li|访客,bei]
+    const bei = L.roster.find((p) => p.id === 8)!;
+    expect(bei.courtSeq).toBeTruthy();
+    live.setCheck(8, "left");
+    expect(L.courts[0].B).toEqual([L.roster[2].id]); // bei 从片上清掉、访客打短
+    expect(bei.courtSeq).toBeUndefined(); // 资历注销（再上场从换上起算）
+    expect(L.queue).toEqual([]); // 不进候场
+  });
   it("到场口径归一（§4.2）：未到首报过开球=迟到队尾；未过开球=已到，也一样按先后队尾", async () => {
     const { live } = await load();
     live.startLive({ ...g102(), startAt: "2027-01-01T14:00:00+08:00" }); // 开球在未来
@@ -387,7 +731,7 @@ describe("setCheck / togglePerson / cancelMatch / clearScore / autoDeal（2.1 §
     expect(L.queue).toEqual([0]); // 队位不变：队尾
     expect(L.roster.find((p) => p.id === 0)!.arriveAt).toBeTruthy(); // 几点到当场落账
   });
-  it("setCheck late：缺席者（原不在队）到场即从队尾进队（avail 放行的配套口径）", async () => {
+  it("setCheck late：缺席者（原不在队）到场即从队尾进队（跳轮保位的配套口径）", async () => {
     const { live } = await load();
     live.startLive(g101());
     const L = live.live!;
@@ -397,20 +741,30 @@ describe("setCheck / togglePerson / cancelMatch / clearScore / autoDeal（2.1 §
     live.setCheck(absentId, "late");
     expect(L.queue[L.queue.length - 1]).toBe(absentId);
   });
-  it("avail 放行迟到（2.1 §3 裁决）：到场攒局自动发牌，迟到者 autoDeal 照样上场", async () => {
+  it("到场攒局放行迟到（2.1 §3 裁决）：迟到者第 4 个到 → 补满片 0 照样上场", async () => {
     const { live } = await load();
     live.startLive(g102());
     const L = live.live!;
-    expect(L.cur).toBeNull(); // 开场不发牌
-    arrive(live); // 4 人到场 → 自动发牌上 cur（balance 蛇形）
-    expect(L.cur).toEqual({ A: [5, L.roster[2].id], B: [0, 8], sa: 0, sb: 0 });
-    live.cancelMatch(); // 全员候场 [li, 访客, me, bei]
-    live.setCheck(5, "late"); // li 迟到 → 队尾、check='late'
-    live.autoDeal(); // balance 蛇形重发：li1574 me1518 bei1452 访客1200
-    expect(L.cur).toEqual({ A: [5, L.roster[2].id], B: [0, 8], sa: 0, sb: 0 }); // 迟到的 li 照样上场
+    L.admins.push(U.me.id);
+    live.setCheck(0, "ok"); // 过开球 → 归一 late
+    live.setCheck(5, "ok");
+    live.setCheck(8, "ok");
+    expect(L.courts[0].A).toEqual([]); // 3 人不够一片
+    live.setCheck(L.roster[2].id, "ok"); // 第 4 人（随行访客）到场 → 补满
+    expect(L.courts[0]).toMatchObject({
+      A: [0, 5],
+      B: [8, L.roster[2].id],
+    }); // 迟到的照样上场（队序分边按到场先后）
+    expect(L.roster.every((p) => p.check !== "absent")).toBe(true);
   });
   it("togglePerson：歇两轮(2/0)与连战互斥、连战队首、任意人可设", async () => {
-    const { live, L } = await setupQueue();
+    const { live } = await load();
+    live.startLive(g102());
+    const L = live.live!;
+    arrive(live); // 片 0
+    live.addGuests(2, "帮手", live.byId(U.me.id));
+    const c1 = L.roster[4]!.id;
+    live.swapPlayers(0, c1); // 我被换下 → queue=[c2, 0]
     live.togglePerson(0, "skip");
     expect(L.roster.find((p) => p.id === 0)!.skip).toBe(2); // 歇两轮
     live.togglePerson(0, "fire");
@@ -420,87 +774,57 @@ describe("setCheck / togglePerson / cancelMatch / clearScore / autoDeal（2.1 §
     expect(L.queue[0]).toBe(0); // 连战 → 队首
     live.togglePerson(0, "fire");
     expect(meP.fire).toBe(false);
-    live.togglePerson(5, "skip"); // 任意人（组织者代设）
+    live.togglePerson(5, "skip"); // 任意人（组织者代设，li 在场上也能设）
     expect(L.roster.find((p) => p.id === 5)!.skip).toBe(2);
     live.togglePerson(5, "skip");
     expect(L.roster.find((p) => p.id === 5)!.skip).toBe(0);
   });
-  it("cancelMatch：人回流队尾、不计积分、无待开片则 cur=null", async () => {
+});
+
+describe("setCourtsInput（2.1 顶条 · 2.4 批2 非空片口径）", () => {
+  it("『3、4 / 3,4 / 3 4 / 3号、4号』归一成 [3号,4号] 写 booked、空片重建重挂名", async () => {
     const { live } = await load();
     live.startLive(g102());
     const L = live.live!;
-    arrive(live); // 4 人到场 → cur
-    const guest = L.roster[2].id;
-    for (let i = 0; i < 5; i++) live.point("a"); // 5:0 未打完
-    live.cancelMatch();
-    expect(L.cur).toBeNull();
-    expect(L.queue).toEqual([5, guest, 0, 8]); // A、B 依次回队尾
-    expect(L.history).toHaveLength(0); // 不计积分
-    expect(L.round).toBe(0);
-    const { U } = await import("@/api");
-    expect(U.li.elo).toBe(1574); // elo 原封
+    expect(L.g.courts).toEqual(["3号", "5号"]); // mock 原值
+    for (const txt of ["3、4", "3,4", "3 4", "3号、4号"]) {
+      expect(live.setCourtsInput(txt)).toBe(true);
+      expect(L.g.courts).toEqual(["3号", "4号"]);
+      expect(L.courts.map((c) => c.name)).toEqual(["3号", "4号"]); // 场地名重挂
+    }
   });
-  it("cancelMatch：有待开片则顶上（101：cur 取消 → 待开片上记分板）", async () => {
+  it("在打的片不能收（非空片数校验、booked 不动），够片则过、空片收敛", async () => {
     const { live } = await load();
     live.startLive(g101());
     const L = live.live!;
-    L.admins.push(U.me.id); // 2.2 权限地基：取消对局收权——机制用例以管理员身份跑
+    L.admins.push(U.me.id); // 2.2 权限地基：场号改写收权——机制用例以管理员身份跑
     arrive(
       live,
       L.roster.slice(0, 9).map((p) => p.id),
-    ); // 前 9 人到场攒出 cur + 待开片
-    expect(L.courts).toHaveLength(1); // 一片在打 + 一片待开
-    live.cancelMatch();
-    expect(L.cur).toEqual({ A: [3, 4], B: [5, 0], sa: 0, sb: 0 }); // 待开片顶上（101 winner 模式按报名序发牌：
-    // 3=wu 五道口钉子步 · 4=gu 国贸截击手 / 5=li 亮马河快攻 · 0=me 我；头片 wang/hai/两位随行访客已被取消回队尾）
-    expect(L.courts).toHaveLength(0);
-    expect(L.queue).toHaveLength(5); // 原场上 4 人回队尾 + 原候场 1 人
+    ); // 前 9 人到场攒出两片在打、第三片空
+    expect(usedNonEmpty(L)).toBe(2);
+    expect(live.setCourtsInput("3号")).toBe(false);
+    expect(L.g.courts).toBeNull(); // 原值不动
+    expect(live.setCourtsInput("3号、5号")).toBe(true);
+    expect(L.g.courts).toEqual(["3号", "5号"]);
+    expect(L.courts).toHaveLength(2); // 空的第三片收敛掉，在打两片重挂名
+    expect(L.courts.map((c) => c.name)).toEqual(["3号", "5号"]);
   });
-  it("clearScore：比分与最后得分方一起清零（undo 不再误撤）", async () => {
+  it("空输入 / 全垃圾 token 拒", async () => {
     const { live } = await load();
     live.startLive(g102());
-    const L = live.live!;
-    arrive(live); // 4 人到场 → cur
-    live.point("a");
-    live.point("b");
-    live.point("a"); // 2:1，last='a'
-    live.clearScore();
-    expect(L.cur!.sa).toBe(0);
-    expect(L.cur!.sb).toBe(0);
-    expect(L.last).toBeUndefined();
-    live.undoPoint(); // last 已清 → 0:0 原地不动
-    expect(L.cur!.sa).toBe(0);
-    expect(L.cur!.sb).toBe(0);
-  });
-  it("autoDeal：空闲时发牌并顶上一场；cur 在则只补片不动 cur", async () => {
-    const { live } = await load();
-    live.startLive(g102());
-    const L = live.live!;
-    const guest = L.roster[2].id;
-    arrive(live); // 4 人到场 → 到场支线已自动顶上 cur
-    live.cancelMatch(); // 全员候场、无 cur
-    live.autoDeal();
-    expect(L.cur).toEqual({ A: [5, guest], B: [0, 8], sa: 0, sb: 0 }); // balance 重排
-    expect(L.queue).toEqual([]);
-    live.point("a");
-    live.autoDeal(); // cur 在 → 不顶新场
-    expect(L.cur!.sa).toBe(1);
+    expect(live.setCourtsInput("")).toBe(false);
+    expect(live.setCourtsInput("   ")).toBe(false);
+    expect(live.setCourtsInput("abc")).toBe(false);
+    expect(live.live!.g.courts).toEqual(["3号", "5号"]); // 不动
   });
 });
 
-describe("swapPlayers / addGuests / setCourtsInput / myRound（2.1 §1/§3/§4）", () => {
-  it("swapPlayers：场上↔候场互换（cur 的 outId→inId，候场的坑由 outId 顶）", async () => {
-    const { live } = await load();
-    const { U } = await import("@/api");
-    live.startLive(g102());
-    const L = live.live!;
-    arrive(live); // 4 人到场 → cur
-    live.addGuests(1, "小陈", U.me);
-    const xin = L.roster[4].id; // 新访客在候场队尾
-    live.swapPlayers(8, xin); // 场上的 bei ↔ 候场的小陈
-    expect(L.cur!.B).toEqual([0, xin]); // cur.B 里 8 → 小陈
-    expect(L.queue).toEqual([8]); // 候场的坑由 bei 顶，次序不乱
-  });
+function usedNonEmpty(L: { courts: LiveCourt[] }): number {
+  return L.courts.filter((c) => c.A.length || c.B.length).length;
+}
+
+describe("addGuests / swapPlayers（2.1 §1 · 2.2 批2 底账挂担保人）", () => {
   it("addGuests：空名→「介绍人前两字+的球友」；非空多位→name·1/name·2（·1 起）；单位不带序号；shadow 进队尾+底账挂担保人", async () => {
     const { live } = await load();
     const { U } = await import("@/api");
@@ -529,70 +853,6 @@ describe("swapPlayers / addGuests / setCourtsInput / myRound（2.1 §1/§3/§4�
     live.addGuests(1, "老周", U.bei);
     expect(L.roster[8]!.name).toBe("老周");
     expect(L.queue).toHaveLength(5);
-  });
-  it("setCourtsInput：『3、4 / 3,4 / 3 4 / 3号、4号』归一成 [3号,4号] 写 booked", async () => {
-    const { live } = await load();
-    live.startLive(g102());
-    const L = live.live!;
-    expect(L.g.courts).toEqual(["3号", "5号"]); // mock 原值
-    for (const txt of ["3、4", "3,4", "3 4", "3号、4号"]) {
-      expect(live.setCourtsInput(txt)).toBe(true);
-      expect(L.g.courts).toEqual(["3号", "4号"]);
-    }
-  });
-  it("setCourtsInput：在打+待开不可收（片数不足拒、booked 不动），够片则过", async () => {
-    const { live } = await load();
-    live.startLive(g101());
-    const L = live.live!;
-    L.admins.push(U.me.id); // 2.2 权限地基：场号改写收权——机制用例以管理员身份跑
-    arrive(
-      live,
-      L.roster.slice(0, 9).map((p) => p.id),
-    ); // 前 9 人到场攒出 cur + 待开片
-    expect(L.cur).not.toBeNull();
-    expect(L.courts).toHaveLength(1); // 在打 1 + 待开 1 → 至少 2 片
-    expect(live.setCourtsInput("3号")).toBe(false);
-    expect(L.g.courts).toBeNull(); // 原值不动
-    expect(live.setCourtsInput("3号、5号")).toBe(true);
-    expect(L.g.courts).toEqual(["3号", "5号"]);
-  });
-  it("setCourtsInput：空输入 / 全垃圾 token 拒", async () => {
-    const { live } = await load();
-    live.startLive(g102());
-    expect(live.setCourtsInput("")).toBe(false);
-    expect(live.setCourtsInput("   ")).toBe(false);
-    expect(live.setCourtsInput("abc")).toBe(false);
-    expect(live.live!.g.courts).toEqual(["3号", "5号"]); // 不动
-  });
-  it("myRound：102 局到场后取消，队列 4 人、我 idx0（连战顶队首）→ 1；未到/在打时 → null", async () => {
-    const { live } = await load();
-    live.startLive(g102());
-    expect(live.myRound).toBeNull(); // 全员未到：我不在队不在场
-    const L = live.live!;
-    arrive(live); // 4 人到场 → cur（我在场上）
-    expect(live.myRound).toBeNull(); // 我在 cur 上，不在队列
-    live.cancelMatch();
-    expect(L.queue).toHaveLength(4);
-    live.togglePerson(0, "fire"); // 我顶到队首 idx0
-    expect(L.queue[0]).toBe(0);
-    expect(live.myRound).toBe(1); // ceil((4*0 + 0 + 1)/4)
-  });
-  it("myRound 公式随待开片放大：101 双取消重发 → 我 idx0 + 1 待开片 → 2", async () => {
-    const { live } = await load();
-    live.startLive(g101());
-    live.live!.admins.push(U.me.id); // 2.2 权限地基：取消/排阵收权——机制用例以管理员身份跑
-    arrive(
-      live,
-      live.live!.roster.slice(0, 9).map((p) => p.id),
-    );
-    expect(live.myRound).toBeNull(); // 我在待开片上（不在队列）
-    live.cancelMatch(); // 待开片顶上 → 我又进 cur
-    live.cancelMatch(); // 全员回队
-    live.autoDeal(); // 重发：8 人上两片、我落单候场
-    const L = live.live!;
-    expect(L.queue).toEqual([0]);
-    expect(L.courts).toHaveLength(1); // cur 之外还有 1 片待开
-    expect(live.myRound).toBe(2); // ceil((4*1 + 0 + 1)/4)
   });
 });
 
@@ -643,27 +903,31 @@ describe("2.2 批1 权限地基：isFullPower / store 总账 guard / setAdmin-un
     expect(ui.toastMsg).toBe("只有组织者能做");
     expect(L.feed).toHaveLength(1); // 无留痕
   });
-  it("球友碰收权动作一律拒且回同一句（B1 总账把关）：清零/改分制/开结算/确认终局/带访客/自动排阵/场号", async () => {
+  it("球友碰收权动作一律拒且回同一句（B1 总账把关）：清零/改分制/改模式/改四件套/开结算/确认终局/带访客/自动排阵/场号", async () => {
     const { live, ui } = await load();
     live.startLive(g101());
     const L = live.live!;
-    L.cur = { A: [1, 2], B: [5, 0], sa: 0, sb: 0 }; // 直造在打局（球友身份代办不了到场，攒不出 cur）
-    live.point("a"); // 球友先记一分
-    live.clearScore();
-    expect(L.cur!.sa).toBe(1); // 未清
+    L.courts = [mkCourt([1, 2], [5, 0])]; // 直造在打片（球友身份代办不了到场，攒不出）
+    live.point(0, "a"); // 球友先记一分
+    live.clearScore(0);
+    expect(L.courts[0].sa).toBe(1); // 未清
     live.setRuleScore(21);
     expect(L.g.scoring).toBe(11);
     live.setRuleMode("rotate");
-    expect(L.g.rotation).toBe("winner");
-    live.openSettle();
+    expect(L.g.rotation).toBe("winner"); // 未改
+    expect(L.rules.down).toBe("all");
+    live.setRules({ down: "n1" });
+    expect(L.rules.down).toBe("all"); // 未改
+    expect(L.rules.downChosen).toBe(false);
+    live.openSettle(0);
     expect(live.settling).toBeNull();
-    live.confirmSettle(true, 1, 0);
+    live.confirmSettle(0, true, 1, 0); // 幂等闸（无 settling）在前——静默 no-op
     expect(L.history).toHaveLength(0); // 未落账
-    expect(L.cur).not.toBeNull();
+    expect(L.courts[0].A).toEqual([1, 2]);
     live.addGuests(1, "小陈", U.me);
     expect(L.roster).toHaveLength(13); // 无人进册
     live.autoDeal();
-    expect(L.cur!.sa).toBe(1); // 未重发
+    expect(L.courts[0].sa).toBe(1); // 未重发
     expect(live.setCourtsInput("3号")).toBe(false);
     expect(L.g.courts).toBeNull();
     expect(ui.toastMsg).toBe("请找组织者或管理员"); // 同一句（最后一步落下的）
@@ -674,21 +938,21 @@ describe("2.2 批1 权限地基：isFullPower / store 总账 guard / setAdmin-un
     const L = live.live!;
     const g1 = L.roster[2].id;
     const g2 = L.roster[3].id;
-    L.cur = { A: [1, 2], B: [g1, g2], sa: 0, sb: 0 }; // 直造在打局 + 候场（球友身份攒不出）
+    L.courts = [mkCourt([1, 2], [g1, g2])]; // 直造在打片 + 候场（球友身份攒不出）
     L.queue = [6];
-    live.point("a");
-    expect(L.cur!.sa).toBe(1);
-    live.undoPoint();
-    expect(L.cur!.sa).toBe(0);
+    live.point(0, "a");
+    expect(L.courts[0].sa).toBe(1);
+    live.undoPoint(0);
+    expect(L.courts[0].sa).toBe(0);
     live.swapPlayers(1, 6); // 场上的 wang ↔ 候场的 shi
-    expect(L.cur!.A).toEqual([6, 2]);
-    expect(L.queue).toEqual([1]);
+    expect(L.courts[0].A).toEqual([6, 2]);
+    expect(L.queue).toEqual([1]); // 换下的排队尾
   });
   it("代办 gate：球友给他人 setCheck/togglePerson 被拒；给自己随时可", async () => {
     const { live, ui } = await load();
     live.startLive(g101()); // 我(0)在册但全员未到
     const L = live.live!;
-    L.courts = [{ A: [1, 2], B: [5, 0] }]; // 直造待开片（我在其上）
+    L.courts = [mkCourt([1, 2], [5, 0])]; // 直造在打片（我在其上）
     live.setCheck(1, "late");
     expect(L.roster.find((p) => p.id === 1)!.check).toBe("absent"); // 没改成
     expect(ui.toastMsg).toBe("请找组织者或管理员");
@@ -696,7 +960,7 @@ describe("2.2 批1 权限地基：isFullPower / store 总账 guard / setAdmin-un
     expect(L.roster.find((p) => p.id === 1)!.skip).toBeFalsy(); // 没设上
     live.setCheck(U.me.id, "left"); // 自己早退随时可
     expect(L.roster.find((p) => p.id === 0)!.check).toBe("left");
-    expect(L.courts[0]!.B).toEqual([5]); // 我在待开片上 → 早退出场
+    expect(L.courts[0]!.B).toEqual([5]); // 我在片上 → 早退出场
     live.togglePerson(U.me.id, "skip"); // 自己歇随时可
     expect(L.roster.find((p) => p.id === 0)!.skip).toBe(2);
   });
@@ -708,12 +972,14 @@ describe("2.2 批1 权限地基：isFullPower / store 总账 guard / setAdmin-un
     arrive(
       live,
       L.roster.slice(0, 9).map((p) => p.id),
-    ); // 代办到场攒出 cur
-    live.point("a");
-    live.clearScore();
-    expect(L.cur!.sa).toBe(0);
+    ); // 代办到场攒出两片
+    live.point(0, "a");
+    live.clearScore(0);
+    expect(L.courts[0].sa).toBe(0);
     live.setRuleScore(21);
     expect(L.g.scoring).toBe(21);
+    live.setRules({ champCap: 5 });
+    expect(L.rules.champCap).toBe(5);
     expect(live.isFullPower).toBe(true);
   });
 });
@@ -723,10 +989,10 @@ describe("2.2 批2 到场与名册：移出名册 / 底账 / 空降超上限", (
     const { live, ui } = await load();
     live.startLive(g102());
     const L = live.live!;
-    arrive(live); // 4 人到场 → cur={A:[5,g],B:[0,8]}
-    live.removeFromRoster(8); // bei 在 cur.B 上
+    arrive(live); // 4 人到场 → 片 0=[me,li|访客,bei]
+    live.removeFromRoster(8); // bei 在片 0.B 上
     expect(L.roster.some((p) => p.id === 8)).toBe(false); // 人从名册消失
-    expect(L.cur!.B).toEqual([0]); // 场上同清
+    expect(L.courts[0].B).toEqual([L.roster[2].id]); // 场上同清、访客打短
     expect(L.queue).toEqual([]);
     const row = L.ledger.find((r) => r.id === 8)!;
     expect(row.name).toBe("北苑小钢炮");
@@ -749,15 +1015,15 @@ describe("2.2 批2 到场与名册：移出名册 / 底账 / 空降超上限", (
     live.startLive(gFull8()); // 线上 8 人满员（max 8 · 我未在其中）
     const L = live.live!;
     expect(L.roster).toHaveLength(8);
-    arrive(live); // 8 人到场 → 两片全开（cur + 待开片）
-    expect(L.courts).toHaveLength(1);
-    expect(L.cur).not.toBeNull();
+    arrive(live); // 8 人到场 → 两片全开
+    expect(L.courts).toHaveLength(2);
+    expect(L.courts.every((c) => c.A.length && c.B.length)).toBe(true);
     L.admins.push(U.me.id); // 搭态带访客用
     expect(await live.arriveMe(gFull8Id)).toBe("已到场 · 进候场区"); // 空降第 9 人（线上满员不拦）
     live.addGuests(1, "小陈", L.roster[0]); // 第 10 人
     expect(L.roster).toHaveLength(10); // 名册超线上上限
     live.autoDeal();
-    expect(L.courts).toHaveLength(1); // 片数已满不炸：8 在场、2 候场
+    expect(L.courts).toHaveLength(2); // 片数已满不炸：8 在场、2 候场
     expect(L.queue).toHaveLength(2);
     const meRow = L.ledger.find((r) => r.id === U.me.id)!;
     expect(meRow.dropin).toBe(true); // 空降底账行

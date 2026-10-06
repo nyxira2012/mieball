@@ -6,7 +6,7 @@
       <view class="q-label">{{ L.queue.length ? '下一场' : '全员都在场上' }}</view>
       <view class="q-avs">
         <view
-          v-for="id in next4"
+          v-for="id in nextN"
           :key="id"
           class="q-av next"
           :class="{ dropin: byId(id).dropin }"
@@ -21,11 +21,13 @@
 </template>
 
 <script setup lang="ts">
-/* 置底候场条（2.1 §3）：无 props，读 live store；emit queue/checkin 由页面开对应抽屉。
+/* 置底候场条（2.1 §3 · 2.4 批2 size-aware）：无 props，读 live store；emit queue/checkin
+   由页面开对应抽屉。下一场头像数=每片人数（courtSize：双打 4 / 单打 2，单一源在引擎）。
    我的轮次三态：队列里「还有 N 轮到我」（=1 加粗强调）/ 场上「场上打拼中」/ 未签到「还没签到」。 */
 import { computed } from 'vue';
 import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
 import { useLiveStore, isArrived } from '@/stores/live';
+import { courtSize } from '@/utils/rotate';
 import { U } from '@/api';
 
 const emit = defineEmits<{ (e: 'queue'): void; (e: 'checkin'): void }>();
@@ -34,8 +36,10 @@ const liveStore = useLiveStore();
 const L = computed(() => liveStore.live);
 const byId = (id: number) => liveStore.byId(id);
 
-/** 下四位头像（不足则全量；全员都在场上时 q-label 已换文案、头像区空） */
-const next4 = computed(() => (L.value?.queue ?? []).slice(0, 4));
+/** 下 N 位头像（N=每片人数；不足则全量，全员都在场上时 q-label 已换文案、头像区空） */
+const nextN = computed(() =>
+  (L.value?.queue ?? []).slice(0, courtSize(L.value?.rules.singles ?? false)),
+);
 
 /** 我的状态一句话：myRound 非空在队列；在册且已签到（谓词单一源 isArrived）但不在队列 = 场上；否则还没签到 */
 const myRound = computed(() => liveStore.myRound);

@@ -37,7 +37,7 @@ export interface User {
   recentStats?: RecentStats;
   check?: CheckStatus;
   skip?: number; // 剩余歇轮数：歇两轮=2（2.1 文档+原型「候场区点人可设歇两轮」）。
-  // 发牌时每次递减 1（rotate.ts avail），归 0 自动归队；0=不在歇
+  // 轮到发牌给他时递减 1（rotate.ts takeFromQueue），归 0 自动归队；0=不在歇
   fire?: boolean; // 连战：排到队首，与歇互斥（alpha:1631-1633）
   dropin?: boolean; // 空降进场：没报名扫码直入名册（§4.4 全场看得到的标记；线上名单/候补不动）
   arriveAt?: string; // ISO · 首次到场时刻（出勤底账，time.ts toIso 落/isoHm 显）
@@ -228,27 +228,20 @@ export interface RotationRules {
   champCap: number; // 连庄上限（仅输家下显示/生效）；默认 3，0=不限
 }
 
-/** 场上待打的一片：A/B 两队（存玩家 id）。
-    2.4 批1 起新引擎追加可选字段（新旧引擎共存期全加法式，批2 删旧引擎后翻必填）：
-    id/name 归 store 建片，singles/sa/sb/streak 归并行引擎。 */
+/** 一片场地（2.4 多片并行）：A/B 半边存玩家 id，sa/sb 是本片自己的记分板——
+    每片各打各的（补满即打，无「待开」态）；playing/idle 由 A/B 是否空区分。
+    id/name 归 store 建片，singles/sa/sb/streak 归并行引擎（endMatch 按 id 定位这片）。 */
 export interface LiveCourt {
   A: number[];
   B: number[];
-  id?: number; // 片序 0..n-1（并行模型键，endMatch 按此定位）
-  name?: string; // 场地号（'3号'；未登记回退序号场）
-  singles?: boolean; // 本片当前对局格式（换单双打过渡期可 ≠ rules.singles）
-  sa?: number;
-  sb?: number;
-  streakA?: number; // 连庄数——跟半边不跟人（手动换人不动连庄，2.4 §4.9）
-  streakB?: number;
-}
-
-/** 进行中的一场（live.cur 记分板） */
-export interface LiveMatch {
-  A: number[];
-  B: number[];
+  id: number; // 片序 0..n-1（并行模型键，endMatch/记分族动作按此定位）
+  name: string; // 场地号（'3号'；未登记回退序号场）
+  singles: boolean; // 本片当前对局格式（换单双打过渡期可 ≠ rules.singles，2.4 §4.7-3）
   sa: number;
   sb: number;
+  last?: "a" | "b"; // 本片最后得分方（undoPoint 回退用——多片各记各的）
+  streakA: number; // 连庄数——跟半边不跟人（手动换人不动连庄，2.4 §4.9）
+  streakB: number;
 }
 
 /** 已完成场次（alpha:1710）。alpha 的 txt 为含高亮的 HTML 字符串，这里存纯文本胜者名，
@@ -259,8 +252,9 @@ export interface MatchHistory {
   sb: number;
 }
 
-/** 现场状态（alpha:1483-1485 live）。g 是真局对象的浅克隆：现场改规则/场地只落在克隆上，
-    不回写 game store 的局（派生态归后端）。 */
+/** 现场状态（alpha:1483-1485 live · 2.4 批2 起多片并行总账：无 cur/lastWinners——
+    各片自带记分板，轮换由 utils/rotate.ts 的 endMatch 按 courtId 接管）。g 是真局对象的
+    浅克隆：现场改规则/场地只落在克隆上，不回写 game store 的局（派生态归后端）。 */
 export interface LiveState {
   g: Game;
   roster: User[];
@@ -268,15 +262,12 @@ export interface LiveState {
   courts: LiveCourt[];
   history: MatchHistory[];
   round: number;
-  cur: LiveMatch | null;
-  lastWinners: number[] | null;
-  last?: "a" | "b"; // 最后得分方（undoPoint 回退用，alpha:1677/1682）
   admins: number[]; // 被封管理员 id（现场态，不回写 g；isFullPower = org ∨ 本表）
   feed: string[]; // 战报事件句（unshift 新到旧；句子在动作处拼好、含操作者，LiveTopbar 轮播消费）
   startedAt: string; // 现场点亮时刻（startLive 落 ISO；批4 底账定格/散场消费）
   ledger: LedgerRow[]; // 出勤底账（动作处同步写：touchLedger 单点；移出/空降行留痕）
-  rules?: RotationRules; // 2.4 轮换四件套（批1 过渡期可选，批2 store 重写后翻必填）
-  courtSeqNext?: number; // 上场先后序发号器（courtSeq 的源——资历并列的 tiebreak）
+  rules: RotationRules; // 2.4 轮换四件套（startLive 起必挂：自选前 down 跟推荐走）
+  courtSeqNext: number; // 上场先后序发号器（courtSeq 的源——资历并列的 tiebreak）
 }
 
 /** 分制（alpha:850 scoreMode 默认 elo） */

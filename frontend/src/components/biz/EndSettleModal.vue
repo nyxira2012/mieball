@@ -63,11 +63,11 @@
           variant="pri"
           block
           :disabled="!full"
-          @click="liveStore.confirmSettle(winA, sa, sb)"
+          @click="liveStore.confirmSettle(courtId, winA, sa, sb)"
           >确认终局 · 排下一场</AppButton
         >
         <view v-if="!full" class="md-full-tip">请组织者或管理员确认</view>
-        <view v-if="full" class="md-cancel" @click="liveStore.cancelMatch()"
+        <view v-if="full" class="md-cancel" @click="liveStore.cancelMatch(courtId)"
           >取消对局</view
         >
       </view>
@@ -76,21 +76,24 @@
 </template>
 
 <script setup lang="ts">
-/* 终局结算（2.1 §5 confirm-before-settle；2.2 §4.8 确认收权）：读 store.settling 快照 + cur 的 A/B；
-   本地态 winA/sa/sb 在快照开窗时重置；确认/取消直调 store（落账·排场·toast 都在 store，
-   撒花由页面 watch history 做）。球友只能看：确认钮与 ± 改分钮置灰+旁注，取消对局不出现（store guard 兜底）。
+/* 终局结算（2.1 §5 confirm-before-settle · 2.4 批2 按片；2.2 §4.8 确认收权）：
+   读 store.settling 快照 + 该片（courtId）的 A/B；本地态 winA/sa/sb 在快照开窗时重置；
+   确认/取消直调 store（落账·排场·toast 都在 store，撒花由页面 watch history 做）。
+   球友只能看：确认钮与 ± 改分钮置灰+旁注，取消对局不出现（store guard 兜底）。
    预览行复用 WinChange 形状（settleElo 与落账同一入参 → 幂等一致）。 */
 import { computed, ref, watch } from "vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import { useLiveStore } from "@/stores/live";
 import { settleElo } from "@/utils/elo";
-import { courtLabel } from "@/utils/format";
+import { courtDisplayName } from "@/utils/format";
 import type { WinChange } from "@/api/types";
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
   /** 是否全权（组织者 ∨ 管理员，单一源在 live store）：确认/取消/± 改分的 UI 前置 */
   full: { type: Boolean, default: false },
+  /** 结算中的片（settling.courtId 透传；对阵与片名读该片） */
+  courtId: { type: Number, required: true },
 });
 const emit = defineEmits<{ (e: "close"): void }>();
 
@@ -111,18 +114,19 @@ watch(
   { immediate: true },
 );
 
-/** 当前场显示名（口径在 utils/format 的 courtLabel 单一源：playing 卡同款） */
-const courtName = computed(() => courtLabel(liveStore.live?.g.courts, 0));
+/** 结算中的这片（阵面/片名单一来源） */
+const court = computed(() =>
+  liveStore.live?.courts.find((c) => c.id === props.courtId),
+);
+
+/** 片显示名（court.name 存场地号 '3号' → '3号场'，单一源 format.courtDisplayName） */
+const courtName = computed(() => courtDisplayName(court.value?.name ?? ""));
 
 const namesA = computed(() =>
-  (liveStore.live?.cur?.A ?? [])
-    .map((id) => liveStore.byId(id).name)
-    .join(" / "),
+  (court.value?.A ?? []).map((id) => liveStore.byId(id).name).join(" / "),
 );
 const namesB = computed(() =>
-  (liveStore.live?.cur?.B ?? [])
-    .map((id) => liveStore.byId(id).name)
-    .join(" / "),
+  (court.value?.B ?? []).map((id) => liveStore.byId(id).name).join(" / "),
 );
 
 /** ± 改分：min 0（只改弹窗本地值，确认时随 confirmSettle 写回）；
@@ -135,7 +139,7 @@ function adj(side: "a" | "b", d: number): void {
 
 /** ±积分预览：胜者在前（与 settleElo 返回序一致）；负号用 −（U+2212，模板里拼） */
 const preview = computed<WinChange[]>(() => {
-  const c = liveStore.live?.cur;
+  const c = court.value;
   if (!c) return [];
   const wIds = winA.value ? c.A : c.B;
   const lIds = winA.value ? c.B : c.A;
