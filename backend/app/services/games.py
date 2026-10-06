@@ -1,4 +1,4 @@
-"""GameBook —— 球局域（docs/1.2）的局簿深模块：发局、找局列表、我的局、详情。
+"""GameBook —— 球局域（docs/1.2）的局簿深模块：发局、找局列表、我的局、详情、报名/退局/改局。
 
 策略全部内聚在这里，路由只做参数搬运：
 - 懒判定（规格 4.8）：生死不靠定时器，任何入口先跑 _evaluate()——把过了截止还 open
@@ -9,8 +9,10 @@
 - 可见性：public 人人；played=组织者∨同打过∨已涉及；invite_only=已涉及。
   链接即门票——detail 不做档位拦截（4.2），档位只管列表翻不翻得到。
 - 打过（played_with）：两人同在一个 state='locked' 局的正式名单；候补/终止/撤局不算。
-- 写串行：SQLite 无行锁，模块级锁罩住全部写动作（publish 与懒判定落库），
+- 写串行：SQLite 无行锁，模块级锁罩住全部写动作（publish/join/quit/edit 与懒判定落库），
   check-then-act 全锁内——两人同秒抢最后坑不超线的地基（规格 B1）。
+- 整行进出（不变承诺 5）：报名行=1+bring 原子占坑；装不下整行落候补、退出/放宽按
+  seq 试转正、收紧按 joined_at 倒序降候补——全走 _promote_waitlist/_demote_to_cap。
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
 from ..core import clock, errors
@@ -186,6 +189,162 @@ class GameBook:
             raise errors.game_not_found()
         return self._view(game, viewer_id=viewer_id, with_entries=True)
 
+    # ---- 报名（4.3/4.14：整行进出、满员落候补、截止后照常可加、重复提交幂等） ----
+
+    def join(self, *, game_id: int, account_id: int, bring: int) -> dict:
+        self._evaluate()  # 截止过期的局先落定：终止 → join_closed，锁定 → 照常可加
+        with _write_lock:
+            game = self.db.get(Game, game_id)
+            if game is None:
+                raise errors.game_not_found()
+            existing = self.db.execute(
+                select(Entry).where(
+                    Entry.game_id == game_id, Entry.account_id == account_id
+                )
+            ).scalar_one_or_none()
+            if existing is not None:
+                # 幂等（B1）：已有本账号行——忽略新 bring、不重复占坑，组织者再 join 同此
+                return self._view(game, viewer_id=account_id, with_entries=True)
+            if _derive(game, clock.now()) not in JOINABLE_STATUSES:
+                raise errors.join_closed()  # done/terminated/cancelled/pending 不可加
+            if not 0 <= bring <= 3:
+                raise errors.bring_limit()
+            row = Entry(
+                game_id=game_id,
+                account_id=account_id,
+                bring=bring,
+                standing="formal",
+                joined_at=clock.now(),
+            )
+            self.db.add(row)
+            try:
+                self.db.flush()  # autoflush=False：显式 flush 让 heads 计入本行
+            except IntegrityError:
+                # 写锁已串行化本进程写动作，撞 Unique(game_id,account_id) 只剩数据库
+                # 兜底的极端竞态（技术设计 §3）——回滚重查，按幂等当没事
+                self.db.rollback()
+                game = self.db.get(Game, game_id)
+                return self._view(game, viewer_id=account_id, with_entries=True)
+            if self._heads(game_id) > game.max_players:
+                # 整行进出：formal 装不下这一整行 → 候补，wait_seq 追加递增（4.3）
+                row.standing = "waitlist"
+                row.wait_seq = self._next_wait_seq(game_id)
+            self.db.commit()
+            return self._view(game, viewer_id=account_id, with_entries=True)
+
+    # ---- 退局（4.4：截止锁的是"防鸽退出"；改约解锁窗例外；带的人整行跟着退） ----
+
+    def quit(self, *, game_id: int, account_id: int) -> dict:
+        self._evaluate()
+        with _write_lock:
+            game = self.db.get(Game, game_id)
+            if game is None:
+                raise errors.game_not_found()
+            entry = self.db.execute(
+                select(Entry).where(
+                    Entry.game_id == game_id, Entry.account_id == account_id
+                )
+            ).scalar_one_or_none()
+            if entry is None:
+                return {"ok": True}  # 幂等（B1）：没报名/已退出，当没事
+            if game.organizer_id == account_id:
+                raise errors.not_organizer("组织者不能退出，只能撤局")
+            status = _derive(game, clock.now())
+            # 窗口：报名中随便退；锁定局只在改约解锁窗内可退（4.6）；
+            # locked 未解锁/live/done/terminated/cancelled/pending 一律拦
+            unlockable = status == "locked" and game.unlocked_at is not None
+            if status != "open" and not unlockable:
+                raise errors.game_locked()
+            self.db.delete(entry)
+            self.db.flush()  # 让 promote 的人头计算看到删掉的行
+            self._promote_waitlist(game)  # 候补按 seq 递补（4.4：名额立刻释放）
+            self.db.commit()
+        return {"ok": True}
+
+    # ---- 改局（4.6：开打前、只有组织者；截止不在参数表=不可改，不变承诺 3） ----
+
+    def edit(
+        self,
+        *,
+        game_id: int,
+        organizer_id: int,
+        name: str | None = None,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+        venue_name: str | None = None,
+        venue_address: str | None = None,
+        min_players: int | None = None,
+        max_players: int | None = None,
+        visibility: str | None = None,
+        scoring: int | None = None,
+        rotation: str | None = None,
+        score_rule: str | None = None,
+    ) -> dict:
+        self._evaluate()
+        with _write_lock:
+            game = self.db.get(Game, game_id)
+            if game is None:
+                raise errors.game_not_found()
+            if game.organizer_id != organizer_id:
+                raise errors.not_organizer()
+            now = clock.now()
+            status = _derive(game, now)
+            if status not in ("open", "locked"):
+                raise errors.game_not_open()  # live/done/pending/terminated/cancelled
+            # None 参沿用原值；合并出"这次编辑后的完整新值"再统一判（判不许看旧值）
+            new = {
+                "name": name if name is not None else game.name,
+                "start_at": _wall(start_at) if start_at is not None else game.start_at,
+                "end_at": _wall(end_at) if end_at is not None else game.end_at,
+                "venue_name": (
+                    venue_name if venue_name is not None else game.venue_name
+                ),
+                "venue_address": (
+                    venue_address if venue_address is not None else game.venue_address
+                ),
+                "min_players": (
+                    min_players if min_players is not None else game.min_players
+                ),
+                "max_players": (
+                    max_players if max_players is not None else game.max_players
+                ),
+                "visibility": (
+                    visibility if visibility is not None else game.visibility
+                ),
+                "scoring": scoring if scoring is not None else game.scoring,
+                "rotation": rotation if rotation is not None else game.rotation,
+                "score_rule": (
+                    score_rule if score_rule is not None else game.score_rule
+                ),
+            }
+            if new["start_at"] >= new["end_at"]:
+                raise errors.deadline_inverted("结束时间必须晚于开打时间")
+            if game.deadline_at >= new["start_at"]:  # deadline 永远取原值
+                raise errors.deadline_inverted("开打时间必须晚于截止时间")
+            if new["min_players"] > new["max_players"]:
+                raise errors.range_invalid()
+            if new["visibility"] not in VISIBILITIES:
+                raise errors.visibility_invalid()
+            # 改约解锁（4.6）：截止后的锁定局动了时间/地点 → 置解锁标记（参加者可退、
+            # 候补照常递补、到开打重新锁死）；报名中改这些不置位
+            schedule_changed = any(
+                new[key] != getattr(game, key)
+                for key in ("start_at", "end_at", "venue_name", "venue_address")
+            )
+            old_max = game.max_players
+            for key, value in new.items():
+                setattr(game, key, value)
+            if status == "locked" and schedule_changed:
+                game.unlocked_at = now
+            self.db.flush()
+            # 上限调整（不变承诺 1：正式人头 ≤ max 全路径）；改 visibility 不赶人
+            if new["max_players"] < old_max:
+                self._demote_to_cap(game)
+            elif new["max_players"] > old_max:
+                self._promote_waitlist(game)
+            self.db.commit()
+            return self._view(game, viewer_id=organizer_id, with_entries=True)
+
     # ---- 打过（4.2 唯一算法；users 接缝 same_game 同源） ----
 
     def played_with(self, *, account_a: int, account_b: int) -> bool:
@@ -253,6 +412,67 @@ class GameBook:
                 )
             ).scalar_one()
         )
+
+    def _next_wait_seq(self, game_id: int) -> int:
+        """候补队尾的下一个号（wait_seq 全局追加递增）。"""
+        return (
+            int(
+                self.db.execute(
+                    select(func.coalesce(func.max(Entry.wait_seq), 0)).where(
+                        Entry.game_id == game_id
+                    )
+                ).scalar_one()
+            )
+            + 1
+        )
+
+    def _promote_waitlist(self, game: Game) -> None:
+        """候补按 seq 逐行试转正（4.3/4.6 退出与放宽上限共用）：整行算（1+bring），
+        装得下才转、装不下的顺延下一位（spec 4.3「谁装得下谁先转」）、不拆行。"""
+        heads = self._heads(game.id)
+        waiting = (
+            self.db.execute(
+                select(Entry)
+                .where(Entry.game_id == game.id, Entry.standing == "waitlist")
+                .order_by(Entry.wait_seq)
+            )
+            .scalars()
+            .all()
+        )
+        for row in waiting:
+            size = 1 + row.bring
+            if heads + size <= game.max_players:
+                row.standing = "formal"
+                row.wait_seq = None
+                heads += size
+
+    def _demote_to_cap(self, game: Game) -> None:
+        """上限改小（4.6）：formal 按 joined_at 倒序逐行降候补到达标——最后报的先降、
+        组织者行永不被转（不变承诺 2）；被降行按 joined_at 升序接到候补尾（保持报名
+        先后公平）。"""
+        rows = (
+            self.db.execute(
+                select(Entry)
+                .where(Entry.game_id == game.id, Entry.standing == "formal")
+                .order_by(Entry.joined_at.desc(), Entry.id.desc())
+            )
+            .scalars()
+            .all()
+        )
+        demoted: list[Entry] = []
+        heads = self._heads(game.id)
+        for row in rows:
+            if heads <= game.max_players:
+                break
+            if row.account_id == game.organizer_id:
+                continue
+            row.standing = "waitlist"
+            demoted.append(row)
+            heads -= 1 + row.bring
+        seq = self._next_wait_seq(game.id)
+        for row in reversed(demoted):  # 收集时新→旧，反转成报名先后（旧→新）接队尾
+            row.wait_seq = seq
+            seq += 1
 
     def _view(
         self, game: Game, *, viewer_id: int | None, with_entries: bool = False

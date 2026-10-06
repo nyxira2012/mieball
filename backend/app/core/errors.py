@@ -87,8 +87,9 @@ def game_not_found() -> ApiError:
     return ApiError(404, "game_not_found", "局不存在")
 
 
-def not_organizer() -> ApiError:
-    return ApiError(403, "not_organizer", "只有组织者能做这个操作")
+def not_organizer(msg: str = "只有组织者能做这个操作") -> ApiError:
+    # 同码分支说话：组织者退局是"不能退"不是"不够格"（4.4 禁止项），message 由调用方给
+    return ApiError(403, "not_organizer", msg)
 
 
 def game_locked() -> ApiError:
