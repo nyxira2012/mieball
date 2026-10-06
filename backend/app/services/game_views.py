@@ -30,6 +30,8 @@ def derive(game: Game, now: datetime) -> str:
     if game.state == "pending":
         return "pending" if now < game.start_at else "terminated"
     if game.state == "locked":
+        if game.ended_at is not None:
+            return "done"  # 散场时刻是局簿终态锚（2.3 §4.9）：散过的局不回头
         if now < game.start_at:
             return "locked"
         return "live" if now < game.end_at else "done"

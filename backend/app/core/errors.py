@@ -132,3 +132,54 @@ def frequency_invalid() -> ApiError:
 
 def booking_invalid(msg: str = "订场登记没填好：场地号和总价都要填") -> ApiError:
     return ApiError(422, "booking_invalid", msg)
+
+
+# ---- 现场域（docs/2.3；球局域旧码一律不动） ----
+
+
+def live_not_found() -> ApiError:
+    return ApiError(404, "live_not_found", "现场不存在")
+
+
+def live_not_started(msg: str = "现场还没开始") -> ApiError:
+    # 同码分支说话（沿 not_organizer 先例）：开账窗口不对等分支由调用方给 message
+    return ApiError(409, "live_not_started", msg)
+
+
+def live_ended() -> ApiError:
+    # 散场后旧画面的写动作一律拒收，回这一句（2.3 §4.10/附录 B1）
+    return ApiError(409, "live_ended", "球局已结束")
+
+
+def live_stale_total() -> ApiError:
+    # 两级号防线·总号旧（附录 B1）：这笔退回，最新画面随 409 一起送来
+    return ApiError(409, "live_stale_total", "现场已更新，请看最新画面再操作")
+
+
+def live_stale_court() -> ApiError:
+    # 两级号防线·片号旧（附录 B1）：只拦该片，别片照常
+    return ApiError(409, "live_stale_court", "这片现场已更新，请看最新画面再操作")
+
+
+def court_idle() -> ApiError:
+    return ApiError(422, "court_idle", "这片还没开打")
+
+
+def court_frozen() -> ApiError:
+    # 待确认片整片冻结（2.3 §4.3/4.8）：换人拒收，出口只有清零/取消/确认
+    return ApiError(409, "court_frozen", "这片待确认中，暂不能换人")
+
+
+def live_residue() -> ApiError:
+    # 散场入口即清扫（2.3 §4.9）：残局不清完不放行
+    return ApiError(409, "live_residue", "还有没处理完的对局，先逐片处理再散场")
+
+
+def live_forbidden() -> ApiError:
+    # 现场越权统一句式（沿 2.2）：球友点结束对局类/清零等动作的提示
+    return ApiError(403, "live_forbidden", "请找组织者或管理员")
+
+
+def organizer_only(msg: str = "只有组织者能做") -> ApiError:
+    # 现场域的组织者独占动作（封撤管理员/散场收局）；与球局域 not_organizer 分码不混用
+    return ApiError(403, "organizer_only", msg)

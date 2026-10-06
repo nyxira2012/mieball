@@ -24,6 +24,7 @@ _NEW_COLUMNS = {
     "games": {
         "terminated_at": "DATETIME",
         "cancelled_at": "DATETIME",
+        "ended_at": "DATETIME",
     }
 }
 
