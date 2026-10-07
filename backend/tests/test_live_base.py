@@ -1,5 +1,5 @@
 """现场域地基（2.3 批1）—— docs/2.3 附录 B：开账展开（正式+访客行）、view 分权
-（考勤时刻 org/本人见）、两级号机制、EloRating 首见 1500。
+（考勤时刻 org/本人见）、两级号机制、EloRating 首见 1200（1.4 §3 调参）。
 
 批1 无路由（批2 挂），全部直调 LiveBook（沿 seed_entry 的 session_factory 取法）；
 时刻基准与发局 helper 复用 test_games_read（FakeClock 基点 10-04 12:00）。
@@ -168,10 +168,10 @@ def test_view_attendance_visibility(client: TestClient):
     assert row_of(as_anon, c["account"]["id"])["arrive_at"] is None
 
 
-# ---- EloRating 首见 1500（访客不入行） ----
+# ---- EloRating 首见 1200（访客不入行） ----
 
 
-def test_elo_first_seen_init_1500(client: TestClient):
+def test_elo_first_seen_init_1200(client: TestClient):
     org = signup(client, "13800020051", "o")
     b = signup(client, "13800020052", "b")
     g = publish(client, org["token"], visibility="public")
@@ -321,6 +321,6 @@ def test_snake_pick_strong_plus_weak():
         2,
     )
     assert [[p["id"] for p in t] for t in ranked] == [[1, 4], [2, 3]]
-    # 没打过的新人按 1500 参与排序（2.4 §8 定值）
+    # 没 rating 键的按访客分 3.0 参与排序（1.4：均衡配对换源吃 DUPR）
     fresh = live_rotation.snake_pick([{"id": 9}, {"id": 10, "rating": 1600}], 2)
     assert [[p["id"] for p in t] for t in fresh] == [[10], [9]]

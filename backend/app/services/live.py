@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import threading
 from contextlib import contextmanager
+from datetime import datetime
 from math import floor
 
 from sqlalchemy import select
@@ -36,17 +37,18 @@ from ..db.models import (
 from . import live_rotation
 from .accounts import person_view
 from .live_sweep import ARRIVED, LiveSweepMixin
+from .stats import StatsLedger
 
 # 开账起笔的 rules 快照默认值（镜像前端 startLive 起笔，2.2 批2 §4.1）：
 # 双打 / 谁下挂 all 占位（推荐重算在前端）/ 按候场队序 / 连庄上限 3
 _DEFAULT_RULES = {"doubles": True, "down": "all", "pairing": "queue", "streak_max": 3}
-# 新人初始等级单一源（2.4 §8 定值；对齐前端 ui「Elo 默认 1500 起」）
-RATING_INIT = 1500
+# Elo 娱乐轨初始分单一源（1.4 §3：初始 1200、访客代入同值；对齐前端 utils/elo.ts 镜像）
+RATING_INIT = 1200
 
-# Elo 镜像源 frontend/src/utils/elo.ts：K=24（alpha:1697）、地板 400（alpha:1704）、
-# 败方只扣胜方涨分六成（alpha:1698）；访客按 1500 代入当正常玩家算——去半折（2.3 修订②）
+# Elo 镜像源 frontend/src/utils/elo.ts：K=24、地板 800、败方只扣胜方涨分六成；
+# 访客按 1200 代入当正常玩家算——去半折（2.3 修订②；1.4 §3 调参收窄波动区间）
 _ELO_K = 24.0
-_ELO_FLOOR = 400
+_ELO_FLOOR = 800
 # 这些码的 409 退回要在错误体里带最新视图（附录 B1：最新画面送来，前端对表用）——
 # 防线两码之外，空降防重的 live_duplicate 同样携视图
 _VIEW_CODES = frozenset({"live_stale_total", "live_stale_court", "live_duplicate"})
@@ -74,7 +76,7 @@ class LiveBook(LiveSweepMixin):
 
     def start(self, *, game_id: int, organizer_id: int) -> dict:
         """开账（2.2 §4.1 开场亮点的总账版）：名册行从正式报名展开——正式球友一人
-        一行（首见建 EloRating 行 1500），bring N 展开成 N 行随行访客（挂担保人）；
+        一行（首见建 EloRating 行 1200），bring N 展开成 N 行随行访客（挂担保人）；
         全员先记 absent、候场队空（报到驱动，check 端点批3）；total_seq 从 1 起。
         幂等：已有 LiveState 直接返视图（散场后再点也只回看，不重开）。"""
         with _write_lock:
@@ -345,8 +347,9 @@ class LiveBook(LiveSweepMixin):
         base_total_seq: int,
         base_court_seq: int,
     ) -> dict:
-        """确认结束（§4.6，全权）：一本账原子——战报行落账（此后不可改）+ EloRating
-        结算 + 人回流补位重排，同一事务要么全成要么全不成。胜方必须分高方（平分双方
+        """确认结束（§4.6，全权）：一本账原子——战报行落账（此后不可改）+ 双轨
+        积分结算（Elo 娱乐轨 + DUPR 核心轨同 commit 双写，1.4 裁决 1）+ 人回流
+        补位重排，同一事务要么全成要么全不成。胜方必须分高方（平分双方
         均可）；幂等：重复确认（重放刚落账那场）回当前视图 200，不重落。
         no_redeal（散场清扫态）：回流定格、不排下一场不补位（§4.9-1）。"""
         with self._write(game_id=game_id, actor_id=actor_id):
@@ -367,28 +370,36 @@ class LiveBook(LiveSweepMixin):
                 winner_side == "b" and score_b < score_a
             ):
                 raise errors.live_invalid("分低的一方当不了胜方")
-            # —— 一本账（§4.6-2）：战报 + 积分 + 回流，一个 commit ——
+            # —— 一本账（§4.6-2）：战报 + 双轨积分 + 回流，一个 commit ——
             rows = self._roster(game_id)
             by_id = {r.id: r for r in rows}
             oncourt = self._oncourt(rows, court_no)
             winners = [r for r in oncourt if r.court_side == winner_side]
             losers = [r for r in oncourt if r.court_side != winner_side]
             elo_rows = self._elo_settle(winners, losers)
-            self.db.add(
-                LiveMatch(
-                    game_id=game_id,
-                    court_no=court_no,
-                    seq=court.seq,
-                    winners=[_snapshot(r) for r in winners],
-                    losers=[_snapshot(r) for r in losers],
-                    sa=score_a,
-                    sb=score_b,
-                    winner_side=winner_side,
-                    ended_at=clock.now(),
-                    elo_rows=elo_rows,
-                )
+            ended = clock.now()
+            match = LiveMatch(
+                game_id=game_id,
+                court_no=court_no,
+                seq=court.seq,
+                winners=[_snapshot(r) for r in winners],
+                losers=[_snapshot(r) for r in losers],
+                sa=score_a,
+                sb=score_b,
+                winner_side=winner_side,
+                ended_at=ended,
+                elo_rows=elo_rows,
             )
+            self.db.add(match)
             self._apply_elo(elo_rows, len(winners))
+            self._apply_dupr(
+                match=match,
+                ended_at=ended,
+                winners=winners,
+                losers=losers,
+                score_w=score_a if winner_side == "a" else score_b,
+                score_l=score_b if winner_side == "a" else score_a,
+            )
             queue = self._queue_ids(rows)
             if no_redeal:
                 # 清扫态：人只回流定格——不排下一场不补位，场上的人按行序接队尾
@@ -398,8 +409,15 @@ class LiveBook(LiveSweepMixin):
                     queue.append(r.id)
                 court.status = "idle"
             else:
+                stats = StatsLedger(self.db)
                 dicts = [
-                    {"id": r.id, "court_no": r.court_no, "court_side": r.court_side}
+                    {
+                        "id": r.id,
+                        "court_no": r.court_no,
+                        "court_side": r.court_side,
+                        # 均衡配对换源吃 DUPR（1.4 §6）：rating 键恒喂当前派生分
+                        "rating": stats.pairing_rating(r.account_id),
+                    }
                     for r in rows
                 ]
                 live_rotation.requeue_after_confirm(
@@ -809,8 +827,11 @@ class LiveBook(LiveSweepMixin):
             raise errors.live_not_found()
         game = self.db.get(Game, game_id)
         is_organizer = viewer_id is not None and game.organizer_id == viewer_id
+        stats = StatsLedger(self.db)
         rows = [
-            self._player_row(p, is_organizer=is_organizer, viewer_id=viewer_id)
+            self._player_row(
+                p, is_organizer=is_organizer, viewer_id=viewer_id, stats=stats
+            )
             for p in self._roster(game_id)
         ]
         courts = self._courts(game_id)
@@ -1070,7 +1091,7 @@ class LiveBook(LiveSweepMixin):
     ) -> list[dict]:
         """结算每人一行、胜队在前（§4.6-2/§4.11）——镜像 utils/elo.ts settleElo：
         双打按两队人均分算期望落到个人、delta=max(1,K*(1-exp))、败方只扣涨分六成、
-        地板 400；访客代入 1500 当正常玩家算（去半折口径），行内记 delta 但不落账。"""
+        地板 800；访客代入 1200 当正常玩家算（去半折口径），行内记 delta 但不落账。"""
 
         def eff(p: LivePlayer) -> int:
             return RATING_INIT if p.guest else self._rating_of(p.account_id)
@@ -1108,6 +1129,35 @@ class LiveBook(LiveSweepMixin):
             if i < winner_count:
                 er.win += 1
 
+    def _apply_dupr(
+        self,
+        *,
+        match: LiveMatch,
+        ended_at: datetime,
+        winners: list[LivePlayer],
+        losers: list[LivePlayer],
+        score_w: int,
+        score_l: int,
+    ) -> None:
+        """DUPR 核心轨双写（1.4 §2：同 commit 落第二本账）——访客按 3.0 代入
+        快照参与期望、自身不落账（§4）；注册球员每人一行明细、随后窗口重放。"""
+        self.db.flush()  # 战报行先取 id（明细锚点，同事务）
+        stats = StatsLedger(self.db)
+
+        def side(players: list[LivePlayer]) -> list[tuple[int | None, float]]:
+            # 访客 account_id=None：pairing_rating 对 None 出 3.0（恒定标准分）
+            return [(p.account_id, stats.pairing_rating(p.account_id)) for p in players]
+
+        stats.settle(
+            game_id=match.game_id,
+            match_id=match.id,
+            ended_at=ended_at,
+            winner_side=side(winners),
+            loser_side=side(losers),
+            score_w=score_w,
+            score_l=score_l,
+        )
+
     def _state_or_none(self, game_id: int) -> LiveState | None:
         return self.db.execute(
             select(LiveState).where(LiveState.game_id == game_id)
@@ -1131,7 +1181,7 @@ class LiveBook(LiveSweepMixin):
         court.court_seq += 1  # 该片记分类改动往前进一
 
     def _elo_row(self, account_id: int) -> EloRating:
-        """积分账一人一行：查无则建（起笔 1500、play/win 归零）、有则返——
+        """积分账一人一行：查无则建（起笔 1200、play/win 归零）、有则返——
         start 首见建行与空降兜底共用（访客不建行不进账，2.3 裁决）。"""
         er = self.db.execute(
             select(EloRating).where(EloRating.account_id == account_id)
@@ -1142,7 +1192,12 @@ class LiveBook(LiveSweepMixin):
         return er
 
     def _player_row(
-        self, p: LivePlayer, *, is_organizer: bool, viewer_id: int | None
+        self,
+        p: LivePlayer,
+        *,
+        is_organizer: bool,
+        viewer_id: int | None,
+        stats: StatsLedger,
     ) -> dict:
         # 考勤分权（2.3 裁决 Q2）：早退迟到不展示给随便扫到的人
         visible = is_organizer or (viewer_id is not None and p.account_id == viewer_id)
@@ -1151,6 +1206,8 @@ class LiveBook(LiveSweepMixin):
             "account_id": p.account_id,
             "name": p.display_name,
             "guest": p.guest,
+            # DUPR 配平代位分（1.4 §6：访客 3.0、未定级吃派生分/自评档）
+            "dupr": stats.pairing_rating(p.account_id),
             "guarantor_account_id": p.guarantor_account_id,
             "dropin": p.dropin,
             "check": p.check,

@@ -26,6 +26,8 @@
   冗余存一份——避免"两列都叫散场时刻"的双真值。
 - live_matches 落账即冻结：没有任何 UPDATE 入口（战报不可篡改是积分可信的地基，2.3 §6）。
 
+战力域（1.4）dupr_ratings / dupr_details：
+- 分数是派生值不落明细：dupr_details 只存事实快照（结算时四人分数/比分/时刻，
   一场一行按注册球员），dupr_ratings 缓存窗口重放结果——调参/纠偏重算即可，零迁移。
 """
 
@@ -37,6 +39,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -60,6 +63,9 @@ class Account(Base):
     # Q 版小人六部件配置，JSON 字符串 {"skin":0,"hair":0,"hc":0,"shirt":5,"face":0,"acc":0}
     chibi: Mapped[str] = mapped_column(Text, nullable=False)
     card_bg: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # 建号自评五档（1.4 §5：2.0/2.5/3.0/3.5/4.0，null=未填按 3.0）——DUPR 起步分与
+    # 配对代位共用；五档校验在账号域（1.1），此处只存值
+    self_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     # active=在册；deactivated=已注销（档案匿名化、历史封存）
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
     # 建号时用的设备标记：支撑"提交卡住重试"的续接窗口判断
@@ -377,10 +383,11 @@ class LiveMatch(Base):
 
 
 class EloRating(Base):
-    """积分账（2.3 技术设计 §2，战力域最小地基）：一人一行。
+    """Elo 娱乐轨积分账（2.3 落地基，1.4 §3 调参为娱乐轨）：一人一行。
 
-    rating 默认 1500 = 新人初始等级单一源（2.4 裁决：访客代入同值参与期望计算，
-    但访客不入行——只有正式球友有行）。仅 2.3 确认时写；读/榜归战力域册（4.1）。
+    rating 默认 1200 = 初始分单一源（1.4 裁决 8：初始 1200、地板 800，访客代入
+    同值参与期望计算但访客不入行——只有正式球友有行）。仅 2.3 确认时写；读/榜
+    归战力域册（4.1）。
     """
 
     __tablename__ = "elo_ratings"
@@ -389,6 +396,51 @@ class EloRating(Base):
     account_id: Mapped[int] = mapped_column(
         ForeignKey("accounts.id"), unique=True, nullable=False
     )
-    rating: Mapped[int] = mapped_column(Integer, default=1500, nullable=False)
+    rating: Mapped[int] = mapped_column(Integer, default=1200, nullable=False)
     play: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     win: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class DuprRating(Base):
+    """DUPR 派生分缓存（1.4 技术设计 §2）：一人一行，重算后整行覆写。
+
+    分数 = 起步分（自评档）+ 窗口内明细逐场重放的派生值（口径常量在
+    services/dupr.py 单一源）；games 缓存明细总行数（定级门槛 ≥5），两者都由
+    StatsLedger 每次结算后对涉事者同步重写。
+    """
+
+    __tablename__ = "dupr_ratings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id"), unique=True, nullable=False
+    )
+    rating: Mapped[float] = mapped_column(Float, default=3.0, nullable=False)
+    games: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class DuprDetail(Base):
+    """DUPR 明细（1.4 技术设计 §2）：一场确认制结束对局，每名注册球员一行
+    （访客不落，按 3.0 代入对面的快照）。
+
+    每行带自己视角的完整输入快照（结算时四人当前派生分 + 比分 + 胜负），
+    落账即冻结无 UPDATE（沿 live_matches 先例）——重放不依赖回溯历史评分状态，
+    与在线落分天然一致。索引 (account_id, id)：窗口 = 按 id 倒序取近 30
+    （id=结算序，避开多片同时确认的 ended_at 抖动）。
+    """
+
+    __tablename__ = "dupr_details"
+    __table_args__ = (Index("ix_dupr_details_account_id_id", "account_id", "id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    match_id: Mapped[int] = mapped_column(ForeignKey("live_matches.id"), nullable=False)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    partner_rating: Mapped[float] = mapped_column(Float, nullable=False)
+    opp_a: Mapped[float] = mapped_column(Float, nullable=False)
+    opp_b: Mapped[float] = mapped_column(Float, nullable=False)
+    score_w: Mapped[int] = mapped_column(Integer, nullable=False)  # 胜方分
+    score_l: Mapped[int] = mapped_column(Integer, nullable=False)
+    won: Mapped[bool] = mapped_column(Boolean, nullable=False)

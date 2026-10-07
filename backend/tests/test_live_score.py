@@ -336,7 +336,7 @@ def test_settle_confirm_match_row_elo_and_requeue(client: TestClient):
     rows = env["view"]["players"]
     org_row, b_row, guest_row, c_row = rows[0], rows[1], rows[2], rows[3]
     d_row, e_row, f_row = rows[4], rows[5], rows[6]
-    # 抬败方一人的分：期望算得动（1500 均势测不出公式）
+    # 抬败方一人的分：期望算得动（1200 均势测不出公式）
     db = client.app.state.session_factory()
     try:
         db.execute(
@@ -365,12 +365,12 @@ def test_settle_confirm_match_row_elo_and_requeue(client: TestClient):
     assert (m["score_a"], m["score_b"], m["winner_side"]) == (11, 8, "a")
     assert m["ended_at"] == NOW_ISO  # 结束时刻（clock.now 定值）
 
-    # elo：胜队均值 1500 vs 败队 (1500+1600)/2 —— delta=14、败方六成=8（K=24 公式）
+    # elo：胜队均值 1200 vs 败队 (1200+1600)/2 —— delta=18、败方六成=11（K=24 公式）
     assert [
         (r_["delta"], r_["rating_before"], r_["rating_after"]) for r_ in m["elo_rows"]
-    ] == [(14, 1500, 1514), (14, 1500, 1514), (-8, 1500, 1492), (-8, 1600, 1592)]
+    ] == [(18, 1200, 1218), (18, 1200, 1218), (-11, 1200, 1189), (-11, 1600, 1589)]
     assert [r_["guest"] for r_ in m["elo_rows"]] == [False, False, True, False]
-    # 正式球友落账、访客不落账不进榜（2.3 裁决：代入 1500 参与期望）
+    # 正式球友落账、访客不落账不进榜（2.3 裁决：代入 1200 参与期望）
     rt = ratings(
         client,
         org_row["account_id"],
@@ -381,7 +381,7 @@ def test_settle_confirm_match_row_elo_and_requeue(client: TestClient):
     assert [
         (rt[a].rating, rt[a].play, rt[a].win)
         for a in (org_row["account_id"], b_row["account_id"], c_row["account_id"])
-    ] == [(1514, 1, 1), (1514, 1, 1), (1592, 1, 0)]
+    ] == [(1218, 1, 1), (1218, 1, 1), (1589, 1, 0)]
     assert rt[d_row["account_id"]].play == 0  # 没上场的人零动
 
     # 回流（默认 all + queue）：四人回队尾、候场首 4 人补全新一队（第 1、2 位一队）

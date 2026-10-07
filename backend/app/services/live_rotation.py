@@ -12,8 +12,7 @@ Python 镜像 frontend/src/utils/rotate.ts 的结算回流段（endMatch 的"谁
 
 from __future__ import annotations
 
-# 均衡排序的初始分（2.4 §8 定值：没打过的新人与访客按 1500 参与排序）
-RANK_INIT = 1500
+from .dupr import GUEST_DUPR
 
 
 def _by_tenure(players: list[dict]) -> list[dict]:
@@ -26,12 +25,14 @@ def _by_tenure(players: list[dict]) -> list[dict]:
 
 
 def snake_pick(players: list[dict], n: int) -> list[list[dict]]:
-    """按积分蛇形均衡分 n 队（2.4 均衡配对）：rating 降序（同分按传入序，不掷骰子）、
-    蛇形轮发 1..n,n..1——最强+最弱 vs 二三，不让最强的几个挤同队。镜像 rotate.ts
-    splitSides(balance) 的语义并推广到 n 队。"""
+    """按 DUPR 蛇形均衡分 n 队（2.4 均衡配对，1.4 换源吃 DUPR 积分）：rating
+    降序（同分按传入序，不掷骰子）、蛇形轮发 1..n,n..1——最强+最弱 vs 二三，
+    不让最强的几个挤同队。缺 rating 键按访客分 3.0 兜底（LiveBook 喂行时
+    恒带值，纯函数缺省只是防御）。镜像 rotate.ts splitSides(balance) 的语义
+    并推广到 n 队。"""
     if n < 1:
         return []
-    ranked = sorted(players, key=lambda p: -p.get("rating", RANK_INIT))
+    ranked = sorted(players, key=lambda p: -p.get("rating", GUEST_DUPR))
     teams: list[list[dict]] = [[] for _ in range(n)]
     # 蛇形取牌序：第 1 轮 0,1,..,n-1、第 2 轮反转 n-1,..,0，按 2n 一循环
     lap = list(range(n)) + list(range(n - 1, -1, -1))
