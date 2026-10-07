@@ -86,11 +86,12 @@
       />
       <LedgerSheet :visible="liveSheet?.k === 'ledger'" @close="closeLocal" />
       <RulesSheet :visible="liveSheet?.k === 'rules'" @close="closeLocal" />
-      <!-- 终局结算（store.settling 驱动，按片开窗）与签到二维码浮层：z-110，顶替退役 WinPopup 层级 -->
+      <!-- 终局结算（store.settling 驱动，按片开窗；批5a 降级单值读法=片号最小那片）与
+           签到二维码浮层：z-110，顶替退役 WinPopup 层级 -->
       <EndSettleModal
-        :visible="!!liveStore.settling"
+        :visible="!!liveStore.settlingOne"
         :full="full"
-        :court-id="liveStore.settling?.courtId ?? -1"
+        :court-id="liveStore.settlingOne?.courtId ?? -1"
         @close="liveStore.closeSettle()"
         @cancel="onCancelMatch"
       />
@@ -122,7 +123,7 @@
 /* 打球页编排层（2.1 改版批2 重写）：数据与动作全在 live store / 组件内，页面只管
    卡片名映射、弹层次序（liveSheet 单槽）、跨页跳转（档案/拉人/深链）、撒花。 */
 import { computed, ref, watch } from "vue";
-import { onHide, onLoad, onShow } from "@dcloudio/uni-app";
+import { onHide, onLoad, onShow, onUnload } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import AppSheet from "@/components/ui/AppSheet.vue";
@@ -185,9 +186,9 @@ const confirmOpen = computed(() => liveSheet.value?.k === "confirm");
 function askConfirm(msg: string, action: () => void): void {
   liveSheet.value = { k: "confirm", msg, action };
 }
-/** 取消对局：卡上带 courtId；结算窗不带（从 settling 快照取） */
+/** 取消对局：卡上带 courtId；结算窗不带（从 settling 降级单值取当前片） */
 function onCancelMatch(courtId?: number): void {
-  const id = courtId ?? liveStore.settling?.courtId;
+  const id = courtId ?? liveStore.settlingOne?.courtId;
   if (id == null) return;
   askConfirm("这场将不计分，场上的人回候场队最前面", () =>
     liveStore.cancelMatch(id),
@@ -285,7 +286,10 @@ onLoad((options) => {
   }
 });
 onShow(() => {
-  if (liveStore.hasLive) return;
+  if (liveStore.hasLive) {
+    liveStore.startPolling(liveStore.live!.g.id); // 回前台续轮询（onHide 停的；同局幂等不重开）
+    return;
+  }
   /* 带 id 深链（扫码/detail 进现场）优先；入口页直进（#/ 无 query）时自动接上唯一
      进行中的局。冷启动无局已被 onLoad 分发去约球页，走到这说明是用户主动回现场键。
      A2 加载中：ensureLive 在途（拉详情等）骨架占位不空白，成败都收骨架 */
@@ -297,11 +301,13 @@ onShow(() => {
     });
   }
 });
-/** 页面隐藏（切 tab/进退页面）清本地弹层，避免残留到别的页 */
+/** 页面隐藏（切 tab/进退页面）清本地弹层，避免残留到别的页；轮询随之停（§4.8 对表只在看现场时发生） */
 onHide(() => {
   liveSheet.value = null;
   qrOpen.value = false;
+  liveStore.stopPolling();
 });
+onUnload(() => liveStore.stopPolling());
 
 /** alpha:1534-1535 空态按钮 → 约球页找局/发局（mock 演示局已随隔离线退场，101 不再是落点） */
 function goOpenTonight(): void {

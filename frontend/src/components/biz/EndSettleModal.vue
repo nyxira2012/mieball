@@ -103,9 +103,9 @@ const liveStore = useLiveStore();
 const winA = ref(true);
 const sa = ref(0);
 const sb = ref(0);
-/* 快照开窗 → 本地态重置为快照值（胜方默认按比分大者） */
+/* 快照开窗 → 本地态重置为快照值（胜方默认按比分大者；批5a 读 settling 多值的降级单值） */
 watch(
-  () => liveStore.settling,
+  () => liveStore.settlingOne,
   (s) => {
     if (!s) return;
     sa.value = s.sa;

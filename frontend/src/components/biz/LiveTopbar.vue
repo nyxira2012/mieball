@@ -143,8 +143,10 @@ function onCourtsInput(ev: Event): void {
       : courtsText.value;
 }
 function commitCourts(): void {
-  if (!liveStore.setCourtsInput(courtsText.value))
-    courtsText.value = storeTxt.value; // toast 在 store
+  // 批5a 起为后端写（Promise<boolean>）：失败回退展示值（toast 在 store）
+  void liveStore.setCourtsInput(courtsText.value).then((ok) => {
+    if (!ok) courtsText.value = storeTxt.value;
+  });
 }
 
 /* ---------- 单行轮播：feed 战报句（新到旧优先）→ history[0] 战报 → 下一场已排 → 候场人数，3.2s 换条 ---------- */

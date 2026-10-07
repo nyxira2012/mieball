@@ -1,58 +1,67 @@
-/* 现场 store（2.4 批2 起多片并行总账）：每片各打各的（LiveCourt 自带记分板/连庄/格式），
-   轮换真值在 utils/rotate.ts 的 endMatch（纯函数，live 状态作参数）——store 只做
-   guard + 编排 + toast + Elo/history/底账落账（沿用 store 头注释分工）。
-   2.2 批1（权限地基）：isFullPower 单一源（组织者 ∨ 管理员）；收权动作入口把关
-   （规格 B1：不指望手机端拦住），越权句式两读：「请找组织者或管理员」（全权动作）
-   /「只有组织者能做」（封撤管理员）。
-   2.2 批2（到场与名册）：名册成真账本——开场全员未到、到场驱动发牌；排队位统一队尾
-   （迟到/中途加入/早退回来一律队尾）；空降扫码直入名册（不再 joinGame）；出勤底账
-   ledger 当场落（touchLedger 单点）；移出名册对付扫码幽灵。
-   2.4（轮换四件套）：rules 挂 LiveState——自选前「谁下」跟推荐走（syncRules 人数/片数
-   变化时重算）、自选起冻结；记分族动作全部按片（courtId）；confirmSettle 幂等闸保证
-   两端并发确认只落一次账（B2）；访客同规（2026-10-07 终裁，无 shadow 留场过滤）。
-   2.2 批3b（移植）：休息 skip+=1 叠加可取消；作废按片回队首+feed；找替补 subFirst（按片）；
-   换人/作废/替补 feed 留名句（§4.13 访客同规终裁后无「访客让位」句）；先确认在页面层。
-   2.2 批4（散场与底账）：endLive 收局（权限两读=org 独占/admin 代收兜底+在打防线）；
-   底账定格（在场者 leftAt=endedAt）；散场后同局扫码/空降一并拦（§4.2）。
-   2.3 批4 阶段2（读链·store 重建层）纯增量：liveView/recap 持有总账视图，
-   applyLiveView 把视图幂等重建成本地 LiveState（适配旧形状），pollLiveView 拉读对表
-   （totalSeq 变才换画面）+ 3s 轮询器 + applyStaleView（409 携视图对表）——
-   写动作与 ensureLive 旧路零改，组件不消费本节（接线归批5）。
-   硬约束：不触碰任何 uni.*；1.2 隔离线：startLive 吃真局对象（Person→伪 User 名册），
-   现场改规则/场地只落在 LiveState.g 浅克隆上，不回写 game store 的局。
-   名册直接引用球员对象：mock U 同 id 者带出真实战绩对象（结算落回战力榜）。 */
+/* 现场 store（2.3 批5a 写链·全切后端）：现场态真值=后端总账，本 store 只做
+   guard + 编排 + toast——写动作统一「组载荷（base 号取 liveView）→ api → 响应视图
+   applyLiveView 落地」；409 stale 携视图对表（toast「现场已更新」）；断网/他错走
+   errText（网络错文案「网络不给力，请稍后再试」）并把本地预变回滚成所持视图。
+   发牌算法仍在前端 rotate.ts（总账把关）：到场/取消/开账后够人的空片本地算完
+   apiLiveDeal 上报；「排下一场」由确认响应视图驱动（回流补位真值在后端）。
+   积分不再本地落账（settleElo 退役到组件预览）；确认响应的 elo_rows 随视图持有。
+   待确认窗按片多值：settling Record（courtId→来源）由视图 pending 驱动，
+   closeSettle 纯前端关窗（记 hide 位，片退出 pending 自动解除）。
+   遗留本地路（后端无对应端点，批6/后续切真）：addGuests/subFirst/removeFromRoster/
+   setRuleScore/endLive（散场清扫流批6 重造）与空降入册（arriveMe 的 dropin 支）。
+   硬约束：不触碰任何 uni.*；名册行 id 是写动作靶位（与 queue/片位同键），
+   账号口径（isAdmin/myRound）按 view.players.accountId 匹配 U.me。 */
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { U } from "@/api";
-import { ApiError } from "@/api/http";
-import { apiLiveView, toLiveView, type LiveViewer } from "@/api/live";
+import { ApiError, errText } from "@/api/http";
+import {
+  apiLiveCancel,
+  apiLiveCheck,
+  apiLiveClear,
+  apiLiveDeal,
+  apiLivePoint,
+  apiLiveRules,
+  apiLiveSetAdmin,
+  apiLiveSettleConfirm,
+  apiLiveSettleOpen,
+  apiLiveStart,
+  apiLiveSwap,
+  apiLiveTempo,
+  apiLiveUndo,
+  apiLiveUnsetAdmin,
+  apiLiveView,
+  toLiveView,
+  type LiveViewer,
+} from "@/api/live";
 import type {
+  CheckInAction,
   CheckStatus,
+  DealCourt,
   FeedEvent,
   Game,
   LedgerRow,
   LiveCourt,
+  LiveRulesInput,
   LiveState,
   LiveView,
+  LiveViewApi,
+  PendingOrigin,
   Person,
   RotationRules,
   User,
 } from "@/api/types";
-import { settleElo } from "@/utils/elo";
 import { DRESS_RANGES } from "@/utils/chibi";
 import {
   RANK_INIT,
   activePlayers,
   courtCount,
   courtSize,
-  endMatch,
   fillAllCourts,
-  fillCourt,
   pById,
   usedCourts,
 } from "@/utils/rotate";
 import { recommend } from "@/utils/recommend";
-import { shouldEnd, undoScore } from "@/utils/score";
 import { isOrg } from "@/utils/format";
 import { toIso } from "@/utils/time";
 import { useGameStore } from "./game";
@@ -70,8 +79,7 @@ export const isArrived = (c?: CheckStatus): boolean =>
 /** 每边满员口径单一源（双打 2 / 单打 1）：subFirst 缺位判定与 CourtMatchCard 找替补入口共用 */
 export const perSide = (singles: boolean): number => courtSize(singles) / 2;
 
-/** 清场单点（2.2 批2：早退/移出两处 10 行块收敛；批3 替补/作废回流是可预见的下一个使用方）：
-    把人从候场队和各片 A/B 同时清掉；在场资历一并注销（人已不在场上） */
+/** 清场单点（早退/移出本地路共用）：把人从候场队和各片 A/B 同时清掉；在场资历一并注销 */
 function clearFromPlay(L: LiveState, id: number): void {
   L.queue = L.queue.filter((x) => x !== id);
   L.courts.forEach((c) => {
@@ -86,7 +94,7 @@ function clearFromPlay(L: LiveState, id: number): void {
 }
 
 /** 总账结构化事件句 → 中文句（契约§2 后端不产文案；句式与 2.2 动作处留痕同款）：
-    view 按发生序追加、旧 feed 新到旧——reverse 适配（批5 换视图消费面后删） */
+    view 按发生序追加、旧 feed 新到旧——reverse 适配 */
 function feedSentences(events: FeedEvent[]): string[] {
   return events
     .map((e) =>
@@ -100,7 +108,7 @@ function feedSentences(events: FeedEvent[]): string[] {
 }
 
 /** 冷扫兜底局（现场态与局簿都没有时的最小 Game，applyLiveView 重建用）：
-    组织者未知给 -1——viewer 两旗降级 false；批5 接线 ensureLive 先行后此路罕见 */
+    组织者未知给 -1——viewer 两旗降级 false；ensureLive 先行后此路罕见 */
 function stubGame(v: LiveView): Game {
   return {
     id: v.gameId,
@@ -132,41 +140,74 @@ function stubGame(v: LiveView): Game {
 
 export const useLiveStore = defineStore("live", () => {
   const ui = useUiStore();
-  /** alpha:805 let live=null —— 进行中的现场状态；TabBar 的 LIVE 红点（alpha:1487 #live-dot-nav） */
+  /** 进行中的现场态（视图重建产物；TabBar 的 LIVE 红点） */
   const live = ref<LiveState | null>(null);
   const hasLive = computed(() => !!live.value);
 
-  /** 终局结算待确认快照（2.1 §5 · 2.4 按片）：非空 = 该片 EndSettleModal 开着；
-      courtId 同时是 confirmSettle 的幂等闸——两端并发确认同一场只落一次账（B2） */
-  const settling = ref<{ courtId: number; sa: number; sb: number } | null>(
-    null,
-  );
+  /** 待确认窗按片多值（§4.3 多片同待确认是正常情况）：courtId（0 起）→ 窗来源；
+      视图 courts[].status==='pending' 驱动、applyLiveView 同步维护。
+      hide 位=纯前端关窗（closeSettle）：片仍 pending 但用户关了窗不重开，
+      片退出 pending（确认/清零/撤分关窗）时自动解除 */
+  const settling = ref<Record<number, { origin: PendingOrigin } | null>>({});
+  const settleHidden = new Set<number>();
 
-  /** 2.3 批4 阶段2（读链）：最近一次总账视图——轮询/409 对表共用的最近真值，
-      totalSeq 是「变了才换画面」的对表基准（§4.8 几秒内全场同步） */
+  /** 最近一次总账视图——写动作 base 号（totalSeq/片 courtSeq）与轮询对表的最近真值 */
   const liveView = ref<LiveView | null>(null);
-  /** 散场后回看视图持有（ended 视图定格；批6 LiveRecap 只读回看消费） */
+  /** 散场后回看视图持有（ended 视图定格；回看 UI 批6 消费） */
   const recap = ref<LiveView | null>(null);
-  /** settling 单值降级警示位：多片同时待确认旧形状装不下（true=画面只呈现了片号
-      最小那片，批5 换按片多值后删） */
-  const multiPending = ref(false);
 
-  /** 管理员谓词单一源（id ∈ L.admins）：PersonSheet/CheckinSheet/QueueSheet 徽章与全权判定共用 */
-  function isAdmin(id: number): boolean {
+  /** settling 多值的降级单值读法（批5a 消费面：live.vue/EndSettleModal 单窗呈现）：
+      片号最小的一片 + 该片当前比分快照；批5b UI 按片化后可退役 */
+  const settlingOne = computed<{
+    courtId: number;
+    sa: number;
+    sb: number;
+    origin: PendingOrigin;
+  } | null>(() => {
     const L = live.value;
-    return !!L && L.admins.includes(id);
+    const hit = Object.entries(settling.value)
+      .filter(([, v]) => v)
+      .map(([k]) => Number(k))
+      .sort((a, b) => a - b)[0];
+    if (hit == null || !L) return null;
+    const c = L.courts.find((x) => x.id === hit);
+    return {
+      courtId: hit,
+      sa: c?.sa ?? 0,
+      sb: c?.sb ?? 0,
+      origin: settling.value[hit]!.origin,
+    };
+  });
+
+  /** 我的名册行 id（键位修正：view.players 按 accountId 匹配 U.me；查无/无视图回落
+      账号 id 兼本地路——mock 时代行 id 即账号 id） */
+  function myRowId(): number {
+    return (
+      liveView.value?.players.find((p) => p.accountId === U.me.id)?.id ??
+      U.me.id
+    );
+  }
+
+  /** 管理员谓词（id 兼两键：视图行 id → 换账号对表；本地路直当账号 id）：
+      PersonSheet/CheckinSheet/QueueSheet 徽章与全权判定共用 */
+  function isAdmin(id: number): boolean {
+    const row = liveView.value?.players.find((p) => p.id === id);
+    const acc = row ? row.accountId : id;
+    const admins = liveView.value?.admins ?? live.value?.admins ?? [];
+    return acc != null && admins.includes(acc);
   }
 
   /** 现场权限单一源（2.2 §4.7）：组织者 ∨ 被封管理员 = 全权（同一套手柄）；
-      球友只开放记分/撤分/换人/自己的报到早退与歇连 */
+      视图时代读映射派生旗（toLiveView 按 viewer 算好），无视图回落本地判 */
   const isFullPower = computed(() => {
+    if (liveView.value) return liveView.value.isFullPower;
     const L = live.value;
     return !!L && (isOrg(L.g) || isAdmin(U.me.id));
   });
 
-  /** 封存闸（§4.14 现场封存 · 底账定格）：endedAt 有值=已散场，收权动作一律拒——
+  /** 封存闸（§4.14 现场封存）：endedAt 有值=已散场，收权动作一律拒——
       所有 needFull 检查处与 setCheck/togglePerson 的自报免检路径共用；
-      LedgerSheet/closeSettle 等只读动作不拦、endLive 自身幂等不重放 */
+      后端散场后写一律拒 live_ended，这里是前置拦截 */
   function sealGate(): boolean {
     if (live.value?.endedAt) {
       ui.toast("现场已散 · 不能再操作");
@@ -175,15 +216,14 @@ export const useLiveStore = defineStore("live", () => {
     return true;
   }
 
-  /** 越权拦截（规格 B1 总账把关）：收权动作入口统一走这里，UI 置灰只是前置 */
+  /** 越权拦截（规格 B1 总账把关；后端 live_forbidden 兜底同一句） */
   function needFull(): boolean {
-    if (!sealGate()) return false; // 散场封存先于权限：底账定格后全权也不开写入口
+    if (!sealGate()) return false;
     if (isFullPower.value) return true;
     ui.toast("请找组织者或管理员");
     return false;
   }
-  /** 组织者独占（§4.6 禁止：管理员自己也不能再封管理员）；封存先于组织者权限——
-      散场后底账定格，封/撤管理员也不可再做（§4.14） */
+  /** 组织者独占（§4.6；后端 organizer_only 兜底同句） */
   function needOrg(): boolean {
     if (!sealGate()) return false;
     const L = live.value;
@@ -192,24 +232,31 @@ export const useLiveStore = defineStore("live", () => {
     return false;
   }
 
-  /** 散场权（§4.14 组织者独占 + 兜底）：组织者已标「早退」离场时管理员可代收——
-      否则没人能收局。判的是名册里组织者本人在不在「早退」态（isOrg 只认 viewer 视角，
-      代收场景两者不是同一人）；组织者被移出名册不算早退，不给代收（规格只授了 left 态） */
+  /** 散场权（§4.14 组织者独占 + 兜底）：组织者已标「早退」离场时管理员可代收；
+      视图时代组织者名册行按 accountId 找 */
   const canEndLive = computed(() => {
     const L = live.value;
+    const v = liveView.value;
     if (!L) return false;
+    if (v)
+      return (
+        v.isOrganizer ||
+        (v.isFullPower &&
+          v.players.find((p) => p.accountId === L.g.organizer.id)?.check ===
+            "left")
+      );
     return (
       isOrg(L.g) ||
       (isAdmin(U.me.id) && pById(L, L.g.organizer.id)?.check === "left")
     );
   });
 
-  /** 战报 feed（unshift 新到旧）：句子在动作处拼好（含操作者），LiveTopbar 轮播消费 */
+  /** 战报 feed（unshift 新到旧）：句子由视图结构化事件拼好（feedSentences 单点） */
   function feedPush(sentence: string): void {
     live.value?.feed.unshift(sentence);
   }
 
-  /** 推荐快照（2.4 §4.2：总账算好随时可取，非强制不替切；批3 RulesSheet 消费） */
+  /** 推荐快照（2.4 §4.2：总账算好随时可取；RulesSheet 消费） */
   const advice = computed(() => {
     const L = live.value;
     return L
@@ -217,19 +264,19 @@ export const useLiveStore = defineStore("live", () => {
       : null;
   });
 
-  /** 我还有几轮上场（2.1 §3 · 2.4 size-aware）：
+  /** 我还有几轮上场（2.1 §3 · 键位修正：队列存行 id，先换回我的行）：
       ceil((每片人数 × 空片数 + 我的队列位 + 1) / 每片人数) */
   const myRound = computed<number | null>(() => {
     const L = live.value;
     if (!L) return null;
-    const idx = L.queue.indexOf(U.me.id);
+    const idx = L.queue.indexOf(myRowId());
     if (idx < 0) return null;
     const size = courtSize(L.rules.singles);
     const empty = L.courts.filter((c) => !c.A.length && !c.B.length).length;
     return Math.ceil((size * empty + idx + 1) / size);
   });
 
-  /** 按片找（记分族动作的定位口径） */
+  /** 按片找（记分族动作的定位口径；片序 0 起） */
   function courtOf(courtId: number): LiveCourt | undefined {
     return live.value?.courts.find((c) => c.id === courtId);
   }
@@ -249,97 +296,91 @@ export const useLiveStore = defineStore("live", () => {
     };
   }
 
-  /** 片数与场地号对齐（startLive 建片 / setCourtsInput 改场地）：
-      非空片（在打）按序保留——收片校验已保证新片数 ≥ 非空片数；空片补齐到片数上限 */
-  function syncCourts(L: LiveState): void {
-    const n = courtCount(L);
-    L.courts = L.courts.filter((c) => c.A.length || c.B.length);
-    L.courts.forEach((c, i) => {
-      c.id = i;
-      c.name = L.g.courts?.[i] ?? `${i + 1}号`;
-    });
-    while (L.courts.length < n) L.courts.push(mkCourt(L, L.courts.length));
-  }
+  /* ─────── 写链公共件：base 号 / 统一发送 / 发牌上报 ─────── */
 
-  /** 推荐跟随（2.4 §4.2）：人数/片数变化的动作尾部调——未自选（!downChosen）时
-      「谁下」重算成最新推荐，不荐挂「全上全下」占位；自选起冻结（推荐只亮标签） */
-  function syncRules(): void {
-    const L = live.value;
-    if (!L || L.rules.downChosen) return;
-    const adv = recommend(L.rules.singles, activePlayers(L), courtCount(L));
-    L.rules.down = adv.kind === "down" ? adv.down : "all";
-  }
-
-  /** 开始打球（alpha:1471-1490 口径 · 2.2 批2§4.1 开场点亮 · 2.4 批2 并行建片）：吃真局对象——
-    - 名册 = formal 报名行展开：成员卡（Person）优先借 mock U 同 id 者的完整属性对象
-      （现场域仍吃 mock 属性；结算 Elo 落回战力榜），无则用 mock 默认值造伪 User；
-    - 「带的人」展开成随行访客（编号从 ·1 起，如「小李的球友·1」）；
-    - 全员先记「未到」谁报到谁亮；候场空——够一片的人数是「到场」攒出来的
-      （setCheck 到场支线自动补片）；片按 courtCount 建空片（差人卡呈现，4.3 空状态）；
-    - rules 四件套起笔：双打/队序/连庄上限 3；「谁下」跟推荐走（无人时挂 all 占位）；
-    - ledger=出勤底账起笔（正式一人一行、随行行挂 guarantor），startedAt=点亮时刻。 */
-  function startLive(g: Game): string | null {
-    const lg: Game = { ...g, courts: g.courts ? [...g.courts] : null }; // 现场改动不回写局（派生态归后端）
-    const src: User[] = [];
-    const ledger: LedgerRow[] = [];
-    (g.entries ?? [])
-      .filter((e) => e.standing === "formal")
-      .forEach((e) => {
-        const m = mkPlayer(e.account);
-        src.push(m);
-        ledger.push({ id: m.id, name: m.name, shadow: m.shadow });
-        for (let i = 0; i < (e.bring || 0); i++) {
-          const gu = mkGuest(
-            `${e.account.nickname.slice(0, 2)}的球友·${i + 1}`,
-          );
-          src.push(gu);
-          ledger.push({
-            id: gu.id,
-            name: gu.name,
-            shadow: true,
-            guarantor: e.account.nickname,
-          });
-        }
-      });
-    const roster = src.map((u) => {
-      u.check = "absent";
-      u.skip = 0;
-      u.fire = false;
-      u.courtSeq = undefined;
-      u.tenure = 0;
-      return u;
-    }); // 全员「未到」开场（§4.1 每人先记未到、谁报到谁亮）
-    const L: LiveState = {
-      g: lg,
-      roster,
-      queue: [], // 候场区空：报到的人按先后排进（到场驱动，开场不发牌不报错）
-      courts: [],
-      history: [],
-      round: 0,
-      admins: [], // 管理员现场封（不回写 g）
-      feed: [`现场已点亮 · 组织者 ${lg.organizer.nickname}`], // 开场首句：轮播在无人动作时也有内容
-      startedAt: toIso(new Date()),
-      ledger,
-      rules: {
-        singles: false,
-        down: "all", // 占位：syncRules 立刻按推荐重算（无人时推荐「不荐」→ 挂 all）
-        downChosen: false,
-        pairing: "queue",
-        champCap: 3,
-      },
-      courtSeqNext: 0,
+  /** 片级写的 base 号对（动全场只带总号） */
+  function seqs(courtNo?: number): {
+    baseTotalSeq: number;
+    baseCourtSeq: number;
+  } {
+    const v = liveView.value;
+    return {
+      baseTotalSeq: v?.totalSeq ?? 0,
+      baseCourtSeq: courtNo != null ? (v?.courtSeqs[courtNo] ?? 0) : 0,
     };
-    live.value = L;
-    settling.value = null; // 换局清残留结算窗（批1 刺客：上一局的快照不许漏进新局）
-    syncCourts(L); // 按片数建空片（差人卡）
-    syncRules();
-    fillAllCourts(L); // 开场若已够人（不会有）——保持到场驱动同一条路
+  }
+
+  /** 统一发送（写动作唯一通道）：api → 响应即最新视图 → applyLiveView 落地；
+      - 409 两码（live_stale_total/court）携视图 → applyStaleView 对表 + toast「现场已更新」；
+      - 其余错误走 errText（断网「网络不给力，请稍后再试」/后端把关句），
+        并重放所持视图把本地预变（发牌预填等）回滚——下一拍轮询兜底。
+      返回是否成功（调用方据此决定后续编排与 toast） */
+  async function writeAction(
+    gameId: number,
+    run: () => Promise<LiveViewApi>,
+    onDone?: () => void,
+  ): Promise<boolean> {
+    try {
+      const raw = await run();
+      applyLiveView(toLiveView(raw, viewerCtx(gameId)));
+      onDone?.();
+      return true;
+    } catch (e) {
+      if (applyStaleView(e)) {
+        ui.toast("现场已更新");
+        return false;
+      }
+      ui.toast(errText(e));
+      if (liveView.value) applyLiveView(liveView.value); // 回滚本地预变
+      return false;
+    }
+  }
+
+  /** 发牌上报（发牌算法在前端，总账把关）：本地把空片补满 → 新填的片组载荷上报；
+      无片可填返 false 不发请求。到场/取消/开账/改单双打后的自动补牌都走这里 */
+  async function maybeDeal(gid: number): Promise<boolean> {
+    const L = live.value;
+    if (!L || !liveView.value) return false;
+    const emptyBefore = new Set(
+      L.courts.filter((c) => !c.A.length && !c.B.length).map((c) => c.id),
+    );
+    fillAllCourts(L);
+    const deals: DealCourt[] = L.courts
+      .filter((c) => emptyBefore.has(c.id) && (c.A.length || c.B.length))
+      .map((c) => ({ courtNo: c.id + 1, a: [...c.A], b: [...c.B] }));
+    if (!deals.length) return false;
+    return writeAction(gid, () =>
+      apiLiveDeal(gid, deals, liveView.value!.totalSeq),
+    );
+  }
+
+  /* ─────── 开账与守门 ─────── */
+
+  /** 开始打球（后端开账路）：apiLiveStart（幂等——已开账直接回视图）→ 视图落地 →
+      开场发牌（已够人的片本地算完上报；新开账全员未到通常为空拍）。
+      签名沿旧（吃真局对象）——g 只取 id 与组织者（viewer 旗派生），名册展开归后端 */
+  async function startLive(g: Game): Promise<string | null> {
     const msg = "球局开始 · 现场已点亮";
+    try {
+      const raw = await apiLiveStart(g.id);
+      applyLiveView(
+        toLiveView(raw, { myId: U.me.id, organizerId: g.organizer.id }),
+      );
+      startPolling(g.id);
+    } catch (e) {
+      if (applyStaleView(e)) {
+        ui.toast("现场已更新");
+        return null;
+      }
+      ui.toast(errText(e));
+      return null;
+    }
+    await maybeDeal(g.id);
     ui.toast(msg);
     return msg;
   }
 
-  /** 成员卡 → 名册 User：mock U 同 id 者直接借对象（战绩联动）；否则 mock 默认值造伪 User */
+  /** 成员卡 → 名册 User（空降入册本地路用）：mock U 同 id 者直接借对象，否则造伪 User */
   function mkPlayer(p: Person): User {
     const known = Object.values(useUserStore().users).find(
       (x) => x.id === p.id,
@@ -348,7 +389,7 @@ export const useLiveStore = defineStore("live", () => {
     return {
       id: p.id,
       name: p.nickname,
-      elo: 1200,
+      elo: RANK_INIT,
       play: 0,
       win: 0,
       month: 0,
@@ -356,39 +397,55 @@ export const useLiveStore = defineStore("live", () => {
     };
   }
 
-  /** 确保现场开的是目标局（跳转/深链/扫码直达共用的守门口径）：
-      列表缓存没有该局（或没带全量名单）就拉详情，找不到提示后不动现场；
-      已结束的局（done/terminated/cancelled 终态）扫码禁入——散场后二维码不能用（§4.2 本批拦截）。 */
+  /** 确保现场开的是目标局（跳转/深链/扫码直达共用的守门口径，后端总账路）：
+      - 拉读 200 → applyLiveView + startPolling（散场视图不再轮询——定格回看）；
+      - 404 live_not_found → 终态局（done/terminated/cancelled）拦「球局不存在或已结束」，
+        否则走开账后端路（组织者；幂等）；
+      - 同局已开 → 续轮询 + 先对一拍（不靠计时器等 3s）；已散场同局 → 拉定格回看，
+        写入口由 sealGate 与后端 live_ended 拦（§4.2/§4.10）。 */
   async function ensureLive(id: number): Promise<void> {
-    if (live.value && live.value.g.id === id) {
-      // 已散场的同局扫码也拦（§4.2：现场封存二维码失效）；live 态保留，不重建不重进
-      if (live.value.endedAt) ui.toast("球局不存在或已结束");
+    const cur = live.value;
+    if (cur && cur.g.id === id) {
+      if (!cur.endedAt) startPolling(id);
+      void pollLiveView(id);
       return;
     }
-    const gs = useGameStore();
-    let g = gs.findGame(id);
-    if (!g || !g.entries?.length) {
-      try {
-        g = await gs.loadDetail(id);
-      } catch {
+    let raw: LiveViewApi;
+    try {
+      raw = await apiLiveView(id);
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.code !== "live_not_found") {
+        ui.toast(errText(e));
+        return;
+      }
+      const gs = useGameStore();
+      let g = gs.findGame(id);
+      if (!g || !g.entries?.length) {
+        try {
+          g = await gs.loadDetail(id);
+        } catch {
+          ui.toast("球局不存在或已结束");
+          return;
+        }
+      }
+      if (["done", "terminated", "cancelled"].includes(g.status)) {
         ui.toast("球局不存在或已结束");
         return;
       }
-    }
-    if (["done", "terminated", "cancelled"].includes(g.status)) {
-      ui.toast("球局不存在或已结束");
+      await startLive(g);
       return;
     }
-    startLive(g);
+    const view = toLiveView(raw, viewerCtx(id));
+    applyLiveView(view);
+    if (!view.ended) startPolling(id);
   }
 
-  /** 造一位随行访客（startLive 报名展开与组织者「带访客」addGuests 同法）：
-      shadow · elo 1200 计入期望 · 随机 chibi 引用 chibi.ts 单一源 DRESS_RANGES */
+  /** 造一位随行访客（addGuests 本地路；随机 chibi 引用 chibi.ts 单一源 DRESS_RANGES） */
   function mkGuest(name: string): User {
     return {
       id: 9000 + ++guestSeq,
       name,
-      elo: 1200,
+      elo: RANK_INIT,
       play: 0,
       win: 0,
       month: 0,
@@ -404,28 +461,53 @@ export const useLiveStore = defineStore("live", () => {
     };
   }
 
-  /** 出勤底账单点补笔（2.2 批2）：只按 id 合并 patch；人已移出（行被保留留痕）时不再复活字段 */
+  /** 出勤底账单点补笔（本地路）：只按 id 合并 patch */
   function touchLedger(id: number, patch: Partial<LedgerRow>): void {
     const row = live.value?.ledger.find((r) => r.id === id);
     if (row) Object.assign(row, patch);
   }
 
-  /** 到场四操作（alpha:1591-1605 setCheck · 2.2 批2§4.2/4.5 口径单一源）：
-    - 「到场」请求一律传 'ok'，未到首报且已过开球时刻（局 startAt，ISO）归一成 'late'；
-    - 排队位统一队尾（修订④）：迟到排队尾、中途加入排队尾（不再插队首）、早退回来也队尾；
-    - 早退=候场队和场上同时清掉 + 落离场时刻（片上缺人打短维持现状，补人归手动换人）；
-    - 三种时刻当场落出勤底账；
-    - 落坑后自动补片（fillAllCourts：够一片补一片，多片同时要人按片号先后）。
-    权限（§4.3）：代办他人收权；自己报到（扫码链路）/早退随时可 */
-  function setCheck(id: number, st: CheckStatus): void {
+  /** 行是否在后端总账（视图行走后端写；空降/本地造的行走本地旧路） */
+  function isViewRow(id: number): boolean {
+    return !!liveView.value?.players.some((r) => r.id === id);
+  }
+
+  /** 到场四操作（后端路 + 本地遗留路）：
+    - 视图行：apiLiveCheck（ok/late 归一、队尾口径全在后端镜像）→ 响应视图落地 →
+      按落定态 toast → 到场支线 maybeDeal（够一片的人数本地算完上报）；
+    - 本地行（空降/无视图）：沿 2.2 批2 本地口径（队尾/清场/底账/自动补片）。
+    权限（§4.3）：代办他人收权；自己报到/早退随时可 */
+  async function setCheck(id: number, st: CheckStatus): Promise<void> {
     const L = live.value;
     const p = L ? pById(L, id) : undefined;
     if (!L || !p) return;
-    if (!sealGate()) return; // 散场后自己也不能报到/早退（自报免 needFull 的路径同受封存闸）
-    if (id !== U.me.id && !needFull()) return;
-    const was = p.check; // 发牌只由「新到场」驱动：已在场的人重报（迟到再点/重复扫）不重发
+    if (!sealGate()) return;
+    if (id !== myRowId() && !needFull()) return;
+    if (st !== "absent" && isViewRow(id)) {
+      const act: CheckInAction = st; // 窄化进闭包（absent 只出不进——上面已挡）
+      const gid = L.g.id;
+      const ok = await writeAction(gid, () =>
+        apiLiveCheck(gid, id, act, seqs().baseTotalSeq),
+      );
+      const row = liveView.value?.players.find((r) => r.id === id);
+      if (!ok || !row) return;
+      if (row.check === "left") {
+        ui.toast(`${row.name} 早退 · 已记离场时刻`);
+      } else if (isArrived(row.check)) {
+        ui.toast(
+          row.check === "late"
+            ? `${row.name} 迟到 · 自动排到队尾等一轮`
+            : row.check === "join"
+              ? `${row.name} 中途加入 · 排到队尾`
+              : `${row.name} 已到场 · 排进候场队`,
+        );
+        await maybeDeal(gid); // 到场驱动发牌（§4.1 够一片的人数就上片）
+      }
+      return;
+    }
+    /* ── 本地遗留路（空降行/无视图演示态；批6 切真时整段退役） ── */
+    const was = p.check;
     if (st === "ok" || st === "late") {
-      // 「回来也是队尾」：早退者再到场走中途加入口径（§4.5 禁止回来排队首）
       if (p.check === "left") st = "join";
       else if (
         st === "ok" &&
@@ -438,7 +520,7 @@ export const useLiveStore = defineStore("live", () => {
       p.check = "late";
       const i = L.queue.indexOf(id);
       if (i >= 0) L.queue.splice(i, 1);
-      L.queue.push(id); // 迟到排队尾（toast 即此承诺）
+      L.queue.push(id);
       ui.toast(`${p.name} 迟到 · 自动排到队尾等一轮`);
     } else if (st === "left") {
       p.check = "left";
@@ -446,13 +528,13 @@ export const useLiveStore = defineStore("live", () => {
       ui.toast(`${p.name} 早退 · 已记离场时刻`);
     } else if (st === "join") {
       p.check = "join";
-      if (!L.queue.includes(id)) L.queue.push(id); // 修订④：中途加入排到队尾
+      if (!L.queue.includes(id)) L.queue.push(id);
       ui.toast(`${p.name} 中途加入 · 排到队尾`);
     } else {
-      const first = !isArrived(p.check); // 'ok' 只在首报时进队（在场上/队里的人重报不重排）
+      const first = !isArrived(p.check);
       p.check = st;
       if (st === "ok") {
-        if (first && !L.queue.includes(id)) L.queue.push(id); // 按先后排进候场队=队尾
+        if (first && !L.queue.includes(id)) L.queue.push(id);
         ui.toast(`${p.name} 已到场 · 排进候场队`);
       }
     }
@@ -461,16 +543,15 @@ export const useLiveStore = defineStore("live", () => {
       touchLedger(id, { leftAt: p.leftAt });
       feedPush(`${p.name} 早退 · 已记离场时刻`);
     } else if (st !== "absent" && !p.arriveAt) {
-      p.arriveAt = toIso(new Date()); // 几点到：首次到场落账（底账随行补笔）
+      p.arriveAt = toIso(new Date());
       touchLedger(id, { arriveAt: p.arriveAt });
     }
     if ((st === "ok" || st === "late" || st === "join") && !isArrived(was)) {
-      fillAllCourts(L); // 到场驱动发牌：够一片的人数就自动上片（重复报到不触发）
+      fillAllCourts(L);
     }
-    syncRules();
   }
 
-  /** 移出名册（2.2 批2§4.3 新动作，收权）：人从名册消失（对付远程扫码幽灵）——
+  /** 移出名册（本地遗留路：后端无对应端点）——人从名册消失（对付远程扫码幽灵）：
       候场/各片全清，底账行保留只落 removedAt（留痕）；与早退的区别：早退还留在名册 */
   function removeFromRoster(id: number): void {
     if (!needFull()) return;
@@ -482,27 +563,45 @@ export const useLiveStore = defineStore("live", () => {
     touchLedger(id, { removedAt: toIso(new Date()) });
     feedPush(`${p.name} 被移出名册`);
     ui.toast(`${p.name} 被移出名册`);
-    syncRules();
   }
 
-  /** 休息（可叠加）/ 连战 / 取消休息（§4.10 修订⑨）：互斥——设一个另一个自动取消。
-      休息=skip+1：轮到我发牌时引擎消耗 1、坑由下一位顶上，按几次跳几轮（无上限无冷却），
-      中途想上随时「取消休息」清 0；连战=fire 下一场优先排到队首（不是留在场上连着打）。
-      给自己随时可、给他人需全权（§4.10 禁止球友代设——needFull 出「请找组织者或管理员」） */
-  function togglePerson(id: number, k: "skip" | "fire" | "unskip"): void {
+  /** 休息/连战/取消休息（§4.10；视图行走 apiLiveTempo，本地行沿旧路）：
+      互斥与叠帐全在后端；toast 按响应视图落定态拼（共跳几轮/连战队首） */
+  async function togglePerson(
+    id: number,
+    k: "skip" | "fire" | "unskip",
+  ): Promise<void> {
     const L = live.value;
     const p = L ? pById(L, id) : undefined;
     if (!L || !p) return;
-    if (!sealGate()) return; // 散场后歇/连也封：自报免 needFull 的路径同受封存闸
-    if (id !== U.me.id && !needFull()) return;
+    if (!sealGate()) return;
+    if (id !== myRowId() && !needFull()) return;
+    if (isViewRow(id)) {
+      const gid = L.g.id;
+      const ok = await writeAction(gid, () =>
+        apiLiveTempo(gid, id, k, seqs().baseTotalSeq),
+      );
+      if (!ok) return;
+      const row = liveView.value!.players.find((r) => r.id === id)!;
+      if (k === "unskip") ui.toast("取消休息 · 下轮照常");
+      else if (k === "skip")
+        ui.toast(
+          row.skip > 1
+            ? `已再跳一轮 · 共跳 ${row.skip} 轮`
+            : "已设休息 · 轮到你时自动跳一轮",
+        );
+      else ui.toast(row.fire ? "连战 · 排到队首" : "取消连战");
+      return;
+    }
+    /* ── 本地遗留路 ── */
     if (k === "unskip") {
       p.skip = 0;
       ui.toast("取消休息 · 下轮照常");
       return;
     }
     if (k === "skip") {
-      if (p.fire) p.fire = false; // 互斥
-      p.skip = (p.skip ?? 0) + 1; // 引擎轮到他发牌时消耗 1（takeFromQueue）——按几次跳几轮
+      if (p.fire) p.fire = false;
+      p.skip = (p.skip ?? 0) + 1;
       ui.toast(
         p.skip > 1
           ? `已再跳一轮 · 共跳 ${p.skip} 轮`
@@ -511,7 +610,7 @@ export const useLiveStore = defineStore("live", () => {
       return;
     }
     p.fire = !p.fire;
-    if (p.fire) p.skip = 0; // 互斥
+    if (p.fire) p.skip = 0;
     if (p.fire) {
       const i = L.queue.indexOf(id);
       if (i >= 0) {
@@ -522,185 +621,187 @@ export const useLiveStore = defineStore("live", () => {
     ui.toast(p.fire ? "连战 · 排到队首" : "取消连战");
   }
 
-  /** 封管理员（§4.6 仅组织者）：admins 存现场态不回写 g；「对方手机弹提示」mock 期降级为 feed+toast。
-      边缘静默幂等：已封再封 / 人不在册都不动 */
-  function setAdmin(id: number): void {
+  /** 封管理员（§4.6 仅组织者；靶行须正式球友）：留痕句由视图 feed 回来，toast 本地拼 */
+  async function setAdmin(id: number): Promise<void> {
     if (!needOrg()) return;
     const L = live.value;
     const p = L ? pById(L, id) : undefined;
-    if (!L || !p || L.admins.includes(id)) return;
-    L.admins.push(id);
-    feedPush(`组织者封 ${p.name} 为管理员`);
-    ui.toast(`组织者封 ${p.name} 为管理员`);
+    if (!L || !p || !liveView.value) return;
+    const acc = liveView.value.players.find((r) => r.id === id)?.accountId;
+    if (acc == null || liveView.value.admins.includes(acc)) return; // 访客当不了/已封静默幂等
+    const gid = L.g.id;
+    await writeAction(
+      gid,
+      () => apiLiveSetAdmin(gid, id, seqs().baseTotalSeq),
+      () => ui.toast(`组织者封 ${p.name} 为管理员`),
+    );
   }
 
-  /** 撤管理员（§4.6 仅组织者）：被撤者留痕 feed「组织者收回了 XX 的管理员身份」；不在册静默 */
-  function unsetAdmin(id: number): void {
+  /** 撤管理员（§4.6 仅组织者）：留痕句由视图 feed 回来 */
+  async function unsetAdmin(id: number): Promise<void> {
     if (!needOrg()) return;
     const L = live.value;
     const p = L ? pById(L, id) : undefined;
-    if (!L || !p || !L.admins.includes(id)) return;
-    L.admins = L.admins.filter((x) => x !== id);
-    feedPush(`组织者收回了 ${p.name} 的管理员身份`);
-    ui.toast(`组织者收回了 ${p.name} 的管理员身份`);
+    if (!L || !p || !liveView.value) return;
+    const acc = liveView.value.players.find((r) => r.id === id)?.accountId;
+    if (acc == null || !liveView.value.admins.includes(acc)) return; // 不是管理员静默
+    const gid = L.g.id;
+    await writeAction(
+      gid,
+      () => apiLiveUnsetAdmin(gid, id, seqs().baseTotalSeq),
+      () => ui.toast(`组织者收回了 ${p.name} 的管理员身份`),
+    );
   }
 
-  /** 扫码自签到（2.1·选项A · 2.2 批2§4.4 空降改造）：
-      名册没我（空降）→ 直入名册（不再 joinGame——线上满员和候补都不拦、线上名单与候补原样
-      不动，名册可超线上上限），带「空降」标记+底账加行+feed 留痕；已在场幂等提示；
-      然后统一走 setCheck 到场支线（空降=中途加入排队尾；已报名者按开球时刻归一 ok/late）。
-      现场没开或开的是别局 → 先切到目标局；已结束的局被 ensureLive 拦下。 */
+  /** 扫码自签到（2.1·选项A）：名册没我（空降）→ 本地入册带「空降」标（后端无空降端点，
+      遗留本地路；批6/后续切真）→ 统一走 setCheck 到场支线（视图行走后端）。
+      现场没开或开的是别局 → ensureLive 先行；已结束的局被 ensureLive/sealGate 拦下 */
   async function arriveMe(gameId: number): Promise<string | null> {
     await ensureLive(gameId);
     const L = live.value;
-    // 散场后 live 态保留（g.id 仍同局）——endedAt 有值即封存，扫码链路到此也拦（§4.2）
     if (!L || L.g.id !== gameId || L.endedAt) return null; // ensureLive 已 toast 兜底
-    const myId = U.me.id;
-    let p = pById(L, myId);
+    let p = pById(L, myRowId());
     if (!p) {
-      p = mkPlayer({ id: myId, nickname: U.me.name, chibi: U.me.chibi }); // 借回 U.me 本体：战力/档案全局联动
-      p.check = undefined; // mkPlayer 可能借回共享对象、残留移出前的 check——入册前先重置，防幂等闸误拦（§4.3 对手方：移出后重扫要能回候场）
+      p = mkPlayer({ id: U.me.id, nickname: U.me.name, chibi: U.me.chibi });
+      p.check = undefined; // 借回共享对象残留的 check 先重置，防幂等闸误拦
       p.dropin = true; // 空降标记全场看得到（§4.4）
       L.roster.push(p);
-      if (!L.ledger.some((r) => r.id === myId))
-        L.ledger.push({ id: myId, name: p.name, dropin: true }); // 同一人一行：移出→重进复用原行，不累积重复行
+      if (!L.ledger.some((r) => r.id === U.me.id))
+        L.ledger.push({ id: U.me.id, name: p.name, dropin: true }); // 同一人一行不累积
       feedPush(`${p.name} 空降 · 排到队尾`);
     }
     if (isArrived(p.check)) {
       ui.toast("你已经在场了");
       return null;
     }
-    setCheck(myId, p.dropin ? "join" : "ok"); // 到场口径（含迟到归一/队尾/自动发牌/toast）在 setCheck 单点
+    await setCheck(p.id, p.dropin ? "join" : "ok"); // 到场口径单点（归一/队尾/发排/toast）
     return "已到场 · 进候场区";
   }
 
-  /** 得分（alpha:1680-1687 point · 2.4 按片）：先到 N 且净胜 2 才收局——到分不落账，
-      只开该片终局弹窗快照；结算窗只拦同片记分，别片照打（4.3 各打各的） */
-  function point(courtId: number, side: "a" | "b"): void {
-    if (settling.value?.courtId === courtId) return;
+  /* ─────── 记分链（片级写，base 号带双号） ─────── */
+
+  /** 得分（§4.1）：后端落账时当即判到分——够线该片转待确认(origin='auto')，
+      响应视图驱动 settling；待确认片冻结（§4.3，后端 court_frozen 兜底） */
+  async function point(courtId: number, side: "a" | "b"): Promise<void> {
+    if (settling.value[courtId]) return;
     const L = live.value;
     const c = courtOf(courtId);
-    if (!L || !c || (!c.A.length && !c.B.length)) return;
-    if (side === "a") c.sa++;
-    else c.sb++;
-    c.last = side;
-    if (shouldEnd(c.sa, c.sb, L.g.scoring))
-      settling.value = { courtId, sa: c.sa, sb: c.sb }; // 片不动，等弹窗确认
+    if (!L || !c || (!c.A.length && !c.B.length) || !liveView.value) return;
+    const no = courtId + 1;
+    const s = seqs(no);
+    await writeAction(L.g.id, () =>
+      apiLivePoint(L.g.id, no, side, s.baseTotalSeq, s.baseCourtSeq),
+    );
   }
 
-  /** 误记撤回一分（alpha:1676-1679 undoPoint · 按片回退该片最后得分方） */
-  function undoPoint(courtId: number): void {
-    if (settling.value?.courtId === courtId) return;
+  /** 误记撤回一分（§4.5）：只撤该片最后得分方那 1 分——auto 窗撤到分线下自动关窗
+      回在打、manual 窗只改比分不关窗（两路都由响应视图落定）；卡上入口对 pending 片
+      由 UI 冻结（§4.3），窗内撤分（批5b UI）与在打撤走同一动作 */
+  async function undoPoint(courtId: number): Promise<void> {
+    const L = live.value;
     const c = courtOf(courtId);
-    if (!c) return;
-    const r = undoScore(c.sa, c.sb, c.last);
-    c.sa = r.sa;
-    c.sb = r.sb;
+    if (!L || !c || !liveView.value) return;
+    const no = courtId + 1;
+    const s = seqs(no);
+    await writeAction(L.g.id, () =>
+      apiLiveUndo(L.g.id, no, s.baseTotalSeq, s.baseCourtSeq),
+    );
   }
 
-  /** 记分已清零 · 重开一盘（2.1 对局卡工具行 · 按片；§4.8 收权——球友只能 ±1） */
-  function clearScore(courtId: number): void {
+  /** 记分已清零 · 重开一盘（§4.2 收权）：比分归 0:0、pending 作废回在打、人不下场 */
+  async function clearScore(courtId: number): Promise<void> {
+    const L = live.value;
+    if (!L || !courtOf(courtId) || !needFull() || !liveView.value) return;
+    const no = courtId + 1;
+    const s = seqs(no);
+    await writeAction(
+      L.g.id,
+      () => apiLiveClear(L.g.id, no, s.baseTotalSeq, s.baseCourtSeq),
+      () => ui.toast("记分已清零 · 重开一盘"),
+    );
+  }
+
+  /** 提前结算开窗（§4.4 收权）：转 pending(origin='manual')——窗开在视图，无成功
+      toast（窗即反馈）；预选看视图 preselect */
+  async function openSettle(courtId: number): Promise<void> {
+    const L = live.value;
     const c = courtOf(courtId);
-    if (!c || !needFull()) return;
-    c.sa = 0;
-    c.sb = 0;
-    c.last = undefined;
-    if (settling.value?.courtId === courtId) settling.value = null;
-    ui.toast("记分已清零 · 重开一盘");
+    if (!L || !c || (!c.A.length && !c.B.length) || !needFull()) return;
+    const no = courtId + 1;
+    const s = seqs(no);
+    await writeAction(L.g.id, () =>
+      apiLiveSettleOpen(L.g.id, no, s.baseTotalSeq, s.baseCourtSeq),
+    );
   }
 
-  /** 手动开终局结算（按片；§4.8 收权）：该片在打才开，快照当前比分 */
-  function openSettle(courtId: number): void {
-    const c = courtOf(courtId);
-    if (!c || (!c.A.length && !c.B.length) || !needFull()) return;
-    settling.value = { courtId, sa: c.sa, sb: c.sb };
+  /** 关结算窗不落账（纯前端关窗 §4.5 遮罩可关）：片仍 pending 但窗不再弹，
+      片退出 pending 后 hide 位自动解除（applyLiveView 维护） */
+  function closeSettle(courtId?: number): void {
+    const ids =
+      courtId != null ? [courtId] : Object.keys(settling.value).map(Number); // 无参=全关（降级单窗消费面等效）
+    for (const id of ids) {
+      if (settling.value[id]) {
+        settleHidden.add(id);
+        settling.value[id] = null;
+      }
+    }
   }
 
-  /** 关结算弹窗不落账：比分保留在该片 */
-  function closeSettle(): void {
-    settling.value = null;
-  }
-
-  /** 确认终局 · 排下一场（2.1 §5 · 2.4 各片各排各的）：
-      幂等闸先行（settling.courtId 对不上直接 return——两端并发确认同一场只落一次账、不双排，
-      B2）；结算 = settleElo 落账（访客同规，无 shadow 留场过滤）→ endMatch 接管轮换
-      （谁下/连庄/资历真值在引擎）→ history/feed 留痕 → 推荐跟随。
-      §4.8 收权：球友只能看结算窗（确认按钮置灰），绕过画面直调也在此拒。撒花由页面层 watch。 */
-  function confirmSettle(
+  /** 确认终局 · 排下一场（§4.6 出口 A，收权）：一本账原子在后端（战报+积分+回流补位），
+      响应视图落地即「排好」——确认响应的 elo_rows 随视图持有（预览修正消费面批5b）。
+      幂等闸：窗没开不落账（前端版；真值在后端——重放幂等回 200） */
+  async function confirmSettle(
     courtId: number,
     winA: boolean,
     sa: number,
     sb: number,
-  ): void {
-    if (settling.value?.courtId !== courtId) return; // 幂等闸：只落一次账
+  ): Promise<void> {
+    if (!settling.value[courtId]) return;
+    if (!needFull()) return;
     const L = live.value;
-    const c = courtOf(courtId);
-    if (!L || !c || !needFull()) return;
-    c.sa = sa;
-    c.sb = sb;
-    c.last = undefined;
-    const winners = winA ? c.A : c.B;
-    const losers = winA ? c.B : c.A;
-    const byId = (id: number): User => pById(L, id)!;
-    const results = settleElo(winners.map(byId), losers.map(byId));
-    winners.concat(losers).forEach((id, i) => {
-      const p = byId(id);
-      const { up, d, elo } = results[i];
-      p.elo = elo; // 地板 400 已在 settleElo 内处理
-      p.month = (p.month || 0) + d; // alpha:1705
-      p.play++; // alpha:1706
-      if (up && !p.shadow) p.win++;
-      if (p.id === U.me.id && p.last5)
-        p.last5 = [...p.last5.slice(1), up ? "W" : "L"]; // alpha:1707 仅我滚动近5场
-    });
-    const wNm = winners.map((id) => byId(id).name).join(" & "); // alpha:1709
-    L.history.unshift({ names: wNm, sa, sb });
-    feedPush(`${wNm} 拿下 ${sa}:${sb}`);
-    L.round++;
-    endMatch(L, courtId, winA ? "A" : "B"); // 轮换真值：谁下/连庄/资历/补坑全在引擎
-    syncRules();
-    settling.value = null;
-    ui.toast("积分落账 · 下一场已排好");
+    if (!L || !liveView.value) return;
+    const no = courtId + 1;
+    const s = seqs(no);
+    await writeAction(
+      L.g.id,
+      () =>
+        apiLiveSettleConfirm(L.g.id, {
+          courtNo: no,
+          winnerSide: winA ? "a" : "b",
+          scoreA: sa,
+          scoreB: sb,
+          baseTotalSeq: s.baseTotalSeq,
+          baseCourtSeq: s.baseCourtSeq,
+        }),
+      () => ui.toast("积分落账 · 下一场已排好"),
+    );
   }
 
-  /** 取消对局（2.1 §2 · 按片；§4.12 修订①）：这场不计分，场上 A/B 全体回候场队**最前面**
-      （A 先 B 后保持原相对序，补偿没打成的）；资历注销；片清空后 fillCourt 立刻按候场首
-      重发这片（无人可补则差人卡）。先确认在页面层（A3 危险动作先确认），权限 needFull 兜底 */
-  function cancelMatch(courtId: number): void {
+  /** 取消对局（§4.7 出口 B，收权）：整场作废不计分，场上的人原样回流队首（后端）；
+      片腾出来由本地重新发牌（发牌在前端）。先确认在页面层（A3） */
+  async function cancelMatch(courtId: number): Promise<void> {
     const L = live.value;
     const c = courtOf(courtId);
     if (!L || !c || (!c.A.length && !c.B.length) || !needFull()) return;
-    const back = [...c.A, ...c.B];
-    L.queue.unshift(...back); // 修订①：回队首（原来是队尾且无确认）
-    for (const id of back) {
-      const p = pById(L, id);
-      if (p) {
-        p.tenure = 0;
-        p.courtSeq = undefined;
-      }
-    }
-    c.A = [];
-    c.B = [];
-    c.sa = 0;
-    c.sb = 0;
-    c.last = undefined;
-    c.streakA = 0;
-    c.streakB = 0;
-    if (settling.value?.courtId === courtId) settling.value = null;
-    feedPush(`对局作废 · 这场不计分 · 场上 ${back.length} 人回到队首`);
-    fillCourt(L, c);
-    syncRules();
-    ui.toast(`对局作废 · 这场不计分 · 场上 ${back.length} 人回到队首`);
+    const gid = L.g.id;
+    const no = courtId + 1;
+    const n = c.A.length + c.B.length; // 出发时场上人数（文案）
+    const s = seqs(no);
+    const ok = await writeAction(
+      gid,
+      () => apiLiveCancel(gid, no, false, s.baseTotalSeq, s.baseCourtSeq),
+      () => ui.toast(`对局作废 · 这场不计分 · 场上 ${n} 人回到队首`),
+    );
+    if (ok) await maybeDeal(gid); // §4.7 该片腾出来重新发牌
   }
 
-  /** 紧急替补（§4.11 找替补，收权 · 按片）：候场队首可用者顶上该片人数少的一队，这局接着打完。
-      可用=到场且不在歇轮（absent/left/skip>0 不补——补进来下一轮也会被引擎当歇轮跳掉）；
-      换上者按换人口径补 courtSeq/资历（从换上起算）；无缺位/候场无人可补 toast 兜底 */
+  /** 紧急替补（本地遗留路：后端无独立端点——换人 apiLiveSwap 可覆盖同型操作）：
+      候场队首可用者顶上该片人数少的一队，这局接着打完 */
   function subFirst(courtId: number): void {
     const L = live.value;
     const c = courtOf(courtId);
     if (!L || !c || !needFull()) return;
-    const per = perSide(c.singles); // 每边满员口径（双打 2 / 单打 1，与 fillCourt 每片同源）
+    const per = perSide(c.singles);
     if (c.A.length >= per && c.B.length >= per) {
       ui.toast("场上没有缺位");
       return;
@@ -713,7 +814,7 @@ export const useLiveStore = defineStore("live", () => {
       ui.toast("候场没人能顶 · 先拉人吧");
       return;
     }
-    const short = c.A.length <= c.B.length ? c.A : c.B; // 人数少的一队补（并列补 A）
+    const short = c.A.length <= c.B.length ? c.A : c.B;
     L.queue.splice(L.queue.indexOf(id), 1);
     short.push(id);
     const p = pById(L, id)!;
@@ -721,16 +822,25 @@ export const useLiveStore = defineStore("live", () => {
     p.courtSeq = L.courtSeqNext;
     p.tenure = 0;
     feedPush(`替补：${p.name} 顶上 · 比赛继续`);
-    syncRules();
     ui.toast("替补已顶上 · 比赛继续");
   }
 
-  /** 换人（2.1 §4 · 2.2 §4.9 球友开放 · 2.4 §4.9 真值）：场上 outId 原位顶坑给候场 inId——
-      换下者排队尾、资历注销；换上者 courtSeq 新发、资历从换上起算；该半边连庄不动。
-      这片下一场照常自动发牌，不推翻手动阵容（endMatch 按资历算，不重排留下的半边）。 */
-  function swapPlayers(outId: number, inId: number): void {
+  /** 换人（§4.9 球友开放，无 guard）：场上 outId 原位顶坑给候场 inId——
+      视图行走后端（out 回队尾、feed 留名、pending 片冻结拒收全在总账）；
+      本地行沿旧路（原位顶坑/资历注销） */
+  async function swapPlayers(outId: number, inId: number): Promise<void> {
     const L = live.value;
     if (!L) return;
+    if (isViewRow(outId)) {
+      const gid = L.g.id;
+      await writeAction(
+        gid,
+        () => apiLiveSwap(gid, outId, inId, seqs().baseTotalSeq),
+        () => ui.toast("已换人 · 对阵重排"),
+      );
+      return;
+    }
+    /* ── 本地遗留路 ── */
     const court = L.courts.find(
       (c) => c.A.includes(outId) || c.B.includes(outId),
     );
@@ -753,13 +863,11 @@ export const useLiveStore = defineStore("live", () => {
     }
     feedPush(
       `${U.me.name} 把 ${outP?.name ?? "?"} 换下 · ${inP?.name ?? "?"} 上`,
-    ); // §4.9 留名：全场看得到是谁换的
-    syncRules();
+    );
     ui.toast("已换人 · 对阵重排");
   }
 
-  /** 带访客（2.1 §1 组织者代办 · 收权）：与 startLive 随行访客同法；编号从 ·1 起；
-      底账加行挂担保人（§4.14 访客谁带的） */
+  /** 带访客（本地遗留路：后端无对应端点）——底账加行挂担保人（§4.14 访客谁带的） */
   function addGuests(count: number, name: string, introducer: User): void {
     const L = live.value;
     if (!L || count <= 0 || !needFull()) return;
@@ -781,11 +889,11 @@ export const useLiveStore = defineStore("live", () => {
         guarantor: introducer.name,
       });
     }
-    syncRules();
     ui.toast(`已带 ${count} 位访客 · 进候场区`);
   }
 
-  /** 改分制（2.1 §3：当场生效——下一记分的收局判定即用新值；只落现场克隆，不回写局；收权动作） */
+  /** 改分制（本地遗留路：后端 rules 端点不带 scoring——分制复用局列，裁决 Q1；
+      改局归 3.2 改局链，本动作待后端定夺后切真） */
   function setRuleScore(v: number): void {
     const L = live.value;
     if (!L || !needFull()) return;
@@ -793,43 +901,30 @@ export const useLiveStore = defineStore("live", () => {
     ui.toast(`分制已改为 ${v} 分 · 当场生效`);
   }
 
-  /** 改轮换四件套（2.4 §4.1/4.7，收权）：点选即生效；在打对局照旧打完，下一场起按新规。
-      - 组合回落：单打×1/2/3人下不合法 → down 自动落回全上全下（如实显示；自动回落不算自选）；
-      - 切到输家下：全片连庄清零重算（场上的人不是赢上来的，4.7-2）；
-      - 自选「谁下」即冻结推荐跟随（downChosen=true，此后推荐只亮标签）；
-      - 连庄上限改动即时生效（到点判定在 endMatch 读现值）；
-      - 换单双打：空片当场转新格式并补满开赛（在打片照旧打完，过渡在 endMatch ③）。 */
-  function setRules(patch: Partial<RotationRules>): void {
+  /** 改轮换四件套（§4.7 收权，视图路）：点选即生效、在打对局照旧打完；
+      组合回落/连庄口径归总账；换单双打后空片重算发牌（§5 边界：2 人即开赛） */
+  async function setRules(patch: Partial<RotationRules>): Promise<void> {
     const L = live.value;
-    if (!L || !needFull()) return;
-    const prevDown = L.rules.down;
-    Object.assign(L.rules, patch);
-    if (L.rules.singles && ["n1", "n2", "n3"].includes(L.rules.down)) {
-      L.rules.down = "all"; // 组合回落（4.7-4，含两人各改一项并发拼出来的）
-    }
-    if (patch.down !== undefined && patch.down === L.rules.down)
-      L.rules.downChosen = true; // 自选冻结；回落后的 all ≠ 所选 → 不算自选
-    if (prevDown !== "loser" && L.rules.down === "loser")
-      L.courts.forEach((c) => {
-        c.streakA = 0;
-        c.streakB = 0;
-      });
-    if (patch.singles !== undefined) {
-      // 空片格式传导（§5 边界：双打空片差人时改单打 → 2 人即开赛）：差人卡按 rules.singles
-      // 显示，但 fillCourt 按 court.singles 取人——不传导会静默 no-op；在打片不动（过渡在 endMatch ③）
-      for (const c of L.courts)
-        if (!c.A.length && !c.B.length) c.singles = L.rules.singles;
-      fillAllCourts(L);
-    }
-    syncRules();
-    ui.toast("规则已更新 · 下一场起按新规");
+    if (!L || !needFull() || !liveView.value) return;
+    const input: LiveRulesInput = {};
+    if (patch.singles !== undefined) input.doubles = !patch.singles;
+    if (patch.down !== undefined) input.down = patch.down;
+    if (patch.pairing !== undefined) input.pairing = patch.pairing;
+    if (patch.champCap !== undefined) input.streakMax = patch.champCap;
+    const gid = L.g.id;
+    const ok = await writeAction(
+      gid,
+      () => apiLiveRules(gid, input, seqs().baseTotalSeq),
+      () => ui.toast("规则已更新 · 下一场起按新规"),
+    );
+    if (ok && patch.singles !== undefined) await maybeDeal(gid);
   }
 
-  /** 场地输入（2.1 顶条 · 2.4 并行口径）：校验至少 1 片且 ≥ 非空片数（在打的片不能收）；
-      过 → 写 g.courts + syncCourts（补空片/删空片/重挂场地名）+ 补满（收权动作） */
-  function setCourtsInput(text: string): boolean {
+  /** 场地输入（2.1 顶条）：本地解析校验（至少 1 片且 ≥ 非空片数）→ 片数上报
+      （apiLiveRules courtsCount；缩片先撤空闲片归总账）；场地名本地挂供重建沿用 */
+  async function setCourtsInput(text: string): Promise<boolean> {
     const L = live.value;
-    if (!L || !needFull()) return false;
+    if (!L || !needFull() || !liveView.value) return false;
     const parts = text
       .split(/[、,，\s]+/)
       .map((s) => s.trim())
@@ -844,25 +939,30 @@ export const useLiveStore = defineStore("live", () => {
       ui.toast("在打 + 待开的场地不能收");
       return false;
     }
-    L.g.courts = parts;
-    syncCourts(L);
-    fillAllCourts(L);
-    syncRules();
+    const gid = L.g.id;
+    const ok = await writeAction(gid, () =>
+      apiLiveRules(gid, { courtsCount: parts.length }, seqs().baseTotalSeq),
+    );
+    if (!ok) return false;
+    const cur = live.value; // writeAction 已整树重建现场态：挂名必须落最新对象
+    if (!cur) return false;
+    cur.g.courts = parts; // 场地名本地挂（视图重建沿用本地 g，片名即用户输入）
+    cur.courts.forEach((c, i) => {
+      c.name = parts[i] ?? `${i + 1}号`;
+    });
     ui.toast(`场地已更新：${parts.join("、")}`);
     return true;
   }
 
-  /** 自动排阵（2.1 §4 · 2.4 按片）：fillAllCourts 补所有空片（多片同时要人按片号先后）（收权动作） */
-  function autoDeal(): void {
+  /** 自动排阵（收权）：补所有空片（多片同时要人按片号先后）——发牌算法在前端 */
+  async function autoDeal(): Promise<void> {
     const L = live.value;
-    if (!L || !needFull()) return;
-    fillAllCourts(L);
+    if (!L || !needFull() || !liveView.value) return;
+    await maybeDeal(L.g.id);
     ui.toast("牌已发 · 按当前规则排好");
   }
 
-  /** 散场两道闸（§4.14，页面按钮与执行共用同一道——防线必须在确认与执行之前）：
-      ①权限（canEndLive：org 独占 / admin 代收兜底）先于②防线（任一片 A/B 非空=在打先拦）；
-      拦下即 toast 说明，过闸才放行确认弹层与执行 */
+  /** 散场两道闸（§4.14 旧路保留；清扫流批6 重造）：①权限（canEndLive）②在打防线 */
   function endGate(): boolean {
     const L = live.value;
     if (!L || !canEndLive.value) {
@@ -876,10 +976,8 @@ export const useLiveStore = defineStore("live", () => {
     return true;
   }
 
-  /** 散场收局（§4.14）：endGate 过闸 → endedAt 落 → 底账定格——已到未走者 leftAt=endedAt
-      （几点到几点走齐了，摊钱有据；早退者保留自己的离场时刻，未到者 arriveAt 本就空，
-      被移出者不在名册不碰、removedAt 留痕原样）→ feed 留封存句。live 态保留（LedgerSheet 要查），
-      endedAt 有值 = 封存：ensureLive/arriveMe 据此拦、散场钮隐藏。已封存直调不重放 */
+  /** 散场收局（本地遗留路；批6 重造为清扫链+apiLiveEnd）：endedAt 落 → 底账定格
+      → live 态保留（回看消费面批6）。已封存直调不重放 */
   function endLive(): void {
     const L = live.value;
     if (!L || L.endedAt || !endGate()) return;
@@ -910,7 +1008,7 @@ export const useLiveStore = defineStore("live", () => {
     );
   }
 
-  /* ─────── 2.3 批4 阶段2：读链（总账视图 → 本地重建 · 轮询 · 409 对表）─────── */
+  /* ─────── 读链（总账视图 → 本地重建 · 轮询 · 409 对表） ─────── */
 
   /** viewer 上下文（批4a 裁定：view 不带身份块，toLiveView 映射时派生两旗）：
       本人在 session（过渡期写到 U.me 位）、组织者在局簿——现场态或局缓存先找，
@@ -925,17 +1023,18 @@ export const useLiveStore = defineStore("live", () => {
   }
 
   /** 总账视图 → 本地 LiveState 重建器（幂等、纯重建：不落牌不发 toast 不自动补片——
-      发牌/轮换真值已归后端）。降级口径（批5 换树后逐一删）：
+      发牌/轮换真值已归后端）：
       - roster 整拷 mock U 同 accountId 者的展示位（chibi/elo/战绩）——不借引用：
-        总账时代 elo 真值在后端，不往 mock U 回写（startLive 借本体是 mock 期联动）；
-        访客/查无者按 mkPlayer 先例补默认位（elo 对齐后端初始 1500，1200 双轨清归批5）；
+        总账时代 elo 真值在后端，不往 mock U 回写；访客/查无者补默认位（elo=RANK_INIT）；
+        fire/shadow/dropin 对称覆写（借来的旧位不残留）；
       - g 只局部重建（现场克隆不回写局簿的旧约不变）：scoring/片名回填，片数吃
         courts_count 真值（courtCount 单一源读到即对表）；
       - history/feed 适配旧形状（view 升序 → 旧新到旧）；
-      - settling 单值降级：恰一片 pending 按旧形状填；多片取片号最小者 + multiPending
-        警示位；streak/资历（courtSeq/tenure）视图不带——旧引擎值位留 0/空。 */
+      - settling 按片多值：pending 片进 Record（hide 位不重开）；streak/资历视图不带——
+        旧引擎值位留 0/空。 */
   function applyLiveView(v: LiveView): void {
     const old = live.value;
+    if (!old || old.g.id !== v.gameId) settleHidden.clear(); // 换局：关窗位不跨局残留
     const src =
       old && old.g.id === v.gameId ? old.g : useGameStore().findGame(v.gameId);
     const base = src ?? stubGame(v);
@@ -962,11 +1061,11 @@ export const useLiveStore = defineStore("live", () => {
           };
       u.id = p.id; // 名册行 id（写动作靶位），与 queue/片位同键
       u.name = p.name; // 开账定格名（注销者占位名/访客编号名照显）
-      if (p.guest) u.shadow = true;
-      if (p.dropin) u.dropin = true;
+      u.shadow = p.guest || undefined;
+      u.dropin = p.dropin || undefined;
+      u.fire = p.fire || undefined;
       u.check = p.check;
       u.skip = p.skip;
-      if (p.fire) u.fire = true;
       u.arriveAt = p.arriveAt ?? undefined;
       u.leftAt = p.leftAt ?? undefined;
       u.courtSeq = undefined;
@@ -1023,7 +1122,7 @@ export const useLiveStore = defineStore("live", () => {
       rules: {
         singles: !v.rules.doubles,
         down: v.rules.down,
-        downChosen: true, // 冻结本地推荐跟随：down 是总账定值，不被 syncRules 改写
+        downChosen: true, // 冻结本地推荐跟随：down 是总账定值
         pairing: v.rules.pairing,
         champCap: v.rules.streakMax,
       },
@@ -1031,13 +1130,18 @@ export const useLiveStore = defineStore("live", () => {
     };
     while (L.courts.length < v.courtsCount)
       L.courts.push(mkCourt(L, L.courts.length)); // 视图片行缺额补空片（差人卡口径）
-    const pend = v.courts
-      .filter((c) => c.status === "pending")
-      .sort((a, b) => a.courtNo - b.courtNo);
-    multiPending.value = pend.length > 1;
-    settling.value = pend.length
-      ? { courtId: pend[0].courtNo - 1, sa: pend[0].scoreA, sb: pend[0].scoreB }
-      : null;
+    const next: Record<number, { origin: PendingOrigin } | null> = {};
+    for (const c of v.courts) {
+      const id = c.courtNo - 1;
+      if (c.status !== "pending") {
+        settleHidden.delete(id); // 片退出 pending：hide 位解除（下次再 pending 会重开窗）
+        continue;
+      }
+      next[id] = settleHidden.has(id)
+        ? null
+        : { origin: c.pendingOrigin ?? "manual" };
+    }
+    settling.value = next;
     live.value = L;
     liveView.value = v;
     if (v.ended) recap.value = v;
@@ -1064,8 +1168,7 @@ export const useLiveStore = defineStore("live", () => {
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let pollGameId: number | null = null;
 
-  /** 轮询器（3s 一拍）：幂等启动、换局重起；页面 onHide/onUnload 停由批5 接线
-      （进页首拍建议直调 pollLiveView，不靠计时器等 3s） */
+  /** 轮询器（3s 一拍）：幂等启动、换局重起；进页首拍直调 pollLiveView（不靠计时器等） */
   function startPolling(gameId: number): void {
     if (pollTimer && pollGameId === gameId) return;
     if (pollTimer) clearInterval(pollTimer);
@@ -1095,6 +1198,7 @@ export const useLiveStore = defineStore("live", () => {
     live,
     hasLive,
     settling,
+    settlingOne,
     advice,
     myRound,
     isFullPower,
@@ -1128,7 +1232,6 @@ export const useLiveStore = defineStore("live", () => {
     endLive,
     liveView,
     recap,
-    multiPending,
     applyLiveView,
     pollLiveView,
     startPolling,
