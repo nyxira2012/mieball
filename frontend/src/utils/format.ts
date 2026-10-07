@@ -11,7 +11,7 @@ import type {
   PairingMode,
 } from "@/api/types";
 import { U, slots } from "@/mock/data";
-import { isoDay, isoHm, splitGameTime } from "@/utils/time";
+import { isoDay, isoHm, splitGameTime, untilTxt } from "@/utils/time";
 
 /** 发牌模式名单一源（原 live.vue/detail.vue 内联 MODE_NAMES 挪出）。2.4 批3 清账：现场域
     （live 顶条/规则抽屉/store 过渡桥）已停消费，剩 detail 规则牌与 LaunchSheet 规则三件——
@@ -77,6 +77,23 @@ export const deadRowKind = (g: Game): "pending" | "restore" | "gray" | null => {
 export const autoGameName = (time: string, venue: string): string =>
   `${time.split(" ")[0]} · ${venue.split(" · ").pop()}`;
 
+/** 卡片入场两字段派生（2.5 §4.1/4.2/4.4）：只对「我的局」（组织者 ∨ 正式报名；waitlist/被邀/
+    游客永无入口）且在办局（open/locked/live）判定——
+    账一开（liveOpened 定值）立即可进不看时间（§4.4）；必开局进两小时窗（含整点）也放行（§4.2）；
+    其余给倒计时灰字，纯展示无出口。 */
+function cardLiveEntry(g: Game): { countdown?: string; liveEnter?: boolean } {
+  const mine = !!g.my?.isOrganizer || g.my?.myEntry?.standing === "formal";
+  if (!mine) return {};
+  if (g.status !== "open" && g.status !== "locked" && g.status !== "live")
+    return {};
+  if (g.liveOpened) return { liveEnter: true };
+  const forced = g.status !== "open";
+  const start = new Date(g.startAt).getTime();
+  if (forced && Date.now() >= start - 2 * 3600_000) return { liveEnter: true };
+  const u = untilTxt(new Date(g.startAt));
+  return u ? { countdown: `还有 ${u}` } : {};
+}
+
 /** 真局 → 卡面模型（meet 列表用）：时间/场馆/必打标都是纯展示换算，
     人头进度读后端定值 slotsLeft；角色与头像来自 entries+my */
 export function newGameCard(g: Game): GameCardModel {
@@ -105,6 +122,7 @@ export function newGameCard(g: Game): GameCardModel {
           : null,
     stackAvatars: formal.slice(0, 5).map((e) => e.account.chibi),
     stackPlus: `+${g.heads - 5 > 0 ? g.heads - 5 : ""}`,
+    ...cardLiveEntry(g),
   };
 }
 

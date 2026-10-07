@@ -70,6 +70,7 @@ function toGame(v: GameViewApi): Game {
     status: v.status,
     unlocked: v.unlocked,
     joinable: v.joinable,
+    liveOpened: v.live_opened,
     heads: v.heads,
     slotsLeft: v.slots_left,
     perHead: v.per_head,

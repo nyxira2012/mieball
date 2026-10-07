@@ -70,6 +70,7 @@ export interface GameViewApi {
   status: GameStatus;
   unlocked: boolean;
   joinable: boolean;
+  live_opened: boolean; // 现场账已开（game_view 定值；2.5 批1）
   heads: number;
   slots_left: number;
   per_head: number | null;

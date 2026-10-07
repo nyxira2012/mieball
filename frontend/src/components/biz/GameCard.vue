@@ -6,8 +6,13 @@
        组件不再认识任何一种 Game 形状（与数据源解耦）。头像叠层右上、角色标签右下（2026-10-04 定，勿改回）。
        人均 chip 已按用户要求移除（信息仍在局详情与报名弹层）。
        is-live：珊瑚描边 + LIVE 角标；is-inv：被邀请珊瑚描边（alpha:329）。
-       只 emit('tap')：进详情或 joinSheet 分支由父层决定（gameTapAction）。 -->
-  <view class="gcard" :class="{ 'is-live': live, 'is-inv': inv }" @click="emit('tap')">
+       emit('tap')：进详情或 joinSheet 分支由父层决定（gameTapAction）；emit('enter')：卡片入场窗内
+       的「进入现场」按钮（2.5 批2），父层 goLive（组织者成员同路）。 -->
+  <view
+    class="gcard"
+    :class="{ 'is-live': live, 'is-inv': inv }"
+    @click="emit('tap')"
+  >
     <view class="gd">
       <!-- alpha:909 时间位：大字 = 时刻，小字 = 日段（今晚 / 10.06 周一） -->
       <view class="time">
@@ -28,7 +33,10 @@
           <template v-if="done">
             <AppChip>已结束</AppChip>
             <AppChip v-if="card.result">
-              <text :class="card.result.myWin ? 'res-w' : 'res-l'">{{ card.result.sa }} · {{ card.result.sb }} {{ card.result.myWin ? '胜' : '负' }}</text>
+              <text :class="card.result.myWin ? 'res-w' : 'res-l'"
+                >{{ card.result.sa }} · {{ card.result.sb }}
+                {{ card.result.myWin ? "胜" : "负" }}</text
+              >
             </AppChip>
           </template>
           <template v-else-if="live">
@@ -38,10 +46,24 @@
           <AppChip v-else-if="full" kind="full">满员 · 候补</AppChip>
           <AppChip v-else kind="ok">剩 {{ card.slotsLeft }} 坑</AppChip>
           <!-- 必打标：已订场=「已订场 · 必开」，仅手动锁=「必开」；未开打的局才显示 -->
-          <AppChip v-if="card.forcedLabel && !done && !live" kind="ok">{{ card.forcedLabel }}</AppChip>
-          <AppChip v-if="!done">{{ card.minPlayers }}-{{ card.maxPlayers }} 人</AppChip>
+          <AppChip v-if="card.forcedLabel && !done && !live" kind="ok">{{
+            card.forcedLabel
+          }}</AppChip>
+          <AppChip v-if="!done"
+            >{{ card.minPlayers }}-{{ card.maxPlayers }} 人</AppChip
+          >
           <view class="sp" />
           <AppChip v-if="role" :kind="role">{{ roleTxt }}</AppChip>
+          <!-- 2.5 卡片三态：入场窗内亮「进入现场」出口（stop 防触发整卡 tap）；否则倒计时灰字，无出口 -->
+          <view
+            v-if="card.liveEnter"
+            class="tbtn on-in"
+            @click.stop="emit('enter')"
+            >进入现场</view
+          >
+          <text v-else-if="card.countdown" class="countdown">{{
+            card.countdown
+          }}</text>
         </view>
       </view>
     </view>
@@ -50,24 +72,32 @@
 
 <script setup lang="ts">
 /* alpha.html:898-917 gameCard（P5a）。卡面字段契约见 types.ts GameCardModel（批4 裁决①）。 */
-import { computed } from 'vue'
-import type { PropType } from 'vue'
-import AppChip from '@/components/ui/AppChip.vue'
-import AvatarStack from '@/components/ui/AvatarStack.vue'
-import type { GameCardModel } from '@/api/types'
+import { computed } from "vue";
+import type { PropType } from "vue";
+import AppChip from "@/components/ui/AppChip.vue";
+import AvatarStack from "@/components/ui/AvatarStack.vue";
+import type { GameCardModel } from "@/api/types";
 
 const props = defineProps({
   card: { type: Object as PropType<GameCardModel>, required: true },
-})
-const emit = defineEmits<{ (e: 'tap'): void }>()
+});
+const emit = defineEmits<{ (e: "tap"): void; (e: "enter"): void }>();
 
-const live = computed(() => props.card.status === 'live')
-const full = computed(() => props.card.slotsLeft <= 0)
-const done = computed(() => props.card.status === 'done')
-const inv = computed(() => props.card.myRole === 'inv')
+const live = computed(() => props.card.status === "live");
+const full = computed(() => props.card.slotsLeft <= 0);
+const done = computed(() => props.card.status === "done");
+const inv = computed(() => props.card.myRole === "inv");
 
-const role = computed(() => (props.card.myRole === 'joined' ? 'dim' : props.card.myRole))
-const roleTxt = computed(() => (props.card.myRole === 'org' ? '我发起' : props.card.myRole === 'inv' ? '被邀请' : '已加入'))
+const role = computed(() =>
+  props.card.myRole === "joined" ? "dim" : props.card.myRole,
+);
+const roleTxt = computed(() =>
+  props.card.myRole === "org"
+    ? "我发起"
+    : props.card.myRole === "inv"
+      ? "被邀请"
+      : "已加入",
+);
 </script>
 
 <style lang="scss" scoped>
@@ -85,7 +115,9 @@ const roleTxt = computed(() => (props.card.myRole === 'org' ? '我发起' : prop
   display: flex;
   flex-direction: column;
   justify-content: center;
-  transition: transform 0.18s ease, border-color 0.18s;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s;
   overflow: hidden;
   cursor: pointer;
 }
@@ -154,6 +186,13 @@ const roleTxt = computed(() => (props.card.myRole === 'org' ? '我发起' : prop
 .sp {
   flex: 1;
 }
+/* 2.5 §4.1 倒计时灰字（跑马灯 NEXT 同族信息，落在自己局的卡上；mono 同 .plusn 口径） */
+.countdown {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+}
 /* alpha:123-125 live-dot 呼吸灯（pulse 在 animations.scss） */
 .live-dot {
   width: 7px;
@@ -176,7 +215,7 @@ const roleTxt = computed(() => (props.card.myRole === 'org' ? '我发起' : prop
   border-color: rgba(255, 90, 54, 0.5);
 }
 .gcard.is-live::after {
-  content: 'LIVE';
+  content: "LIVE";
   position: absolute;
   top: 12px;
   right: 14px;

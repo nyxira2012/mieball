@@ -164,6 +164,7 @@ function stubGame(v: LiveView): Game {
     status: "live",
     unlocked: false,
     joinable: false,
+    liveOpened: true, // 这本账就是从现场视图重建的——账必然开着
     heads: v.players.length,
     slotsLeft: 0,
     perHead: null,

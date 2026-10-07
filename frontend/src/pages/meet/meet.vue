@@ -63,7 +63,8 @@
           v-for="{ g, card } in cards"
           :key="card.id"
           :card="card"
-          @tap="onGameTap(g)"
+          @tap="onGameTap(g, card)"
+          @enter="onGameTap(g, card)"
         />
         <EmptyBox
           v-if="!flt.length"
@@ -174,7 +175,7 @@ import type { TickerItem } from "@/components/ui/Ticker.vue";
 import FilterChips from "@/components/ui/FilterChips.vue";
 import SectionTitle from "@/components/ui/SectionTitle.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
-import type { Game, Intent } from "@/api/types";
+import type { Game, GameCardModel, Intent } from "@/api/types";
 import { communityMeta } from "@/api";
 import { useGameStore } from "@/stores/game";
 import { useLiveStore } from "@/stores/live";
@@ -336,8 +337,14 @@ const myIntentLine = computed(() =>
 
 /* ---- 点击分支 ---- */
 /* alpha:907 点球局卡分支（判定在 utils/format 的 gameTapAction 单一源）：
-   被邀请未加入 → joinSheet；其余 → 详情页 */
-function onGameTap(g: Game): void {
+   被邀请未加入 → joinSheet；其余 → 详情页。
+   2.5 批2：卡片亮「进入现场」（enter 按钮或整卡点）→ goLive 直进现场——
+   组织者成员同路，开账在后端幂等（spec §4.8）。 */
+function onGameTap(g: Game, card?: GameCardModel): void {
+  if (card?.liveEnter) {
+    goLive(g.id);
+    return;
+  }
   if (gameTapAction(g) === "join") {
     ui.openSheet({ type: "join", gameId: g.id });
     return;

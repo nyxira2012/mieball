@@ -151,6 +151,7 @@ export interface Game {
   status: GameStatus;
   unlocked: boolean; // 改约解锁：锁定局改了时间/地点，开打前可退
   joinable: boolean; // 派生态 ∈ {open, locked, live}——加入按钮显隐直接读
+  liveOpened: boolean; // 现场账已开（LiveState 行存在；2.5 §4.4：账一开卡片立显「进入现场」，不看时间）
   heads: number; // 人头（自己+带的人，后端定值）
   slotsLeft: number; // 剩几坑
   perHead: number | null; // 人均（half-up）；null=未定
@@ -200,6 +201,8 @@ export interface GameCardModel {
   forcedLabel?: string; // '已订场 · 必开' / '必开'；未锁定则缺省
   result?: { sa: number; sb: number; myWin: boolean }; // done 战报（mock 快照域）
   myRole?: "org" | "inv" | "joined" | null;
+  countdown?: string; // 开打倒计时灰字（2.5 §4.1：'还有 N 小时 N 分'；仅在办局且没到入场窗才派生）
+  liveEnter?: boolean; // 「进入现场」入口（2.5 §4.2/4.4：账已开 ∨ 必开且进两小时窗；waitlist/游客永无）
   stackAvatars: ChibiConfig[];
   stackPlus: string; // 头像叠层溢出文案：'+' / '+N' / '+N · 含随行'
 }

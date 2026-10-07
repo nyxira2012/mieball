@@ -45,6 +45,7 @@ function mkGame(p: Partial<Game> = {}): Game {
     status: "open",
     unlocked: false,
     joinable: true,
+    liveOpened: false,
     heads: 1,
     slotsLeft: 7,
     perHead: null,
@@ -111,6 +112,99 @@ describe("newGameCard（真局 → 卡面模型：定值直读，时间现场换
       newGameCard(mkGame({ manualLock: true, forced: true })).forcedLabel,
     ).toBe("必开");
     expect(newGameCard(mkGame()).forcedLabel).toBeUndefined();
+  });
+});
+
+/* 2.5 批2 卡片三态（§4.1 倒计时 / §4.2 两小时窗入口 / §4.4 账开即入口）：
+   时间相关例以 now 相对量构造 startAt，断言只看字段有无不看具体分钟文案（免时钟漂移）。 */
+describe("newGameCard 三态（进入现场入口 / 倒计时 / 均无）", () => {
+  const org = (p: Partial<Game> = {}) =>
+    mkGame({ my: { isOrganizer: true, myEntry: null, invited: false }, ...p });
+  const member =
+    (standing: "formal" | "waitlist") =>
+    (p: Partial<Game> = {}) =>
+      mkGame({
+        my: {
+          isOrganizer: false,
+          myEntry: {
+            bring: 0,
+            standing,
+            waitSeq: standing === "waitlist" ? 1 : null,
+          },
+          invited: false,
+        },
+        ...p,
+      });
+  const hoursFromNow = (h: number): string =>
+    toIso(new Date(Date.now() + h * 3600_000));
+
+  it(">2h 未开账 open 局：只有倒计时，无入口（§4.2）", () => {
+    const card = newGameCard(org({ startAt: hoursFromNow(3) }));
+    expect(card.countdown).toMatch(/^还有 /);
+    expect(card.liveEnter).toBeUndefined();
+  });
+
+  it("报名中未锁定的局进两小时窗：也只有倒计时，无入口（§5）", () => {
+    const card = newGameCard(org({ startAt: hoursFromNow(1.5) }));
+    expect(card.countdown).toMatch(/^还有 /);
+    expect(card.liveEnter).toBeUndefined();
+  });
+
+  it("没报任何局的人（游客视角 my 缺省）：两字段均无（§5）", () => {
+    const card = newGameCard(
+      mkGame({ status: "locked", startAt: hoursFromNow(1.5) }),
+    );
+    expect(card.liveEnter).toBeUndefined();
+    expect(card.countdown).toBeUndefined();
+  });
+
+  it("locked 局进两小时窗：入口亮、倒计时收（整点边界含）", () => {
+    const inWin = newGameCard(
+      org({ status: "locked", startAt: hoursFromNow(1.5) }),
+    );
+    expect(inWin.liveEnter).toBe(true);
+    expect(inWin.countdown).toBeUndefined();
+    const atEdge = newGameCard(
+      org({ status: "locked", startAt: hoursFromNow(2) }),
+    );
+    expect(atEdge.liveEnter).toBe(true);
+  });
+
+  it("locked 局但 >2h 未开账：仍是倒计时", () => {
+    const card = newGameCard(
+      org({ status: "locked", startAt: hoursFromNow(3) }),
+    );
+    expect(card.countdown).toMatch(/^还有 /);
+    expect(card.liveEnter).toBeUndefined();
+  });
+
+  it("账已开（liveOpened）：不看时间立即入口（§4.4）", () => {
+    const card = newGameCard(
+      org({ liveOpened: true, startAt: hoursFromNow(3) }),
+    );
+    expect(card.liveEnter).toBe(true);
+    expect(card.countdown).toBeUndefined();
+  });
+
+  it("waitlist 成员：窗内也两字段均无（候补不出现入口）", () => {
+    const card = newGameCard(
+      member("waitlist")({ status: "locked", startAt: hoursFromNow(1.5) }),
+    );
+    expect(card.liveEnter).toBeUndefined();
+    expect(card.countdown).toBeUndefined();
+  });
+
+  it("done 局：终态两字段均无（哪怕账开过）", () => {
+    const card = newGameCard(org({ status: "done", liveOpened: true }));
+    expect(card.liveEnter).toBeUndefined();
+    expect(card.countdown).toBeUndefined();
+  });
+
+  it("正式报名成员与组织者同规矩：窗内 locked 局入口亮", () => {
+    const card = newGameCard(
+      member("formal")({ status: "locked", startAt: hoursFromNow(1.5) }),
+    );
+    expect(card.liveEnter).toBe(true);
   });
 });
 
