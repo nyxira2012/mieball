@@ -432,6 +432,7 @@ export const useLiveStore = defineStore("live", () => {
 
   /** 确保现场开的是目标局（跳转/深链/扫码直达共用的守门口径，后端总账路）：
       - 拉读 200 → applyLiveView + startPolling（散场视图不再轮询——定格回看）；
+        局簿没缓存这局时顺手 loadDetail 回填 g（深链冷设备顶条降级修复，批6 P2）；
       - 404 live_not_found → 终态局（done/terminated/cancelled）拦「球局不存在或已结束」，
         否则走开账后端路（组织者；幂等）；
       - 同局已开 → 续轮询 + 先对一拍（不靠计时器等 3s）；已散场同局 → 拉定格回看，
@@ -468,9 +469,27 @@ export const useLiveStore = defineStore("live", () => {
       await startLive(g);
       return;
     }
-    const view = toLiveView(raw, viewerCtx(id));
-    applyLiveView(view);
-    if (!view.ended) startPolling(id);
+    const first = toLiveView(raw, viewerCtx(id));
+    applyLiveView(first);
+    if (!first.ended) startPolling(id);
+    /* 深链冷设备（新 origin 无局详情缓存）直达已开局（批6 走查 P2）：视图 200 直达
+       不经局详情——g 走 stub 兜底（批5a 裁定保留），顶条局名「现场」/倒计时 NaN/
+       组织者缺。局簿没这局时顺手 loadDetail 回填缓存后重放首拍：applyLiveView 的 g
+       局部重建吃真局（stub 让位），viewer 两旗借真组织者重派生；比分/名册/规则等
+       真值仍全以视图为准，不被详情覆盖。拉不到（无权限/已删）留 stub 不拦路 */
+    if (!useGameStore().findGame(id)) {
+      try {
+        await useGameStore().loadDetail(id);
+      } catch {
+        return;
+      }
+      // 期间视图没被轮询推进才重放首拍（推进过的那拍已带最新号，重放旧的会回拨）
+      if (
+        liveView.value?.gameId === id &&
+        liveView.value.totalSeq === first.totalSeq
+      )
+        applyLiveView(toLiveView(raw, viewerCtx(id)));
+    }
   }
 
   /** 造一位随行访客（addGuests 本地路；随机 chibi 引用 chibi.ts 单一源 DRESS_RANGES） */
@@ -1071,33 +1090,58 @@ export const useLiveStore = defineStore("live", () => {
       都没有给 -1（游客/冷扫降级：两旗 false） */
   function viewerCtx(gameId: number): LiveViewer {
     const L = live.value;
-    const org =
-      L && L.g.id === gameId
-        ? L.g.organizer.id
-        : (useGameStore().findGame(gameId)?.organizer.id ?? -1);
+    const orgCached = useGameStore().findGame(gameId)?.organizer.id;
+    let org: number;
+    if (L && L.g.id === gameId) {
+      org = L.g.organizer.id;
+      if (org < 0 && orgCached != null) org = orgCached; // stub 兜底局：局簿详情到位后借真组织者（批6 P2 深链回填）
+    } else {
+      org = orgCached ?? -1;
+    }
     return { myId: U.me.id, organizerId: org };
   }
 
   /** 总账视图 → 本地 LiveState 重建器（幂等、纯重建：不落牌不发 toast 不自动补片——
       发牌/轮换真值已归后端）：
       - roster 整拷 mock U 同 accountId 者的展示位（chibi/elo/战绩）——不借引用：
-        总账时代 elo 真值在后端，不往 mock U 回写；访客/查无者补默认位（elo=RANK_INIT）；
-        fire/shadow/dropin 对称覆写（借来的旧位不残留）；
+        总账时代 elo 真值在后端，不往 mock U 回写；最近 matches[].eloRows 按人
+        回填 elo 展示位（批6 P3：确认落账即显新等级，访客 rating_after 同吃）；
+        访客/查无者补默认位（elo=RANK_INIT）；fire/shadow/dropin 对称覆写（借来的旧位不残留）；
       - g 只局部重建（现场克隆不回写局簿的旧约不变）：scoring/片名回填，片数吃
-        courts_count 真值（courtCount 单一源读到即对表）；
+        courts_count 真值（courtCount 单一源读到即对表）；stub 兜底局（组织者 -1）
+        在局簿详情到位后让位真局（深链冷设备两段路，批6 P2）；
       - history/feed 适配旧形状（view 升序 → 旧新到旧）；
       - settling 按片多值：pending 片进 Record（窗禁遮罩关、纯随视图起落）；streak/资历
         视图不带——旧引擎值位留 0/空。 */
   function applyLiveView(v: LiveView): void {
     const old = live.value;
+    const cached = useGameStore().findGame(v.gameId);
+    // 现场克隆优先（setCourtsInput 本地挂的片名只挂在克隆上，重建沿用）；唯一例外：
+    // stub 兜底局（组织者 -1 印记）在局簿详情到位后让位真局——深链冷设备 ensureLive
+    // 先行、loadDetail 后补的两段路（批6 走查 P2）
     const src =
-      old && old.g.id === v.gameId ? old.g : useGameStore().findGame(v.gameId);
+      old && old.g.id === v.gameId
+        ? old.g.organizer.id < 0 && cached
+          ? cached
+          : old.g
+        : (cached ?? stubGame(v));
     const base = src ?? stubGame(v);
     const names = Array.from(
       { length: v.courtsCount },
       (_, i) => base.courts?.[i] ?? `${i + 1}号`,
     );
     const users = Object.values(useUserStore().users);
+    /** 最近结算行按人回填 elo 展示位（批6 走查 P3：确认落账后卡面新对阵即显新等级，
+        不再显示 mock U 借来的旧位）：matches 按结束序、后面的覆盖前面的——每人吃
+        最后一场的 rating_after；正式球友按 accountId 对表、访客（账号 null）按开账
+        定格名对表。名册行是 {...known} 拷贝，回填不污染 mock U 本体 */
+    const latestElo = new Map<string, number>();
+    for (const m of v.matches)
+      for (const r of m.eloRows)
+        latestElo.set(
+          r.accountId != null ? `a${r.accountId}` : `n${r.name}`,
+          r.ratingAfter,
+        );
     const roster: User[] = v.players.map((p) => {
       const known =
         p.accountId != null
@@ -1114,6 +1158,10 @@ export const useLiveStore = defineStore("live", () => {
             month: 0,
             chibi: {},
           };
+      const elo = latestElo.get(
+        p.accountId != null ? `a${p.accountId}` : `n${p.name}`,
+      );
+      if (elo != null) u.elo = elo; // 结算行真值 > mock 借位（拷贝上改，访客同样回填）
       u.id = p.id; // 名册行 id（写动作靶位），与 queue/片位同键
       u.name = p.name; // 开账定格名（注销者占位名/访客编号名照显）
       u.shadow = p.guest || undefined;

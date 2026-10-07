@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { U } from "@/api";
+import type { GameViewApi } from "@/api/games";
 import type {
   Game,
   LiveCourtApi,
@@ -39,15 +40,25 @@ const liveApi = vi.hoisted(() => ({
   apiLiveEnd: vi.fn(),
 }));
 
+/** 批6 P2 深链回填用：ensureLive 200 路顺手 loadDetail——局详情接口替身
+    （game store 本体保持真实现，current/findGame 链路照真走） */
+const gamesApi = vi.hoisted(() => ({ apiGameDetail: vi.fn() }));
+
 vi.mock("@/api/live", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   ...liveApi,
+}));
+
+vi.mock("@/api/games", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  ...gamesApi,
 }));
 
 beforeEach(async () => {
   vi.resetModules();
   setActivePinia(createPinia());
   Object.values(liveApi).forEach((m) => m.mockReset());
+  gamesApi.apiGameDetail.mockReset();
 });
 
 async function load() {
@@ -289,6 +300,36 @@ async function inPlay(v: LiveViewApi = vPlay()) {
 }
 
 const person = (id: number, nickname: string) => ({ id, nickname, chibi: {} });
+
+/** 900 局详情（snake，apiGameDetail 替身回包；与 g900 同一局的线上形状） */
+function d900(): GameViewApi {
+  return {
+    id: 900,
+    name: "九百局",
+    organizer: person(0, "我"),
+    start_at: "2026-10-07T19:00:00+08:00",
+    end_at: "2026-10-07T21:00:00+08:00",
+    deadline_at: "2026-10-07T17:00:00+08:00",
+    venue_name: "望京球馆",
+    venue_address: null,
+    min_players: 4,
+    max_players: 8,
+    visibility: "public",
+    scoring: 11,
+    rotation: "winner",
+    score_rule: "",
+    manual_lock: false,
+    courts: null,
+    fee_total: null,
+    status: "live",
+    unlocked: false,
+    joinable: true,
+    heads: 4,
+    slots_left: 4,
+    per_head: null,
+    forced: false,
+  };
+}
 
 /** 900 局簿格（entries 一行保 ensureLive 404 路不必拉详情；status/组织者可覆写——
     isOrg 读 g.my.isOrganizer 视角块，随 orgId 派生） */
@@ -1520,5 +1561,129 @@ describe("批5b 补测销号（验收官批5a findings G1-G3）", () => {
     denied.live.subFirst(0);
     expect(denied.ui.toastMsg).toBe("请找组织者或管理员"); // needFull gate 前置
     expect(denied.live.live!.courts[0].B).toEqual([103, 104]);
+  });
+});
+
+/* ─────────── 批6 浏览器走查销号（P1 确认槽 / P2 深链 g 回填 / P3 elo 回填） ───────────
+   P1 本体是页面模板层修复：确认槽内容壳 class="cf" 撞了全局 animations.scss 的撒花
+   粒子类（absolute 9px 见方 + pointer-events:none）→ 面板塌成 9px 宽、按钮不可点；
+   改名 cfm 后恢复。vitest 无组件渲染基建，视觉/可点性测不了（注明）——这里测确认槽
+   所踩的 store 状态位：settling 窗位在视图重放（P2 回填重放首拍的场面）间不丢不闪。 */
+describe("批6 走查销号（P1/P2/P3）", () => {
+  it("P1 确认槽状态位：待确认窗随视图 pending 起、同视图重放不丢窗（深链回填重放首拍不闪关）、片退出 pending 窗关", async () => {
+    const { toLiveView } = await import("@/api/live");
+    const { live } = await load();
+    const vp = vPlay(7, { courts: [ct(1, "pending", 11, 9, "manual")] });
+    live.applyLiveView(toLiveView(vp));
+    expect(live.settling).toEqual({ 0: { origin: "manual" } }); // pending 即有窗
+    expect(live.settlingCourtId).toBe(0); // 确认槽挂在这扇窗上（live.vue confirmOpen）
+    live.applyLiveView(toLiveView(vp)); // 同视图重放（回填重放首拍）：窗位原样不闪
+    expect(live.settling).toEqual({ 0: { origin: "manual" } });
+    live.applyLiveView(
+      toLiveView(vPlay(8, { courts: [ct(1, "playing", 11, 9)] })),
+    );
+    expect(live.settling).toEqual({}); // 片退出 pending：窗与确认槽状态位全清
+    expect(live.settlingCourtId).toBeNull();
+  });
+
+  it("P2 深链冷设备直达已开局（ensureLive 200 路）：局簿没缓存 → loadDetail 回填 g（局名/时刻/组织者）+ viewer 旗重派生；比分名册仍以视图为准", async () => {
+    const { live } = await load();
+    gamesApi.apiGameDetail.mockResolvedValue(d900());
+    liveApi.apiLiveView.mockResolvedValue(vMid(7));
+    await live.ensureLive(900);
+    expect(gamesApi.apiGameDetail).toHaveBeenCalledTimes(1);
+    expect(gamesApi.apiGameDetail).toHaveBeenCalledWith(900);
+    const g = live.live!.g;
+    expect(g.name).toBe("九百局"); // 不再是 stub 的「现场」
+    expect(g.endAt).toBe("2026-10-07T21:00:00+08:00"); // 倒计时源（stub 是 "" → NaN）
+    expect(g.organizer.id).toBe(0); // 组织者回到顶条 chip（stub 是 -1）
+    expect(live.liveView!.isOrganizer).toBe(true); // 两旗借真组织者重派生（首拍 -1 降级 false）
+    expect(live.live!.roster.map((p) => p.name)).toEqual([
+      "亮马河快攻",
+      "亮的球友·1",
+      "我",
+      "赵姐的朋友",
+    ]); // 名册/比分真值未被详情覆盖
+    expect(live.live!.courts[0]).toMatchObject({ sa: 3, sb: 2 });
+    live.stopPolling();
+  });
+
+  it("P2 边界：详情拉不到留 stub 兜底不拦路（批5a 裁定保留）；局簿已有缓存不重复拉详情", async () => {
+    const { live, ui } = await load();
+    gamesApi.apiGameDetail.mockRejectedValue(new TypeError("boom"));
+    liveApi.apiLiveView.mockResolvedValue(vMid(7));
+    await live.ensureLive(900);
+    expect(live.live!.g.name).toBe("现场"); // stub 保留
+    expect(live.live!.g.organizer.id).toBe(-1);
+    expect(ui.toastMsg).toBeFalsy(); // 静默降级，现场照常可看
+    live.stopPolling();
+  });
+
+  it("P2 边界：局簿已有缓存（列表/详情页点进的路）→ 吃缓存起步，不重复拉详情", async () => {
+    await seedGame(g900());
+    const { live } = await load();
+    liveApi.apiLiveView.mockResolvedValue(vMid(7));
+    await live.ensureLive(900);
+    expect(gamesApi.apiGameDetail).not.toHaveBeenCalled();
+    expect(live.live!.g.name).toBe("九百局"); // 首建即真局（无需回填两段路）
+    live.stopPolling();
+  });
+
+  it("P3 确认落账后卡面 elo 更新：roster 吃最近 matches[].eloRows 回填（正式按账号/访客按名，后一场覆盖前一场）；mock U 本体不动", async () => {
+    const first = vMid().matches[0]!;
+    const v = vMid(9);
+    v.matches = [
+      {
+        ...first,
+        elo_rows: [
+          {
+            account_id: 5,
+            name: "亮马河快攻",
+            guest: false,
+            rating_before: 1562,
+            rating_after: 1574,
+            delta: 12,
+          },
+        ],
+      },
+      {
+        ...first,
+        seq: 2,
+        ended_at: "2026-10-07T20:10:00+08:00",
+        elo_rows: [
+          {
+            account_id: 5,
+            name: "亮马河快攻",
+            guest: false,
+            rating_before: 1574,
+            rating_after: 1586,
+            delta: 12,
+          },
+          {
+            account_id: null,
+            name: "亮的球友·1",
+            guest: true,
+            rating_before: 1500,
+            rating_after: 1490,
+            delta: -10,
+          },
+          {
+            account_id: 0,
+            name: "我",
+            guest: false,
+            rating_before: 1518,
+            rating_after: 1506,
+            delta: -12,
+          },
+        ],
+      },
+    ];
+    const { live } = await apply(v);
+    const [li, guest, me] = live.live!.roster;
+    expect(li.elo).toBe(1586); // 后一场覆盖前一场（1574 恰是 mock U.li 旧借位——必须吃到新值）
+    expect(guest.elo).toBe(1490); // 访客按开账定格名回填 rating_after（展示位本就近真值）
+    expect(me.elo).toBe(1506); // 负 delta 同样回填
+    expect(U.li.elo).toBe(1574); // mock U 本体不被重建污染（借拷贝已改 elo 位）
+    expect(U.me.elo).toBe(1518);
   });
 });

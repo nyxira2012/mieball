@@ -116,13 +116,15 @@
         @cancel-all="onSweepCancelAll"
         @end="onSweepEnd"
       />
-      <!-- 危险动作先确认（A3）：后果句+双纽，本地确认槽不走全局 union；叠在结算窗之上 -->
+      <!-- 危险动作先确认（A3）：后果句+双纽，本地确认槽不走全局 union；叠在结算窗之上。
+           内容壳类名勿用 .cf——那是全局 animations.scss 的撒花粒子类（absolute 9px 见方 +
+           pointer-events:none），撞上即面板塌成 9px 宽、按钮全不可点（批6 走查 P1 根因） -->
       <AppSheet
         class="confirm-sheet"
         :visible="confirmOpen"
         @close="closeLocal"
       >
-        <view v-if="liveSheet?.k === 'confirm'" class="cf">
+        <view v-if="liveSheet?.k === 'confirm'" class="cfm">
           <view class="sheet-t">确定要这么做？</view>
           <view class="sheet-hint">{{ liveSheet.msg }}</view>
           <view class="cf-btns">
