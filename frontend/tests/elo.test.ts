@@ -6,10 +6,7 @@ import {
   duprTier,
   fmtDupr,
   fmtDupr1,
-  fmtScore,
-  ntrp,
   settleElo,
-  tier,
 } from "@/utils/elo";
 
 /** 手工对照 alpha:1688-1714 公式的推演值：
@@ -102,36 +99,3 @@ describe("DUPR 展示（1.4 §1/§2：三位小数 + 段位档）", () => {
   });
 });
 
-describe("ntrp / tier / fmtScore（alpha:851-863）", () => {
-  it("ntrp 分级阈值", () => {
-    expect(ntrp(1721)).toBe("4.5");
-    expect(ntrp(1700)).toBe("4.5");
-    expect(ntrp(1699)).toBe("4.0");
-    expect(ntrp(1655)).toBe("4.0");
-    expect(ntrp(1600)).toBe("4.0");
-    expect(ntrp(1599)).toBe("3.5");
-    expect(ntrp(1518)).toBe("3.5");
-    expect(ntrp(1500)).toBe("3.5");
-    expect(ntrp(1499)).toBe("3.0");
-    expect(ntrp(1400)).toBe("3.0");
-    expect(ntrp(1399)).toBe("2.5");
-    expect(ntrp(1300)).toBe("2.5");
-    expect(ntrp(1299)).toBe("2.0");
-  });
-
-  it("tier 段位", () => {
-    expect(tier(1721)).toBe("SS");
-    expect(tier(1688)).toBe("S");
-    expect(tier(1602)).toBe("S");
-    expect(tier(1574)).toBe("A");
-    expect(tier(1498)).toBe("B");
-    expect(tier(1380)).toBe("C");
-  });
-
-  it("fmtScore 双分制", () => {
-    expect(fmtScore(1518, "elo")).toBe(1518);
-    expect(fmtScore(1518.6, "elo")).toBe(1519);
-    expect(fmtScore(1518, "ntrp")).toBe("3.5");
-    expect(fmtScore(1721, "ntrp")).toBe("4.5");
-  });
-});

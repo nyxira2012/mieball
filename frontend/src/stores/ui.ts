@@ -1,13 +1,11 @@
-/* ui 全局状态（alpha:832-847 toast/sheet · alpha:850 scoreMode）
+/* ui 全局状态（alpha:832-847 toast/sheet）
    不触碰任何 uni.* —— 纯状态层；SheetHost/AppToast 组件负责渲染（P1/P3 接线）。
    2.1 打球页改版：WinPopup/showWin/closeWin 退役——终局结算改走 live store 的 settling 弹窗（批2 组件）。 */
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
-import type { ScoreMode, SheetPayload } from '@/api/types';
+import type { SheetPayload } from '@/api/types';
 
 export const useUiStore = defineStore('ui', () => {
-  /** 分制，默认 elo（alpha:850 let scoreMode='elo'） */
-  const scoreMode = ref<ScoreMode>('elo');
   /** 全局单例弹层（alpha:836 openSheet：全局唯一 #sheet，按 payload.type 分发渲染） */
   const sheet = ref<SheetPayload | null>(null);
   /** 自绘 toast（alpha:834-835）。key 自增：重复消息也能重触发组件动画。
@@ -28,12 +26,6 @@ export const useUiStore = defineStore('ui', () => {
     toastMsg.value = msg;
     toastKey.value++;
   }
-  /** alpha:1739-1744 setScoreMode（切回同档静默；切换 toast 文案逐字保留） */
-  function setScoreMode(m: ScoreMode): void {
-    if (scoreMode.value === m) return;
-    scoreMode.value = m;
-    toast(m === 'elo' ? '已切至 Elo 分制 · 默认 1500 起' : '已切至 NTRP 分制 · 2.0-5.0 国际分级');
-  }
 
   /* —— P3 纯增量：全局撒花触发器（alpha:839-845 confetti(n) 的状态层入口）——
      Confetti.vue（P1）是纯展示件，只接受 trigger 计数 + count 粒数两个 props，
@@ -46,5 +38,5 @@ export const useUiStore = defineStore('ui', () => {
     confettiKey.value++;
   }
 
-  return { scoreMode, sheet, toastMsg, toastKey, confettiKey, confettiN, openSheet, closeSheet, signupThen, toast, setScoreMode, burst };
+  return { sheet, toastMsg, toastKey, confettiKey, confettiN, openSheet, closeSheet, signupThen, toast, burst };
 });

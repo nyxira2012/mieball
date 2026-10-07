@@ -1,28 +1,13 @@
 <template>
   <PageShell tab="power">
     <view>
-      <!-- 标题区 + 分制切换胶囊（alpha.html:1831-1843） -->
+      <!-- 标题区（alpha.html:1831-1843） -->
       <view class="stag">
         <view class="head">
           <view>
             <view class="kicker">Power Rating</view>
             <!-- alpha:1835 <h1 class="brand" style="margin-bottom:0">战<em>力</em>榜（em 用 text 承载，避堵小程序） -->
             <view class="brand">战<text class="em">力</text>榜</view>
-          </view>
-          <!-- alpha:1837-1840 sw-capsule：Elo/NTRP 切换（全局类 .sw-capsule 在 base.scss；行为 ui.setScoreMode，全页联动） -->
-          <view class="sw-capsule">
-            <text
-              class="sw-opt"
-              :class="{ on: ui.scoreMode === 'elo' }"
-              @click="ui.setScoreMode('elo')"
-              >Elo</text
-            >
-            <text
-              class="sw-opt"
-              :class="{ on: ui.scoreMode === 'ntrp' }"
-              @click="ui.setScoreMode('ntrp')"
-              >NTRP</text
-            >
           </view>
         </view>
         <!-- alpha:1842 副标题（1.4 批4v1 改双轨说明） -->
@@ -128,7 +113,6 @@
 
 <script setup lang="ts">
 /* 战力页（alpha.html:1824-1889 renderPower · P9 · 1.4 批4v1 榜单切 DUPR）。
-   分制切换胶囊暂留（ui.setScoreMode 不再有消费面，归批4v2 删）；
    榜单懒加载 = alpha:1774-1822 的滚动通道（§2.4：IntersectionObserver → onPageScroll 距底 160px）；
    榜单/打架图/我的卡点击 → ui.openSheet({type:'profile',userId})。 */
 import { computed, nextTick, onMounted, ref, watch } from "vue";

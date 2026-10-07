@@ -1,52 +1,5 @@
 /* 5.1 分数体系：Elo 娱乐轨引擎（1.4 §3：初始 1200/地板 800，只担弹窗±等情绪反馈）+
-   DUPR 展示函数（1.4 §1/§2）；ntrp/tier 族退役面归批4v2（消费方批4v1 切换） */
-import type { ScoreMode } from "@/api/types";
-
-export type Tier = "SS" | "S" | "A" | "B" | "C";
-
-/** NTRP 分级阈值（alpha:851-858 逐字对齐） */
-export function ntrp(e: number): string {
-  if (e >= 1700) return "4.5";
-  if (e >= 1600) return "4.0";
-  if (e >= 1500) return "3.5";
-  if (e >= 1400) return "3.0";
-  if (e >= 1300) return "2.5";
-  return "2.0";
-}
-
-/** 分制展示（alpha:859；mode 来自 ui store 的 scoreMode） */
-export function fmtScore(e: number, mode: ScoreMode = "elo"): number | string {
-  return mode === "elo" ? Math.round(e) : ntrp(e);
-}
-
-/** 段位（alpha:860） */
-export function tier(e: number): Tier {
-  return e >= 1700
-    ? "SS"
-    : e >= 1600
-      ? "S"
-      : e >= 1500
-        ? "A"
-        : e >= 1400
-          ? "B"
-          : "C";
-}
-
-/** 段位徽章配色（alpha:861-862 值原样；TierBadge 组件消费） */
-export const TIER_BG: Record<Tier, string> = {
-  SS: "rgba(255,90,54,.2)",
-  S: "rgba(255,212,0,.18)",
-  A: "rgba(111,231,255,.16)",
-  B: "rgba(184,169,255,.16)",
-  C: "rgba(245,241,232,.1)",
-};
-export const TIER_FG: Record<Tier, string> = {
-  SS: "var(--coral)",
-  S: "var(--lemon)",
-  A: "var(--ice)",
-  B: "var(--lilac)",
-  C: "var(--dim)",
-};
+   DUPR 展示函数（1.4 §1/§2） */
 
 export const ELO_K = 24; // alpha:1697 K=24：赢强者涨得多（1.4 §3：K 不动）
 export const ELO_INIT = 1200; // 1.4 §3：初始 1200（推翻 2.3 的 1500）；访客/新人代入
@@ -77,9 +30,8 @@ export function duprTier(d: number): string {
   return "2.0";
 }
 
-/** DUPR 段位徽章配色（按档名给，TierBadge 消费）：沿旧 TIER_BG/TIER_FG 风格重排——
-    4.0+ 最高档珊瑚、3.5 柠檬、3.0 电青、2.5 丁香、2.0 入门近中性；
-    档名单一源在 duprTier，键不会 miss。旧 TIER_BG/TIER_FG 映射归批4v2 删 */
+/** DUPR 段位徽章配色（按档名给，TierBadge 消费）：4.0+ 最高档珊瑚、3.5 柠檬、
+    3.0 电青、2.5 丁香、2.0 入门近中性；档名单一源在 duprTier，键不会 miss */
 export const DUPR_TIER_BG: Record<string, string> = {
   "4.0+": "rgba(255,90,54,.2)",
   "3.5": "rgba(255,212,0,.18)",

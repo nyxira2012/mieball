@@ -133,7 +133,7 @@ export const U: Record<string, User> = {
     dupr: 3.0,
     provisional: true,
     play: 4,
-    win: 2,
+    win: 1,
     month: 0,
     last5: ["L", "W", "L", "L"],
     chibi: { skin: 1, hair: 1, hc: 5, shirt: 3, face: 0, acc: 0 },

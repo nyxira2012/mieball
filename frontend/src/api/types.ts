@@ -383,9 +383,6 @@ export interface LiveState {
   courtSeqNext: number; // 上场先后序发号器（courtSeq 的源——资历并列的 tiebreak）
 }
 
-/** 分制（alpha:850 scoreMode 默认 elo） */
-export type ScoreMode = "elo" | "ntrp";
-
 /** 组局表单提交值（线上形状 snake_case，POST /games 请求体镜像；契约§1）。
     拨盘串→ISO 的换算归 LaunchSheet（utils/time.ts toIso）。 */
 export interface PublishGameInput {
@@ -430,9 +427,11 @@ export type SheetPayload =
       pendingJoin?: { gameId: number; bring: number };
       pendingLaunch?: PublishGameInput;
       pendingCheckin?: { gameId: number };
+      pendingIntent?: { slots: string[]; frequency: number; note: string };
     };
-// 名片建号卡（1.1 A1）：游客点报名/建局/扫码签到时弹出；建号成功自动接着完成挂起的动作（D3 两步拆分）
+// 名片建号卡（1.1 A1）：游客点报名/建局/留意向/扫码签到时弹出；建号成功自动接着完成挂起的动作（D3 两步拆分）
 // pendingCheckin（2.1·选项A）：扫码到场一律走名片建号，建号成功后自动「我到了」进候场区
+// pendingIntent（1.2 4.13）：游客留意向同走先看后报——建号成功自动把意向落进意向簿
 
 /** 结算 ±积分一行（2.1 打球页改版：终局结算弹窗 EndSettleModal 的预览行复用本形状） */
 export interface WinChange {

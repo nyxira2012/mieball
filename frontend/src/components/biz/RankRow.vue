@@ -161,7 +161,7 @@ const topCls = computed(() =>
   color: var(--cream);
   text-align: right;
 }
-/* alpha:1772 NTRP 角标（font-size:9px · mono · dim · margin-left:2px） */
+/* alpha:1772 DUPR 单位角标（font-size:9px · mono · dim · margin-left:2px） */
 .unit {
   font-size: 9px;
   font-family: var(--mono);
