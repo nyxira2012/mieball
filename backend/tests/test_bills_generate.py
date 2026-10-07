@@ -248,6 +248,10 @@ def test_waitlist_never_billed(client: TestClient):
     g = publish(client, org["token"], visibility="public", min_players=2, max_players=3)
     for m in mates:
         join_ok(client, m["token"], g["id"])
+    # 2.5 开账闸：成局才可开（本测的是候补不进摊钱人头，成局前置直落 seed）
+    with db_of(client) as db:
+        db.get(Game, g["id"]).state = "locked"
+        db.commit()
     out = detail(client, g["id"], org["token"])
     assert (
         next(
@@ -369,13 +373,15 @@ def test_organizer_fallback_row_when_no_roster(client: TestClient):
 
 
 def test_open_game_end_seals_state_and_fee_backfill(client: TestClient):
-    """open 局（publish 后没锁、截止未到）直接开账再散场：end 把 state 定格成
-    locked，派生态经 masked 翻 done——补填入口（前端 status=='done' 才亮）在这条
-    真实路径不丢（1.3 走查补漏）；定格后 POST fee 照常出账。"""
+    """账开着而局簿停在 open 的旧账散场：end 把 state 定格成 locked，派生态经
+    masked 翻 done——补填入口（前端 status=='done' 才亮）在这条路径不丢（1.3 走查
+    补漏）；定格后 POST fee 照常出账。（2.5 收紧后 API 造不出这种局，兼容分支靠
+    seed 复刻旧账形保活。）"""
     env = open_live(client, seed=65, players=6)
     gid = env["game_id"]
     with db_of(client) as db:
-        assert db.get(Game, gid).state == "open"  # 前提：没手动锁、截止未到
+        db.get(Game, gid).state = "open"  # 复刻旧账：账开着、局簿还没定格
+        db.commit()
     v = end_live(client, env)
     assert v["ended"] is True
     assert detail(client, gid)["status"] == "done"  # masked/derive 路径

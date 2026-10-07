@@ -76,6 +76,14 @@ def open_live(
     join_ok(client, mates[0]["token"], g["id"], bring=bring)
     for u in mates[1:]:
         join_ok(client, u["token"], g["id"])
+    # 2.5 开账闸：成局才可开——前置直接定格 locked（沿本文件"真值直落数据库"先例，
+    # 免拨钟：过截止+懒判定的真实链路在 test_live_base 的守门组专测）
+    db = client.app.state.session_factory()
+    try:
+        db.get(Game, g["id"]).state = "locked"
+        db.commit()
+    finally:
+        db.close()
     r = live_call(client, org["token"], g["id"], "start", {})
     assert r.status_code == 200, r.text
     db = client.app.state.session_factory()
@@ -607,16 +615,22 @@ def test_undo_never_negative_noop_at_zero(client: TestClient):
     assert v3["total_seq"] == v2["total_seq"]  # 第二下是无可撤：不进号
 
 
-# ---- 读链与开账路由冒烟（start 幂等/分权在批1 测过 LiveBook，这里锁路由面） ----
+# ---- 读链与开账路由冒烟（守门分支在批1/2.5 测过 LiveBook，这里锁路由面） ----
 
 
-def test_start_route_permission_and_idempotent(client: TestClient):
+def test_start_route_opened_idempotent_and_open_game_blocked(client: TestClient):
     env = open_live(client, seed=17, players=3)
+    # 已开账：成员再点也只回视图（2.5 后成员本就有开账权，幂等先行）
     r = live_call(client, env["mate"]["token"], env["game_id"], "start", {})
-    assert r.status_code == 403 and r.json()["error"]["code"] == "organizer_only"
+    assert r.status_code == 200, r.text
     again = live_call(client, env["org"]["token"], env["game_id"], "start", {})
     assert again.status_code == 200, again.text
     assert again.json()["players"] == env["view"]["players"]  # 再点开账当没事
+    # 报名中的局谁都不能开（2.5 §4.4 收紧——组织者旧路就此关闭）
+    org2 = signup(client, _ph(179, 1), "o")
+    g2 = publish(client, org2["token"], visibility="public")
+    r = live_call(client, org2["token"], g2["id"], "start", {})
+    assert r.status_code == 403 and r.json()["error"]["code"] == "live_requires_forced"
 
 
 def test_anonymous_can_read_view(client: TestClient):

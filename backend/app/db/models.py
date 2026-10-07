@@ -281,6 +281,8 @@ class LiveState(Base):
     streak_max: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     round: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # 开账人账号 id（2.5 B1「谁开的账」新记；组织者或窗内正式成员，旧账 None）
+    started_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # 管理员名单（2.2 §4.6 封撤的真值，存 Account.id；组织者独占封撤、散场即止不回写局簿）
     admins: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     # 战报事件句留痕（2.2 §4.6/§4.9 撤管理员与换人）：结构化事件行，句式拼装归前端

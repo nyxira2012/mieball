@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import threading
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from math import floor
 
 from sqlalchemy import select
@@ -36,6 +36,7 @@ from ..db.models import (
 )
 from . import live_rotation
 from .accounts import person_view
+from .game_views import derive, is_forced
 from .live_sweep import ARRIVED, LiveSweepMixin
 from .stats import StatsLedger
 
@@ -78,21 +79,23 @@ class LiveBook(LiveSweepMixin):
         """开账（2.2 §4.1 开场亮点的总账版）：名册行从正式报名展开——正式球友一人
         一行（首见建 EloRating 行 1200），bring N 展开成 N 行随行访客（挂担保人）；
         全员先记 absent、候场队空（报到驱动，check 端点批3）；total_seq 从 1 起。
+        触发权 2.5 §4/§8：成局后组织者随时、正式成员开打前两小时内（organizer_id
+        形参沿路由旧名，实为开账人），落 started_by=开账人（B1「谁开的账」）。
         幂等：已有 LiveState 直接返视图（散场后再点也只回看，不重开）。"""
         with _write_lock:
             game = self.db.get(Game, game_id)
             if game is None:
                 raise errors.game_not_found()
-            if game.organizer_id != organizer_id:
-                raise errors.organizer_only("只有组织者能开现场账")
             if self._state_or_none(game_id) is not None:
                 return self.view(game_id=game_id, viewer_id=organizer_id)
             now = clock.now()
+            self._start_gate(game, organizer_id, now)
             self.db.add(
                 LiveState(
                     game_id=game_id,
                     total_seq=1,
                     started_at=now,
+                    started_by=organizer_id,
                     # 片数起笔镜像 rotate.ts courtCount 单一源：订场登记优先，缺省按人数回退
                     courts_count=(
                         len(game.courts)
@@ -493,7 +496,8 @@ class LiveBook(LiveSweepMixin):
         left=早退——清队列位与片上位置、落离场时刻（片上缺人打短维持现状，补人归
         手动换人）；left 回来按 join 走（回来也是队尾）。在片上的人报 ok/late/join 拒
         （人已在场上不该再报到——防"留片上+进队"双态；left 清过片位，不受此拦）。
-        到场不自动发牌——发牌算法在前端，够人由前端 deal 上报。"""
+        到场不自动发牌——发牌算法在前端，够人由前端 deal 上报。
+        2.5：本账开张后第一个到场签到的人自动暂管现场（组织者首签不授、已授不重授）。"""
         with self._write(game_id=game_id, actor_id=actor_id):
             state, game = self._open_write(game_id)
             row = self._roster_row(game_id, player_id)
@@ -535,6 +539,9 @@ class LiveBook(LiveSweepMixin):
                 row.check = st
                 if row.arrive_at is None:
                     row.arrive_at = clock.now()  # 几点到：首次到场落账
+            # 自动管理员两路同权（修C）：签到端点与空降扫码共用（扫码即签到），
+            # 落账后判——"第一个"含本行这次
+            self._maybe_grant_first_admin(state, game, row, rows)
             self._place_queue(by_id, queue)
             self._bump_total(state)
             self.db.commit()
@@ -754,6 +761,8 @@ class LiveBook(LiveSweepMixin):
             queue = self._queue_ids(rows)
             queue.append(new.id)
             self._place_queue(by_id, queue)
+            # 空降扫码即签到：自动管理员与 check 端点同权（修C）
+            self._maybe_grant_first_admin(state, game, new, rows)
             self._bump_total(state)
             self.db.commit()
         return self.view(game_id=game_id, viewer_id=actor_id)
@@ -934,6 +943,65 @@ class LiveBook(LiveSweepMixin):
         if game.ended_at is not None:
             raise errors.live_ended()
         return state, game
+
+    def _maybe_grant_first_admin(
+        self, state: LiveState, game: Game, row: LivePlayer, rows: list[LivePlayer]
+    ) -> None:
+        """自动管理员（2.5 §4.2/§8）：账开张后第一个签到的球友暂管现场。签到两路
+        共用（check 端点 + 空降 dropin——扫码即签到，0号两路同权），落账后调用：
+        "第一个" = 除本行这次外此前无账号行 ARRIVED。只数账号行——访客行随带即到
+        （check=ok）不参与判定也不触发授予（组织者先带访客不挡球友首签）；组织者
+        首签不授（到场自然说了算）、已是管理员不重授（含组织者预先封的）。"""
+        if (
+            row.account_id is None
+            or row.check not in ARRIVED
+            or row.account_id == game.organizer_id
+            or row.account_id in (state.admins or [])
+        ):
+            return
+        if any(
+            r.check in ARRIVED
+            for r in rows
+            if r.account_id is not None and r.id != row.id
+        ):
+            return
+        state.admins = [*(state.admins or []), row.account_id]
+        self._feed_push(
+            state,
+            {
+                "kind": "auto_admin",
+                "actor": row.display_name,
+                "target": row.display_name,
+                "at": clock.iso(clock.now()),
+            },
+        )
+
+    def _start_gate(self, game: Game, actor_id: int, now: datetime) -> None:
+        """开账触发权（2.5 §4.4/§8，幂等检查之后、落账之前）：先成局再开账——
+        死局（待处置/已终止/已撤局）谁都不放行，组织者同规（§8 Q3 现有行为收紧）；
+        必开标志即刻成局：手动锁必打或已订场登记即算，不等截止懒判定（§4.4
+        "离开打还有两个多小时也行"）；成局后组织者随时、正式成员开打前两小时内
+        （定值窗，§8 裁决）；候补与未报名不触发开账（app 内不服务，§8 候补裁决）。"""
+        status = derive(game, now)
+        if status in ("done", "terminated", "cancelled", "pending"):
+            # done 也算死局：锁定局过了散场时刻仍没人开账，隔天开不出新账（修B）
+            raise errors.live_requires_forced("该局已取消或已终止")
+        # 必开标志即刻成局（is_forced 单一源）：有标志不等截止懒判定
+        if not is_forced(game) and status not in ("locked", "live"):
+            raise errors.live_requires_forced()
+        if game.organizer_id == actor_id:
+            return  # 组织者不受两小时窗限（2.5 场景 4.4）
+        formal = self.db.execute(
+            select(Entry).where(
+                Entry.game_id == game.id,
+                Entry.account_id == actor_id,
+                Entry.standing == "formal",
+            )
+        ).scalar_one_or_none()
+        if formal is None:
+            raise errors.live_entry_required()
+        if now < game.start_at - timedelta(hours=2):
+            raise errors.live_too_early()
 
     def _roster(self, game_id: int) -> list[LivePlayer]:
         return (

@@ -31,6 +31,8 @@ _NEW_COLUMNS = {
         "admins": "JSON DEFAULT '[]'",
         "feed": "JSON DEFAULT '[]'",
         "courts_count": "INTEGER NOT NULL DEFAULT 2",
+        # 2.5 批1：开账人（可空——旧账没有这笔记录）
+        "started_by": "INTEGER",
     },
 }
 

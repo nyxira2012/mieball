@@ -17,11 +17,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..core import clock
-from ..db.models import Account, Bill, BillRow, Entry, Game, Invite
+from ..db.models import Account, Bill, BillRow, Entry, Game, Invite, LiveState
 from .accounts import person_view
 
 # 截止后照常可加到局结束（4.14）；done/terminated/cancelled/pending 不可加
 JOINABLE_STATUSES = ("open", "locked", "live")
+
+
+def is_forced(game: Game) -> bool:
+    """必开 = 已订场登记或手动锁必打——开账闸（2.5 §4.4）与卡片 forced 标志同一源。"""
+    return bool(game.courts) or game.manual_lock
 
 
 def derive(game: Game, now: datetime) -> str:
@@ -105,7 +110,14 @@ def game_view(
             if game.fee_total is not None and heads
             else None
         ),
-        "forced": game.manual_lock or bool(game.courts),
+        # 必开标志（is_forced 单一源：后端开账闸与 A4 卡片同源）
+        "forced": is_forced(game),
+        # 账开标志（2.5 B1「账开没开」新记）：现场账头行存在即开过——列表页逐局一查，
+        # SQLite 十人规模可接受（2.5 技术设计 §game_view）
+        "live_opened": db.execute(
+            select(LiveState.id).where(LiveState.game_id == game.id)
+        ).first()
+        is not None,
     }
     if with_entries:
         view["entries"] = entry_rows(db, game.id)

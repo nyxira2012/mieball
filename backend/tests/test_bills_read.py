@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.core import clock
-from app.db.models import Bill, BillRow
+from app.db.models import Bill, BillRow, Game
 
 from .conftest import signup
 from .test_bills_generate import auth, book_fee, db_of, end_live, set_fee
@@ -77,6 +77,13 @@ def stage(
     join_ok(client, ms[0]["token"], g["id"], bring=bring)
     for m in ms[1:]:
         join_ok(client, m["token"], g["id"])
+    # 2.5 开账闸：成局才可开——前置直接定格 locked（沿 open_live 同款 seed 先例）
+    db = client.app.state.session_factory()
+    try:
+        db.get(Game, g["id"]).state = "locked"
+        db.commit()
+    finally:
+        db.close()
     r = live_call(client, o["token"], g["id"], "start", {})
     assert r.status_code == 200, r.text
     view = r.json()

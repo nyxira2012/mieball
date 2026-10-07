@@ -21,7 +21,7 @@ from app.services.live import RATING_INIT, LiveBook
 
 from .conftest import signup
 from .test_games_actions import join_ok
-from .test_games_read import publish
+from .test_games_read import detail, publish, seed_entry
 
 ARRIVE_ISO = "2026-10-06T19:02:00+08:00"
 
@@ -46,6 +46,21 @@ def view_live(client: TestClient, game_id: int, viewer_id: int | None) -> dict:
     )
 
 
+def lock_past_deadline(client: TestClient, fake, game_id: int) -> None:
+    """拨过截止并触发一次局簿读：懒判定把 open 局落成 locked（2.5 开账前提）。
+    标准局时刻（test_games_read）：→ 10-06 18:00，过 17:00 截止、开打前 1h。"""
+    fake.advance(days=2, hours=6)
+    detail(client, game_id)
+
+
+def started_by_of(client: TestClient, game_id: int) -> int | None:
+    def probe(book: LiveBook):
+        state = book._state_or_none(game_id)
+        return state.started_by if state else None
+
+    return with_book(client, probe)
+
+
 def seed_attendance(client: TestClient, game_id: int, account_id: int) -> None:
     """直接落一条考勤时刻（check 端点批3 才有）——分权断言要真值。"""
     db = client.app.state.session_factory()
@@ -68,13 +83,14 @@ def row_of(view: dict, account_id: int) -> dict:
 # ---- 开账：名册展开 ----
 
 
-def test_start_expands_roster_formal_and_guests(client: TestClient):
+def test_start_expands_roster_formal_and_guests(client: TestClient, fake):
     org = signup(client, "13800020001", "o")
     b = signup(client, "13800020002", "b", nickname="小李", nickname_set=True)
     c = signup(client, "13800020003", "c")
     g = publish(client, org["token"], visibility="public")
     join_ok(client, b["token"], g["id"], bring=2)
     join_ok(client, c["token"], g["id"])
+    lock_past_deadline(client, fake, g["id"])  # 2.5：成局才可开账
 
     out = start_live(client, g["id"], org["account"]["id"])
 
@@ -106,11 +122,12 @@ def test_start_expands_roster_formal_and_guests(client: TestClient):
     assert out["total_seq"] == 1 and out["round"] == 0
 
 
-def test_start_idempotent_keeps_single_roster(client: TestClient):
+def test_start_idempotent_keeps_single_roster(client: TestClient, fake):
     org = signup(client, "13800020011", "o")
     b = signup(client, "13800020012", "b")
     g = publish(client, org["token"], visibility="public")
     join_ok(client, b["token"], g["id"], bring=1)
+    lock_past_deadline(client, fake, g["id"])  # 2.5：成局才可开账
 
     first = start_live(client, g["id"], org["account"]["id"])
     second = start_live(client, g["id"], org["account"]["id"])  # 再点开账当没事
@@ -128,13 +145,216 @@ def test_start_idempotent_keeps_single_roster(client: TestClient):
     assert with_book(client, state_count) == 1
 
 
-def test_start_by_non_organizer_rejected(client: TestClient):
+# ---- 开账触发权（2.5 §4/§8）：成局才可开、组织者随时、正式成员两小时窗 ----
+
+
+def test_start_member_within_window_opens(client: TestClient, fake):
+    """成员窗内可开账：正式球友开打前 1h 点开始 → 现场亮起、started_by=成员。"""
     org = signup(client, "13800020021", "o")
     b = signup(client, "13800020022", "b")
     g = publish(client, org["token"], visibility="public")
+    join_ok(client, b["token"], g["id"])
+    lock_past_deadline(client, fake, g["id"])  # → 开打前 1h，成局
+
+    out = start_live(client, g["id"], b["account"]["id"])
+
+    assert {r["account_id"] for r in out["players"]} == {
+        org["account"]["id"],
+        b["account"]["id"],
+    }
+    assert started_by_of(client, g["id"]) == b["account"]["id"]
+
+
+def test_start_member_outside_window_too_early(client: TestClient, fake):
+    org = signup(client, "13800020023", "o")
+    b = signup(client, "13800020024", "b")
+    # 截止提前到 14:00，16:00（开打前 3h）已成局——拒的是窗不是成局
+    g = publish(
+        client,
+        org["token"],
+        visibility="public",
+        deadline_at="2026-10-06T14:00:00+08:00",
+    )
+    join_ok(client, b["token"], g["id"])
+    fake.advance(days=2, hours=4)  # → 10-06 16:00 = 开打前 3h
+    detail(client, g["id"])  # 懒判定成局
+
     with pytest.raises(ApiError) as e:
         start_live(client, g["id"], b["account"]["id"])
-    assert e.value.status_code == 403 and e.value.code == "organizer_only"
+    assert e.value.status_code == 403 and e.value.code == "live_too_early"
+
+
+def test_start_waitlist_entry_required(client: TestClient, fake):
+    """候补不触发开账（2.5 §4.8：app 内一律不服务）。"""
+    org = signup(client, "13800020025", "o")
+    b = signup(client, "13800020026", "b")
+    g = publish(client, org["token"], visibility="public", min_players=1)
+    seed_entry(client, g["id"], b["account"]["id"], standing="waitlist", wait_seq=1)
+    lock_past_deadline(client, fake, g["id"])  # org 自成一局（min=1）
+
+    with pytest.raises(ApiError) as e:
+        start_live(client, g["id"], b["account"]["id"])
+    assert e.value.status_code == 403 and e.value.code == "live_entry_required"
+
+
+def test_start_open_game_requires_forced(client: TestClient):
+    """报名中的局谁都不能开账（2.5 §4.4 收紧：组织者旧路就此关闭）。"""
+    org = signup(client, "13800020027", "o")
+    g = publish(client, org["token"], visibility="public")
+    with pytest.raises(ApiError) as e:
+        start_live(client, g["id"], org["account"]["id"])
+    assert e.value.status_code == 403 and e.value.code == "live_requires_forced"
+
+
+def _org_headers(client: TestClient, token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_start_manual_lock_before_deadline_opens(client: TestClient, fake):
+    """手动锁必打即刻成局（2.5 §4.4）：未到截止、state 仍 open，组织者开账放行。"""
+    org = signup(client, "13800020081", "o")
+    b = signup(client, "13800020082", "b")
+    g = publish(client, org["token"], visibility="public")
+    join_ok(client, b["token"], g["id"])
+    r = client.post(
+        f"/api/games/{g['id']}/lock", headers=_org_headers(client, org["token"])
+    )
+    assert r.status_code == 200, r.text
+
+    out = start_live(client, g["id"], org["account"]["id"])
+
+    assert out["players"]
+    assert started_by_of(client, g["id"]) == org["account"]["id"]
+
+
+def test_start_courts_booked_opens_before_deadline(client: TestClient, fake):
+    """订场登记即刻成局（2.5 §4.4）：courts 非空即必打，不等截止懒判定。"""
+    org = signup(client, "13800020083", "o")
+    b = signup(client, "13800020084", "b")
+    g = publish(client, org["token"], visibility="public")
+    join_ok(client, b["token"], g["id"])
+    r = client.post(
+        f"/api/games/{g['id']}/booking",
+        headers=_org_headers(client, org["token"]),
+        json={"courts": ["3号"], "fee_total": 100},
+    )
+    assert r.status_code == 200, r.text
+
+    out = start_live(client, g["id"], org["account"]["id"])
+
+    assert out["players"]
+    assert started_by_of(client, g["id"]) == org["account"]["id"]
+
+
+def test_start_cancelled_game_rejected_even_locked(client: TestClient, fake):
+    """撤局后即便锁过必打也不开账（死局先拒，2.5 §8）。"""
+    org = signup(client, "13800020085", "o")
+    b = signup(client, "13800020086", "b")
+    g = publish(client, org["token"], visibility="public")
+    join_ok(client, b["token"], g["id"])
+    headers = _org_headers(client, org["token"])
+    assert client.post(f"/api/games/{g['id']}/lock", headers=headers).status_code == 200
+    assert (
+        client.post(f"/api/games/{g['id']}/cancel", headers=headers).status_code == 200
+    )
+
+    with pytest.raises(ApiError) as e:
+        start_live(client, g["id"], org["account"]["id"])
+    assert e.value.status_code == 403 and e.value.code == "live_requires_forced"
+
+
+def test_start_after_end_at_rejected_even_locked(client: TestClient, fake):
+    """锁定局过了散场时刻仍没人开账 → 再开不出新账（done 也是死局，2.5 修B）。"""
+    org = signup(client, "13800020087", "o")
+    b = signup(client, "13800020088", "b")
+    g = publish(client, org["token"], visibility="public")
+    join_ok(client, b["token"], g["id"])
+    headers = _org_headers(client, org["token"])
+    assert client.post(f"/api/games/{g['id']}/lock", headers=headers).status_code == 200
+    fake.advance(days=2, hours=10)  # → 10-06 22:00，过 21:00 散场、从未开账
+    detail(client, g["id"])  # 懒判定翻 locked
+
+    with pytest.raises(ApiError) as e:
+        start_live(client, g["id"], org["account"]["id"])
+    assert e.value.status_code == 403 and e.value.code == "live_requires_forced"
+
+
+def test_start_member_window_boundary_inclusive(client: TestClient, fake):
+    """两小时窗含整点（2.5 §5）：恰 start_at-2h 整点，成员开账放行。"""
+    org = signup(client, "13800020089", "o")
+    b = signup(client, "13800020090", "b")
+    g = publish(client, org["token"], visibility="public")
+    join_ok(client, b["token"], g["id"])
+    headers = _org_headers(client, org["token"])
+    assert client.post(f"/api/games/{g['id']}/lock", headers=headers).status_code == 200
+    fake.advance(days=2, hours=5)  # → 10-06 17:00 整点（必开即刻成局，只验窗）
+
+    start_live(client, g["id"], b["account"]["id"])
+
+    assert started_by_of(client, g["id"]) == b["account"]["id"]
+
+
+def test_start_member_window_one_second_early_rejected(client: TestClient, fake):
+    org = signup(client, "13800020091", "o")
+    b = signup(client, "13800020092", "b")
+    g = publish(client, org["token"], visibility="public")
+    join_ok(client, b["token"], g["id"])
+    headers = _org_headers(client, org["token"])
+    assert client.post(f"/api/games/{g['id']}/lock", headers=headers).status_code == 200
+    fake.advance(days=2, hours=4, seconds=3599)  # → 16:59:59，差一秒
+
+    with pytest.raises(ApiError) as e:
+        start_live(client, g["id"], b["account"]["id"])
+    assert e.value.status_code == 403 and e.value.code == "live_too_early"
+
+
+def test_start_organizer_anytime_after_locked(client: TestClient, fake):
+    """组织者成局后随时开账，不受两小时窗限（2.5 场景 4.4）。"""
+    org = signup(client, "13800020028", "o")
+    b = signup(client, "13800020029", "b")
+    g = publish(
+        client,
+        org["token"],
+        visibility="public",
+        deadline_at="2026-10-06T14:00:00+08:00",
+    )
+    join_ok(client, b["token"], g["id"])
+    fake.advance(days=2, hours=4)  # → 开打前 3h（已过截止成局）
+    detail(client, g["id"])
+
+    out = start_live(client, g["id"], org["account"]["id"])
+
+    assert out["total_seq"] == 1 and out["players"]
+    assert started_by_of(client, g["id"]) == org["account"]["id"]
+
+
+def test_start_idempotent_keeps_started_by(client: TestClient, fake):
+    """已开账重复调（换人也一样）→ 幂等回视图，started_by 不改写。"""
+    org = signup(client, "13800020101", "o")
+    b = signup(client, "13800020102", "b")
+    g = publish(client, org["token"], visibility="public")
+    join_ok(client, b["token"], g["id"])
+    lock_past_deadline(client, fake, g["id"])
+
+    first = start_live(client, g["id"], b["account"]["id"])
+    second = start_live(client, g["id"], org["account"]["id"])
+
+    assert second == first
+    assert started_by_of(client, g["id"]) == b["account"]["id"]
+
+
+def test_game_view_live_opened_flag(client: TestClient, fake):
+    """账开标志（2.5 B1「账开没开」送到卡片）：开账前 False、开账后 True。"""
+    org = signup(client, "13800020103", "o")
+    b = signup(client, "13800020104", "b")
+    g = publish(client, org["token"], visibility="public")
+    join_ok(client, b["token"], g["id"])
+    assert detail(client, g["id"], org["token"])["live_opened"] is False
+    lock_past_deadline(client, fake, g["id"])
+
+    start_live(client, g["id"], org["account"]["id"])
+
+    assert detail(client, g["id"], org["token"])["live_opened"] is True
 
 
 def test_view_before_start_404(client: TestClient):
@@ -148,13 +368,14 @@ def test_view_before_start_404(client: TestClient):
 # ---- view 分权：考勤时刻 org/本人见、他人 null（2.3 裁决 Q2） ----
 
 
-def test_view_attendance_visibility(client: TestClient):
+def test_view_attendance_visibility(client: TestClient, fake):
     org = signup(client, "13800020041", "o")
     b = signup(client, "13800020042", "b")
     c = signup(client, "13800020043", "c")
     g = publish(client, org["token"], visibility="public")
     join_ok(client, b["token"], g["id"])
     join_ok(client, c["token"], g["id"])
+    lock_past_deadline(client, fake, g["id"])  # 2.5：成局才可开账
     start_live(client, g["id"], org["account"]["id"])
     seed_attendance(client, g["id"], c["account"]["id"])  # c 19:02 到场
 
@@ -171,11 +392,12 @@ def test_view_attendance_visibility(client: TestClient):
 # ---- EloRating 首见 1200（访客不入行） ----
 
 
-def test_elo_first_seen_init_1200(client: TestClient):
+def test_elo_first_seen_init_1200(client: TestClient, fake):
     org = signup(client, "13800020051", "o")
     b = signup(client, "13800020052", "b")
     g = publish(client, org["token"], visibility="public")
     join_ok(client, b["token"], g["id"], bring=1)  # 访客不该有积分行
+    lock_past_deadline(client, fake, g["id"])  # 2.5：成局才可开账
     start_live(client, g["id"], org["account"]["id"])
 
     db = client.app.state.session_factory()
@@ -192,9 +414,10 @@ def test_elo_first_seen_init_1200(client: TestClient):
 # ---- 两级号机制（附录 B1）：写入口校验 + 号前进 ----
 
 
-def test_two_level_seq_mechanism(client: TestClient):
+def test_two_level_seq_mechanism(client: TestClient, fake):
     org = signup(client, "13800020061", "o")
-    g = publish(client, org["token"], visibility="public")
+    g = publish(client, org["token"], visibility="public", min_players=1)
+    lock_past_deadline(client, fake, g["id"])  # 2.5：成局才可开账
     start_live(client, g["id"], org["account"]["id"])
 
     def probe(book: LiveBook) -> None:

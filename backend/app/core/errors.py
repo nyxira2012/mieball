@@ -235,3 +235,26 @@ def live_forbidden() -> ApiError:
 def organizer_only(msg: str = "只有组织者能做") -> ApiError:
     # 现场域的组织者独占动作（封撤管理员/散场收局）；与球局域 not_organizer 分码不混用
     return ApiError(403, "organizer_only", msg)
+
+
+# ---- 开账触发权（docs/2.5 §4/§8 裁决：先成局再开账，正式成员两小时窗） ----
+
+
+def live_requires_forced(msg: str = "先锁定必打，才能开始打球") -> ApiError:
+    # 未成局（报名中/已散场）谁都不能开账，组织者同规（§8 Q3 现有行为收紧）；
+    # 死局（撤局/终止/待处置）同码不同句（msg 分句，2.5 批1 修1 裁决）
+    return ApiError(403, "live_requires_forced", msg)
+
+
+def live_entry_required() -> ApiError:
+    # 开账触发权只到正式报名（候补 app 内不服务，§8 候补裁决）
+    return ApiError(
+        403,
+        "live_entry_required",
+        "要正式报名才能进现场 · 候补可到现场扫二维码入场",
+    )
+
+
+def live_too_early() -> ApiError:
+    # 正式成员的开账窗：开打前两小时内（§8 两小时门槛定值裁决）
+    return ApiError(403, "live_too_early", "开打前两小时内才能进现场")
