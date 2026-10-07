@@ -86,14 +86,14 @@
       />
       <LedgerSheet :visible="liveSheet?.k === 'ledger'" @close="closeLocal" />
       <RulesSheet :visible="liveSheet?.k === 'rules'" @close="closeLocal" />
-      <!-- 终局结算（store.settling 驱动，按片开窗；批5a 降级单值读法=片号最小那片）与
-           签到二维码浮层：z-110，顶替退役 WinPopup 层级 -->
+      <!-- 确认窗（store.settling 驱动、按片渲染：一次一扇=片号最小，确认/关窗后下一片
+           顶上，多片互不等待 §4.3）；清零/取消入口在窗内 emit，走下方危险确认槽。
+           与签到二维码浮层：z-110，顶替退役 WinPopup 层级 -->
       <EndSettleModal
-        :visible="!!liveStore.settlingOne"
-        :full="full"
-        :court-id="liveStore.settlingOne?.courtId ?? -1"
-        @close="liveStore.closeSettle()"
-        @cancel="onCancelMatch"
+        :visible="liveStore.settlingCourtId != null"
+        :court-id="liveStore.settlingCourtId ?? -1"
+        @clear="onClearScore()"
+        @cancel="onCancelMatch()"
       />
       <!-- 危险动作先确认（A3）：后果句+双纽，本地确认槽不走全局 union；叠在结算窗之上 -->
       <AppSheet
@@ -186,17 +186,21 @@ const confirmOpen = computed(() => liveSheet.value?.k === "confirm");
 function askConfirm(msg: string, action: () => void): void {
   liveSheet.value = { k: "confirm", msg, action };
 }
-/** 取消对局：卡上带 courtId；结算窗不带（从 settling 降级单值取当前片） */
+/** 取消对局（§4.7）：卡上带 courtId；确认窗入口不带（从当前渲染窗的片取）。
+    动作本体与权限把关都在 store（needFull 兜底），这里只管「先确认」 */
 function onCancelMatch(courtId?: number): void {
-  const id = courtId ?? liveStore.settlingOne?.courtId;
+  const id = courtId ?? liveStore.settlingCourtId;
   if (id == null) return;
   askConfirm("这场将不计分，场上的人回候场队最前面", () =>
     liveStore.cancelMatch(id),
   );
 }
-function onClearScore(courtId: number): void {
+/** 清零重开（§4.2）：卡上带 courtId；确认窗入口不带（从当前渲染窗的片取） */
+function onClearScore(courtId?: number): void {
+  const id = courtId ?? liveStore.settlingCourtId;
+  if (id == null) return;
   askConfirm("比分将清零重开一盘，已得的分不算了", () =>
-    liveStore.clearScore(courtId),
+    liveStore.clearScore(id),
   );
 }
 function confirmGo(): void {

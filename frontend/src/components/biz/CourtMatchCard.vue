@@ -1,12 +1,14 @@
 <template>
   <!-- 块二对局卡（2.4 批2 单卡自足）：一片一实例，playing/idle 由 court.A/B 空否自判——
-       playing = 对阵区 + 卡底记分框「比分即按钮」+ 全权工具行；
-       idle = 空片差人卡（还差 N 人 · courtSize-aware + 自动排阵/去拉人双钮）。
-       卡头 = 场地号 + 单双打标识（读 court.singles，选了什么显什么）+ 分制 +
-       连庄 chip（仅 down=loser 且该边 streak>0 显示，2.4 新增显示）。
-       点数字记分与撤回对所有人开放（2.2 §4.8）；清零/终局/取消/找替补是全权手柄，
-       其中清零/取消先弹后果确认（A3，确认槽在页面层）。 -->
-  <view class="court-matchcard" :class="{ idle: !playing }">
+     playing = 对阵区 + 卡底记分框「比分即按钮」+ 全权工具行；
+     idle = 空片差人卡（还差 N 人 · courtSize-aware + 自动排阵/去拉人双钮）。
+     卡头 = 场地号 + 单双打标识（读 court.singles，选了什么显什么）+ 分制 +
+     连庄 chip（仅 down=loser 且该边 streak>0 显示，2.4 新增显示）。
+     点数字记分与撤回对所有人开放（2.2 §4.8）；清零/提前结算/取消/找替补是全权手柄，
+     其中清零/取消先弹后果确认（A3，确认槽在页面层）。
+     待确认态（2.3 §4.3）：卡头「待确认」chip + 记分框压暗不可点 + 工具行收起——
+     整片冻结（记分/撤分/换人锁死），清零/取消/调分出口收进确认窗。 -->
+  <view class="court-matchcard" :class="{ idle: !playing, frozen }">
     <!-- ---------- playing：对阵区 ---------- -->
     <template v-if="playing">
       <view class="match-header">
@@ -16,6 +18,8 @@
             >{{ court.singles ? "单打" : "双打" }} · {{ scoring }}分</text
           >
         </view>
+        <!-- §4.3 待确认标识：该片冻结中（记分/撤分/换人锁死，出口收在确认窗） -->
+        <text v-if="frozen" class="chip frozen-chip">待确认</text>
       </view>
 
       <view class="match-arena">
@@ -50,8 +54,9 @@
         </template>
       </view>
 
-      <!-- 卡底记分框（原型 .score-plate）：点左数字 = A +1，点右 = B +1；领先侧 .lead 高亮 -->
-      <view class="score-plate">
+      <!-- 卡底记分框（原型 .score-plate）：点左数字 = A +1，点右 = B +1；领先侧 .lead 高亮；
+           待确认片冻结（§4.3）：记分框压暗不可点、撤分入口收起——处理入口在确认窗 -->
+      <view class="score-plate" :class="{ off: frozen }">
         <view class="sp-num a-side" @click="emit('point', court.id, 'a')">
           <view
             :key="`a${bumpTick}`"
@@ -63,9 +68,13 @@
         </view>
         <view class="sp-mid">
           <view class="sp-colon">:</view>
-          <text class="sp-tip">点数字记分</text>
+          <text class="sp-tip">{{
+            frozen ? "待确认 · 窗内处理" : "点数字记分"
+          }}</text>
           <!-- 撤回对所有人可见（§4.8：记分±1 是球友手柄，撤回同族；store 本就无 guard） -->
-          <text class="sp-undo" @click="emit('undo', court.id)">撤回</text>
+          <text v-if="!frozen" class="sp-undo" @click="emit('undo', court.id)"
+            >撤回</text
+          >
         </view>
         <view class="sp-num b-side" @click="emit('point', court.id, 'b')">
           <view
@@ -80,14 +89,15 @@
 
       <!-- 全权工具行（非 full 不渲染；换人不设独立入口，走「点人」抽屉）：
           找替补只在缺人且候场有人时出现（§4.11）；清零/取消先确认由页面接（A3）；
-          撤回已挪记分行对所有人开放（§4.8），不再占工具行 -->
-      <view v-if="full" class="match-card-tools">
+          撤回已挪记分行对所有人开放（§4.8），不再占工具行；
+          待确认片整行收起（§4.3-2：清零/取消/提前结算入口收进确认窗） -->
+      <view v-if="full && !frozen" class="match-card-tools">
         <text v-if="needSub" class="tool-link" @click="emit('sub', court.id)"
           >找替补</text
         >
         <text class="tool-link" @click="emit('clear', court.id)">清零</text>
         <text class="tool-link" @click="emit('settle', court.id)"
-          >终局结算</text
+          >提前结算</text
         >
         <text class="tool-link danger" @click="emit('cancel', court.id)"
           >取消对局</text
@@ -161,6 +171,11 @@ const liveStore = useLiveStore();
 const playing = computed(
   () => !!props.court.A.length || !!props.court.B.length,
 );
+
+/** 待确认冻结（§4.3 单片冻结呈现）：单一源在 store 的 isPending（读视图片状态——
+   pending 即有窗、窗禁遮罩关，不再有「窗召不回」的情形）；记分框压暗不可点、
+   工具行收起，处理入口在确认窗 */
+const frozen = computed(() => liveStore.isPending(props.court.id));
 
 /** 显示名（court.name 存场地号 '3号' → '3号场'，单一源 format.courtDisplayName）与分制 */
 const label = computed(() => courtDisplayName(props.court.name));
@@ -507,6 +522,23 @@ onUnmounted(() => {
 }
 .tool-link.danger:active {
   color: var(--coral);
+}
+
+/* ---------- 待确认冻结（§4.3）：轻呈现——卡头「待确认」chip + 记分框压暗不可点，
+   出口与改分都在确认窗，本卡不另养第二套手柄 ---------- */
+.chip.frozen-chip {
+  border-color: rgba(255, 212, 0, 0.4);
+  color: var(--lemon);
+}
+.court-matchcard.frozen .match-arena {
+  opacity: 0.75;
+}
+.score-plate.off {
+  pointer-events: none;
+}
+.score-plate.off .sp-v {
+  opacity: 0.5;
+  text-shadow: none;
 }
 
 /* ---------- 徽章（访客/歇）：形与色在 base.scss 全局类；此处只补头像下方的位置 margin ---------- */

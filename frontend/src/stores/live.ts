@@ -1,12 +1,15 @@
-/* 现场 store（2.3 批5a 写链·全切后端）：现场态真值=后端总账，本 store 只做
-   guard + 编排 + toast——写动作统一「组载荷（base 号取 liveView）→ api → 响应视图
-   applyLiveView 落地」；409 stale 携视图对表（toast「现场已更新」）；断网/他错走
+/* 现场 store（2.3 批5a 写链·全切后端；批5b 确认窗按片化收口）：现场态真值=后端总账，
+   本 store 只做 guard + 编排 + toast——写动作统一「组载荷（base 号取 liveView）→ api →
+   响应视图 applyLiveView 落地」；409 stale 携视图对表（toast「现场已更新」）；断网/他错走
    errText（网络错文案「网络不给力，请稍后再试」）并把本地预变回滚成所持视图。
    发牌算法仍在前端 rotate.ts（总账把关）：到场/取消/开账后够人的空片本地算完
    apiLiveDeal 上报；「排下一场」由确认响应视图驱动（回流补位真值在后端）。
    积分不再本地落账（settleElo 退役到组件预览）；确认响应的 elo_rows 随视图持有。
    待确认窗按片多值：settling Record（courtId→来源）由视图 pending 驱动，
-   closeSettle 纯前端关窗（记 hide 位，片退出 pending 自动解除）。
+   settlingCourtId=当前应渲染窗的片（一次一扇、片号最小者顶上）。窗禁遮罩关
+   （批5b 验收官销号，§4.3-2 出口全在窗内）：store 不设前端关窗动作，窗只随
+   视图 pending 起落——确认/清零/取消成功、auto 窗撤到分线下，响应视图关窗；
+   遮罩是否可关是纯模板行为（EndSettleModal 遮罩无点击事件），类型层测不了。
    遗留本地路（后端无对应端点，批6/后续切真）：addGuests/subFirst/removeFromRoster/
    setRuleScore/endLive（散场清扫流批6 重造）与空降入册（arriveMe 的 dropin 支）。
    硬约束：不触碰任何 uni.*；名册行 id 是写动作靶位（与 queue/片位同键），
@@ -79,6 +82,30 @@ export const isArrived = (c?: CheckStatus): boolean =>
 /** 每边满员口径单一源（双打 2 / 单打 1）：subFirst 缺位判定与 CourtMatchCard 找替补入口共用 */
 export const perSide = (singles: boolean): number => courtSize(singles) / 2;
 
+/** 片序换算单点（旧片序 0 起 ↔ 视图/载荷片号 1 起）：记分族动作、确认窗取数、
+    发牌载荷共用——换算散写已在批5b 验收官 Nit 销号，新增一律走本函数 */
+export function courtNoOf(courtId: number): number {
+  return courtId + 1;
+}
+
+/** 确认窗胜方联动（§4.6「改比分胜方自动跟分高方」的纯函数面，EndSettleModal 消费）：
+    分高方当胜方——分低的一方当不了胜方，落不出「分低的赢了」的战报；平分清空预选
+    （返回 null＝禁确认，§4.4 平分不预选）。前端联动、后端 settle-confirm 仍把关 */
+export function followWinner(sa: number, sb: number): boolean | null {
+  if (sa > sb) return true;
+  if (sb > sa) return false;
+  return null;
+}
+
+/** 确认窗胜方点选闸（§4.6 分低方选不中；平分双方均可点——点了才有预选） */
+export function canPickWinner(
+  sa: number,
+  sb: number,
+  side: "a" | "b",
+): boolean {
+  return side === "a" ? sa >= sb : sb >= sa;
+}
+
 /** 清场单点（早退/移出本地路共用）：把人从候场队和各片 A/B 同时清掉；在场资历一并注销 */
 function clearFromPlay(L: LiveState, id: number): void {
   L.queue = L.queue.filter((x) => x !== id);
@@ -145,39 +172,34 @@ export const useLiveStore = defineStore("live", () => {
   const hasLive = computed(() => !!live.value);
 
   /** 待确认窗按片多值（§4.3 多片同待确认是正常情况）：courtId（0 起）→ 窗来源；
-      视图 courts[].status==='pending' 驱动、applyLiveView 同步维护。
-      hide 位=纯前端关窗（closeSettle）：片仍 pending 但用户关了窗不重开，
-      片退出 pending（确认/清零/撤分关窗）时自动解除 */
-  const settling = ref<Record<number, { origin: PendingOrigin } | null>>({});
-  const settleHidden = new Set<number>();
+      视图 courts[].status==='pending' 驱动、applyLiveView 同步维护——pending 即有窗
+      （窗禁遮罩关，§4.3-2）：片退出 pending 窗随之关、再 pending 窗再开，
+      无「关了不重开」的态（原 hide 位机械随遮罩禁关一并删，SC6 卫生） */
+  const settling = ref<Record<number, { origin: PendingOrigin }>>({});
 
   /** 最近一次总账视图——写动作 base 号（totalSeq/片 courtSeq）与轮询对表的最近真值 */
   const liveView = ref<LiveView | null>(null);
   /** 散场后回看视图持有（ended 视图定格；回看 UI 批6 消费） */
   const recap = ref<LiveView | null>(null);
 
-  /** settling 多值的降级单值读法（批5a 消费面：live.vue/EndSettleModal 单窗呈现）：
-      片号最小的一片 + 该片当前比分快照；批5b UI 按片化后可退役 */
-  const settlingOne = computed<{
-    courtId: number;
-    sa: number;
-    sb: number;
-    origin: PendingOrigin;
-  } | null>(() => {
-    const L = live.value;
-    const hit = Object.entries(settling.value)
-      .filter(([, v]) => v)
-      .map(([k]) => Number(k))
-      .sort((a, b) => a - b)[0];
-    if (hit == null || !L) return null;
-    const c = L.courts.find((x) => x.id === hit);
-    return {
-      courtId: hit,
-      sa: c?.sa ?? 0,
-      sb: c?.sb ?? 0,
-      origin: settling.value[hit]!.origin,
-    };
-  });
+  /** 当前应渲染确认窗的片（§4.3 多片各弹各的互不等待；窗一次一扇——片号最小者顶上，
+      确认/关窗后下一片接上；settlingOne 降级单值随批5b 按片化退役） */
+  const settlingCourtId = computed<number | null>(
+    () =>
+      Object.keys(settling.value)
+        .map(Number)
+        .filter((id) => settling.value[id])
+        .sort((a, b) => a - b)[0] ?? null,
+  );
+
+  /** 片待确认中（§4.3 单片冻结呈现的单一源）：读视图片状态——与 settling 窗位同源
+      同步（pending 即有窗、禁遮罩关），呈现不必跟窗位走 */
+  function isPending(courtId: number): boolean {
+    return (
+      liveView.value?.courts.find((c) => c.courtNo === courtNoOf(courtId))
+        ?.status === "pending"
+    );
+  }
 
   /** 我的名册行 id（键位修正：view.players 按 accountId 匹配 U.me；查无/无视图回落
       账号 id 兼本地路——mock 时代行 id 即账号 id） */
@@ -310,6 +332,18 @@ export const useLiveStore = defineStore("live", () => {
     };
   }
 
+  /** 写链错误共件（writeAction 与 startLive 同款两分支）：409 两码携视图 → 对表 +
+      toast「现场已更新」返 true；其余 toast errText（断网「网络不给力，请稍后再试」/
+      后端把关句）返 false */
+  function handleWriteError(e: unknown): boolean {
+    if (applyStaleView(e)) {
+      ui.toast("现场已更新");
+      return true;
+    }
+    ui.toast(errText(e));
+    return false;
+  }
+
   /** 统一发送（写动作唯一通道）：api → 响应即最新视图 → applyLiveView 落地；
       - 409 两码（live_stale_total/court）携视图 → applyStaleView 对表 + toast「现场已更新」；
       - 其余错误走 errText（断网「网络不给力，请稍后再试」/后端把关句），
@@ -326,12 +360,7 @@ export const useLiveStore = defineStore("live", () => {
       onDone?.();
       return true;
     } catch (e) {
-      if (applyStaleView(e)) {
-        ui.toast("现场已更新");
-        return false;
-      }
-      ui.toast(errText(e));
-      if (liveView.value) applyLiveView(liveView.value); // 回滚本地预变
+      if (!handleWriteError(e) && liveView.value) applyLiveView(liveView.value); // 回滚本地预变
       return false;
     }
   }
@@ -347,7 +376,7 @@ export const useLiveStore = defineStore("live", () => {
     fillAllCourts(L);
     const deals: DealCourt[] = L.courts
       .filter((c) => emptyBefore.has(c.id) && (c.A.length || c.B.length))
-      .map((c) => ({ courtNo: c.id + 1, a: [...c.A], b: [...c.B] }));
+      .map((c) => ({ courtNo: courtNoOf(c.id), a: [...c.A], b: [...c.B] }));
     if (!deals.length) return false;
     return writeAction(gid, () =>
       apiLiveDeal(gid, deals, liveView.value!.totalSeq),
@@ -368,11 +397,7 @@ export const useLiveStore = defineStore("live", () => {
       );
       startPolling(g.id);
     } catch (e) {
-      if (applyStaleView(e)) {
-        ui.toast("现场已更新");
-        return null;
-      }
-      ui.toast(errText(e));
+      handleWriteError(e);
       return null;
     }
     await maybeDeal(g.id);
@@ -687,7 +712,7 @@ export const useLiveStore = defineStore("live", () => {
     const L = live.value;
     const c = courtOf(courtId);
     if (!L || !c || (!c.A.length && !c.B.length) || !liveView.value) return;
-    const no = courtId + 1;
+    const no = courtNoOf(courtId);
     const s = seqs(no);
     await writeAction(L.g.id, () =>
       apiLivePoint(L.g.id, no, side, s.baseTotalSeq, s.baseCourtSeq),
@@ -701,7 +726,7 @@ export const useLiveStore = defineStore("live", () => {
     const L = live.value;
     const c = courtOf(courtId);
     if (!L || !c || !liveView.value) return;
-    const no = courtId + 1;
+    const no = courtNoOf(courtId);
     const s = seqs(no);
     await writeAction(L.g.id, () =>
       apiLiveUndo(L.g.id, no, s.baseTotalSeq, s.baseCourtSeq),
@@ -712,7 +737,7 @@ export const useLiveStore = defineStore("live", () => {
   async function clearScore(courtId: number): Promise<void> {
     const L = live.value;
     if (!L || !courtOf(courtId) || !needFull() || !liveView.value) return;
-    const no = courtId + 1;
+    const no = courtNoOf(courtId);
     const s = seqs(no);
     await writeAction(
       L.g.id,
@@ -727,24 +752,11 @@ export const useLiveStore = defineStore("live", () => {
     const L = live.value;
     const c = courtOf(courtId);
     if (!L || !c || (!c.A.length && !c.B.length) || !needFull()) return;
-    const no = courtId + 1;
+    const no = courtNoOf(courtId);
     const s = seqs(no);
     await writeAction(L.g.id, () =>
       apiLiveSettleOpen(L.g.id, no, s.baseTotalSeq, s.baseCourtSeq),
     );
-  }
-
-  /** 关结算窗不落账（纯前端关窗 §4.5 遮罩可关）：片仍 pending 但窗不再弹，
-      片退出 pending 后 hide 位自动解除（applyLiveView 维护） */
-  function closeSettle(courtId?: number): void {
-    const ids =
-      courtId != null ? [courtId] : Object.keys(settling.value).map(Number); // 无参=全关（降级单窗消费面等效）
-    for (const id of ids) {
-      if (settling.value[id]) {
-        settleHidden.add(id);
-        settling.value[id] = null;
-      }
-    }
   }
 
   /** 确认终局 · 排下一场（§4.6 出口 A，收权）：一本账原子在后端（战报+积分+回流补位），
@@ -760,7 +772,7 @@ export const useLiveStore = defineStore("live", () => {
     if (!needFull()) return;
     const L = live.value;
     if (!L || !liveView.value) return;
-    const no = courtId + 1;
+    const no = courtNoOf(courtId);
     const s = seqs(no);
     await writeAction(
       L.g.id,
@@ -784,7 +796,7 @@ export const useLiveStore = defineStore("live", () => {
     const c = courtOf(courtId);
     if (!L || !c || (!c.A.length && !c.B.length) || !needFull()) return;
     const gid = L.g.id;
-    const no = courtId + 1;
+    const no = courtNoOf(courtId);
     const n = c.A.length + c.B.length; // 出发时场上人数（文案）
     const s = seqs(no);
     const ok = await writeAction(
@@ -1030,11 +1042,10 @@ export const useLiveStore = defineStore("live", () => {
       - g 只局部重建（现场克隆不回写局簿的旧约不变）：scoring/片名回填，片数吃
         courts_count 真值（courtCount 单一源读到即对表）；
       - history/feed 适配旧形状（view 升序 → 旧新到旧）；
-      - settling 按片多值：pending 片进 Record（hide 位不重开）；streak/资历视图不带——
-        旧引擎值位留 0/空。 */
+      - settling 按片多值：pending 片进 Record（窗禁遮罩关、纯随视图起落）；streak/资历
+        视图不带——旧引擎值位留 0/空。 */
   function applyLiveView(v: LiveView): void {
     const old = live.value;
-    if (!old || old.g.id !== v.gameId) settleHidden.clear(); // 换局：关窗位不跨局残留
     const src =
       old && old.g.id === v.gameId ? old.g : useGameStore().findGame(v.gameId);
     const base = src ?? stubGame(v);
@@ -1130,16 +1141,10 @@ export const useLiveStore = defineStore("live", () => {
     };
     while (L.courts.length < v.courtsCount)
       L.courts.push(mkCourt(L, L.courts.length)); // 视图片行缺额补空片（差人卡口径）
-    const next: Record<number, { origin: PendingOrigin } | null> = {};
+    const next: Record<number, { origin: PendingOrigin }> = {};
     for (const c of v.courts) {
-      const id = c.courtNo - 1;
-      if (c.status !== "pending") {
-        settleHidden.delete(id); // 片退出 pending：hide 位解除（下次再 pending 会重开窗）
-        continue;
-      }
-      next[id] = settleHidden.has(id)
-        ? null
-        : { origin: c.pendingOrigin ?? "manual" };
+      if (c.status === "pending")
+        next[c.courtNo - 1] = { origin: c.pendingOrigin ?? "manual" }; // pending 即有窗
     }
     settling.value = next;
     live.value = L;
@@ -1198,7 +1203,8 @@ export const useLiveStore = defineStore("live", () => {
     live,
     hasLive,
     settling,
-    settlingOne,
+    settlingCourtId,
+    isPending,
     advice,
     myRound,
     isFullPower,
@@ -1219,7 +1225,6 @@ export const useLiveStore = defineStore("live", () => {
     undoPoint,
     clearScore,
     openSettle,
-    closeSettle,
     confirmSettle,
     cancelMatch,
     subFirst,

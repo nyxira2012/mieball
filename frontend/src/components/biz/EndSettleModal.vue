@@ -1,27 +1,45 @@
 <template>
-  <!-- 终局结算弹窗（temp/打球页原型 .modal-wrap/.modal 逐字；全场唯一弹窗）：
-       胜方二选一（可改判）→ 比分 ± 可改 → ±积分预览（settleElo 纯函数实时算）→ 确认落账/取消对局。
-       z-110 fixed 居中（顶替退役 WinPopup 的层级生态）；遮罩可关 = closeSettle 保留比分回来重打。 -->
+  <!-- 确认窗（2.3 §4.3-4.6 重造）：到分自动 / 提前结算人工开——同一扇窗。数据全读
+       live store 视图（A4 画面不自算）：片号/比分/胜方预选吃 courts[].preselect，
+       两队名单吃 players[].courtNo/courtSide。多片各弹各的互不等待——页面一次只渲染
+       片号最小的一片，确认/关窗后下一片顶上（窗位在 store.settling Record）。
+       §4.6 联动：点胜方可改预选（防左右记反、分低方选不中）；± 改分胜方自动跟分高方、
+       平分清空禁确认。§4.5 窗内撤一分走后端 undo，响应视图驱动两路（auto 不够线自动关
+       回在打 / manual 保窗只改比分），窗内比分显示吃视图。
+       §4.11 ±积分预览当场算（settleElo，访客按新人初始等级 1500 代入当正常玩家、
+       不带旧半折——与后端 elo 镜像同口径）：预览只展示不落账，落账以确认响应 elo_rows
+       为准（显示吃视图）。§4.3-2 清零重开与取消对局的待确认入口收在窗里（仅全权可见，
+       emit 由页面危险确认槽接）；球友看窗只读：确认灰+旁注「请组织者或管理员确认」。
+       z-110 fixed 居中；遮罩不可关（批5b 验收官销号，§4.3-2 出口全在窗内——遮罩纯视觉
+       背板，无点击事件）：窗只按合同路径关——确认/清零/取消成功、auto 窗撤到分线下，
+       均由响应视图驱动；遮罩关窗会把待确认片困成「冻结但无处处理」。 -->
   <view class="mwrap" :class="{ on: visible }">
-    <!-- 遮罩层垫底（先渲染居下）：点空白处关窗 = closeSettle 保留比分回来重打 -->
-    <view class="mmask" @click="emit('close')" />
+    <view class="mmask" />
     <view class="modal">
-      <view class="md-kick">MATCH POINT · {{ courtName }}</view>
-      <view class="md-title">终局 <text class="bem">结算</text></view>
+      <view class="md-kick">CONFIRM · {{ courtName }}</view>
+      <view class="md-title">确认<text class="bem">结束</text></view>
 
-      <!-- 胜方点选：A 柠檬 / B 冰蓝 -->
+      <!-- 胜方点选：A 柠檬 / B 冰蓝；分低方与球友视角 .off 置灰 -->
       <view class="win-pick">
-        <view class="wp a" :class="{ on: winA }" @click="winA = true">
+        <view
+          class="wp a"
+          :class="{ on: winA === true, off: !full || !canA }"
+          @click="pick('a')"
+        >
           <view class="t">TEAM A</view>
           <view class="n">{{ namesA }}</view>
         </view>
-        <view class="wp b" :class="{ on: !winA }" @click="winA = false">
+        <view
+          class="wp b"
+          :class="{ on: winA === false, off: !full || !canB }"
+          @click="pick('b')"
+        >
           <view class="t">TEAM B</view>
           <view class="n">{{ namesB }}</view>
         </view>
       </view>
 
-      <!-- 大比分 + ± 改分（min 0） -->
+      <!-- 大比分 + ± 改分（min 0，只改本地；确认时随 confirmSettle 写回） -->
       <view class="md-score">
         <view class="md-side">
           <view class="num a">{{ sa }}</view>
@@ -46,113 +64,184 @@
             >
           </view>
         </view>
+      </view>
+      <view class="md-tools">
         <text class="edit">比分可点改</text>
+        <text v-if="full" class="md-undo" @click="undoInWindow">撤一分</text>
       </view>
 
-      <!-- ±积分预览（settleElo 纯函数，随胜方/比分实时变） -->
+      <!-- ±积分预览（胜队在前；平分未点胜方时不显示）；访客带「不计积分」标识（§4.11） -->
       <view v-for="(r, i) in preview" :key="i" class="elo-row">
-        <text class="nm">{{ r.name }}</text>
+        <text class="nm"
+          >{{ r.name
+          }}<text v-if="r.guest" class="gtag">访客 · 不计积分</text></text
+        >
         <text class="d" :class="r.up ? 'up' : 'dn'">{{
           r.up ? `+${r.d}` : `−${Math.abs(r.d)}`
         }}</text>
       </view>
-      <view class="md-note">访客半权重 · 输家少扣的俱乐部友好制</view>
+      <view class="md-note">±积分为当场估算 · 落账以结算为准</view>
 
       <view class="md-btns">
         <AppButton
           variant="pri"
           block
-          :disabled="!full"
-          @click="liveStore.confirmSettle(courtId, winA, sa, sb)"
-          >确认终局 · 排下一场</AppButton
+          :disabled="!canConfirm"
+          @click="onConfirm"
+          >确认结束 · 排下一场</AppButton
         >
         <view v-if="!full" class="md-full-tip">请组织者或管理员确认</view>
-        <view v-if="full" class="md-cancel" @click="emit('cancel')"
-          >取消对局</view
+        <view v-else-if="winA === null" class="md-full-tip"
+          >平分不分胜负 · 先点胜方</view
         >
+        <!-- 待确认的出口（§4.3-2 收在窗里，仅全权）：先弹后果再执行，确认槽在页面 -->
+        <view v-if="full" class="md-danger">
+          <text class="md-link" @click="emit('clear')">清零重开</text>
+          <text class="md-link danger" @click="emit('cancel')">取消对局</text>
+        </view>
       </view>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-/* 终局结算（2.1 §5 confirm-before-settle · 2.4 批2 按片；2.2 §4.8 确认收权 · 批3b 取消走确认槽）：
-   读 store.settling 快照 + 该片（courtId）的 A/B；本地态 winA/sa/sb 在快照开窗时重置；
-   确认直调 store（落账·排场·toast 都在 store，撒花由页面 watch history 做）；
-   「取消对局」emit 由页面确认槽接（A3 危险动作先确认），courtId 从 settling 取。
-   球友只能看：确认钮与 ± 改分钮置灰+旁注，取消对局不出现（store guard 兜底）。
-   预览行复用 WinChange 形状（settleElo 与落账同一入参 → 幂等一致）。 */
+/* 确认窗呈现与联动（2.3 §4.3-4.6；编排归页面）：本地态只有 winA/sa/sb——起点吃视图
+   （preselect/比分），± 只动本地（改完胜方跟分高方、平分清空），窗内撤分走后端、
+   响应视图回来重新对齐；确认/撤分直调 store（落账·关窗·toast 都在 store），
+   清零/取消 emit 由页面确认槽接（A3 危险动作先确认）。
+   联动纯函数（followWinner/canPickWinner）单一源在 store 模块，测试落 live-store.test.ts。
+   球友看窗只读：点选/±/撤置灰、确认灰+旁注；预览行复用 settleElo（访客代入 1500、
+   带旧半折的 shadow 位不传——与后端镜像同口径，elo.ts 半折清理归末批）。 */
 import { computed, ref, watch } from "vue";
 import AppButton from "@/components/ui/AppButton.vue";
-import { useLiveStore } from "@/stores/live";
-import { settleElo } from "@/utils/elo";
+import {
+  canPickWinner,
+  courtNoOf,
+  followWinner,
+  useLiveStore,
+} from "@/stores/live";
+import { settleElo, type EloPlayer } from "@/utils/elo";
 import { courtDisplayName } from "@/utils/format";
-import type { WinChange } from "@/api/types";
+import { RANK_INIT } from "@/utils/rotate";
+import type { LivePlayer } from "@/api/types";
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
-  /** 是否全权（组织者 ∨ 管理员，单一源在 live store）：确认/取消/± 改分的 UI 前置 */
-  full: { type: Boolean, default: false },
-  /** 结算中的片（settling.courtId 透传；对阵与片名读该片） */
+  /** 确认中的片（页面从 settlingCourtId 透传；0 起片序，写动作同键） */
   courtId: { type: Number, required: true },
 });
-const emit = defineEmits<{ (e: "close"): void; (e: "cancel"): void }>();
+/** 清零重开 / 取消对局：待确认时的出口入口在窗里，后果确认在页面（A3） */
+const emit = defineEmits<{ (e: "clear"): void; (e: "cancel"): void }>();
 
 const liveStore = useLiveStore();
+/** 全权单一源在 store（组织者 ∨ 管理员）：窗内一切手柄的前置闸 */
+const full = computed(() => liveStore.isFullPower);
 
-const winA = ref(true);
+/* 本地态：比分可 ± 纠偏、胜方可改预选——起点吃视图 */
+const winA = ref<boolean | null>(null);
 const sa = ref(0);
 const sb = ref(0);
-/* 快照开窗 → 本地态重置为快照值（胜方默认按比分大者；批5a 读 settling 多值的降级单值） */
+
+/** 这片的总账片行（片序 0 起 → 片号 1 走 courtNoOf 单点）与两队名单（视图单一源） */
+const courtRow = computed(() =>
+  liveStore.liveView?.courts.find(
+    (c) => c.courtNo === courtNoOf(props.courtId),
+  ),
+);
+function sideRows(side: "a" | "b"): LivePlayer[] {
+  return (
+    liveStore.liveView?.players.filter(
+      (p) => p.courtNo === courtNoOf(props.courtId) && p.courtSide === side,
+    ) ?? []
+  );
+}
+
+const courtName = computed(() =>
+  courtDisplayName(
+    liveStore.live?.courts.find((c) => c.id === props.courtId)?.name ?? "",
+  ),
+);
+const namesA = computed(() =>
+  sideRows("a")
+    .map((p) => p.name)
+    .join(" / "),
+);
+const namesB = computed(() =>
+  sideRows("b")
+    .map((p) => p.name)
+    .join(" / "),
+);
+
+/* 开窗与窗内撤分共用一条对齐路：视图比分/预选变 → 本地态重置（± 只动本地不触发；
+   撤分响应视图回来这里对齐——auto 不够线窗自动关、manual 保窗只改比分）。
+   preselect 是视图算好的定值（领先方/平分 null，A4），与 followWinner 同一口径 */
 watch(
-  () => liveStore.settlingOne,
-  (s) => {
-    if (!s) return;
-    sa.value = s.sa;
-    sb.value = s.sb;
-    winA.value = s.sa >= s.sb;
+  () =>
+    [props.courtId, courtRow.value?.scoreA, courtRow.value?.scoreB] as const,
+  ([, a, b]) => {
+    sa.value = a ?? 0;
+    sb.value = b ?? 0;
+    winA.value =
+      courtRow.value?.preselect === "a"
+        ? true
+        : courtRow.value?.preselect === "b"
+          ? false
+          : null; // 平分不预选（§4.4）
   },
   { immediate: true },
 );
 
-/** 结算中的这片（阵面/片名单一来源） */
-const court = computed(() =>
-  liveStore.live?.courts.find((c) => c.id === props.courtId),
-);
+/** 分低方选不中（§4.6）；平分双方均可点 */
+const canA = computed(() => canPickWinner(sa.value, sb.value, "a"));
+const canB = computed(() => canPickWinner(sa.value, sb.value, "b"));
+/** 确认闸：全权 + 已点胜方（平分未点禁确认） */
+const canConfirm = computed(() => full.value && winA.value !== null);
 
-/** 片显示名（court.name 存场地号 '3号' → '3号场'，单一源 format.courtDisplayName） */
-const courtName = computed(() => courtDisplayName(court.value?.name ?? ""));
-
-const namesA = computed(() =>
-  (court.value?.A ?? []).map((id) => liveStore.byId(id).name).join(" / "),
-);
-const namesB = computed(() =>
-  (court.value?.B ?? []).map((id) => liveStore.byId(id).name).join(" / "),
-);
-
-/** ± 改分：min 0（只改弹窗本地值，确认时随 confirmSettle 写回）；
-    §4.8 球友只能看：± 钮置灰（off 样式）+ 此处拦截，双保险 */
-function adj(side: "a" | "b", d: number): void {
-  if (!props.full) return;
-  if (side === "a") sa.value = Math.max(0, sa.value + d);
-  else sb.value = Math.max(0, sb.value + d);
+/** 点胜方（防左右记反，可改预选）；球友只看不点 */
+function pick(side: "a" | "b"): void {
+  if (!full.value || !canPickWinner(sa.value, sb.value, side)) return;
+  winA.value = side === "a";
 }
 
-/** ±积分预览：胜者在前（与 settleElo 返回序一致）；负号用 −（U+2212，模板里拼） */
-const preview = computed<WinChange[]>(() => {
-  const c = court.value;
-  if (!c) return [];
-  const wIds = winA.value ? c.A : c.B;
-  const lIds = winA.value ? c.B : c.A;
-  const users = [...wIds, ...lIds].map((id) => liveStore.byId(id));
-  return settleElo(users.slice(0, wIds.length), users.slice(wIds.length)).map(
-    (r, i) => ({
-      name: users[i].name,
-      up: r.up,
-      d: r.d,
-    }),
-  );
+/** ± 改分：改完胜方自动跟分高方、平分清空（分低的一方当不了胜方——前端联动，
+    后端 settle-confirm 仍把关） */
+function adj(side: "a" | "b", d: number): void {
+  if (!full.value) return;
+  if (side === "a") sa.value = Math.max(0, sa.value + d);
+  else sb.value = Math.max(0, sb.value + d);
+  winA.value = followWinner(sa.value, sb.value);
+}
+
+/** 窗内撤一分（§4.5）：够不够分线、关不关窗，两路都由后端 undo 判——
+    响应视图落地后上面的 watch 对齐窗内比分 */
+function undoInWindow(): void {
+  if (!full.value) return;
+  void liveStore.undoPoint(props.courtId);
+}
+
+/** ±积分预览（§4.11 当场估算，只展示不落账）：settleElo 与后端 elo 镜像同公式口径
+    （K=24；访客按新人初始等级 1500 代入当正常玩家）；胜队在前 */
+const preview = computed(() => {
+  if (winA.value === null) return [];
+  const w = sideRows(winA.value ? "a" : "b");
+  const l = sideRows(winA.value ? "b" : "a");
+  const asPlayer = (p: LivePlayer): EloPlayer => ({
+    // 访客代入初始等级、不带 shadow（elo.ts 的半折是待清旧口径，后端镜像已去半折）
+    elo: p.guest ? RANK_INIT : liveStore.byId(p.id).elo,
+  });
+  const all = [...w, ...l];
+  return settleElo(w.map(asPlayer), l.map(asPlayer)).map((r, i) => ({
+    name: all[i]!.name,
+    guest: all[i]!.guest,
+    up: r.up,
+    d: r.d,
+  }));
 });
+
+function onConfirm(): void {
+  if (winA.value === null) return;
+  void liveStore.confirmSettle(props.courtId, winA.value, sa.value, sb.value);
+}
 </script>
 
 <style lang="scss" scoped>
@@ -166,7 +255,7 @@ const preview = computed<WinChange[]>(() => {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  pointer-events: none; /* 关窗态不挡页面；on 态整层可点（遮罩关/卡片操作） */
+  pointer-events: none; /* 关窗态不挡页面；on 态整层可点（窗内操作；遮罩纯视觉不可关窗） */
 }
 .mwrap.on {
   pointer-events: auto;
@@ -269,6 +358,11 @@ const preview = computed<WinChange[]>(() => {
 .wp.b.on .t {
   color: var(--ice);
 }
+/* 分低方选不中 / 球友只看（§4.6/§4.3）：置灰不可点，预选高亮仍可见 */
+.wp.off {
+  opacity: 0.45;
+  pointer-events: none;
+}
 
 /* ---------- 大比分 + ± 小钮 ---------- */
 .md-score {
@@ -276,7 +370,7 @@ const preview = computed<WinChange[]>(() => {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  margin: 4px 0 14px;
+  margin: 4px 0 10px;
 }
 .md-side {
   display: flex;
@@ -300,11 +394,6 @@ const preview = computed<WinChange[]>(() => {
   font-size: 22px;
   color: var(--coral);
 }
-.md-score .edit {
-  font-size: 10px;
-  color: var(--dim);
-  align-self: center;
-}
 .adj {
   display: flex;
   gap: 6px;
@@ -326,10 +415,32 @@ const preview = computed<WinChange[]>(() => {
   border-color: var(--lemon);
   color: var(--lemon);
 }
-/* 球友只看（§4.8）：± 置灰与确认钮（AppButton disabled）同一观感 */
+/* 球友只看（§4.3）：± 置灰与确认钮（AppButton disabled）同一观感 */
 .adj-btn.off {
   opacity: 0.35;
   pointer-events: none;
+}
+/* 比分注 + 窗内撤一分（§4.5，仅全权）：撤走后端 undo、两路关留在响应视图 */
+.md-tools {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.edit {
+  font-size: 10px;
+  color: var(--dim);
+}
+.md-undo {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  cursor: pointer;
+  text-decoration: underline dotted rgba(245, 241, 232, 0.3);
+}
+.md-undo:active {
+  color: var(--lemon);
 }
 
 /* ---------- ±积分预览行 ---------- */
@@ -347,6 +458,13 @@ const preview = computed<WinChange[]>(() => {
   flex: 1;
   font-size: 12px;
   font-weight: 600;
+}
+.elo-row .gtag {
+  margin-left: 6px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 400;
+  color: var(--lilac);
 }
 .elo-row .d {
   font-family: var(--mono);
@@ -377,19 +495,28 @@ const preview = computed<WinChange[]>(() => {
   font-size: 11px;
   color: var(--dim);
 }
-.md-cancel {
-  border: 1px solid rgba(255, 90, 54, 0.4);
-  background: none;
-  color: var(--coral);
-  font-size: 13px;
-  font-weight: 600;
-  font-family: var(--sans);
-  border-radius: 16px;
-  padding: 11px 0;
-  text-align: center;
+/* 待确认的出口（§4.3-2 收在窗里，仅全权）：清零重开 / 取消对局 */
+.md-danger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+}
+.md-link {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
   cursor: pointer;
 }
-.md-cancel:active {
-  background: rgba(255, 90, 54, 0.1);
+.md-link:active {
+  color: var(--lemon);
+}
+.md-link.danger {
+  color: var(--coral);
+  opacity: 0.85;
+}
+.md-link.danger:active {
+  color: var(--coral);
+  opacity: 1;
 }
 </style>
