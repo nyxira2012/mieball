@@ -1,14 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { ELO_K, fmtScore, ntrp, settleElo, tier } from "@/utils/elo";
+import {
+  ELO_FLOOR,
+  ELO_INIT,
+  ELO_K,
+  duprTier,
+  fmtDupr,
+  fmtDupr1,
+  fmtScore,
+  ntrp,
+  settleElo,
+  tier,
+} from "@/utils/elo";
 
 /** 手工对照 alpha:1688-1714 公式的推演值：
     exp = 1/(1+10^((lAvg-wAvg)/400))，delta=max(1,round(24*(1-exp)))，loss=max(1,round(delta*0.6)) */
-describe("elo settleElo（K=24 · 败方六成 · 地板 400 · 访客 1500 全额 · 双打人均）", () => {
-  it("同分 1500 vs 1500：涨 12 / 扣 7", () => {
-    const r = settleElo([{ elo: 1500 }], [{ elo: 1500 }]);
+describe("elo settleElo（K=24 · 败方六成 · 地板 800 · 访客 1200 全额 · 双打人均）", () => {
+  it("常量：初始 1200 / 地板 800 / K=24（1.4 §3 参数迁移）", () => {
+    expect(ELO_INIT).toBe(1200);
+    expect(ELO_FLOOR).toBe(800);
+    expect(ELO_K).toBe(24);
+  });
+
+  it("同分 1200 vs 1200：涨 12 / 扣 7", () => {
+    const r = settleElo([{ elo: 1200 }], [{ elo: 1200 }]);
     // exp=0.5 → delta=round(24*0.5)=12；loss=round(12*0.6)=round(7.2)=7
-    expect(r[0]).toEqual({ up: true, d: 12, elo: 1512 });
-    expect(r[1]).toEqual({ up: false, d: -7, elo: 1493 });
+    expect(r[0]).toEqual({ up: true, d: 12, elo: 1212 });
+    expect(r[1]).toEqual({ up: false, d: -7, elo: 1193 });
   });
 
   it("强者胜弱者：小涨（1600 胜 1400 → +6 / -4）", () => {
@@ -29,18 +46,18 @@ describe("elo settleElo（K=24 · 败方六成 · 地板 400 · 访客 1500 全�
     expect(r[1].elo).toBe(1589);
   });
 
-  it("访客按新人初始等级 1500 代入、同公式全额（2.3 修订②翻案：旧半折口径作废）", () => {
-    // 访客代入 1500 打 1400 正式球友并赢：lAvg-wAvg=-100 → exp≈0.6401 → delta=round(8.64)=9
-    // → loss=round(5.4)=5；无半折无另册——代入值当正常玩家算
-    const r = settleElo([{ elo: 1500 }], [{ elo: 1400 }]);
-    expect(r[0]).toEqual({ up: true, d: 9, elo: 1509 });
-    expect(r[1]).toEqual({ up: false, d: -5, elo: 1395 });
+  it("访客按初始 1200 代入、同公式全额（1.4 §4：访客 Elo 恒 1200，自己不落账）", () => {
+    // 访客代入 1200 打 1400 正式球友并赢：lAvg-wAvg=200 → exp≈0.2403 → delta=round(18.23)=18
+    // → loss=round(10.8)=11；无半折无另册——代入值当正常玩家算
+    const r = settleElo([{ elo: 1200 }], [{ elo: 1400 }]);
+    expect(r[0]).toEqual({ up: true, d: 18, elo: 1218 });
+    expect(r[1]).toEqual({ up: false, d: -11, elo: 1389 });
   });
 
-  it("地板 400：401 输 1 分也只到 400", () => {
-    const r = settleElo([{ elo: 1500 }], [{ elo: 401 }]);
-    // 碾压 → delta=max(1,0)=1 → loss=max(1,round(0.6))=1 → max(400, 400)=400
-    expect(r[1].elo).toBe(400);
+  it("地板 800：801 输 1 分也只到 800", () => {
+    const r = settleElo([{ elo: 1200 }], [{ elo: 801 }]);
+    // 碾压 → exp≈0.909 → delta=round(2.19)=2 → loss=round(1.2)=1 → max(800, 800)=800
+    expect(r[1].elo).toBe(800);
     expect(r[1].d).toBe(-1);
   });
 
@@ -54,9 +71,34 @@ describe("elo settleElo（K=24 · 败方六成 · 地板 400 · 访客 1500 全�
     expect(r.map((x) => x.elo)).toEqual([1612, 1412, 1493, 1493]);
     expect(r.map((x) => x.up)).toEqual([true, true, false, false]);
   });
+});
 
-  it("K 常量 = 24（alpha:1697）", () => {
-    expect(ELO_K).toBe(24);
+describe("DUPR 展示（1.4 §1/§2：三位小数 + 段位档）", () => {
+  it("fmtDupr 三位小数（主数字形态）", () => {
+    expect(fmtDupr(3.52)).toBe("3.520");
+    expect(fmtDupr(3.5)).toBe("3.500");
+    expect(fmtDupr(4)).toBe("4.000");
+    expect(fmtDupr(2.875)).toBe("2.875");
+  });
+
+  it("fmtDupr1 一位小数（现场小字）", () => {
+    expect(fmtDupr1(3.52)).toBe("3.5");
+    expect(fmtDupr1(3.48)).toBe("3.5");
+    expect(fmtDupr1(2.44)).toBe("2.4");
+    expect(fmtDupr1(4.04)).toBe("4.0");
+  });
+
+  it("duprTier 段位边界：2.5 / 3.0 / 3.5 / 4.0 各档左闭右开", () => {
+    expect(duprTier(2.0)).toBe("2.0");
+    expect(duprTier(2.499)).toBe("2.0");
+    expect(duprTier(2.5)).toBe("2.5");
+    expect(duprTier(2.999)).toBe("2.5");
+    expect(duprTier(3.0)).toBe("3.0");
+    expect(duprTier(3.499)).toBe("3.0");
+    expect(duprTier(3.5)).toBe("3.5");
+    expect(duprTier(3.999)).toBe("3.5");
+    expect(duprTier(4.0)).toBe("4.0+");
+    expect(duprTier(4.6)).toBe("4.0+");
   });
 });
 

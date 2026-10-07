@@ -115,7 +115,7 @@ function mkLiveView(p: Partial<LiveViewApi> = {}): LiveViewApi {
   };
 }
 
-/** 名册行速造（arrived 起笔；不在片不在队） */
+/** 名册行速造（arrived 起笔；不在片不在队；dupr 默认 3.0=后端访客/缺档兜底） */
 const pl = (
   id: number,
   accountId: number | null,
@@ -126,6 +126,7 @@ const pl = (
   name: accountId != null ? `u${accountId}` : `访客${id}`,
   guest: accountId == null,
   guarantor_account_id: null,
+  dupr: 3.0,
   dropin: false,
   check: "ok",
   arrive_at: null,
@@ -180,6 +181,7 @@ function vMid(seq = 7): LiveViewApi {
         account_id: 5,
         name: "亮马河快攻",
         guest: false,
+        dupr: 3.42,
         guarantor_account_id: null,
         dropin: false,
         check: "ok",
@@ -196,6 +198,7 @@ function vMid(seq = 7): LiveViewApi {
         account_id: null,
         name: "亮的球友·1",
         guest: true,
+        dupr: 3.0,
         guarantor_account_id: 5,
         dropin: false,
         check: "join",
@@ -212,6 +215,7 @@ function vMid(seq = 7): LiveViewApi {
         account_id: 0,
         name: "我",
         guest: false,
+        dupr: 3.28,
         guarantor_account_id: null,
         dropin: true,
         check: "ok",
@@ -382,13 +386,16 @@ describe("applyLiveView（批4 阶段2：总账视图 → 本地 LiveState 幂�
     const [li, guest, me, zhao] = L.roster;
     expect(li.id).toBe(101); // User.id = 名册行 id（写动作靶位，与 queue/片位同键）
     expect(li.elo).toBe(1574); // accountId 5 → 借 U.li 展示位
+    expect(li.dupr).toBe(3.42); // dupr 吃视图行真值（> mock U.li 借位 3.3）
     expect(li.chibi).toEqual(U.li.chibi);
     expect(li.check).toBe("ok");
     expect(li.arriveAt).toBe("2026-10-07T19:02:00+08:00");
     expect(guest.shadow).toBe(true); // 访客 shadow 标记
-    expect(guest.elo).toBe(1500); // 查无者默认展示位＝后端初始等第（RANK_INIT）
+    expect(guest.elo).toBe(1200); // 查无者默认展示位＝后端初始等第（ELO_INIT）
+    expect(guest.dupr).toBe(3.0); // 访客 dupr 后端回 GUEST_DUPR
     expect(guest.chibi).toEqual({});
     expect(me.elo).toBe(1518); // accountId 0 → 借 U.me
+    expect(me.dupr).toBe(3.28); // 视图真值覆写 mock U.me 的 3.2（整拷上改）
     expect(me.dropin).toBe(true);
     expect(zhao.shadow).toBeUndefined(); // 覆写对称：mock U.zhao 自带 shadow、行非访客 → 清掉（批5a Nit）
     expect(L.queue).toEqual([103]); // 候场队序
@@ -426,6 +433,7 @@ describe("applyLiveView（批4 阶段2：总账视图 → 本地 LiveState 幂�
     expect(live.liveView?.totalSeq).toBe(7); // 最近视图持有
     expect(live.recap).toBeNull(); // 未散场不持有回看
     expect(U.li.elo).toBe(1574); // 整拷：mock U 不被重建污染
+    expect(U.me.dupr).toBe(3.2); // dupr 回填同样只改拷贝
     // 幂等：同视图重放不漂移（空片不重复补、队列不重排）
     const { toLiveView } = await import("@/api/live");
     live.applyLiveView(toLiveView(vMid()));
@@ -718,16 +726,16 @@ describe("待确认窗（§4.3-4.6：到分 auto / 提前结算 manual / 窗内�
                 account_id: 0,
                 name: "我",
                 guest: false,
-                rating_before: 1500,
-                rating_after: 1522,
+                rating_before: 1200,
+                rating_after: 1222,
                 delta: 22,
               },
               {
                 account_id: null,
                 name: "亮的球友·1",
                 guest: true,
-                rating_before: 1500,
-                rating_after: 1510,
+                rating_before: 1200,
+                rating_after: 1210,
                 delta: 10,
               },
             ],
@@ -1002,7 +1010,7 @@ describe("swapPlayers（§4.9 球友开放：无 guard、全场写只带总号�
       {
         id: 9001,
         name: "帮手·1",
-        elo: 1500,
+        elo: 1200,
         play: 0,
         win: 0,
         month: 0,
@@ -1013,7 +1021,7 @@ describe("swapPlayers（§4.9 球友开放：无 guard、全场写只带总号�
       {
         id: 9002,
         name: "帮手·2",
-        elo: 1500,
+        elo: 1200,
         play: 0,
         win: 0,
         month: 0,
@@ -1721,8 +1729,8 @@ describe("批6 走查销号（P1/P2/P3）", () => {
             account_id: null,
             name: "亮的球友·1",
             guest: true,
-            rating_before: 1500,
-            rating_after: 1490,
+            rating_before: 1200,
+            rating_after: 1190,
             delta: -10,
           },
           {
@@ -1739,7 +1747,7 @@ describe("批6 走查销号（P1/P2/P3）", () => {
     const { live } = await apply(v);
     const [li, guest, me] = live.live!.roster;
     expect(li.elo).toBe(1586); // 后一场覆盖前一场（1574 恰是 mock U.li 旧借位——必须吃到新值）
-    expect(guest.elo).toBe(1490); // 访客按开账定格名回填 rating_after（展示位本就近真值）
+    expect(guest.elo).toBe(1190); // 访客按开账定格名回填 rating_after（展示位本就近真值）
     expect(me.elo).toBe(1506); // 负 delta 同样回填
     expect(U.li.elo).toBe(1574); // mock U 本体不被重建污染（借拷贝已改 elo 位）
     expect(U.me.elo).toBe(1518);

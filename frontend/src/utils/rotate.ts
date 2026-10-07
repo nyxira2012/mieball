@@ -16,16 +16,14 @@ export function usedCourts(live: LiveState): number {
 /* ───────── 2.4 引擎（多片并行 · 纯函数）─────────
    合同 docs/2.4 §4.4-4.8：只管轮换，Elo/history/round 落账归 store 编排。 */
 
-/** 均衡排序的初始分（2.4 §8 定值：没打过的新人与访客按 1500 参与排序；战力册将来沿用） */
-export const RANK_INIT = 1500;
+/** 均衡排序用分（1.4 §6 消费矩阵：配对吃 DUPR——未定级以自评档代位）：dupr 直用，
+    访客/缺数兜底 3.0（对齐后端 GUEST_DUPR，1.4 §4 访客 DUPR 恒 3.0） */
+export function rankOf(p: User | undefined): number {
+  return p?.dupr ?? 3.0;
+}
 
 /** 每片人数单一源（双打 4 / 单打 2）——myRound/差人卡/发牌同口径，消灭 4 人硬编码 */
 export const courtSize = (singles: boolean): number => (singles ? 2 : 4);
-
-/** 均衡排序用分：打过的按 elo，没打过按初始分（2.4 §4.5） */
-export function rankOf(p: User | undefined): number {
-  return p && p.play > 0 ? p.elo : RANK_INIT;
-}
 
 /** 片数单一源：订场登记优先（片数是花钱定下的默认值），未登记回退 maxPlayers≥12 三片否则两片。
    推荐矩阵与建片（store syncCourts）同源消费。 */
@@ -97,7 +95,7 @@ export function takeFromQueue(live: LiveState, n: number): number[] {
 }
 
 /** 全新一队分边（2.4 §4.5）：ids 已是队序。
-    queue → 第 1、2 位一队、第 3、4 位一队；balance → 积分强到弱（同分按队序先后，不掷骰子），
+    queue → 第 1、2 位一队、第 3、4 位一队；balance → DUPR 强到弱（同分按队序先后，不掷骰子），
     最强+最弱 vs 二三——不让两个高手挤同一边；上场永远队序，均衡只管分边不越序挑人。
     单打（2 人）没有分队一说：一左一右。 */
 export function splitSides(live: LiveState, ids: number[], pairing: PairingMode): { A: number[]; B: number[] } {

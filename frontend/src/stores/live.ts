@@ -65,7 +65,6 @@ import type {
   User,
 } from "@/api/types";
 import {
-  RANK_INIT,
   activePlayers,
   courtCount,
   courtSize,
@@ -73,6 +72,7 @@ import {
   pById,
   usedCourts,
 } from "@/utils/rotate";
+import { ELO_INIT } from "@/utils/elo";
 import { recommend } from "@/utils/recommend";
 import { isOrg } from "@/utils/format";
 import { toIso } from "@/utils/time";
@@ -1033,6 +1033,7 @@ export const useLiveStore = defineStore("live", () => {
         id: -1,
         name: "—",
         elo: 0,
+        dupr: 3.0, // 查无行展示兜底＝GUEST_DUPR（1.4 §4）
         play: 0,
         win: 0,
         month: 0,
@@ -1064,7 +1065,8 @@ export const useLiveStore = defineStore("live", () => {
       - roster 整拷 mock U 同 accountId 者的展示位（chibi/elo/战绩）——不借引用：
         总账时代 elo 真值在后端，不往 mock U 回写；最近 matches[].eloRows 按人
         回填 elo 展示位（批6 P3：确认落账即显新等级，访客 rating_after 同吃）；
-        访客/查无者补默认位（elo=RANK_INIT）；fire/shadow/dropin 对称覆写（借来的旧位不残留）；
+        访客/查无者补默认位（elo=ELO_INIT 1200、dupr 吃视图行——后端访客回 3.0）；
+        fire/shadow/dropin 对称覆写（借来的旧位不残留）；
       - g 只局部重建（现场克隆不回写局簿的旧约不变）：scoring/片名回填，片数吃
         courts_count 真值（courtCount 单一源读到即对表）；stub 兜底局（组织者 -1）
         在局簿详情到位后让位真局（深链冷设备两段路，批6 P2）；
@@ -1110,7 +1112,7 @@ export const useLiveStore = defineStore("live", () => {
         : {
             id: p.id,
             name: p.name,
-            elo: RANK_INIT,
+            elo: ELO_INIT,
             play: 0,
             win: 0,
             month: 0,
@@ -1120,6 +1122,7 @@ export const useLiveStore = defineStore("live", () => {
         p.accountId != null ? `a${p.accountId}` : `n${p.name}`,
       );
       if (elo != null) u.elo = elo; // 结算行真值 > mock 借位（拷贝上改，访客同样回填）
+      u.dupr = p.dupr; // 视图行 dupr 真值直落展示位（配对 rankOf 消费；访客后端已回 3.0）
       u.id = p.id; // 名册行 id（写动作靶位），与 queue/片位同键
       u.name = p.name; // 开账定格名（注销者占位名/访客编号名照显）
       u.shadow = p.guest || undefined;

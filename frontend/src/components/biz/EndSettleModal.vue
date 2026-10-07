@@ -6,7 +6,7 @@
        §4.6 联动：点胜方可改预选（防左右记反、分低方选不中）；± 改分胜方自动跟分高方、
        平分清空禁确认。§4.5 窗内撤一分走后端 undo，响应视图驱动两路（auto 不够线自动关
        回在打 / manual 保窗只改比分），窗内比分显示吃视图。
-       §4.11 ±积分预览当场算（settleElo，访客按新人初始等级 1500 代入当正常玩家——
+       §4.11 ±积分预览当场算（settleElo，访客按初始等级 1200 代入当正常玩家——
        与后端 elo 镜像同口径）：预览只展示不落账，落账以确认响应 elo_rows
        为准（显示吃视图）。§4.3-2 清零重开与取消对局的待确认入口收在窗里（仅全权可见，
        emit 由页面危险确认槽接）；球友看窗只读：确认灰+旁注「请组织者或管理员确认」。
@@ -110,7 +110,7 @@
    响应视图回来重新对齐；确认/撤分直调 store（落账·关窗·toast 都在 store），
    清零/取消 emit 由页面确认槽接（A3 危险动作先确认）。
    联动纯函数（followWinner/canPickWinner）单一源在 store 模块，测试落 live-store.test.ts。
-   球友看窗只读：点选/±/撤置灰、确认灰+旁注；预览行复用 settleElo（访客代入 1500——
+   球友看窗只读：点选/±/撤置灰、确认灰+旁注；预览行复用 settleElo（访客代入 1200——
    与后端镜像同口径）。清扫态（store.sweepState）确认走 noRedeal=true：不排下一场不补位。 */
 import { computed, ref, watch } from "vue";
 import AppButton from "@/components/ui/AppButton.vue";
@@ -120,9 +120,8 @@ import {
   followWinner,
   useLiveStore,
 } from "@/stores/live";
-import { settleElo, type EloPlayer } from "@/utils/elo";
+import { ELO_INIT, settleElo, type EloPlayer } from "@/utils/elo";
 import { courtDisplayName } from "@/utils/format";
-import { RANK_INIT } from "@/utils/rotate";
 import type { LivePlayer } from "@/api/types";
 
 const props = defineProps({
@@ -220,14 +219,14 @@ function undoInWindow(): void {
 }
 
 /** ±积分预览（§4.11 当场估算，只展示不落账）：settleElo 与后端 elo 镜像同公式口径
-    （K=24；访客按新人初始等级 1500 代入当正常玩家）；胜队在前 */
+    （K=24；访客按初始等级 1200 代入当正常玩家——1.4 §4 访客 Elo 恒 1200）；胜队在前 */
 const preview = computed(() => {
   if (winA.value === null) return [];
   const w = sideRows(winA.value ? "a" : "b");
   const l = sideRows(winA.value ? "b" : "a");
   const asPlayer = (p: LivePlayer): EloPlayer => ({
-    // 访客代入新人初始等级（与后端 elo 镜像同口径：同公式全额，访客自己不落账）
-    elo: p.guest ? RANK_INIT : liveStore.byId(p.id).elo,
+    // 访客代入初始等级（与后端 elo 镜像同口径：同公式全额，访客自己不落账）
+    elo: p.guest ? ELO_INIT : liveStore.byId(p.id).elo,
   });
   const all = [...w, ...l];
   return settleElo(w.map(asPlayer), l.map(asPlayer)).map((r, i) => ({
