@@ -12,12 +12,21 @@
 - entries 的 Unique(game_id, account_id) 是报名幂等的天然键（并发抢坑由它兜底）。
 - intents.invited_at 非空即"已邀"标记（invite 置位、本人改意向清位）。
 
+账单域（1.3）bills / bill_rows：
+- 一场局一份账：bills.game_id unique——出账幂等（散场 end 与补填两个入口竞态/重放）
+  靠它兜底，谁先落库谁赢，第二本账建不出来。
+- 行不存状态列：说「转了」（paid_at）与点「收」（received_at）是两个时刻，三态由
+  两时刻推导（A4：状态是推导不是存储）；display_name 是出账那一刻的定格名，此后
+  改名/注销不动这笔账（视图组装时才做「已注销球友」占位转换）。
+
 现场域（2.3）live_state / live_players / live_courts / live_matches / elo_ratings：
 - live 域整体与局簿六表并列新建（不并入）：现场是 locked 局之上的"另一本账"，散场封存后
   局簿照旧走自己的派生态，现场表定格当底账。
 - 散场时刻只落 games.ended_at 一处（局簿终态锚，derive 吃它出 done）；live_state 不再
   冗余存一份——避免"两列都叫散场时刻"的双真值。
 - live_matches 落账即冻结：没有任何 UPDATE 入口（战报不可篡改是积分可信的地基，2.3 §6）。
+
+  一场一行按注册球员），dupr_ratings 缓存窗口重放结果——调参/纠偏重算即可，零迁移。
 """
 
 from __future__ import annotations
@@ -200,6 +209,48 @@ class Intent(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     # 非空 = "已邀"标记（invite 置位、本人改意向清位；意向列表排序依据）
     invited_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Bill(Base):
+    """一场局一份账（1.3 技术设计 §1）：出账即定格，账永久留档（无删除/改写入口）。
+
+    per_head = 向下抹零的整份（fee_total // heads）；账单日期不在此冗余存——
+    按散场那天（games.ended_at）归属，billed_at 只记出账时刻（补填的局=补填那刻）。
+    """
+
+    __tablename__ = "bills"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(
+        ForeignKey("games.id"), unique=True, nullable=False
+    )
+    fee_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    heads: Mapped[int] = mapped_column(Integer, nullable=False)
+    per_head: Mapped[int] = mapped_column(Integer, nullable=False)
+    billed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class BillRow(Base):
+    """摊钱名单每人一行（1.3 技术设计 §1）：正式/空降/早退/缺席的账号行一人一行
+    （候补从不进 live_players 故天然不进账）；访客不单独成行——份额归担保人
+    （guest_count=名下访客行数，share_count=1+guest_count）。amount 出账定格，
+    组织者行=总价−Σ非组织者（差额兜底，合计恒等于总价）。"""
+
+    __tablename__ = "bill_rows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    bill_id: Mapped[int] = mapped_column(
+        ForeignKey("bills.id"), nullable=False, index=True
+    )
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id"), nullable=False, index=True
+    )
+    display_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    guest_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    share_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class LiveState(Base):

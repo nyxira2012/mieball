@@ -141,6 +141,33 @@ def game_ended() -> ApiError:
     return ApiError(422, "game_ended", "球局已散场，费用已定死")
 
 
+# ---- 账单域（docs/1.3）----
+
+
+def game_not_ended() -> ApiError:
+    # 出账只挂散场（1.3 §4.7）：没散场的局不收补填总价
+    return ApiError(422, "game_not_ended", "球局还没散场，散场后才能定总价")
+
+
+def fee_already_set() -> ApiError:
+    # 价格定死不回头（1.3 §4.5 禁止项）：填过（含补 0）就没有第二个口子
+    return ApiError(409, "fee_already_set", "总价已定死，不能再改")
+
+
+def fee_invalid() -> ApiError:
+    return ApiError(422, "fee_invalid", "总价得是不小于 0 的整数")
+
+
+def bill_not_found() -> ApiError:
+    # 这场局没有账（未散场/未填价/0 元）——读链（批4）与 settle/receive（批5）用
+    return ApiError(404, "bill_not_found", "这场局还没有账")
+
+
+def not_on_bill() -> ApiError:
+    # 本人不在摊钱名单（settle 用，批5）：404 不泄漏别人的账（1.3 §4.6 看账边界）
+    return ApiError(404, "not_on_bill", "你不在这场局的摊钱名单里")
+
+
 # ---- 现场域（docs/2.3；球局域旧码一律不动） ----
 
 

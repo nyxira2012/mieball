@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..core import clock
-from ..db.models import Account, Entry, Game, Invite
+from ..db.models import Account, Bill, BillRow, Entry, Game, Invite
 from .accounts import person_view
 
 # 截止后照常可加到局结束（4.14）；done/terminated/cancelled/pending 不可加
@@ -85,6 +85,7 @@ def game_view(
         "manual_lock": game.manual_lock,
         "courts": list(game.courts) if game.courts is not None else None,
         "fee_total": game.fee_total,
+        "bill": bill_block(db, game, viewer_id),
         "status": status,
         "unlocked": game.unlocked_at is not None and now < game.start_at,
         "joinable": status in JOINABLE_STATUSES,
@@ -103,6 +104,30 @@ def game_view(
     if viewer_id is not None:
         view["my"] = my_block(db, game, viewer_id)
     return view
+
+
+def bill_block(db: Session, game: Game, viewer_id: int | None) -> dict | None:
+    """已出账局的实摊定值块（1.3 §3）：fee_total/per_head/heads 是引擎定格数，
+    my_share 按 viewer 在账行的 amount（不在摊钱名单/游客 → null）；未出账 → None
+    ——前端以块有无区分「约（预估）」与实摊（A4）。只给自己的行：别人摊多少、
+    结没结一字节不漏（§4.6 看账边界）。"""
+    bill = db.execute(select(Bill).where(Bill.game_id == game.id)).scalar_one_or_none()
+    if bill is None:
+        return None
+    mine = None
+    if viewer_id is not None:
+        mine = db.execute(
+            select(BillRow).where(
+                BillRow.bill_id == bill.id, BillRow.account_id == viewer_id
+            )
+        ).scalar_one_or_none()
+    return {
+        "fee_total": bill.fee_total,
+        "per_head": bill.per_head,
+        "heads": bill.heads,
+        "my_share": mine.amount if mine else None,
+        "my_guest_count": mine.guest_count if mine else None,
+    }
 
 
 def entry_rows(db: Session, game_id: int) -> list[dict]:

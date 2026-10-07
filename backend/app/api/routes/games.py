@@ -13,8 +13,9 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from ...db.models import Account
+from ...services.bills import BillBook
 from ...services.games import GameBook
-from ..deps import current_account, get_game_book, require_account
+from ..deps import current_account, get_bill_book, get_game_book, require_account
 
 router = APIRouter(prefix="/games", tags=["games"])
 
@@ -70,6 +71,12 @@ class InviteIn(BaseModel):
     """邀请表单（4.11）：邀谁（被邀不占坑，对方点不点加入随他）。"""
 
     account_id: int
+
+
+class FeeIn(BaseModel):
+    """补填总价表单（1.3 §4.5）：只开给散场过且从未填过价的局；免费的填 0。"""
+
+    fee_total: int
 
 
 @router.post("")
@@ -189,6 +196,32 @@ def clear_game_booking(
 ):
     """清空订场登记（4.7）：费用回未定、截止照常判人数；手动锁保留。"""
     return book.clear_booking(game_id=game_id, organizer_id=account.id)
+
+
+@router.get("/{game_id}/fee-preview")
+def game_fee_preview(
+    game_id: int,
+    amount: int,
+    account: Account = Depends(require_account),
+    bills: BillBook = Depends(get_bill_book),
+):
+    """补填确认步定值（1.3 §4.5）：「将按人均 X 元向 N 人出账」——按当前名册
+    现算不落库，组织者本人（管理员不碰钱，C2）。"""
+    return bills.preview(game_id=game_id, organizer_id=account.id, amount=amount)
+
+
+@router.post("/{game_id}/fee")
+def set_game_fee(
+    game_id: int,
+    body: FeeIn,
+    account: Account = Depends(require_account),
+    book: GameBook = Depends(get_game_book),
+    bills: BillBook = Depends(get_bill_book),
+):
+    """补填总价（1.3 §4.5）：>0 当场出账（账单日期仍记散场那天）、=0 只定值
+    不出账；价格就此定死。响应直出局视图（带 bill 块）。"""
+    bills.set_fee(game_id=game_id, organizer_id=account.id, fee_total=body.fee_total)
+    return book.detail(game_id=game_id, viewer_id=account.id)
 
 
 @router.post("/{game_id}/cancel")

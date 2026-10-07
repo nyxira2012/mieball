@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from ..core import errors
 from ..db.models import Account
 from ..services.accounts import AccountBook
+from ..services.bills import BillBook
 from ..services.games import GameBook
 from ..services.intents import IntentBook
 from ..services.keys import KeyVault
@@ -38,6 +39,10 @@ def get_intent_book(db: Session = Depends(get_db)) -> IntentBook:
 
 def get_live_book(db: Session = Depends(get_db)) -> LiveBook:
     return LiveBook(db)
+
+
+def get_bill_book(db: Session = Depends(get_db)) -> BillBook:
+    return BillBook(db)
 
 
 def bearer_token(authorization: str | None = Header(default=None)) -> str | None:
