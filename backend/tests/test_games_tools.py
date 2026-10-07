@@ -113,10 +113,10 @@ def test_booking_fee_half_up_and_editable_after_deadline(client: TestClient, fak
     assert out["courts"] == ["9号"] and out["fee_total"] == 7
     assert out["per_head"] == 4  # 3.5 → 4，人均跟着重算
 
-    fake.advance(hours=3)  # 21:00 已结束
-    assert_blocked(
-        book_court(client, org["token"], g["id"], fee_total=1), "game_not_open"
-    )
+    fake.advance(hours=3)  # 21:00 已过结束时刻（到点未散场）
+    # 改价窗口到散场确认为止（1.3 §4.5 修订①）：到点未散场仍可改，不再 game_not_open
+    out = book_court(client, org["token"], g["id"], courts=["9号"], fee_total=9).json()
+    assert out["status"] == "done" and out["fee_total"] == 9
 
 
 def test_booking_validation(client: TestClient):

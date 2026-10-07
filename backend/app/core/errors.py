@@ -136,6 +136,11 @@ def booking_invalid(msg: str = "订场登记没填好：场地号和总价都要
     return ApiError(422, "booking_invalid", msg)
 
 
+def game_ended() -> ApiError:
+    # 散场确认后总价定死（1.3 §4.5 修订①）：book/clear_booking 的改价窗口已关
+    return ApiError(422, "game_ended", "球局已散场，费用已定死")
+
+
 # ---- 现场域（docs/2.3；球局域旧码一律不动） ----
 
 

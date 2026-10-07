@@ -124,8 +124,10 @@
           @click="onQuit"
         >退出局</AppButton>
         <AppChip v-if="joined && !org && !canQuit && game.status !== 'done'" class="mid">已到截止 · 不能退出</AppChip>
-        <!-- 锁升级三态一入口（BookingSheet 批5 重排面板；这里先把动作与文案接上） -->
-        <template v-if="org && (game.status === 'open' || game.status === 'locked')">
+        <!-- 锁升级三态一入口（BookingSheet 批5 重排面板；这里先把动作与文案接上）。
+             live 态也开：改价窗口到散场确认前（1.3 §4.5 修订①，开打后加片/买水的钱改总价）；
+             done 态本批不接——补填形态批3 后接通 -->
+        <template v-if="org && (game.status === 'open' || game.status === 'locked' || game.status === 'live')">
           <AppButton variant="ghost" class="grow sure-btn" @click="onBooking">{{
             game.courts?.length
               ? `🔒 已订场 · ${game.courts.join('、')} · ¥${game.feeTotal}`

@@ -47,6 +47,10 @@
     </template>
     <EmptyBox v-else text="残局已清 · 没有挂在账上的对局了" />
 
+    <!-- 费用亮数行（1.3 §4.5 修订②：散场确认看着屏幕亮出的数字收工——数字全吃
+         视图 fee 块定值，组件不自算；费用未定亮「总价未定 · N 人」） -->
+    <view v-if="feeLine" class="sw-fee">{{ feeLine }}</view>
+
     <AppButton
       variant="burn"
       block
@@ -83,6 +87,16 @@ const emit = defineEmits<{
 }>();
 
 const liveStore = useLiveStore();
+
+/** 费用亮数行（1.3 §4.5 修订②）：总价定值 + 摊钱人头（后端账单口径）+ 人均；
+    无视图/无 fee 块不亮（旧数据容错） */
+const feeLine = computed(() => {
+  const f = liveStore.liveView?.fee;
+  if (!f) return "";
+  return f.total != null
+    ? `总价 ${f.total} · ${f.heads} 人 · 人均 ${f.perHead}`
+    : `总价未定 · ${f.heads} 人`;
+});
 
 /** 清单行视图一次拼好：片名借本地片行（场地名本地挂），比分/状态吃视图 */
 const rows = computed(() =>
@@ -174,6 +188,19 @@ const rows = computed(() =>
 }
 .all-cancel {
   margin-top: 4px;
+}
+.sw-fee {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 212, 0, 0.25);
+  background: rgba(255, 212, 0, 0.06);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--lemon);
 }
 .end-btn {
   margin-top: 8px;

@@ -259,6 +259,9 @@ export function toLiveView(
     startedAt: v.started_at,
     ended: v.ended,
     endedAt: v.ended_at,
+    fee: v.fee
+      ? { total: v.fee.total, heads: v.fee.heads, perHead: v.fee.per_head }
+      : null,
     totalSeq: v.total_seq,
     round: v.round,
     admins: [...v.admins],

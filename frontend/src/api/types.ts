@@ -462,12 +462,22 @@ export interface LiveRulesApi {
   streak_max: number; // 连庄上限
 }
 
+/** 费用亮数块（view.fee 镜像，1.3 批1 散场确认页）：total=订场登记总价（null=未定）；
+    heads=账单口径摊钱人头（正式/空降行每人 1 + 名下访客行数，后端定值）；
+    per_head=floor(total/heads)，未定时 null 但 heads 照给（亮「总价未定 · N 人」用） */
+export interface LiveFeeApi {
+  total: number | null;
+  heads: number;
+  per_head: number | null;
+}
+
 /** 总账读视图（GET /games/{id}/live 响应镜像）：进行中与散场后同一形状（散场=只读回看） */
 export interface LiveViewApi {
   game_id: number;
   started_at: string; // ISO · 开账时刻
   ended: boolean; // 已散场（games.ended_at 有值）
   ended_at: string | null; // ISO · 散场时刻
+  fee?: LiveFeeApi | null; // 费用亮数块（散场确认页吃它，1.3 批1）
   total_seq: number; // 全场总号：任何现场写 +1（轮询对表与写动作 base_total_seq 的基准）
   round: number; // 全场第几场（散场时收口定总数）
   admins: number[]; // 管理员 account_id 表（组织者 ∨ 本表 = 全权）
@@ -536,6 +546,13 @@ export interface LiveRules {
   streakMax: number;
 }
 
+/** 费用亮数块（camel）：LiveFeeApi 的映射产物 */
+export interface LiveFee {
+  total: number | null;
+  heads: number;
+  perHead: number | null;
+}
+
 /** 战报新结构（2.3）：片号/第几场/双方名单快照/比分/胜方是否 A/时刻/结算行。
     与旧 MatchHistory 双树为稳态，删旧归 1.3；sa/sb/winA 沿旧树短名。 */
 export interface MatchReport {
@@ -558,6 +575,7 @@ export interface LiveView {
   startedAt: string;
   ended: boolean;
   endedAt: string | null;
+  fee?: LiveFee | null; // 费用亮数块（散场确认页吃它，1.3 批1）
   totalSeq: number; // 轮询对表基准：变了才换画面（§4.8 几秒内全场同步）
   round: number;
   admins: number[];

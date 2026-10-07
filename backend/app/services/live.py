@@ -740,6 +740,7 @@ class LiveBook(LiveSweepMixin):
             "started_at": clock.iso(state.started_at),
             "ended": game.ended_at is not None,
             "ended_at": clock.iso(game.ended_at) if game.ended_at else None,
+            "fee": self._fee_block(game),
             "total_seq": state.total_seq,
             "round": state.round,
             "admins": state.admins or [],
@@ -785,6 +786,19 @@ class LiveBook(LiveSweepMixin):
         }
 
     # ---- 内部：写动作公共件与两级号机制（全部在 _write_lock 内调用） ----
+
+    def _fee_block(self, game: Game) -> dict:
+        """费用亮数块（1.3 §3 散场确认页）：总价=订场登记真值（null=未定）；人头=
+        账单口径的摊钱人头——正式/空降行每人 1 + 名下访客行数（与出账引擎同尺，
+        亮数与实摊一个数）；per_head=floor 向下抹零，未定价局为 null 但 heads 照给
+        （亮「总价未定 · N 人」用）。"""
+        rows = self._roster(game.id)
+        accounts = {p.account_id for p in rows if p.account_id is not None}
+        heads = len(accounts) + sum(
+            1 for p in rows if p.guarantor_account_id in accounts
+        )
+        per_head = game.fee_total // heads if game.fee_total is not None else None
+        return {"total": game.fee_total, "heads": heads, "per_head": per_head}
 
     @contextmanager
     def _write(self, *, game_id: int, actor_id: int):

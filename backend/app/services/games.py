@@ -38,8 +38,9 @@ from .game_views import (
 )
 
 VISIBILITIES = ("played", "public", "invite_only")
-# 工具箱（锁必打/订场/清空/撤局）的受理窗口：开打前；pending 是恢复后的待处置，
-# 锁/订场/撤局都是它的处置出口（4.9）
+# 工具箱（锁必打/撤局）的受理窗口：开打前；pending 是恢复后的待处置，
+# 锁/撤局是它的处置出口（4.9）。订场/清空不在此列——改价窗口已放宽到散场确认前
+# （1.3 §4.5 修订①），book/clear_booking 自行判窗（_check_booking_window）
 TOOLBOX_STATUSES = ("open", "locked", "pending")
 
 # 局簿写动作全串行：SQLite 无行锁，靠它保住"正式人头 ≤ max"的不变承诺（技术设计 §3）
@@ -359,7 +360,8 @@ class GameBook:
             self.db.commit()
             return self._view(game, viewer_id=organizer_id, with_entries=True)
 
-    # ---- 组织者工具箱（4.7 锁必打与订场 / 4.10 撤局 / 4.9 恢复；窗口一律开打前） ----
+    # ---- 组织者工具箱（4.7 锁必打 / 4.10 撤局 / 4.9 恢复，窗口开打前；
+    #      4.7 订场/清空窗口到散场确认前——1.3 §4.5 修订①） ----
 
     def lock(self, *, game_id: int, organizer_id: int) -> dict:
         """空锁必打（4.7）：不订场也锁"人数不足照开"；一锁不撤（清订场不松、无解锁）。
@@ -378,9 +380,10 @@ class GameBook:
     def book(
         self, *, game_id: int, organizer_id: int, courts: list[str], fee_total: int
     ) -> dict:
-        """订场登记（4.7）：订场发生在 app 外，这里只登记结果——最后写赢、可反复改；
-        填了场地号即必打、费用落定（人均按当前人数摊，最少保底作废）。名单锁只锁人，
-        截止后（locked）仍可改——临到场场馆换号很常见。"""
+        """订场登记（4.7 / 1.3 §4.5 修订①）：订场发生在 app 外，这里只登记结果——
+        最后写赢、可反复改；填了场地号即必打、费用落定（人均按当前人数摊，最少保底
+        作废）。名单锁只锁人，截止后（locked）仍可改——临到场场馆换号很常见；开打后
+        一样改（加一片场、中场买球买水的钱都往总价里加），窗口到散场确认为止。"""
         if not courts:
             raise errors.booking_invalid("至少填一个场地号")
         if fee_total < 0:
@@ -388,8 +391,7 @@ class GameBook:
         self._evaluate()
         with _write_lock:
             game = self._owned(game_id, organizer_id)
-            if derive(game, clock.now()) not in TOOLBOX_STATUSES:
-                raise errors.game_not_open()
+            self._check_booking_window(game)
             game.courts = list(courts)
             game.fee_total = fee_total
             if game.state == "pending":
@@ -398,12 +400,12 @@ class GameBook:
             return self._view(game, viewer_id=organizer_id, with_entries=True)
 
     def clear_booking(self, *, game_id: int, organizer_id: int) -> dict:
-        """清空订场登记（4.7）：费用回未定、截止照常判人数；手动锁一上不撤。幂等。"""
+        """清空订场登记（4.7）：费用回未定、截止照常判人数；手动锁一上不撤。幂等；
+        窗口同 book——散场确认前随时可清（清空即回未定）。"""
         self._evaluate()
         with _write_lock:
             game = self._owned(game_id, organizer_id)
-            if derive(game, clock.now()) not in TOOLBOX_STATUSES:
-                raise errors.game_not_open()
+            self._check_booking_window(game)
             game.courts = None
             game.fee_total = None
             self.db.commit()
@@ -497,6 +499,15 @@ class GameBook:
         if game.organizer_id != organizer_id:
             raise errors.not_organizer()
         return game
+
+    def _check_booking_window(self, game: Game) -> None:
+        """订场/清空的改价窗口（1.3 §4.5 修订①）：散场确认前随时可改——只锚
+        ended_at 与存储终态，不看派生态（开打中 live、到点未散场的 done 都在窗内）；
+        散场确认后总价定死（game_ended）。终态局仍走 game_not_open（语义不变）。"""
+        if game.ended_at is not None:
+            raise errors.game_ended()
+        if game.state in ("terminated", "cancelled"):
+            raise errors.game_not_open()
 
     def _viewer_game_ids(self, viewer_id: int | None) -> tuple[set[int], set[int]]:
         """该账号 (报过名的局 id 集, 被邀的局 id 集)；匿名两集皆空。"""
