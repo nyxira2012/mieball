@@ -18,9 +18,9 @@
         <view class="mname">{{ meName }}</view>
         <view class="mrecord">{{ record }}</view>
         <view class="mchips">
-          <!-- alpha:1939 me-elo：tierB 徽章 + ELO 分 + 段位（chip ok） -->
+          <!-- alpha:1939 me-elo 位（1.4 批4v1 切 DUPR）：tierB 徽章 + DUPR 分 + 档名（chip ok） -->
           <AppChip kind="ok">
-            <TierBadge :tier="meTier" /> ELO {{ me.elo }} · {{ meTier }} 段
+            <TierBadge :tier="meTier" /> DUPR {{ fmtDupr(me.dupr ?? 3.0) }} · {{ meTier }}
           </AppChip>
           <!-- alpha:656 尾号 chip：登录后是账号真实尾号，游客回落演示尾号 -->
           <AppChip>尾号 ···{{ session.phoneTail }}</AppChip>
@@ -49,7 +49,9 @@
     <view class="duo">
       <view class="d-card" @click="go('/pages/mine/signup')">
         <view class="d-t">参加登记</view>
-        <view class="d-s">共 {{ mySignups.length }} 局 · 签到 {{ myCheckins.length }} 次</view>
+        <view class="d-s"
+          >共 {{ mySignups.length }} 局 · 签到 {{ myCheckins.length }} 次</view
+        >
       </view>
       <view class="d-card" @click="go('/pages/mine/logs')">
         <view class="d-t">打球记录</view>
@@ -60,16 +62,28 @@
     <!-- 账号区（1.1/5.1 对齐）：密码与微信授权已随 MVP 下架（D1）；游客给找回入口 -->
     <SectionTitle title="账号" />
     <view class="acc-links">
-      <view v-if="session.isGuest" class="acc-link" @click="go('/pages/mine/login')">
+      <view
+        v-if="session.isGuest"
+        class="acc-link"
+        @click="go('/pages/mine/login')"
+      >
         登录 · 我是老球友（手机号找回） <text class="arr">▸</text>
       </view>
-          <view v-else class="acc-link" @click="go('/pages/mine/dress')">
-            手机号 {{ session.maskedPhone }} · 唯一钥匙 <text class="arr">▸</text>
-          </view>
+      <view v-else class="acc-link" @click="go('/pages/mine/dress')">
+        手机号 {{ session.maskedPhone }} · 唯一钥匙 <text class="arr">▸</text>
+      </view>
     </view>
     <view class="acc-row">
-      <AppButton variant="ghost" size="sm" class="grow" @click="onLogout">退出账号</AppButton>
-      <AppButton variant="ghost" size="sm" class="grow danger" @click="onDeleteAcc">注销账号</AppButton>
+      <AppButton variant="ghost" size="sm" class="grow" @click="onLogout"
+        >退出账号</AppButton
+      >
+      <AppButton
+        variant="ghost"
+        size="sm"
+        class="grow danger"
+        @click="onDeleteAcc"
+        >注销账号</AppButton
+      >
     </view>
   </PageShell>
 </template>
@@ -77,45 +91,59 @@
 <script setup lang="ts">
 /* 我的页（P10）· 5.1 我的页主页面：底账入口聚合（账单/登记/记录）+ 账号区。
    alpha:1931-1976 的 meName/战绩/ELO 段位口径保留，其余换装与账本逻辑退场。 */
-import { computed } from 'vue';
-import PageShell from '@/components/biz/PageShell.vue';
-import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
-import AppChip from '@/components/ui/AppChip.vue';
-import AppButton from '@/components/ui/AppButton.vue';
-import TierBadge from '@/components/ui/TierBadge.vue';
-import SectionTitle from '@/components/ui/SectionTitle.vue';
-import BillSummaryCard from '@/components/biz/BillSummaryCard.vue';
-import { games as seedGames } from '@/api';
-import { useUserStore } from '@/stores/user';
-import { useSessionStore } from '@/stores/session';
-import { useUiStore } from '@/stores/ui';
-import { useBillStore } from '@/stores/bill';
-import { isMe } from '@/utils/format';
-import { tier } from '@/utils/elo';
+import { computed } from "vue";
+import { onShow } from "@dcloudio/uni-app";
+import PageShell from "@/components/biz/PageShell.vue";
+import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AppChip from "@/components/ui/AppChip.vue";
+import AppButton from "@/components/ui/AppButton.vue";
+import TierBadge from "@/components/ui/TierBadge.vue";
+import SectionTitle from "@/components/ui/SectionTitle.vue";
+import BillSummaryCard from "@/components/biz/BillSummaryCard.vue";
+import { games as seedGames } from "@/api";
+import { useUserStore } from "@/stores/user";
+import { useSessionStore } from "@/stores/session";
+import { useUiStore } from "@/stores/ui";
+import { useBillStore } from "@/stores/bill";
+import { isMe } from "@/utils/format";
+import { duprTier, fmtDupr } from "@/utils/elo";
 
 const user = useUserStore();
 const session = useSessionStore();
 const ui = useUiStore();
 const bill = useBillStore();
 
+/* 账单卡三数（1.3 批4）：全量口径后端定值，进页拉一次（游客=演示视图；断网静默沿用上次） */
+onShow(() => {
+  bill.loadTotal().catch(() => undefined);
+});
+
 /* 登记口径（隔离线，与登记页 signup.vue 同式）：我组织/已报名 且未终止 */
 const mySignups = computed(() =>
-  seedGames.filter((g) => !g.dead && (isMe(g.organizer.id) || g.joined.some((e) => isMe(e.u.id)))),
+  seedGames.filter(
+    (g) =>
+      !g.dead && (isMe(g.organizer.id) || g.joined.some((e) => isMe(e.u.id))),
+  ),
 );
-const myCheckins = computed(() => mySignups.value.filter((g) => g.status === 'done' && !!g.myLog?.checkIn));
+const myCheckins = computed(() =>
+  mySignups.value.filter((g) => g.status === "done" && !!g.myLog?.checkIn),
+);
 
 /** 账号区行的手机号打码口径在 session store（maskedPhone 单一源，AccountSheet 同消费） */
 
 /** 我（alpha:1935 U.me；user store 与 games/live 同源引用，装扮保存全产品同步） */
 const me = computed(() => user.me);
 /** alpha:1937：默认名「我」显示为「我的球场小人」 */
-const meName = computed(() => (me.value.name === '我' ? '我的球场小人' : me.value.name));
+const meName = computed(() =>
+  me.value.name === "我" ? "我的球场小人" : me.value.name,
+);
 /** alpha:1938 战绩行：N 场 · N 胜 · 胜率 N% */
 const record = computed(
-  () => `${me.value.play} 场 · ${me.value.win} 胜 · 胜率 ${Math.round((me.value.win / me.value.play) * 100)}%`,
+  () =>
+    `${me.value.play} 场 · ${me.value.win} 胜 · 胜率 ${Math.round((me.value.win / me.value.play) * 100)}%`,
 );
-/** alpha:1939 ELO chip 的段位（utils/elo.ts tier） */
-const meTier = computed(() => tier(me.value.elo));
+/** DUPR chip 的档名（utils/elo.ts duprTier；未填按 3.0 起步档） */
+const meTier = computed(() => duprTier(me.value.dupr ?? 3.0));
 
 /* —— 导航（uni 路由集中在页面层，store 不碰 uni.*；路由在模板处直读） —— */
 function go(url: string): void {
@@ -123,14 +151,14 @@ function go(url: string): void {
 }
 /** 档案卡弹层 = 别人看到的完整档案卡（userId 0 = 我） */
 function onProfileCard(): void {
-  ui.openSheet({ type: 'profile', userId: 0 });
+  ui.openSheet({ type: "profile", userId: 0 });
 }
 /** 退出/注销走确认弹层（5.1 弹窗：两步/守卫逻辑在 AccountSheet） */
 function onLogout(): void {
-  ui.openSheet({ type: 'logout-confirm' });
+  ui.openSheet({ type: "logout-confirm" });
 }
 function onDeleteAcc(): void {
-  ui.openSheet({ type: 'delete-confirm' });
+  ui.openSheet({ type: "delete-confirm" });
 }
 </script>
 

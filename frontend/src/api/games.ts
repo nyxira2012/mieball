@@ -30,6 +30,22 @@ export interface MyBlockApi {
   invited: boolean;
 }
 
+/** 已出账局的实摊定值块（game_view bill 镜像，1.3 批3；my_* 按 viewer，不在名单 → null） */
+export interface GameBillApi {
+  fee_total: number;
+  per_head: number;
+  heads: number;
+  my_share: number | null;
+  my_guest_count: number | null;
+}
+
+/** 补填确认步定值（fee-preview 响应，1.3 §4.5）：「将按人均 X 元向 N 人出账」 */
+export interface FeePreviewApi {
+  heads: number;
+  per_head: number;
+  organizer_share: number;
+}
+
 /** 局（game_view 镜像）。heads/slots_left/per_head/forced 是后端算好的定值（A4）；
     entries 仅详情与写动作出口带，my 仅登录 viewer 带。 */
 export interface GameViewApi {
@@ -50,6 +66,7 @@ export interface GameViewApi {
   manual_lock: boolean;
   courts: string[] | null;
   fee_total: number | null;
+  bill?: GameBillApi | null; // 实摊定值块（已出账的局非 null；1.3 批3）
   status: GameStatus;
   unlocked: boolean;
   joinable: boolean;
@@ -131,6 +148,19 @@ export function apiBookCourt(
 /** 清空订场（手动锁保留；幂等） */
 export function apiClearBooking(id: number): Promise<GameViewApi> {
   return request("POST", `/games/${id}/booking/clear`);
+}
+
+/** 补填确认步定值（组织者本人；纯现算不落库） */
+export function apiGameFeePreview(
+  id: number,
+  amount: number,
+): Promise<FeePreviewApi> {
+  return request("GET", `/games/${id}/fee-preview?amount=${amount}`);
+}
+
+/** 补填总价（1.3 §4.5：>0 当场出账、=0 只定值不出账；价格就此定死）——响应直出局视图 */
+export function apiGameFee(id: number, feeTotal: number): Promise<GameViewApi> {
+  return request("POST", `/games/${id}/fee`, { fee_total: feeTotal });
 }
 
 /** 撤局（开打前；组织者 mine 不留痕） */

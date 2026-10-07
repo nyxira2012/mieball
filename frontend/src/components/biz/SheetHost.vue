@@ -11,7 +11,11 @@
     <JoinSheet v-else-if="s?.type === 'join'" :game-id="s.gameId" />
     <ConfirmSheet v-else-if="s?.type === 'quit-confirm'" kind="quit" :game-id="s.gameId" />
     <ConfirmSheet v-else-if="s?.type === 'cancel-confirm'" kind="cancel" :game-id="s.gameId" />
-    <BookingSheet v-else-if="s?.type === 'booking'" :game-id="s.gameId" />
+    <BookingSheet
+      v-else-if="s?.type === 'booking'"
+      :game-id="s.gameId"
+      :fee-only="s.feeOnly ?? false"
+    />
     <InviteSheet v-else-if="s?.type === 'invite-to-game'" mode="to-game" :game-id="s.gameId" />
     <InviteSheet v-else-if="s?.type === 'invite-to-slot'" mode="to-slot" :user-id="s.userId" />
     <IntentFormSheet v-else-if="s?.type === 'intent-form'" />

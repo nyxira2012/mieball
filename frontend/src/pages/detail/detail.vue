@@ -6,7 +6,10 @@
   <PageShell>
     <view v-if="game" class="stag">
       <!-- alpha:1403-1407 页头：kicker + 局名（首个 ' · ' 断行，其余保留） -->
-      <view class="kicker">Game #{{ game.id }} · {{ tDay }} · {{ game.organizer.nickname }} 发起</view>
+      <view class="kicker"
+        >Game #{{ game.id }} · {{ tDay }} ·
+        {{ game.organizer.nickname }} 发起</view
+      >
       <view class="brand">
         {{ brandA }}
         <text v-if="brandB" class="brand-line">{{ brandB }}</text>
@@ -15,7 +18,9 @@
       <!-- alpha:1408-1424 hero：大时间 · 日段·时长·场馆 · kv 行 · 人均口径 · 分享行 -->
       <view class="hero">
         <view class="big">{{ tBig }}</view>
-        <view class="sub hero-sub">{{ tDay }} · 打 {{ durText }} · {{ game.venueName }}</view>
+        <view class="sub hero-sub"
+          >{{ tDay }} · 打 {{ durText }} · {{ game.venueName }}</view
+        >
         <view class="row">
           <view class="kv">
             <view class="k">名单</view>
@@ -24,11 +29,17 @@
           <!-- 5.1 剩坑/截止/场地是赛前口径：done 局收掉，保住 kv 网格 -->
           <view v-if="game.status !== 'done'" class="kv">
             <view class="k">剩坑</view>
-            <view class="v" :style="{ color: game.slotsLeft ? 'var(--dim)' : 'var(--coral)' }">{{ game.slotsLeft }}</view>
+            <view
+              class="v"
+              :style="{ color: game.slotsLeft ? 'var(--dim)' : 'var(--coral)' }"
+              >{{ game.slotsLeft }}</view
+            >
           </view>
           <view class="kv">
-            <view class="k">{{ game.feeTotal != null ? '总价' : '费用' }}</view>
-            <view class="v">{{ game.feeTotal != null ? `¥${game.feeTotal}` : '未定' }}</view>
+            <view class="k">{{ game.feeTotal != null ? "总价" : "费用" }}</view>
+            <view class="v">{{
+              game.feeTotal != null ? `¥${game.feeTotal}` : "未定"
+            }}</view>
           </view>
           <view v-if="game.perHead != null" class="kv">
             <view class="k">人均</view>
@@ -36,13 +47,20 @@
           </view>
           <view v-if="game.status !== 'done'" class="kv">
             <view class="k">场地</view>
-            <view class="v v-court" :style="{ color: game.courts?.length ? 'var(--cream)' : 'var(--dim)' }">
-              {{ game.courts?.length ? game.courts.join('、') : '待定' }}
+            <view
+              class="v v-court"
+              :style="{
+                color: game.courts?.length ? 'var(--cream)' : 'var(--dim)',
+              }"
+            >
+              {{ game.courts?.length ? game.courts.join("、") : "待定" }}
             </view>
           </view>
           <view v-if="game.status !== 'done'" class="kv">
             <view class="k">截止</view>
-            <view class="v v-dl">{{ isoDay(game.deadlineAt) }} {{ isoHm(game.deadlineAt) }}</view>
+            <view class="v v-dl"
+              >{{ isoDay(game.deadlineAt) }} {{ isoHm(game.deadlineAt) }}</view
+            >
           </view>
           <view v-if="game.unlocked" class="kv">
             <view class="k">名单</view>
@@ -52,8 +70,12 @@
         <!-- 人均口径（后端定值：订场后按实际人数摊）/ 截止判局提示 -->
         <view v-if="perNote" class="sub hero-note">{{ perNote }}</view>
         <view class="row act2">
-          <AppButton variant="ghost" size="sm" @click="onShare">⤴ 分享到群</AppButton>
-          <AppChip v-if="game.status === 'locked' && !game.unlocked" kind="full">已到截止 · 名单锁定</AppChip>
+          <AppButton variant="ghost" size="sm" @click="onShare"
+            >⤴ 分享到群</AppButton
+          >
+          <AppChip v-if="game.status === 'locked' && !game.unlocked" kind="full"
+            >已到截止 · 名单锁定</AppChip
+          >
         </view>
       </view>
 
@@ -70,25 +92,45 @@
 
       <!-- 名单：formal 按报名先后（组织者排头）、候补按序跟后（后端 entries 保序）；
            带 N 人角标 + 随行展开成独立 pcard（带的人不单独有账号，随主人头像） -->
-      <SectionTitle :title="`名单 ${game.heads}/${game.maxPlayers} · 组织者排头一个`">
-        <template v-if="waitlist.length" #more>候补 {{ waitlist.length }} 人</template>
+      <SectionTitle
+        :title="`名单 ${game.heads}/${game.maxPlayers} · 组织者排头一个`"
+      >
+        <template v-if="waitlist.length" #more
+          >候补 {{ waitlist.length }} 人</template
+        >
       </SectionTitle>
       <view class="grid-p">
         <template v-for="e in formalRows" :key="e.account.id">
-          <view class="pcard" :class="{ me: e.account.id === meId }" @click="onPlayer(e.account.id)">
+          <view
+            class="pcard"
+            :class="{ me: e.account.id === meId }"
+            @click="onPlayer(e.account.id)"
+          >
             <view v-if="e.bring" class="tag">带 {{ e.bring }} 人</view>
-            <view class="avatar"><ChibiAvatar :chibi="e.account.chibi" :size="56" /></view>
+            <view class="avatar"
+              ><ChibiAvatar :chibi="e.account.chibi" :size="56"
+            /></view>
             <view class="nm">{{ e.account.nickname }}</view>
           </view>
           <!-- 带的人：用带他的人的头像，名 = 名字前两字+的球友 -->
-          <view v-for="i in e.bring || 0" :key="`${e.account.id}-b${i}`" class="pcard dim75">
+          <view
+            v-for="i in e.bring || 0"
+            :key="`${e.account.id}-b${i}`"
+            class="pcard dim75"
+          >
             <view class="tag">随行</view>
-            <view class="avatar"><ChibiAvatar :chibi="e.account.chibi" :size="56" /></view>
+            <view class="avatar"
+              ><ChibiAvatar :chibi="e.account.chibi" :size="56"
+            /></view>
             <view class="nm">{{ e.account.nickname.slice(0, 2) }}的球友</view>
           </view>
         </template>
         <!-- 加入入口：joinable 定值（截止后/进行中照常可加，已结束只读——4.14） -->
-        <view v-if="!joined && game.joinable" class="pcard join" @click="onJoin">
+        <view
+          v-if="!joined && game.joinable"
+          class="pcard join"
+          @click="onJoin"
+        >
           <view class="plus">＋</view>
           <view class="nm">加入 / 带人</view>
         </view>
@@ -100,8 +142,14 @@
           <template #more>有人退出即刻递补</template>
         </SectionTitle>
         <view class="grid-p">
-          <view v-for="e in waitlist" :key="`w${e.account.id}`" class="pcard dim65">
-            <view class="avatar"><ChibiAvatar :chibi="e.account.chibi" :size="56" /></view>
+          <view
+            v-for="e in waitlist"
+            :key="`w${e.account.id}`"
+            class="pcard dim65"
+          >
+            <view class="avatar"
+              ><ChibiAvatar :chibi="e.account.chibi" :size="56"
+            /></view>
             <view class="nm">{{ e.account.nickname }}</view>
           </view>
         </view>
@@ -109,57 +157,110 @@
 
       <!-- 组织者按钮行：翻意向拉人（截止前后都开放——现场换人常翻名单） -->
       <view v-if="org && game.joinable" class="org-row">
-        <AppButton variant="ghost" size="sm" @click="onInvite">＋ 邀请 · 翻意向列表拉人</AppButton>
+        <AppButton variant="ghost" size="sm" @click="onInvite"
+          >＋ 邀请 · 翻意向列表拉人</AppButton
+        >
       </view>
 
       <!-- 底部动作区：加入/退局窗口与提示全按 status/unlocked 定值 -->
       <view class="actions">
-        <AppButton v-if="!joined && game.joinable" variant="pri" class="grow" @click="onJoin">
-          ＋ 加入 · 可带人{{ full ? ' · 进候补' : '' }}
+        <AppButton
+          v-if="!joined && game.joinable"
+          variant="pri"
+          class="grow"
+          @click="onJoin"
+        >
+          ＋ 加入 · 可带人{{ full ? " · 进候补" : "" }}
         </AppButton>
         <AppButton
           v-if="joined && !org && canQuit"
           variant="ghost"
           class="grow"
           @click="onQuit"
-        >退出局</AppButton>
-        <AppChip v-if="joined && !org && !canQuit && game.status !== 'done'" class="mid">已到截止 · 不能退出</AppChip>
-        <!-- 锁升级三态一入口（BookingSheet 批5 重排面板；这里先把动作与文案接上）。
+          >退出局</AppButton
+        >
+        <AppChip
+          v-if="joined && !org && !canQuit && game.status !== 'done'"
+          class="mid"
+          >已到截止 · 不能退出</AppChip
+        >
+        <!-- 锁升级三态一入口（BookingSheet；这里把动作与文案接上）。
              live 态也开：改价窗口到散场确认前（1.3 §4.5 修订①，开打后加片/买水的钱改总价）；
-             done 态本批不接——补填形态批3 后接通 -->
-        <template v-if="org && (game.status === 'open' || game.status === 'locked' || game.status === 'live')">
+             done 态走下面的补填形态——只有从未填过价的局留这一个口子 -->
+        <template
+          v-if="
+            org &&
+            (game.status === 'open' ||
+              game.status === 'locked' ||
+              game.status === 'live')
+          "
+        >
           <AppButton variant="ghost" class="grow sure-btn" @click="onBooking">{{
             game.courts?.length
-              ? `🔒 已订场 · ${game.courts.join('、')} · ¥${game.feeTotal}`
+              ? `🔒 已订场 · ${game.courts.join("、")} · ¥${game.feeTotal}`
               : game.manualLock
-                ? '🔒 已锁定必打 · 去登记场地'
-                : '🔒 锁定必打 · 可登记订场'
+                ? "🔒 已锁定必打 · 去登记场地"
+                : "🔒 锁定必打 · 可登记订场"
           }}</AppButton>
         </template>
-        <template v-if="org && (game.status === 'open' || game.status === 'locked')">
+        <!-- 补填费用（1.3 §4.5）：散场过且从未填价（bill 未出、fee 未定）——只让填总价 -->
+        <template
+          v-if="
+            org && game.status === 'done' && game.feeTotal == null && !game.bill
+          "
+        >
+          <AppButton variant="ghost" class="grow sure-btn" @click="onBookingFee"
+            >补填费用 · 只填总价（免费填 0）</AppButton
+          >
+        </template>
+        <template
+          v-if="org && (game.status === 'open' || game.status === 'locked')"
+        >
           <AppButton variant="ghost" @click="onEdit">改信息</AppButton>
-          <AppButton variant="ghost" class="cancel-btn" @click="onCancel">取消局</AppButton>
+          <AppButton variant="ghost" class="cancel-btn" @click="onCancel"
+            >取消局</AppButton
+          >
         </template>
       </view>
 
       <!-- 状态动作：live 回现场；在办局开始打球 -->
-      <AppButton v-if="game.status === 'live'" variant="burn" block class="mt12" @click="onLive">▶ 回到现场</AppButton>
+      <AppButton
+        v-if="game.status === 'live'"
+        variant="burn"
+        block
+        class="mt12"
+        @click="onLive"
+        >▶ 回到现场</AppButton
+      >
       <AppButton
         v-else-if="game.joinable"
         variant="burn"
         block
         class="mt12"
         @click="onStart"
-      >▶ 开始打球</AppButton>
+        >▶ 开始打球</AppButton
+      >
 
       <!-- 规则牌（规则三件 + 候补/人均口径；score_rule 未知值不显示得分规则段——旧局容错） -->
       <NoteCard class="rules">
-        <b>规则牌：</b>{{ game.scoring }} 分制（领先 2 分才算赢）<template v-if="ruleName"> · {{ ruleName }}</template> · {{ modeName }}
-        · 满 {{ game.maxPlayers }} 人进候补，有人退出即刻递补<template v-if="game.perHead != null"> · 人均＝总价 ¥{{ game.feeTotal }} ÷ {{ game.heads }}（按实际人数摊）</template>。
+        <b>规则牌：</b>{{ game.scoring }} 分制（领先 2 分才算赢）<template
+          v-if="ruleName"
+        >
+          · {{ ruleName }}</template
+        >
+        · {{ modeName }} · 满
+        {{ game.maxPlayers }} 人进候补，有人退出即刻递补<template
+          v-if="game.perHead != null"
+        >
+          · 人均＝总价 ¥{{ game.feeTotal }} ÷
+          {{ game.heads }}（按实际人数摊）</template
+        >。
       </NoteCard>
     </view>
     <!-- A2：等待提示 / 链接失效说明页（文案中性） -->
-    <view v-else-if="loading" class="ph">{{ slow ? '网络有点慢 · 再等等，或稍后再来' : '正在打开这局…' }}</view>
+    <view v-else-if="loading" class="ph">{{
+      slow ? "网络有点慢 · 再等等，或稍后再来" : "正在打开这局…"
+    }}</view>
     <view v-else class="ph">这个球局不存在或已被删除</view>
   </PageShell>
 </template>
@@ -167,19 +268,19 @@
 <script setup lang="ts">
 /* 球局详情（alpha.html:1400-1467 · 1.2 接线修订面）。数据源 = game store 的 loadDetail/current；
    分享按钮只出 toast（分享卡片降级规格§6）；「到截止判定」手动按钮退役（懒判定归后端）。 */
-import { computed, onUnmounted, ref } from 'vue';
-import { onLoad, onShow } from '@dcloudio/uni-app';
-import PageShell from '@/components/biz/PageShell.vue';
-import AppButton from '@/components/ui/AppButton.vue';
-import AppChip from '@/components/ui/AppChip.vue';
-import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
-import NoteCard from '@/components/ui/NoteCard.vue';
-import { useGameStore } from '@/stores/game';
-import { useUserStore } from '@/stores/user';
-import { useUiStore } from '@/stores/ui';
-import { isOrg, MODE_NAMES, SCORE_RULE_NAMES } from '@/utils/format';
-import { isoDay, isoHm } from '@/utils/time';
-import { goLive } from '@/utils/nav';
+import { computed, onUnmounted, ref } from "vue";
+import { onLoad, onShow } from "@dcloudio/uni-app";
+import PageShell from "@/components/biz/PageShell.vue";
+import AppButton from "@/components/ui/AppButton.vue";
+import AppChip from "@/components/ui/AppChip.vue";
+import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import NoteCard from "@/components/ui/NoteCard.vue";
+import { useGameStore } from "@/stores/game";
+import { useUserStore } from "@/stores/user";
+import { useUiStore } from "@/stores/ui";
+import { isOrg, MODE_NAMES, SCORE_RULE_NAMES } from "@/utils/format";
+import { isoDay, isoHm } from "@/utils/time";
+import { goLive } from "@/utils/nav";
 
 const store = useGameStore();
 const ui = useUiStore();
@@ -215,63 +316,80 @@ onUnmounted(() => {
   if (slowTimer) clearTimeout(slowTimer);
 });
 
-const game = computed(() => (gameId.value != null && store.current?.id === gameId.value ? store.current : null));
+const game = computed(() =>
+  gameId.value != null && store.current?.id === gameId.value
+    ? store.current
+    : null,
+);
 
 /* ---- 名单派生（后端 entries 已按 formal 报名序 + 候补序排好） ---- */
-const formalRows = computed(() => game.value?.entries?.filter((e) => e.standing === 'formal') ?? []);
-const waitlist = computed(() => game.value?.entries?.filter((e) => e.standing === 'waitlist') ?? []);
+const formalRows = computed(
+  () => game.value?.entries?.filter((e) => e.standing === "formal") ?? [],
+);
+const waitlist = computed(
+  () => game.value?.entries?.filter((e) => e.standing === "waitlist") ?? [],
+);
 
 const full = computed(() => !!game.value && game.value.slotsLeft <= 0);
 const joined = computed(() => !!game.value?.my?.myEntry);
 const org = computed(() => !!game.value && isOrg(game.value));
 /** 退局窗口：报名中随便退；锁定后仅改约解锁窗可退（4.4/4.6） */
-const canQuit = computed(() => !!game.value && (game.value.status === 'open' || game.value.unlocked));
-const started = computed(() => !!game.value && game.value.status !== 'open');
+const canQuit = computed(
+  () => !!game.value && (game.value.status === "open" || game.value.unlocked),
+);
+const started = computed(() => !!game.value && game.value.status !== "open");
 const played = computed(() => {
   const s = game.value?.status;
-  return s === 'live' || s === 'done';
+  return s === "live" || s === "done";
 });
-const reported = computed(() => game.value?.status === 'done');
+const reported = computed(() => game.value?.status === "done");
 
 /* 3.3 打多久文案：endAt-startAt 现算（拨盘 5 分步进会出现 115 分钟这类；整/半小时才用小时） */
 const durText = computed(() => {
-  if (!game.value) return '';
+  if (!game.value) return "";
   const mins = Math.max(
     0,
-    Math.round((new Date(game.value.endAt).getTime() - new Date(game.value.startAt).getTime()) / 60000),
+    Math.round(
+      (new Date(game.value.endAt).getTime() -
+        new Date(game.value.startAt).getTime()) /
+        60000,
+    ),
   );
   return mins % 30 === 0 ? `${mins / 60} 小时` : `${mins} 分钟`;
 });
 
-const tBig = computed(() => (game.value ? isoHm(game.value.startAt) : ''));
-const tDay = computed(() => (game.value ? isoDay(game.value.startAt) : ''));
+const tBig = computed(() => (game.value ? isoHm(game.value.startAt) : ""));
+const tDay = computed(() => (game.value ? isoDay(game.value.startAt) : ""));
 
 /* alpha:1405 局名首个 ' · ' 断行 */
 const brandA = computed(() => {
-  if (!game.value) return '';
-  const i = game.value.name.indexOf(' · ');
+  if (!game.value) return "";
+  const i = game.value.name.indexOf(" · ");
   return i >= 0 ? game.value.name.slice(0, i) : game.value.name;
 });
 const brandB = computed(() => {
-  if (!game.value) return '';
-  const i = game.value.name.indexOf(' · ');
-  return i >= 0 ? game.value.name.slice(i + 3) : '';
+  if (!game.value) return "";
+  const i = game.value.name.indexOf(" · ");
+  return i >= 0 ? game.value.name.slice(i + 3) : "";
 });
 
 /* 人均口径提示：费用未定时提示截止判局；费用落定即按实际人数摊（4.7） */
 const perNote = computed(() => {
   const g = game.value;
-  if (!g) return '';
+  if (!g) return "";
   if (g.feeTotal != null) return `费用已落定 · 人均按当前 ${g.heads} 人摊`;
-  if (g.heads < g.minPlayers && !g.forced) return `还差 ${g.minPlayers - g.heads} 人到最少 · 截止人数不足且未锁必打会自动终止`;
-  return '';
+  if (g.heads < g.minPlayers && !g.forced)
+    return `还差 ${g.minPlayers - g.heads} 人到最少 · 截止人数不足且未锁必打会自动终止`;
+  return "";
 });
 
 /* 规则牌：mode 必有；得分规则仅认识 rally/serve（旧局/未知值不显示） */
-const modeName = computed(() => (game.value ? MODE_NAMES[game.value.rotation] : ''));
+const modeName = computed(() =>
+  game.value ? MODE_NAMES[game.value.rotation] : "",
+);
 const ruleName = computed(() => {
   const r = game.value?.scoreRule;
-  return r === 'rally' || r === 'serve' ? SCORE_RULE_NAMES[r] : '';
+  return r === "rally" || r === "serve" ? SCORE_RULE_NAMES[r] : "";
 });
 
 /** 响应式「我」id（名单行高亮） */
@@ -279,31 +397,38 @@ const meId = computed(() => useUserStore().me.id);
 
 /** 分享 = 纯 toast（分享卡片降级，规格§6；演示模拟已随假局退役） */
 const onShare = () => {
-  ui.toast('分享卡片已生成 · 转到微信群里拉人');
+  ui.toast("分享卡片已生成 · 转到微信群里拉人");
 };
 /** joinSheet → JoinSheet 弹层 */
 const onJoin = () => {
-  if (game.value) ui.openSheet({ type: 'join', gameId: game.value.id });
+  if (game.value) ui.openSheet({ type: "join", gameId: game.value.id });
 };
 /** quitSheet → ConfirmSheet(kind=quit) */
 const onQuit = () => {
-  if (game.value) ui.openSheet({ type: 'quit-confirm', gameId: game.value.id });
+  if (game.value) ui.openSheet({ type: "quit-confirm", gameId: game.value.id });
 };
 /** 锁定必打 / 订场登记（三态一入口 BookingSheet） */
 const onBooking = () => {
-  if (game.value) ui.openSheet({ type: 'booking', gameId: game.value.id });
+  if (game.value) ui.openSheet({ type: "booking", gameId: game.value.id });
+};
+/** 补填费用（1.3 §4.5 补填形态：只填总价 + 出账确认步） */
+const onBookingFee = () => {
+  if (game.value)
+    ui.openSheet({ type: "booking", gameId: game.value.id, feeOnly: true });
 };
 /** editSheet → openLaunch(id)：LaunchSheet 编辑态 */
 const onEdit = () => {
-  if (game.value) ui.openSheet({ type: 'launch', gameId: game.value.id });
+  if (game.value) ui.openSheet({ type: "launch", gameId: game.value.id });
 };
 /** cancelSheet → ConfirmSheet(kind=cancel) */
 const onCancel = () => {
-  if (game.value) ui.openSheet({ type: 'cancel-confirm', gameId: game.value.id });
+  if (game.value)
+    ui.openSheet({ type: "cancel-confirm", gameId: game.value.id });
 };
 /** inviteFromGame → InviteSheet(mode=to-game) */
 const onInvite = () => {
-  if (game.value) ui.openSheet({ type: 'invite-to-game', gameId: game.value.id });
+  if (game.value)
+    ui.openSheet({ type: "invite-to-game", gameId: game.value.id });
 };
 /** 开始打球 → 现场页（goLive 内 ensureLive 统一守门） */
 const onStart = () => {
@@ -314,7 +439,7 @@ const onLive = () => {
 };
 /** 名单球员卡 → 球友名片弹层（真局成员可能不在 mock U，档案页自兜底） */
 const onPlayer = (uid: number) => {
-  ui.openSheet({ type: 'profile', userId: uid });
+  ui.openSheet({ type: "profile", userId: uid });
 };
 </script>
 

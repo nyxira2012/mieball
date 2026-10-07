@@ -3,7 +3,7 @@
 export {
   U,
   games,
-  bills,
+  demoBillsView,
   slots,
   mockDemoUser,
   mockAreas,
@@ -11,4 +11,4 @@ export {
   AREA_OPTS,
   MOCK_BASE_DATE_STR,
   communityMeta,
-} from '../mock/data';
+} from "../mock/data";

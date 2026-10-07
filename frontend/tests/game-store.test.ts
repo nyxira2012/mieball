@@ -23,6 +23,8 @@ const api = vi.hoisted(() => ({
   apiMyIntent: vi.fn(),
   apiSaveIntent: vi.fn(),
   apiDeleteIntent: vi.fn(),
+  apiGameFeePreview: vi.fn(),
+  apiGameFee: vi.fn(),
 }));
 
 vi.mock('@/api/games', () => api);
@@ -322,5 +324,33 @@ describe('saveIntent / delIntent（意向簿）', () => {
     await store.delIntent();
     expect(store.myIntent).toBeNull();
     expect(ui.toastMsg).toBe('意向已删 · 随时可以再留');
+  });
+});
+
+describe('feePreview / setFee（补填链，1.3 §4.5）', () => {
+  it('feePreview 纯现算直通：回定值、不落 store、不 toast（组件确认步定值源头）', async () => {
+    const { store, ui } = await loadStore();
+    const preview = { heads: 12, per_head: 58, organizer_share: 62 };
+    api.apiGameFeePreview.mockResolvedValue(preview);
+    await expect(store.feePreview(5, 700)).resolves.toEqual(preview);
+    expect(api.apiGameFeePreview).toHaveBeenCalledWith(5, 700);
+    expect(ui.toastMsg).toBe(''); // 不 toast
+    expect(store.games).toHaveLength(0); // 不落 store（纯现算，不回填）
+  });
+
+  it('setFee >0：出账回填 bill 块，toast 带实摊份数；=0 只定值不出账文案', async () => {
+    const { store, ui } = await loadStore();
+    api.apiListGames.mockResolvedValue([mkView({ id: 5 })]);
+    await store.loadGames(); // upsert 要有落点
+    api.apiGameFee.mockResolvedValue(
+      mkView({ id: 5, fee_total: 700, bill: { fee_total: 700, per_head: 58, heads: 12, my_share: 62, my_guest_count: 0 } }),
+    );
+    await store.setFee(5, 700);
+    expect(api.apiGameFee).toHaveBeenCalledWith(5, 700);
+    expect(store.findGame(5)?.bill?.heads).toBe(12);
+    expect(ui.toastMsg).toBe('总价已定 · 账已出，按 12 份摊，账单里见');
+    api.apiGameFee.mockResolvedValue(mkView({ id: 5, fee_total: 0, bill: null }));
+    await store.setFee(5, 0);
+    expect(ui.toastMsg).toBe('费用已定为 ¥0 · 免费场，不出账');
   });
 });

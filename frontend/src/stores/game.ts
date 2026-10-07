@@ -3,8 +3,8 @@
    - 写动作成功 toast 仍在 store（文案单一源），失败一律抛 ApiError 由调用方 errText；
    - quit/cancel/invite 后端只回 {ok:true}，名单/标记的回填在 store 内补拉（refresh/loadIntents）；
    - 硬约束：动作只改状态与弹出文案 —— 不做路由跳转、不直接调 uni.*（导航由页面层做）。 */
-import { computed, ref } from 'vue';
-import { defineStore } from 'pinia';
+import { computed, ref } from "vue";
+import { defineStore } from "pinia";
 import {
   apiBookCourt,
   apiCancelGame,
@@ -12,6 +12,8 @@ import {
   apiDeleteIntent,
   apiEditGame,
   apiGameDetail,
+  apiGameFee,
+  apiGameFeePreview,
   apiInviteUser,
   apiJoinGame,
   apiListGames,
@@ -23,11 +25,18 @@ import {
   apiQuitGame,
   apiRestoreGame,
   apiSaveIntent,
+  type FeePreviewApi,
   type GameViewApi,
   type IntentViewApi,
-} from '@/api/games';
-import type { EditGameInput, Game, Intent, MyIntent, PublishGameInput } from '@/api/types';
-import { useUiStore } from './ui';
+} from "@/api/games";
+import type {
+  EditGameInput,
+  Game,
+  Intent,
+  MyIntent,
+  PublishGameInput,
+} from "@/api/types";
+import { useUiStore } from "./ui";
 
 /** game_view（线上 snake）→ Game（store camel）：唯一映射点 */
 function toGame(v: GameViewApi): Game {
@@ -49,6 +58,15 @@ function toGame(v: GameViewApi): Game {
     manualLock: v.manual_lock,
     courts: v.courts,
     feeTotal: v.fee_total,
+    bill: v.bill
+      ? {
+          feeTotal: v.bill.fee_total,
+          perHead: v.bill.per_head,
+          heads: v.bill.heads,
+          myShare: v.bill.my_share,
+          myGuestCount: v.bill.my_guest_count,
+        }
+      : null,
     status: v.status,
     unlocked: v.unlocked,
     joinable: v.joinable,
@@ -65,7 +83,11 @@ function toGame(v: GameViewApi): Game {
     my: v.my
       ? {
           isOrganizer: v.my.is_organizer,
-          myEntry: v.my.my_entry && { bring: v.my.my_entry.bring, standing: v.my.my_entry.standing, waitSeq: v.my.my_entry.wait_seq },
+          myEntry: v.my.my_entry && {
+            bring: v.my.my_entry.bring,
+            standing: v.my.my_entry.standing,
+            waitSeq: v.my.my_entry.wait_seq,
+          },
           invited: v.my.invited,
         }
       : undefined,
@@ -85,7 +107,7 @@ function toIntent(v: IntentViewApi): Intent {
   };
 }
 
-export const useGameStore = defineStore('game', () => {
+export const useGameStore = defineStore("game", () => {
   const ui = useUiStore();
   /* 数据：找局打 / 我的局 / 详情页当前局（链接直达的局可能不在列表里，弹层经 findGame 统一取） */
   const games = ref<Game[]>([]);
@@ -119,7 +141,11 @@ export const useGameStore = defineStore('game', () => {
   /** 弹层/详情统一取局：current 优先（链接直达），再两个列表 */
   function findGame(id: number): Game | null {
     if (current.value?.id === id) return current.value;
-    return games.value.find((x) => x.id === id) ?? myGames.value.find((x) => x.id === id) ?? null;
+    return (
+      games.value.find((x) => x.id === id) ??
+      myGames.value.find((x) => x.id === id) ??
+      null
+    );
   }
 
   /* ---- 读 ---- */
@@ -152,7 +178,9 @@ export const useGameStore = defineStore('game', () => {
 
   async function loadMyIntent(): Promise<void> {
     const v = await track(apiMyIntent);
-    myIntent.value = v ? { slots: [...v.slots], frequency: v.frequency, note: v.note } : null;
+    myIntent.value = v
+      ? { slots: [...v.slots], frequency: v.frequency, note: v.note }
+      : null;
   }
 
   /* ---- 局簿写动作 ---- */
@@ -163,9 +191,9 @@ export const useGameStore = defineStore('game', () => {
     upsert(g);
     // 4.1：默认「跟我打过的人」档冷启动靠链接，发布提示带一句引导
     ui.toast(
-      input.visibility === 'played'
-        ? '局已发布 · 名单头一个就是你 · 这个档位下，球友主要通过你转的链接看到这个局'
-        : '局已发布 · 名单头一个就是你，点局上的 ⤴ 分享到群里拉人',
+      input.visibility === "played"
+        ? "局已发布 · 名单头一个就是你 · 这个档位下，球友主要通过你转的链接看到这个局"
+        : "局已发布 · 名单头一个就是你，点局上的 ⤴ 分享到群里拉人",
     );
     return g;
   }
@@ -175,15 +203,17 @@ export const useGameStore = defineStore('game', () => {
     const g = toGame(await track(() => apiEditGame(id, input)));
     upsert(g);
     // A3 上限放宽反馈：转正人数 = 前后正式名单差，剩余候补照实说（上限没放宽就是普通改局）
-    const formal = (x: Game | null): number => x?.entries?.filter((e) => e.standing === 'formal').length ?? 0;
-    const waitN = g.entries?.filter((e) => e.standing === 'waitlist').length ?? 0;
+    const formal = (x: Game | null): number =>
+      x?.entries?.filter((e) => e.standing === "formal").length ?? 0;
+    const waitN =
+      g.entries?.filter((e) => e.standing === "waitlist").length ?? 0;
     const moved = Math.max(0, formal(g) - formal(before));
     ui.toast(
       moved
         ? waitN
           ? `局已改好 · 上限放宽，候补转正，仍剩 ${waitN} 人满员（建议下次再参加）`
-          : '局已改好 · 上限放宽，候补已全部转正'
-        : '局已改好 · 名单里的人看到的就是新信息',
+          : "局已改好 · 上限放宽，候补已全部转正"
+        : "局已改好 · 名单里的人看到的就是新信息",
     );
     return g;
   }
@@ -193,18 +223,18 @@ export const useGameStore = defineStore('game', () => {
     upsert(g);
     // 整行装不下时后端落候补也 200——文案按返回名单分支（4.3 候补提示）
     ui.toast(
-      g.my?.myEntry?.standing === 'waitlist'
-        ? '已进候补栏 · 有人退出即刻递补'
+      g.my?.myEntry?.standing === "waitlist"
+        ? "已进候补栏 · 有人退出即刻递补"
         : bring
           ? `已加入 · 带了 ${bring} 人（共占 ${1 + bring} 坑）`
-          : '已加入 · 这局进了「我的局」',
+          : "已加入 · 这局进了「我的局」",
     );
     return g;
   }
 
   async function quitGame(id: number): Promise<void> {
     await track(() => apiQuitGame(id));
-    ui.toast('已退出 · 名单里少了你');
+    ui.toast("已退出 · 名单里少了你");
     await refresh(id); // 名额释放/候补递补回填
   }
 
@@ -217,20 +247,26 @@ export const useGameStore = defineStore('game', () => {
     drop(games.value);
     drop(myGames.value);
     if (current.value?.id === id) current.value = null;
-    ui.toast('局已撤下 · 报名的球友「我的局」里同步消失'); // 订场退订提醒由 ConfirmSheet 的提示行负责
+    ui.toast("局已撤下 · 报名的球友「我的局」里同步消失"); // 订场退订提醒由 ConfirmSheet 的提示行负责
   }
 
   async function lockGame(id: number): Promise<Game> {
     const g = toGame(await track(() => apiLockGame(id)));
     upsert(g);
-    ui.toast('已锁定必打 · 到截止不再因人数不足终止，最少人数要求作废');
+    ui.toast("已锁定必打 · 到截止不再因人数不足终止，最少人数要求作废");
     return g;
   }
 
-  async function bookCourt(id: number, courts: string[], feeTotal: number): Promise<Game> {
+  async function bookCourt(
+    id: number,
+    courts: string[],
+    feeTotal: number,
+  ): Promise<Game> {
     const g = toGame(await track(() => apiBookCourt(id, courts, feeTotal)));
     upsert(g);
-    ui.toast(`已订场 · ${courts.join('、')}（${courts.length} 片）· 这局必开，费用已落定`);
+    ui.toast(
+      `已订场 · ${courts.join("、")}（${courts.length} 片）· 这局必开，费用已落定`,
+    );
     return g;
   }
 
@@ -239,8 +275,28 @@ export const useGameStore = defineStore('game', () => {
     upsert(g);
     ui.toast(
       g.manualLock
-        ? '订场登记已清空 · 手动锁定保留，这局仍必打'
-        : '订场登记已清空 · 局回到未订场，费用未定，截止照常判人数',
+        ? "订场登记已清空 · 手动锁定保留，这局仍必打"
+        : "订场登记已清空 · 局回到未订场，费用未定，截止照常判人数",
+    );
+    return g;
+  }
+
+  /** 补填确认步定值（1.3 §4.5「将按人均 X 元向 N 人出账」）：纯现算，不落库不 toast */
+  async function feePreview(
+    id: number,
+    amount: number,
+  ): Promise<FeePreviewApi> {
+    return track(() => apiGameFeePreview(id, amount));
+  }
+
+  /** 补填总价（散场后从未填价的局）：>0 当场出账、=0 只定值；价格就此定死 */
+  async function setFee(id: number, feeTotal: number): Promise<Game> {
+    const g = toGame(await track(() => apiGameFee(id, feeTotal)));
+    upsert(g);
+    ui.toast(
+      feeTotal > 0
+        ? `总价已定 · 账已出，按 ${g.bill?.heads ?? g.heads} 份摊，账单里见`
+        : "费用已定为 ¥0 · 免费场，不出账",
     );
     return g;
   }
@@ -248,47 +304,89 @@ export const useGameStore = defineStore('game', () => {
   async function restoreGame(id: number): Promise<Game> {
     const g = toGame(await track(() => apiRestoreGame(id)));
     upsert(g);
-    ui.toast('局已恢复 · 待处置：决定必定开局还是撤局后回到正常列表');
+    ui.toast("局已恢复 · 待处置：决定必定开局还是撤局后回到正常列表");
     return g;
   }
 
   async function inviteUser(gameId: number, accountId: number): Promise<void> {
-    const name = intents.value.find((i) => i.account.id === accountId)?.account.nickname;
+    const name = intents.value.find((i) => i.account.id === accountId)?.account
+      .nickname;
     await track(() => apiInviteUser(gameId, accountId));
-    ui.toast(name ? `已邀请 ${name} · 局已出现在 ta 的「我的局」` : '已邀请 · 局已出现在 ta 的「我的局」');
+    ui.toast(
+      name
+        ? `已邀请 ${name} · 局已出现在 ta 的「我的局」`
+        : "已邀请 · 局已出现在 ta 的「我的局」",
+    );
     await loadIntents(); // 已邀标记与排序刷新（排序单一源=后端：未邀在前、已邀靠后，前端保持该序）
   }
 
   /* ---- 意向簿 ---- */
 
-  async function saveIntent(slots: string[], frequency: number, note: string): Promise<Intent> {
+  async function saveIntent(
+    slots: string[],
+    frequency: number,
+    note: string,
+  ): Promise<Intent> {
     if (!slots.length) {
-      ui.toast('至少选一个时段');
-      throw new Error('intent_slots_empty'); // 调用方（表单）应先拦，此处兜底
+      ui.toast("至少选一个时段");
+      throw new Error("intent_slots_empty"); // 调用方（表单）应先拦，此处兜底
     }
     const had = !!myIntent.value;
     const v = await track(() => apiSaveIntent(slots, frequency, note));
     const it = toIntent(v);
-    myIntent.value = { slots: it.slots, frequency: it.frequency, note: it.note };
-    ui.toast(had ? '意向已更新 · 想改随时改' : '意向已留下 · 组局的人凑人时会看见你');
+    myIntent.value = {
+      slots: it.slots,
+      frequency: it.frequency,
+      note: it.note,
+    };
+    ui.toast(
+      had ? "意向已更新 · 想改随时改" : "意向已留下 · 组局的人凑人时会看见你",
+    );
     return it;
   }
 
   async function delIntent(): Promise<void> {
     await track(() => apiDeleteIntent());
     myIntent.value = null;
-    ui.toast('意向已删 · 随时可以再留');
+    ui.toast("意向已删 · 随时可以再留");
   }
 
   /** 进行中的局（live 入口页冷启动分发在用；真局来自后端派生态） */
   const liveGame = computed(
-    () => games.value.find((g) => g.status === 'live') ?? myGames.value.find((g) => g.status === 'live') ?? null,
+    () =>
+      games.value.find((g) => g.status === "live") ??
+      myGames.value.find((g) => g.status === "live") ??
+      null,
   );
 
   return {
-    games, myGames, current, intents, myIntent, loading, liveGame,
-    findGame, loadGames, loadMine, loadDetail, refresh, loadIntents, loadMyIntent,
-    publishGame, editGame, joinGame, quitGame, cancelGame, lockGame, bookCourt, clearBooking,
-    restoreGame, inviteUser, saveIntent, delIntent,
+    games,
+    myGames,
+    current,
+    intents,
+    myIntent,
+    loading,
+    liveGame,
+    findGame,
+    loadGames,
+    loadMine,
+    loadDetail,
+    refresh,
+    loadIntents,
+    loadMyIntent,
+    publishGame,
+    editGame,
+    joinGame,
+    quitGame,
+    cancelGame,
+    lockGame,
+    bookCourt,
+    clearBooking,
+    feePreview,
+    setFee,
+    restoreGame,
+    inviteUser,
+    saveIntent,
+    delIntent,
   };
 });

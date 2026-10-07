@@ -1,5 +1,7 @@
 <template>
-  <!-- 账单页（5.1 子页）：期间筛选 + 三数总览 + 逐笔列表（结算/收款行内动作，点行进原局详情看摊账） -->
+  <!-- 账单页（5.1 子页 · 1.3 批4 切真）：期间筛选 + 三数总览 + 费用未定提醒 + 谁还欠你 +
+       逐笔列表（结算/收款行内动作，点行进原局详情）。数据全在 bill store（后端定值直读，
+       A4 界面不自算）；确认问句/断网重试精修批5，本批动作直调 + 整树换新 -->
   <PageShell>
     <!-- 子页统一返回行（BackRow；uni 多页无返回手势兜底） -->
     <BackRow />
@@ -9,107 +11,212 @@
       <view class="brand">账<text class="bem">单</text></view>
     </view>
 
-    <!-- 期间筛选（5.1 辅助功能：近 7 天 / 近 30 天 / 全部） -->
+    <!-- 游客态（4.9）：钱的地方假数字必须标明 + 登录入口 -->
+    <view v-if="bill.isDemo" class="demo-banner">
+      <text class="demo-txt">未登录 · 以下是演示数据</text>
+      <text class="demo-link" @click="goLogin">登录 ▸</text>
+    </view>
+
+    <!-- 期间筛选（4.6：三数、逐笔、谁还欠你一起跟着走——切换即重拉） -->
     <FilterChips v-model="period" :options="PERIOD_OPTS" />
 
-    <!-- 三数总览（store summary 已基于 filtered 求和）；三数版式内聚在 BillSummaryCard -->
-    <BillSummaryCard
-      class="trio-gap"
-      :due="bill.summary.due"
-      :paid="bill.summary.paid"
-      :receivable="bill.summary.receivable"
-    />
+    <!-- A2 加载中：占位（真请求在途时；演示态无请求不占位） -->
+    <view v-if="bill.loading && !bill.rows.length" class="ph"
+      >正在打开账单…</view
+    >
 
-    <!-- 「谁还欠你」按人汇总（5.1 修订：debtors 与三数同口径；没人欠整块不渲染） -->
-    <view v-if="bill.debtors.length" class="debtors">
-      <view class="dhead">谁还欠你</view>
-      <view v-for="d in bill.debtors" :key="d.u.id" class="drow">
-        <text class="dname">{{ d.u.name }}</text>
-        <text class="damt">¥{{ d.amt }} · {{ d.n }} 场</text>
+    <template v-else-if="!failed">
+      <!-- 三数总览（后端定值）；三数版式内聚在 BillSummaryCard -->
+      <BillSummaryCard
+        class="trio-gap"
+        :due="bill.summary.due"
+        :paid="bill.summary.paid"
+        :receivable="bill.summary.receivable"
+      />
+
+      <!-- 费用未定提醒条（4.5：仅组织者数据里有；可点直达局页补填总价。
+           逐条带自己的局名——「你有 N 场」的总句式只在单条时成立，多条照念就错了） -->
+      <view
+        v-for="u in bill.unfixed"
+        :key="u.gameId"
+        class="unfixed"
+        @click="goGame(u.gameId)"
+      >
+        「{{ u.gameName }}」费用未定，补填后才出账 · 去补 ▸
       </view>
-    </view>
 
-    <!-- 逐笔列表（filtered 倒序由 store 保序给出）；该收行点开=行内展开按人名单，
-         其余行点行进原参加场次页看摊账明细。template v-for 双根：行 + 行下的展开区。
-         包一层 .list 是为首行上边框取 :first-child —— uni 下 :first-of-type 会被卡片的
-         根 view 占掉，匹配不到首行 -->
-    <view v-if="bill.filtered.length" class="list">
-      <template v-for="b in bill.filtered" :key="b.id">
-        <view class="lrow" @click="tapBill(b)">
-          <view class="lmain">
-            <view class="gname">{{ b.gname }}</view>
-            <!-- 待付行写明欠谁（5.1）：收款人＝那场局的组织者 -->
-            <view class="gdate">{{ b.status === 'due' && b.payee ? `欠 ${b.payee.name} · ${b.date}` : b.date }}</view>
-          </view>
-          <view class="lright">
-            <view class="amt" :class="amtCls(b.status)">{{ amtTxt(b) }}</view>
-            <view class="st">{{ BILL_STATUS_NAMES[b.status] }}{{ b.status === 'receivable' ? (openId === b.id ? ' ▴' : ' ▾') : '' }}</view>
-          </view>
-          <!-- 行内动作（5.1 账单结算）：due→结算；该收逐人清账，整笔收款作废，收款钮在展开区 -->
-          <view v-if="b.status === 'due'" class="tbtn" @click.stop="bill.settleBill(b.id)">结算</view>
+      <!-- 「谁还欠你」按人汇总：后端跨场聚合定值；小字常显（5.1 小改③，spec 无 all 豁免） -->
+      <view v-if="bill.debtors.length" class="debtors">
+        <view class="dhead">谁还欠你 · 只算所选期间内散场的局</view>
+        <view v-for="d in bill.debtors" :key="d.accountId" class="drow">
+          <text class="dname">{{ d.name }}</text>
+          <text class="damt">¥{{ d.total }} · {{ d.games }} 场</text>
         </view>
-        <!-- 该收行展开区（5.1 修订）：按人明细由数据侧给好，逐人点「已收」清账 -->
-        <view v-if="openId === b.id && b.payers" class="pays">
-          <view v-for="p in b.payers" :key="p.u.id" class="prow">
-            <text class="pname">{{ p.u.name }}</text>
-            <text class="pamt" :class="{ dim: p.settled }">¥{{ p.amt }}</text>
-            <text v-if="p.settled" class="pdone">已收 ✓</text>
-            <view v-else class="tbtn rec pbtn" @click.stop="bill.receivePayer(b.id, p.u.id)">已收</view>
+      </view>
+
+      <!-- 逐笔列表（后端按散场日新到旧）；应收行点开=行内展开按人明细，
+           其余行点行进原局页看摊账。template v-for 双根：行 + 行下展开区 -->
+      <view v-if="bill.rows.length" class="list">
+        <template v-for="b in bill.rows" :key="b.gameId">
+          <view class="lrow" @click="tapBill(b)">
+            <view class="lmain">
+              <view class="gname">{{ b.gameName }}</view>
+              <view class="gdate">{{ rowSub(b) }}</view>
+              <view v-if="b.peerReceived" class="gray-flag"
+                >对方已收款 · 记得回来点结算</view
+              >
+            </view>
+            <view class="lright">
+              <view class="amt" :class="amtCls(b.kind)">{{ amtTxt(b) }}</view>
+              <view class="st"
+                >{{ BILL_STATUS_NAMES[b.kind]
+                }}{{
+                  expandable(b) ? (openId === b.gameId ? " ▴" : " ▾") : ""
+                }}</view
+              >
+            </view>
+            <!-- 行内动作（4.3）：待付行「结算」；终态不可逆，确认问句批5 接 -->
+            <view
+              v-if="b.kind === 'payable'"
+              class="tbtn"
+              @click.stop="onSettle(b)"
+              >结算</view
+            >
           </view>
-        </view>
-      </template>
-    </view>
-    <EmptyBox v-if="!bill.filtered.length" text="这段期间没有账单 · 换个筛法" />
+          <!-- 应收行展开区（4.2/4.4）：按人明细 + 末行「总价 · 我自己那份」 -->
+          <view v-if="openId === b.gameId && b.payerRows" class="pays">
+            <view v-for="p in b.payerRows" :key="p.accountId" class="prow">
+              <view class="pcol">
+                <text class="pname">{{ p.name }}</text>
+                <text v-if="p.paidAt && !p.receivedAt" class="gray-flag"
+                  >已转 · 待收</text
+                >
+              </view>
+              <text class="pamt" :class="{ dim: !!p.receivedAt }"
+                >¥{{ p.amount }}</text
+              >
+              <text v-if="p.receivedAt" class="pdone">已收 ✓</text>
+              <view v-else class="tbtn rec pbtn" @click.stop="onReceive(b, p)"
+                >已收</view
+              >
+            </view>
+            <view class="psum">
+              总价 ¥{{ b.feeTotal }} · 我自己那份 ¥{{ b.myShare
+              }}<template v-if="(b.myGuestCount ?? 0) > 0"
+                >（含带来的朋友 ×{{ b.myGuestCount }}）</template
+              >
+            </view>
+          </view>
+        </template>
+      </view>
+      <EmptyBox v-if="!bill.rows.length" text="这段期间没有账单 · 换个筛法" />
+    </template>
+
+    <!-- A2 出错：断网提示 + 重试（已点成功的动作不丢——整树只在成功响应后换新） -->
+    <view v-else class="ph retry" @click="refresh()"
+      >账单没打开 · 点这里重试</view
+    >
   </PageShell>
 </template>
 
 <script setup lang="ts">
-/* 账单页（5.1 子页）：我的花钱底账。数据全在 bill store（过滤/汇总/结算/逐人收款，toast 内聚），
-   本页只做筛选接线、行展开/导航与展示。 */
-import { computed, ref } from 'vue';
-import PageShell from '@/components/biz/PageShell.vue';
-import BackRow from '@/components/biz/BackRow.vue';
-import BillSummaryCard from '@/components/biz/BillSummaryCard.vue';
-import FilterChips from '@/components/ui/FilterChips.vue';
-import EmptyBox from '@/components/ui/EmptyBox.vue';
-import { useBillStore, BILL_STATUS_NAMES, PERIOD_OPTS, payerSum, type BillPeriod } from '@/stores/bill';
-import type { Bill, BillStatus } from '@/api/types';
-import { goGame } from '@/utils/nav';
+/* 账单页（5.1 子页 · 1.3 批4）：真数据账单的主场。数据全在 bill store（后端定值直读，
+   toast 在 store 内），本页只做筛选接线、行展开/导航、加载/出错/游客三态与动作兜底。 */
+import { computed, ref } from "vue";
+import { onShow } from "@dcloudio/uni-app";
+import PageShell from "@/components/biz/PageShell.vue";
+import BackRow from "@/components/biz/BackRow.vue";
+import BillSummaryCard from "@/components/biz/BillSummaryCard.vue";
+import FilterChips from "@/components/ui/FilterChips.vue";
+import EmptyBox from "@/components/ui/EmptyBox.vue";
+import {
+  useBillStore,
+  BILL_STATUS_NAMES,
+  PERIOD_OPTS,
+  type BillPeriod,
+} from "@/stores/bill";
+import type { Bill, BillPayer, BillStatus } from "@/api/types";
+import { errText } from "@/api/http";
+import { useUiStore } from "@/stores/ui";
+import { goGame } from "@/utils/nav";
 
 const bill = useBillStore();
+const ui = useUiStore();
 
-/** 账单期（BillPeriod 窄类型直接双向绑定——FilterChips v-model 已收窄为 string|number） */
+/** 账单期（切换=重新 load，服务端过滤；BillPeriod 窄类型双向绑定） */
 const period = computed<BillPeriod>({
   get: () => bill.period,
   set: (v) => {
-    bill.period = v;
+    void refresh(v);
   },
 });
 
-/** 行点击按状态分类：该收行行内展开（不跳页）；其余行（含全清翻转成 received 的）点行进原参加场次页看摊账明细 */
+/** A2 出错态：load 抛错（断网/未登录失效）→ 提示 + 重试入口 */
+const failed = ref(false);
+
+async function refresh(p: BillPeriod = bill.period): Promise<void> {
+  failed.value = false;
+  try {
+    await bill.load(p);
+  } catch (e) {
+    failed.value = true;
+    ui.toast(errText(e));
+  }
+}
+
+onShow(() => {
+  void refresh();
+});
+
+/** 游客态登录入口（4.9：演示数据照显，登录后换真账） */
+function goLogin(): void {
+  uni.navigateTo({ url: "/pages/mine/login" });
+}
+
+/** 行副标题：待付写明欠谁（4.1），其余只记散场那天；带了朋友加一行小字（5.1 小改①） */
+function rowSub(b: Bill): string {
+  const day = dayTxt(b.endedDay);
+  return (b.kind === "payable" || b.kind === "paid") && b.payeeName
+    ? `欠 ${b.payeeName} · ${day}`
+    : day;
+}
+
+/** 'YYYY-MM-DD' → 'M.DD'（散场那天；账单日期口径与旧演示一致） */
+function dayTxt(day: string): string {
+  const [, m, d] = day.split("-");
+  return `${Number(m)}.${d}`;
+}
+
+/** 行点击按态分类：应收/已收行行内展开按人明细（不跳页）；待付/已付行进原局页 */
 const openId = ref<number | null>(null);
+function expandable(b: Bill): boolean {
+  return b.kind === "receivable" || b.kind === "received";
+}
 function tapBill(b: Bill): void {
-  if (b.status === 'receivable') openId.value = openId.value === b.id ? null : b.id;
+  if (expandable(b)) openId.value = openId.value === b.gameId ? null : b.gameId;
   else goGame(b.gameId);
 }
 
-/** 金额状态色：due→coral / receivable→lemon / paid·received→dim */
+/** 金额状态色：待付→coral / 应收→lemon / 已付·已收→dim */
 function amtCls(st: BillStatus): string {
-  return st === 'due' ? 'due' : st === 'receivable' ? 'rec' : 'dim';
+  return st === "payable" ? "due" : st === "receivable" ? "rec" : "dim";
 }
-/** received→✓ 金额；receivable→有已收小计时「已收 ¥X / 共 ¥Y」，否则裸金额 */
+/** 已收→✓ 金额；应收行金额=未收合计（点一人少一笔，后端定值） */
 function amtTxt(b: Bill): string {
-  if (b.status === 'received') return '✓ ¥' + b.amt;
-  if (b.status === 'receivable') {
-    const got = payerSum(b, true);
-    return got > 0 ? `已收 ¥${got} / 共 ¥${b.amt}` : `¥${b.amt}`;
-  }
-  return `¥${b.amt}`;
+  return b.kind === "received" ? `✓ ¥${b.amount}` : `¥${b.amount}`;
+}
+
+/** 两向记账动作：store 内调 API + 整树换新 + toast；失败原样抛，这里兜 toast */
+function onSettle(b: Bill): void {
+  bill.settleBill(b.gameId).catch((e) => ui.toast(errText(e)));
+}
+function onReceive(b: Bill, p: BillPayer): void {
+  bill.receivePayer(b.gameId, p.accountId).catch((e) => ui.toast(errText(e)));
 }
 </script>
 
 <style lang="scss" scoped>
-/* ---------- 头部 brand：版式走全局 .brand 类，只补 700 加粗（mine 系约定，补 alpha h1 的 UA 默认加粗） ---------- */
+/* ---------- 头部 brand：版式走全局 .brand 类，只补 700 加粗（mine 系约定） ---------- */
 .brand {
   font-weight: 700;
 }
@@ -119,7 +226,39 @@ function amtTxt(b: Bill): string {
   margin-bottom: 6px;
 }
 
-/* ---------- 「谁还欠你」按人汇总（5.1 修订：与三数同口径，没欠收起） ---------- */
+/* ---------- 游客横幅（4.9：未登录 · 演示数据 + 登录入口） ---------- */
+.demo-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 4px 0 10px;
+  padding: 9px 12px;
+  border: 1px dashed rgba(255, 212, 0, 0.35);
+  border-radius: var(--r-lg);
+  font-size: 11px;
+  color: var(--dim);
+}
+.demo-link {
+  color: var(--lemon);
+  flex: none;
+}
+
+/* ---------- 费用未定提醒条（4.5：可点直达局页补填） ---------- */
+.unfixed {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 159, 67, 0.35);
+  border-radius: var(--r-lg);
+  font-size: 12px;
+  color: var(--lemon);
+  cursor: pointer;
+}
+.unfixed:active {
+  border-color: rgba(255, 212, 0, 0.6);
+}
+
+/* ---------- 「谁还欠你」按人汇总（后端跨场聚合定值 + 期间说明小字常显） ---------- */
 .debtors {
   margin: 6px 0 12px;
   padding: 12px 2px;
@@ -152,7 +291,7 @@ function amtTxt(b: Bill): string {
   flex: none;
 }
 
-/* ---------- 逐笔行（旧 mine.vue .lrow 版式：上下边框分隔 · 左局名+日期｜右金额+状态） ---------- */
+/* ---------- 逐笔行（上下边框分隔 · 左局名+副题｜右金额+状态） ---------- */
 .lrow {
   display: flex;
   align-items: center;
@@ -183,6 +322,12 @@ function amtTxt(b: Bill): string {
   color: var(--dim);
   margin-top: 2px;
 }
+/* 两向灰字旗（4.3b/4.4）：只提示、不改态 */
+.gray-flag {
+  font-size: 10px;
+  color: var(--dim);
+  margin-top: 2px;
+}
 .lright {
   text-align: right;
   flex: none;
@@ -207,7 +352,7 @@ function amtTxt(b: Bill): string {
   margin-top: 2px;
 }
 
-/* ---------- 该收行展开区（5.1 修订：视觉上属于该行——左缩进、无边框） ---------- */
+/* ---------- 应收行展开区（视觉上属于该行——左缩进、无边框） ---------- */
 .pays {
   padding: 4px 0 8px 14px;
 }
@@ -217,9 +362,12 @@ function amtTxt(b: Bill): string {
   gap: 10px;
   padding: 7px 2px;
 }
-.pname {
+.pcol {
   flex: 1;
   min-width: 0;
+}
+.pname {
+  display: block;
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -239,15 +387,37 @@ function amtTxt(b: Bill): string {
   color: var(--dim);
   flex: none;
 }
+/* 明细末行（4.2）：「总价 · 我自己那份」——组织者兜的零头不用自己心算 */
+.psum {
+  margin-top: 6px;
+  padding-top: 7px;
+  border-top: 1px dashed rgba(245, 241, 232, 0.12);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+}
 /* 未结的逐人「已收」小钮：复用 .tbtn.rec，行内收窄 */
 .pbtn {
   padding: 5px 10px;
   font-size: 11px;
 }
 
-/* 行内动作小钮：基础形走全局 .tbtn（base.scss 收源）；receivable 收款 lemon 描边为本页私变体 */
+/* 行内动作小钮：基础形走全局 .tbtn（base.scss 收源）；收款 lemon 描边为本页私变体 */
 .tbtn.rec {
   border-color: rgba(255, 212, 0, 0.5);
   color: var(--lemon);
+}
+
+/* ---------- 加载/出错占位（A2：3 秒内补上；出错可点重试） ---------- */
+.ph {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+  padding: 40px 0;
+  text-align: center;
+}
+.retry {
+  cursor: pointer;
+  text-decoration: underline;
 }
 </style>

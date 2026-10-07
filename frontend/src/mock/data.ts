@@ -4,6 +4,7 @@
    1.2 接线：games 种子改型 MockGame（5.1 隔离线快照冻结——账单/登记/记录/现场演示继续吃这份，
    字段不再生长）；局/意向真数据走 api/games.ts + stores/game。 */
 import type { BillsView, MockGame, Slot, User } from "@/api/types";
+import { GUEST_DUPR } from "@/utils/elo";
 
 /* dupr：1.4 双轨演示底数（2.4-4.6 分布，批3i）；play/win/month 事实位不动 */
 export const U: Record<string, User> = {
@@ -124,15 +125,17 @@ export const U: Record<string, User> = {
     last5: ["L", "W", "L", "W", "L"],
     chibi: { skin: 0, hair: 3, hc: 1, shirt: 5, face: 0, acc: 1 },
   },
+  /* zhang：批4v1 未定级演示样本（play<5 → 战力榜「参考」区 + 未定级标记，1.4 §5/§6） */
   zhang: {
     id: 12,
     name: "小张",
     elo: 1380,
-    dupr: 2.5,
-    play: 6,
+    dupr: 3.0,
+    provisional: true,
+    play: 4,
     win: 2,
     month: 0,
-    last5: ["L", "W", "L", "L", "W"],
+    last5: ["L", "W", "L", "L"],
     chibi: { skin: 1, hair: 1, hc: 5, shirt: 3, face: 0, acc: 0 },
   },
   ken: {
@@ -146,12 +149,12 @@ export const U: Record<string, User> = {
     last5: ["W", "L", "L", "W", "L"],
     chibi: { skin: 0, hair: 4, hc: 3, shirt: 6, face: 2, acc: 0 },
   },
-  /* zhao：shadow 访客无 DUPR 档案——恒 3.0 代位（1.4 §4，对齐后端 GUEST_DUPR） */
+  /* zhao：shadow 访客无 DUPR 档案——恒 GUEST_DUPR 代位（1.4 §4，对齐后端 dupr.py） */
   zhao: {
     id: 10,
     name: "赵姐的朋友",
     elo: 0,
-    dupr: 3.0,
+    dupr: GUEST_DUPR,
     play: 0,
     win: 0,
     month: 0,

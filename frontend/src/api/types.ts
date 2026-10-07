@@ -116,6 +116,17 @@ export interface MyBlock {
   invited: boolean;
 }
 
+/** 已出账局的实摊定值块（game_view bill 镜像，1.3 批3）：fee_total/per_head/heads
+    是引擎定格数；my_share/my_guest_count 按 viewer（不在摊钱名单 → null）。
+    未出账 → 整块 null——前端以块有无区分「约（预估人均）」与实摊（A4） */
+export interface GameBill {
+  feeTotal: number;
+  perHead: number;
+  heads: number;
+  myShare: number | null;
+  myGuestCount: number | null;
+}
+
 /** 球局（game_view 镜像）。人头/剩坑/人均/forced 是后端算好的定值（A4：画面不自算）；
     entries 仅详情与写动作出口带（列表简版没有），my 仅登录 viewer 带。 */
 export interface Game {
@@ -136,6 +147,7 @@ export interface Game {
   manualLock: boolean; // 必打手动锁（锁上不撤）
   courts: string[] | null; // 订场登记的场地号；场上有号即必打；null=未登记
   feeTotal: number | null; // 总价（整数元）；null=费用未定
+  bill?: GameBill | null; // 实摊定值块（已出账的局非 null；1.3 批3）
   status: GameStatus;
   unlocked: boolean; // 改约解锁：锁定局改了时间/地点，开打前可退
   joinable: boolean; // 派生态 ∈ {open, locked, live}——加入按钮显隐直接读
@@ -192,28 +204,125 @@ export interface GameCardModel {
   stackPlus: string; // 头像叠层溢出文案：'+' / '+N' / '+N · 含随行'
 }
 
-/** 账单状态四态（5.1 文档：待付/已付/该收/已收） */
-export type BillStatus = "due" | "paid" | "receivable" | "received";
+/* ─────────── 1.3 账单域（批4 读链切真） ───────────
+   snake 线上形状（…Api 族）逐字镜像 backend/app/services/bills.py 的 view 输出
+   （契约唯一真源；技术设计 §8b 签名照抄）；camel 业务形状（Bill/BillPayer 等，
+   导出名沿 5.1 mock 期）由 stores/bill.ts 单点映射。 */
 
-/** 该收按人明细一行——数据侧算好的每个人该摊多少、结没结，界面不自算（5.1 修订） */
-export interface BillPayer {
-  u: User;
-  amt: number;
-  settled: boolean;
+/** 账单行四态（5.1：待付/已付/应收/已收；状态由两时刻推导，后端同串直出） */
+export type BillKind = "payable" | "paid" | "receivable" | "received";
+
+/** 应收按人明细一行（§4.2：每个别人该摊多少、收没收到；组织者自己那份由
+    my_share 承载，不进明细）。paid_at 有而 received_at 空 = 「已转 · 待收」灰字 */
+export interface BillPayerApi {
+  account_id: number;
+  name: string;
+  deactivated: boolean;
+  amount: number;
+  guest_count: number;
+  paid_at: string | null;
+  received_at: string | null;
 }
 
-/** 账单（5.1 文档：哪局、多少钱、什么状态；垫付只属组织者，故 role=org 才有 receivable。
-    member 行 amt=人均摊费、payee=该局组织者（欠谁）；org 行 amt=别人摊费合计、payers=按人明细） */
+/** 账单行（§4.1/§4.2）：payable/paid 是我欠的（payee=组织者）；receivable/received
+    是我组织的（amount=未收合计，收讫翻全额；payer_rows 不含我自己那份） */
+export interface BillRowApi {
+  kind: BillKind;
+  game_id: number;
+  game_name: string;
+  ended_day: string; // 'YYYY-MM-DD' 散场那天（补填出账的局也记散场日）
+  amount: number;
+  guest_count?: number; // >0 才带：「含带来的朋友 ×N」
+  payee_name?: string; // payable/paid：欠谁
+  payee_deactivated?: boolean;
+  peer_received?: boolean; // 对方已点收而我未结算（灰字旗，不改三数）
+  fee_total?: number; // receivable/received：明细末行「总价 · 我自己那份」
+  my_share?: number | null;
+  my_guest_count?: number;
+  payer_rows?: BillPayerApi[];
+}
+
+/** 「谁还欠你」一行（跨场聚合，期间内散场的局） */
+export interface BillDebtorApi {
+  account_id: number;
+  name: string;
+  deactivated: boolean;
+  total: number;
+  games: number;
+}
+
+/** 费用未定提醒一条（仅组织者自己：散场过且从未填价） */
+export interface BillUnfixedApi {
+  game_id: number;
+  game_name: string;
+  ended_day: string;
+}
+
+/** 账单页全视图（GET /api/bills 响应镜像）：分权在服务层裁死——三数/逐笔/
+    谁还欠你同随 period，SQL 只取 viewer 的行/viewer 组织的局 */
+export interface BillsViewApi {
+  period: "7d" | "30d" | "all";
+  summary: { due: number; paid: number; receivable: number };
+  rows: BillRowApi[];
+  debtors: BillDebtorApi[];
+  unfixed: BillUnfixedApi[];
+}
+
+/** 账单状态（=行四态；导出名沿 5.1 mock 期，定义体已切真形状） */
+export type BillStatus = BillKind;
+
+/** 该收按人明细一行（camel）：paidAt 有而 receivedAt 空 = 「已转 · 待收」 */
+export interface BillPayer {
+  accountId: number;
+  name: string;
+  deactivated: boolean;
+  amount: number;
+  guestCount: number;
+  paidAt: string | null;
+  receivedAt: string | null;
+}
+
+/** 账单行（camel，store 映射产物）：见 BillRowApi */
 export interface Bill {
-  id: number;
+  kind: BillStatus;
   gameId: number;
-  gname: string;
-  date: string;
-  amt: number;
-  status: BillStatus;
-  role: "org" | "member";
-  payee?: User; // 欠谁——member 行＝该局组织者；org 行无此字段
-  payers?: BillPayer[]; // 该收按人明细，org 行才有；不含我自己
+  gameName: string;
+  endedDay: string;
+  amount: number;
+  guestCount?: number;
+  payeeName?: string;
+  payeeDeactivated?: boolean;
+  peerReceived?: boolean;
+  feeTotal?: number;
+  myShare?: number | null;
+  myGuestCount?: number;
+  payerRows?: BillPayer[];
+}
+
+/** 「谁还欠你」一行（camel） */
+export interface BillDebtor {
+  accountId: number;
+  name: string;
+  deactivated: boolean;
+  total: number;
+  games: number;
+}
+
+/** 费用未定提醒一条（camel） */
+export interface BillUnfixed {
+  gameId: number;
+  gameName: string;
+  endedDay: string;
+}
+
+/** 账单页全视图（camel，store/页面消费）：三数/rows/debtors/unfixed 全是后端
+    定值（A4：界面不自算），期间切换=重新 load */
+export interface BillsView {
+  period: "7d" | "30d" | "all";
+  summary: { due: number; paid: number; receivable: number };
+  rows: Bill[];
+  debtors: BillDebtor[];
+  unfixed: BillUnfixed[];
 }
 
 /** 谁下（2.4 §4.1 四件套之二）：全上全下 / 输家下 / 1、2、3人下（单打只有 all/loser） */
@@ -305,7 +414,11 @@ export type SheetPayload =
   | { type: "join"; gameId: number }
   | { type: "quit-confirm"; gameId: number }
   | { type: "cancel-confirm"; gameId: number }
-  | { type: "booking"; gameId: number } // 订场登记 / 锁定必打（3.2 三态锁：没锁→空锁→订场锁共用的面板）
+  | {
+      type: "booking"; // 订场登记 / 锁定必打（3.2 三态锁：没锁→空锁→订场锁共用的面板）
+      gameId: number;
+      feeOnly?: boolean; // 补填形态（1.3 §4.5）：散场后从未填价的局，只让填总价
+    }
   | { type: "invite-to-game"; gameId: number } // 局详情翻意向列表拉人（alpha:1213）
   | { type: "invite-to-slot"; userId: number } // 球员档案选局邀请（alpha:1239）
   | { type: "intent-form" } // 留/改意向（alpha:1266）
@@ -317,11 +430,9 @@ export type SheetPayload =
       pendingJoin?: { gameId: number; bring: number };
       pendingLaunch?: PublishGameInput;
       pendingCheckin?: { gameId: number };
-      pendingIntent?: { slots: string[]; frequency: number; note: string };
     };
-// 名片建号卡（1.1 A1）：游客点报名/建局/留意向/扫码签到时弹出；建号成功自动接着完成挂起的动作（D3 两步拆分）
+// 名片建号卡（1.1 A1）：游客点报名/建局/扫码签到时弹出；建号成功自动接着完成挂起的动作（D3 两步拆分）
 // pendingCheckin（2.1·选项A）：扫码到场一律走名片建号，建号成功后自动「我到了」进候场区
-// pendingIntent（1.2 4.13）：游客留意向同走先看后报——建号成功自动把意向落进意向簿
 
 /** 结算 ±积分一行（2.1 打球页改版：终局结算弹窗 EndSettleModal 的预览行复用本形状） */
 export interface WinChange {
@@ -391,7 +502,7 @@ export interface LivePlayerApi {
   id: number; // 名册行 id——check/swap/tempo/封撤管理员写动作按它定靶
   account_id: number | null; // 访客 null
   name: string; // 开账定格名（注销者占位名；访客=担保人前两字+编号）
-  guest: boolean; // 随行访客：代入 1500 算分但不落积分账
+  guest: boolean; // 随行访客：代入 1200 算分但不落积分账（1.4 §4）
   dupr: number; // DUPR 配平代位分（1.4 §6：访客 3.0、未定级吃派生分/自评档）
   guarantor_account_id: number | null; // 访客挂谁名下（考勤底账「谁带的」）
   dropin: boolean; // 空降进场（没报名扫码直入名册）

@@ -1,133 +1,319 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createPinia, setActivePinia } from 'pinia';
-import { U } from '@/api/mock'; // 人名↔id 锚定（li=5、wu=3、bei=8…），比裸数字可读；id 是种子常量，resetModules 不变
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
+import type { BillPayerApi, BillsViewApi, BillRowApi } from "@/api/types";
+import { demoBillsView } from "@/api/mock";
 
-/* 每个用例 vi.resetModules() 重新求值模块图 → 拿到全新 mock 数据（等价 alpha 刷新页面） */
-beforeEach(async () => {
+/* 1.3 批4 切真重写：bill store 动作全是真接口调用——api 层整体 mock，用例喂 crafted
+   BillsViewApi（形状与后端 bills.py view 输出逐字对齐），测的是游客回落演示（4.9）、
+   snake→camel 映射、三数/rows/debtors 定值直读（A4）、期间切换重拉与两向记账整树换。 */
+const api = vi.hoisted(() => ({
+  apiBills: vi.fn(),
+  apiBillSettle: vi.fn(),
+  apiBillReceive: vi.fn(),
+}));
+
+vi.mock("@/api/bills", () => api);
+
+beforeEach(() => {
+  vi.clearAllMocks();
   vi.resetModules();
   setActivePinia(createPinia());
 });
 
 async function loadStore() {
-  const mod = await import('@/stores/bill');
-  return mod.useBillStore();
+  const mod = await import("@/stores/bill");
+  return {
+    store: mod.useBillStore(),
+    session: (await import("@/stores/session")).useSessionStore(),
+    ui: (await import("@/stores/ui")).useUiStore(),
+  };
 }
 
-describe('期间过滤（今日=2026-10-04：7d 自 9.27、30d 自 9.04，边界当天含）', () => {
-  it('默认 all：种子 6 笔全在，倒序即种子顺序', async () => {
-    const s = await loadStore();
-    expect(s.period).toBe('all');
-    expect(s.filtered.map((b) => b.id)).toEqual([1, 2, 3, 4, 5, 6]);
+/* ---- BillsViewApi 造数（线上 snake 形状） ---- */
+let seq = 0;
+function mkRow(p: Partial<BillRowApi> = {}): BillRowApi {
+  seq += 1;
+  return {
+    kind: "payable",
+    game_id: seq,
+    game_name: `测试局 ${seq}`,
+    ended_day: "2026-10-01",
+    amount: 58,
+    payee_name: "朝阳反手王",
+    payee_deactivated: false,
+    peer_received: false,
+    ...p,
+  };
+}
+
+function mkPayer(p: Partial<BillPayerApi> = {}): BillPayerApi {
+  return {
+    account_id: 5,
+    name: "小赵",
+    deactivated: false,
+    amount: 58,
+    guest_count: 0,
+    paid_at: null,
+    received_at: null,
+    ...p,
+  };
+}
+
+function mkView(p: Partial<BillsViewApi> = {}): BillsViewApi {
+  return {
+    period: "all",
+    summary: { due: 58, paid: 0, receivable: 0 },
+    rows: [mkRow()],
+    debtors: [],
+    unfixed: [],
+    ...p,
+  };
+}
+
+describe("游客回落演示（4.9：未登录 · 演示数据，不冒充真账）", () => {
+  it("load 不发请求：view=演示视图、isDemo 亮、total 同源", async () => {
+    const { store } = await loadStore();
+    await store.load();
+    expect(api.apiBills).not.toHaveBeenCalled();
+    expect(store.isDemo).toBe(true);
+    expect(store.view?.rows).toHaveLength(demoBillsView.rows.length);
+    expect(store.rows[0]?.gameName).toBe("周五夜光局");
+    expect(store.summary).toEqual(demoBillsView.summary);
+    expect(store.debtors).toEqual(demoBillsView.debtors);
+    expect(store.unfixed).toEqual(demoBillsView.unfixed);
+    expect(store.totalSummary).toEqual(demoBillsView.summary);
   });
 
-  it('7d：10.01/10.02 两笔；9.26 不含、9.27 当天含（>= 边界）', async () => {
-    const s = await loadStore();
-    s.period = '7d';
-    expect(s.filtered.map((b) => b.id)).toEqual([1, 2]);
-    s.bills.push(
-      { id: 91, gameId: 0, gname: '边界当天', date: '9.27', amt: 1, status: 'paid', role: 'member' },
-      { id: 92, gameId: 0, gname: '边界前一天', date: '9.26', amt: 1, status: 'paid', role: 'member' },
+  it("演示态点结算/已收：只提示引导登录，不调 API", async () => {
+    const { store, ui } = await loadStore();
+    await store.load();
+    await store.settleBill(98);
+    await store.receivePayer(97, 5);
+    expect(api.apiBillSettle).not.toHaveBeenCalled();
+    expect(api.apiBillReceive).not.toHaveBeenCalled();
+    expect(ui.toastMsg).toBe("演示数据 · 登录后才能记真账");
+  });
+});
+
+describe("登录读链（三数/rows/debtors 直读定值，A4）", () => {
+  it("load 拉 apiBills：snake→camel 映射抽查 + period 回带", async () => {
+    api.apiBills.mockResolvedValue(
+      mkView({
+        period: "7d",
+        summary: { due: 174, paid: 0, receivable: 638 },
+        rows: [
+          mkRow({
+            kind: "payable",
+            game_id: 9,
+            amount: 174,
+            guest_count: 2,
+            peer_received: true,
+          }),
+          mkRow({
+            kind: "receivable",
+            game_id: 8,
+            ended_day: "2026-09-30",
+            amount: 638,
+            fee_total: 700,
+            my_share: 62,
+            my_guest_count: 0,
+            payer_rows: [mkPayer({ paid_at: "2026-10-01T20:00:00+08:00" })],
+          }),
+        ],
+        debtors: [
+          {
+            account_id: 5,
+            name: "小赵",
+            deactivated: false,
+            total: 638,
+            games: 1,
+          },
+        ],
+        unfixed: [
+          { game_id: 7, game_name: "周三夜战", ended_day: "2026-09-28" },
+        ],
+      }),
     );
-    const ids = s.filtered.map((b) => b.id);
-    expect(ids).toContain(91);
-    expect(ids).not.toContain(92);
-  });
-
-  it('30d：种子 6 笔全在；9.04 当天含、9.03 不含', async () => {
-    const s = await loadStore();
-    s.period = '30d';
-    expect(s.filtered.map((b) => b.id)).toEqual([1, 2, 3, 4, 5, 6]);
-    s.bills.push(
-      { id: 91, gameId: 0, gname: '边界当天', date: '9.04', amt: 1, status: 'paid', role: 'member' },
-      { id: 92, gameId: 0, gname: '边界前一天', date: '9.03', amt: 1, status: 'paid', role: 'member' },
-    );
-    const ids = s.filtered.map((b) => b.id);
-    expect(ids).toContain(91);
-    expect(ids).not.toContain(92);
-  });
-});
-
-describe('三数总览 summary（基于 filtered，received 不进三数）', () => {
-  it('30d / all：应付 86 · 已付 120 · 该收 280（未结口径：bill2 li 100 + bill6 li/wu 各 90；种子已结行不算）', async () => {
-    const s = await loadStore();
-    s.period = '30d';
-    expect(s.summary).toEqual({ due: 86, paid: 120, receivable: 280 });
-    s.period = 'all';
-    expect(s.summary).toEqual({ due: 86, paid: 120, receivable: 280 });
-    // 同源锚：该收三数 === Σ debtors.amt（同一份未结明细的两种加总方向）
-    expect(s.summary.receivable).toBe(s.debtors.reduce((t, d) => t + d.amt, 0));
-  });
-
-  it('7d：只剩 10.02/10.01 两笔 → 应付 45 · 已付 0 · 该收 100（bill2 li 未结）', async () => {
-    const s = await loadStore();
-    s.period = '7d';
-    expect(s.summary).toEqual({ due: 45, paid: 0, receivable: 100 });
-  });
-});
-
-describe('settle 状态迁移（due→paid）', () => {
-  it('settle due 行：状态落 paid，三数随之此消彼长', async () => {
-    const s = await loadStore();
-    const msg = s.settleBill(1); // 10.02 待付 45
-    expect(msg).toBe('已结算 · 应付变已付');
-    expect(s.bills.find((b) => b.id === 1)?.status).toBe('paid');
-    expect(s.summary.due).toBe(41); // 86 − 45
-    expect(s.summary.paid).toBe(165); // 120 + 45
-  });
-
-  it('settle 非 due 行 → null 且状态不动', async () => {
-    const s = await loadStore();
-    expect(s.settleBill(2)).toBeNull(); // receivable
-    expect(s.settleBill(3)).toBeNull(); // paid
-    expect(s.bills.find((b) => b.id === 2)?.status).toBe('receivable');
-  });
-});
-
-describe('receivePayer 逐人清账（5.1 修订：整笔一键收款作废）', () => {
-  it('部分结清不翻整笔：msg 报到人，行仍 receivable，该收只减他那份', async () => {
-    const s = await loadStore();
-    const msg = s.receivePayer(6, U.wu.id); // bill6 未结：li/wu
-    expect(msg).toBe(`已收 ${U.wu.name} 这笔`);
-    expect(s.bills.find((b) => b.id === 6)?.status).toBe('receivable');
-    expect(s.summary.receivable).toBe(190); // 280 − 90（wu 结了）
-  });
-
-  it('全清翻整笔：最后一人收掉 → 行落 received（received 态的运行期来源）', async () => {
-    const s = await loadStore();
-    const msg = s.receivePayer(2, U.li.id); // bill2 仅剩 li 未结
-    expect(msg).toBe('已收讫 · 这场全结清');
-    expect(s.bills.find((b) => b.id === 2)?.status).toBe('received');
-    expect(s.summary.receivable).toBe(180); // 独立 store 实例从种子起算：只剩 bill6 的 li+wu 未结
-  });
-
-  it('已结再收 → null；对 due/paid 行收 → null', async () => {
-    const s = await loadStore();
-    expect(s.receivePayer(6, U.bei.id)).toBeNull(); // bei 已结，不重复收
-    expect(s.receivePayer(1, U.hai.id)).toBeNull(); // due 行无按人明细
-    expect(s.receivePayer(3, U.wang.id)).toBeNull(); // paid 行
-  });
-});
-
-describe('debtors「谁还欠你」（filtered 同口径，按人聚合未结 payer，amt 降序）', () => {
-  it('all：li 190·2场（bill2+bill6 同人聚合）· wu 90·1场', async () => {
-    const s = await loadStore();
-    expect(s.debtors).toEqual([
-      { u: U.li, amt: 190, n: 2 },
-      { u: U.wu, amt: 90, n: 1 },
+    const { store, session } = await loadStore();
+    session.status = "ready"; // 登录态
+    await store.load("7d");
+    expect(api.apiBills).toHaveBeenCalledWith("7d");
+    expect(store.isDemo).toBe(false);
+    expect(store.summary).toEqual({ due: 174, paid: 0, receivable: 638 });
+    const pay = store.rows[0]!;
+    expect(pay.gameId).toBe(9);
+    expect(pay.guestCount).toBe(2); // 「含带来的朋友 ×2」
+    expect(pay.peerReceived).toBe(true); // 「对方已收款」灰字旗
+    const rec = store.rows[1]!;
+    expect(rec.payerRows?.[0]).toEqual({
+      accountId: 5,
+      name: "小赵",
+      deactivated: false,
+      amount: 58,
+      guestCount: 0,
+      paidAt: "2026-10-01T20:00:00+08:00", // 「已转 · 待收」的数据半边
+      receivedAt: null,
+    });
+    expect(rec.myShare).toBe(62); // 明细末行「总价 · 我自己那份」
+    expect(store.debtors).toEqual([
+      { accountId: 5, name: "小赵", deactivated: false, total: 638, games: 1 },
+    ]);
+    expect(store.unfixed).toEqual([
+      { gameId: 7, gameName: "周三夜战", endedDay: "2026-09-28" },
     ]);
   });
 
-  it('7d：bill6 被筛掉 → 只剩 li 100·1场', async () => {
-    const s = await loadStore();
-    s.period = '7d';
-    expect(s.debtors).toEqual([{ u: U.li, amt: 100, n: 1 }]);
+  it("期间切换=重新 load（服务端过滤，不自算）", async () => {
+    api.apiBills.mockResolvedValue(mkView());
+    const { store, session } = await loadStore();
+    session.status = "ready";
+    await store.load("all");
+    await store.load("30d");
+    expect(api.apiBills).toHaveBeenLastCalledWith("30d");
+    expect(store.period).toBe("30d");
   });
 
-  it('结清后移出：收掉 bill2 的 li 与 bill6 的 wu、li → debtors 空', async () => {
-    const s = await loadStore();
-    s.receivePayer(2, U.li.id);
-    s.receivePayer(6, U.wu.id);
-    s.receivePayer(6, U.li.id); // bill6 最后一笔 → 整笔翻 received
-    expect(s.debtors).toEqual([]);
+  it("load 失败不吞：原样上抛给页面（A2 出错态），loading 复位", async () => {
+    api.apiBills.mockRejectedValue(new Error("网络不给力，请稍后再试"));
+    const { store, session } = await loadStore();
+    session.status = "ready";
+    await expect(store.load()).rejects.toThrow("网络不给力，请稍后再试");
+    expect(store.loading).toBe(false);
+  });
+
+  it("loadTotal 全量口径：恒拉 all，与随筛选漂的 summary 分开", async () => {
+    api.apiBills.mockImplementation(async (p: string) =>
+      mkView({
+        period: p as "7d" | "30d" | "all",
+        summary:
+          p === "all"
+            ? { due: 999, paid: 0, receivable: 0 }
+            : { due: 1, paid: 0, receivable: 0 },
+      }),
+    );
+    const { store, session } = await loadStore();
+    session.status = "ready";
+    await store.load("7d");
+    await store.loadTotal();
+    expect(api.apiBills).toHaveBeenLastCalledWith("all");
+    expect(store.summary.due).toBe(1); // 账单页卡随筛选
+    expect(store.totalSummary.due).toBe(999); // 我的页卡/注销守卫看全部
+  });
+});
+
+describe("settle / receive（调 API + 响应整树换新）", () => {
+  it("settleBill：带当前档调 API，视图整体替换 + toast", async () => {
+    const { store, ui, session } = await loadStore();
+    session.status = "ready";
+    await store.load("7d");
+    api.apiBills.mockResolvedValue(mkView({ period: "7d" }));
+    api.apiBillSettle.mockResolvedValue(
+      mkView({ period: "7d", summary: { due: 0, paid: 58, receivable: 0 } }),
+    );
+    await store.settleBill(seq);
+    expect(api.apiBillSettle).toHaveBeenCalledWith(seq, "7d");
+    expect(store.summary).toEqual({ due: 0, paid: 58, receivable: 0 });
+    expect(ui.toastMsg).toBe("已结算 · 应付变已付");
+  });
+
+  it("receivePayer 单人未收完：toast 报到人；收完最后一笔：整笔翻已收文案", async () => {
+    const { store, ui, session } = await loadStore();
+    session.status = "ready";
+    api.apiBills.mockResolvedValue(
+      mkView({
+        summary: { due: 0, paid: 0, receivable: 116 },
+        rows: [
+          mkRow({
+            kind: "receivable",
+            game_id: 42,
+            amount: 116,
+            payer_rows: [
+              mkPayer({ account_id: 5, name: "小赵", amount: 58 }),
+              mkPayer({ account_id: 6, name: "小张", amount: 58 }),
+            ],
+          }),
+        ],
+        debtors: [
+          {
+            account_id: 5,
+            name: "小赵",
+            deactivated: false,
+            total: 116,
+            games: 1,
+          },
+        ],
+      }),
+    );
+    await store.load("all");
+
+    api.apiBillReceive.mockResolvedValue(
+      mkView({
+        summary: { due: 0, paid: 0, receivable: 58 },
+        rows: [
+          mkRow({
+            kind: "receivable",
+            game_id: 42,
+            amount: 58,
+            payer_rows: [
+              mkPayer({
+                account_id: 5,
+                name: "小赵",
+                received_at: "2026-10-02T09:00:00+08:00",
+              }),
+              mkPayer({ account_id: 6, name: "小张", amount: 58 }),
+            ],
+          }),
+        ],
+        debtors: [],
+      }),
+    );
+    await store.receivePayer(42, 5);
+    expect(api.apiBillReceive).toHaveBeenCalledWith(42, 5, "all");
+    expect(ui.toastMsg).toBe("已收 小赵 这笔");
+    expect(store.summary.receivable).toBe(58); // 点一个人少一笔（后端定值）
+
+    api.apiBillReceive.mockResolvedValue(
+      mkView({
+        summary: { due: 0, paid: 0, receivable: 0 },
+        rows: [
+          mkRow({
+            kind: "received",
+            game_id: 42,
+            amount: 116,
+            payer_rows: [
+              mkPayer({
+                account_id: 5,
+                name: "小赵",
+                received_at: "2026-10-02T09:00:00+08:00",
+              }),
+              mkPayer({
+                account_id: 6,
+                name: "小张",
+                amount: 58,
+                received_at: "2026-10-02T10:00:00+08:00",
+              }),
+            ],
+          }),
+        ],
+        debtors: [],
+      }),
+    );
+    await store.receivePayer(42, 6);
+    expect(ui.toastMsg).toBe("已收讫 · 这场全结清");
+    expect(store.rows[0]?.kind).toBe("received"); // 整笔翻已收（不占三数，翻旧账仍在）
+    expect(store.summary.receivable).toBe(0);
+  });
+
+  it("动作失败原样上抛（页面兜 toast），视图不动", async () => {
+    const { store, session } = await loadStore();
+    session.status = "ready";
+    api.apiBills.mockResolvedValue(mkView());
+    await store.load();
+    const before = store.view;
+    api.apiBillSettle.mockRejectedValue(new Error("网络不给力，请稍后再试"));
+    await expect(store.settleBill(seq)).rejects.toThrow(
+      "网络不给力，请稍后再试",
+    );
+    expect(store.view).toBe(before); // 失败不换树
   });
 });

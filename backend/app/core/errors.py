@@ -168,9 +168,10 @@ def bill_not_found() -> ApiError:
     return ApiError(404, "bill_not_found", "这场局还没有账")
 
 
-def not_on_bill() -> ApiError:
-    # 本人不在摊钱名单（settle 用，批5）：404 不泄漏别人的账（1.3 §4.6 看账边界）
-    return ApiError(404, "not_on_bill", "你不在这场局的摊钱名单里")
+def not_on_bill(msg: str = "你不在这场局的摊钱名单里") -> ApiError:
+    # 本人不在摊钱名单（settle/receive 用，批4）：404 不泄漏别人的账（1.3 §4.6 看账
+    # 边界）；组织者行误点结算/收款走同码分支说话（沿 not_organizer 先例）
+    return ApiError(404, "not_on_bill", msg)
 
 
 # ---- 现场域（docs/2.3；球局域旧码一律不动） ----
