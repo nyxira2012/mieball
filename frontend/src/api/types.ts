@@ -566,7 +566,9 @@ export interface LiveMatchApi {
 export type FeedEventApi =
   | { kind: "swap"; actor: string; out: string; in: string; at: string }
   | {
-      kind: "set_admin" | "unset_admin";
+      /** auto_admin（2.5）：账开张后第一位签到的球友自动暂管现场（后端批1 落的事件，
+          actor=target=获授人） */
+      kind: "set_admin" | "unset_admin" | "auto_admin";
       actor: string;
       target: string;
       at: string;

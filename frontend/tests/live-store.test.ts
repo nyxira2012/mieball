@@ -827,7 +827,7 @@ describe("setCheck（§4.2/4.3 报到四态：归一与队位归总账，发牌�
     expect(liveApi.apiLiveCheck).toHaveBeenCalledWith(900, 101, "ok", 7);
     expect(live.live!.roster[0]!.check).toBe("late"); // 后端归一（过开球时刻）
     expect(live.live!.queue).toEqual([101]); // 排队尾
-    expect(ui.toastMsg).toBe("我 迟到 · 自动排到队尾等一轮");
+    expect(ui.toastMsg).toBe("我 已签到 · 自动加入候场队"); // 2.5 §4.7 统一句：迟到不单说
     expect(liveApi.apiLiveDeal).not.toHaveBeenCalled(); // 1 人不够一片：不发牌
   });
   it("到场驱动发牌（§4.1 够一片的人数就上片）：第 4 人报到 → 本地算完 apiLiveDeal 上报", async () => {
@@ -856,7 +856,7 @@ describe("setCheck（§4.2/4.3 报到四态：归一与队位归总账，发牌�
     );
     liveApi.apiLiveDeal.mockResolvedValue(vPlay(9));
     await live.setCheck(101, "ok");
-    expect(ui.toastMsg).toBe("我 已到场 · 排进候场队");
+    expect(ui.toastMsg).toBe("我 已签到 · 自动加入候场队"); // 2.5 §4.7 统一句
     expect(liveApi.apiLiveDeal).toHaveBeenCalledWith(
       900,
       [{ courtNo: 1, a: [102, 103], b: [104, 101] }],
@@ -891,6 +891,75 @@ describe("setCheck（§4.2/4.3 报到四态：归一与队位归总账，发牌�
     liveApi.apiLiveCheck.mockResolvedValue(vPlay(8));
     await live.setCheck(101, "ok"); // 自己（row 101 = 我的行）
     expect(liveApi.apiLiveCheck).toHaveBeenCalledWith(900, 101, "ok", 7);
+  });
+  it("签到统一句（2.5 §4.7）：ok 与 late 落定态同一句——文案只认到场，不认迟没迟到", async () => {
+    const late = await apply(vCheck());
+    liveApi.apiLiveCheck.mockResolvedValue(
+      vCheck({
+        total_seq: 8,
+        players: [pl(101, 0, { name: "我", check: "late", queue_pos: 0 })],
+        queue: [101],
+      }),
+    );
+    await late.live.setCheck(101, "ok");
+    const ok = await apply(vCheck());
+    liveApi.apiLiveCheck.mockResolvedValue(
+      vCheck({
+        total_seq: 8,
+        players: [pl(101, 0, { name: "我", check: "ok", queue_pos: 0 })],
+        queue: [101],
+      }),
+    );
+    await ok.live.setCheck(101, "ok");
+    expect(ok.ui.toastMsg).toBe(late.ui.toastMsg); // 同句
+    expect(ok.ui.toastMsg).toBe("我 已签到 · 自动加入候场队");
+  });
+  it("自动管理员获授（2.5 §4.2）：首签后 admins 新增含我（非组织者）→ 唯一 toast 用合同原句「组织者还没来 · 现场你先管着」，feed auto_admin 拼句", async () => {
+    const { live, ui } = await apply(vCheck({ admins: [] })); // 冷账无管理员；局簿无此局 → isOrganizer false
+    liveApi.apiLiveCheck.mockResolvedValue(
+      vCheck({
+        total_seq: 8,
+        admins: [0],
+        players: [pl(101, 0, { name: "我", check: "ok", queue_pos: 0 })],
+        queue: [101],
+        feed: [
+          {
+            kind: "auto_admin",
+            actor: "我",
+            target: "我",
+            at: "2026-10-07T19:00:00+08:00",
+          },
+        ],
+      }),
+    );
+    await live.setCheck(101, "ok");
+    expect(ui.toastMsg).toBe("组织者还没来 · 现场你先管着");
+    expect(live.live!.feed[0]).toBe("现场第一位签到的 我 暂管现场"); // feedSentences auto_admin 分支
+    expect(live.live!.admins).toEqual([0]);
+  });
+  it("自动管理员不授面：组织者首签不加尾巴（后端不授）；我已是管理员再签不重复提示", async () => {
+    await seedGame(g900()); // 组织者是我
+    const org = await apply(vCheck({ admins: [] }));
+    liveApi.apiLiveCheck.mockResolvedValue(
+      vCheck({
+        total_seq: 8,
+        admins: [0],
+        players: [pl(101, 0, { name: "我", check: "ok", queue_pos: 0 })],
+        queue: [101],
+      }),
+    );
+    await org.live.setCheck(101, "ok");
+    expect(org.ui.toastMsg).toBe("我 已签到 · 自动加入候场队");
+    const already = await apply(vCheck()); // admins [0]：我已在管理员表
+    liveApi.apiLiveCheck.mockResolvedValue(
+      vCheck({
+        total_seq: 8,
+        players: [pl(101, 0, { name: "我", check: "ok", queue_pos: 0 })],
+        queue: [101],
+      }),
+    );
+    await already.live.setCheck(101, "ok");
+    expect(already.ui.toastMsg).toBe("我 已签到 · 自动加入候场队");
   });
 });
 
@@ -1254,6 +1323,15 @@ describe("ensureLive（守门分流：拉读 → 开账 / 终态拦 / 回看）"
     expect(live.recap?.ended).toBe(true);
     expect(live.live!.endedAt).toBe("2026-10-07T21:30:00+08:00");
     expect(await live.arriveMe(900)).toBeNull(); // 旧画面残留的写动作拦下
+  });
+});
+
+describe("pendingLiveId（2.5 弹回 bug：goLive 落位 → live.vue onShow 消费清位的跨页信号位）", () => {
+  it("store 级：默认空位、可落位（消费清位在 live.vue 编排层，vitest 无页面基建不测）", async () => {
+    const { live } = await load();
+    expect(live.pendingLiveId).toBeNull();
+    live.pendingLiveId = 900;
+    expect(live.pendingLiveId).toBe(900);
   });
 });
 

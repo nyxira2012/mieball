@@ -1000,6 +1000,7 @@ class LiveBook(LiveSweepMixin):
         ).scalar_one_or_none()
         if formal is None:
             raise errors.live_entry_required()
+        # 两小时窗与前端 format.ts cardLiveEntry 的 2*3600_000 同源——2.5 §4.2 两端各算
         if now < game.start_at - timedelta(hours=2):
             raise errors.live_too_early()
 

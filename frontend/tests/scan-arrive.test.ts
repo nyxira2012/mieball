@@ -225,7 +225,7 @@ describe("arriveMe（扫码签到）", () => {
 
     const msg = await live.arriveMe(107);
 
-    expect(msg).toBe("已到场 · 进候场区");
+    expect(msg).toBe("已签到 · 进候场区");
     expect(api.apiJoinGame).not.toHaveBeenCalled(); // 空降不再 joinGame（§4.4：满员/候补都不拦）
     expect(liveApi.apiLiveDropIn).toHaveBeenCalledWith(107, 1); // base 号=出发时总号
     const L = live.live!;
@@ -255,7 +255,7 @@ describe("arriveMe（扫码签到）", () => {
 
     const msg = await live.arriveMe(107);
 
-    expect(msg).toBe("已到场 · 进候场区");
+    expect(msg).toBe("已签到 · 进候场区");
     expect(liveApi.apiLiveDropIn).not.toHaveBeenCalled(); // 有行不空降
     expect(liveApi.apiLiveCheck).toHaveBeenCalledWith(107, 42, "ok", 1);
     expect(live.live!.roster.find((p) => p.id === 42)?.check).toBe("late"); // 迟到归一在后端
@@ -272,7 +272,7 @@ describe("arriveMe（扫码签到）", () => {
 
     const msg = await live.arriveMe(107); // 幽灵重扫
 
-    expect(msg).toBe("已到场 · 进候场区");
+    expect(msg).toBe("已签到 · 进候场区");
     expect(liveApi.apiLiveDropIn).toHaveBeenCalledTimes(2); // 再空降
     const me = live.live!.roster.find((p) => p.id === 42);
     expect(me).toBeTruthy(); // 回到名册

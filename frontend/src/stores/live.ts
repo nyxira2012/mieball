@@ -135,7 +135,9 @@ function feedSentences(events: FeedEvent[]): string[] {
         ? `${e.actor} 把 ${e.out} 换下 · ${e.in} 上`
         : e.kind === "set_admin"
           ? `组织者封 ${e.target} 为管理员`
-          : `组织者收回了 ${e.target} 的管理员身份`,
+          : e.kind === "auto_admin"
+            ? `现场第一位签到的 ${e.target} 暂管现场`
+            : `组织者收回了 ${e.target} 的管理员身份`,
     )
     .reverse();
 }
@@ -180,6 +182,11 @@ export const useLiveStore = defineStore("live", () => {
 
   /** 最近一次总账视图——写动作 base 号（totalSeq/片 courtSeq）与轮询对表的最近真值 */
   const liveView = ref<LiveView | null>(null);
+
+  /** 跨页信号位（仿 sweepOnArrive）：goLive 跳转前落目标局 id——switchTab 不带 query，
+      live.vue 的弹回判定与 onShow 取 id 认它（参与者冷缓存时 liveGame/hasLive 全空，
+      缺了它会被误弹回约球页）；ensureLive 落地后由页面消费清位，一次性非持久态 */
+  const pendingLiveId = ref<number | null>(null);
   /** 散场后回看视图（ended 视图定格派生；回看 UI 批6 消费） */
   const recap = computed<LiveView | null>(() =>
     liveView.value?.ended ? liveView.value : null,
@@ -507,6 +514,7 @@ export const useLiveStore = defineStore("live", () => {
     if (st !== "absent" && isViewRow(id)) {
       const act: CheckInAction = st; // 窄化进闭包（absent 只出不进——上面已挡）
       const gid = L.g.id;
+      const adminsBefore = liveView.value?.admins ?? []; // 对比基准：apply 前的管理员表
       const ok = await writeAction(gid, () =>
         apiLiveCheck(gid, id, act, seqs().baseTotalSeq),
       );
@@ -515,12 +523,18 @@ export const useLiveStore = defineStore("live", () => {
       if (row.check === "left") {
         ui.toast(`${row.name} 早退 · 已记离场时刻`);
       } else if (isArrived(row.check)) {
+        // 自动管理员提示（2.5 §4.2）：授予在后端落账时办，这里只认账——
+        // apply 前后 admins 新增含我且我非组织者，唯一 toast 用合同原句
+        // （获授者不显统一签到句：签到已成功，spec 句信息量更高）；不获授走统一句
+        const granted =
+          !isOrg(L.g) &&
+          !adminsBefore.includes(U.me.id) &&
+          (liveView.value?.admins ?? []).includes(U.me.id);
+        // 签到统一句（§4.7 不分迟到与否，队位真值在响应视图）
         ui.toast(
-          row.check === "late"
-            ? `${row.name} 迟到 · 自动排到队尾等一轮`
-            : row.check === "join"
-              ? `${row.name} 中途加入 · 排到队尾`
-              : `${row.name} 已到场 · 排进候场队`,
+          granted
+            ? "组织者还没来 · 现场你先管着"
+            : `${row.name} 已签到 · 自动加入候场队`,
         );
         await maybeDeal(gid); // 到场驱动发牌（§4.1 够一片的人数就上片）
       }
@@ -623,14 +637,14 @@ export const useLiveStore = defineStore("live", () => {
       );
       if (!ok) return null;
       ui.toast("空降 · 排到队尾");
-      return "已到场 · 进候场区";
+      return "已签到 · 进候场区";
     }
     if (isArrived(p.check)) {
       ui.toast("你已经在场了");
       return null;
     }
     await setCheck(p.id, "ok"); // 到场口径单点（归一/队尾/发排/toast）
-    return "已到场 · 进候场区";
+    return "已签到 · 进候场区";
   }
 
   /* ─────── 记分链（片级写，base 号带双号） ─────── */
@@ -1168,6 +1182,7 @@ export const useLiveStore = defineStore("live", () => {
   return {
     live,
     hasLive,
+    pendingLiveId,
     settling,
     settlingCourtId,
     isPending,

@@ -236,9 +236,22 @@
         </template>
       </view>
 
-      <!-- 状态动作：live 回现场；在办局开始打球 -->
+      <!-- 状态动作（2.5 附录A1：详情与卡片同一套规矩）。组织者——报名中未定必开给指引句
+           （无按钮语义，后端 live_requires_forced 同闸）、已锁/已订场随时开始（goLive 内
+           ensureLive 开账，幂等）、开着回现场，done/终态无按钮。正式成员——「进入现场」
+           吃卡片同源判定 cardLiveEntry（账已开 ∨ 必开两小时窗）；
+           候补/未报名/游客无按钮（上场唯一路=现场扫码） -->
+      <AppChip v-if="orgGuide" class="mt12">先锁定必打，才能开始打球</AppChip>
       <AppButton
-        v-if="game.status === 'live'"
+        v-else-if="org && (game.status === 'open' || game.status === 'locked')"
+        variant="burn"
+        block
+        class="mt12"
+        @click="onStart"
+        >▶ 开始打球</AppButton
+      >
+      <AppButton
+        v-else-if="org && game.status === 'live'"
         variant="burn"
         block
         class="mt12"
@@ -246,12 +259,12 @@
         >▶ 回到现场</AppButton
       >
       <AppButton
-        v-else-if="game.joinable"
+        v-else-if="memberLiveEnter"
         variant="burn"
         block
         class="mt12"
-        @click="onStart"
-        >▶ 开始打球</AppButton
+        @click="onLive"
+        >▶ 进入现场</AppButton
       >
 
       <!-- 规则牌（规则三件 + 候补/人均口径；score_rule 未知值不显示得分规则段——旧局容错） -->
@@ -291,7 +304,12 @@ import NoteCard from "@/components/ui/NoteCard.vue";
 import { useGameStore } from "@/stores/game";
 import { useUserStore } from "@/stores/user";
 import { useUiStore } from "@/stores/ui";
-import { isOrg, MODE_NAMES, SCORE_RULE_NAMES } from "@/utils/format";
+import {
+  cardLiveEntry,
+  isOrg,
+  MODE_NAMES,
+  SCORE_RULE_NAMES,
+} from "@/utils/format";
 import { durTxt, isoDay, isoHm } from "@/utils/time";
 import { goLive } from "@/utils/nav";
 
@@ -346,6 +364,21 @@ const waitlist = computed(
 const full = computed(() => !!game.value && game.value.slotsLeft <= 0);
 const joined = computed(() => !!game.value?.my?.myEntry);
 const org = computed(() => !!game.value && isOrg(game.value));
+/* 2.5 附录A1：报名中且未定必开（未锁必打也未订场）谁都没有开账入口——组织者给指引句
+   而非按钮。锁必打不动 status（games.lock 只翻 pending，截止前仍 open），后端开账闸认
+   forced——open+forced 的组织者照样随时开始，指引句只压真正开不了账的局面 */
+const orgGuide = computed(
+  () =>
+    !!game.value &&
+    org.value &&
+    game.value.status === "open" &&
+    !game.value.forced,
+);
+/* 成员「进入现场」与约球页卡片同一判定源（同规矩同文案，验收红线：勿手写第二份）；
+   组织者走上面三态另判，不与它混 */
+const memberLiveEnter = computed(
+  () => !!game.value && !org.value && !!cardLiveEntry(game.value).liveEnter,
+);
 /** 退局窗口：报名中随便退；锁定后仅改约解锁窗可退（4.4/4.6） */
 const canQuit = computed(
   () => !!game.value && (game.value.status === "open" || game.value.unlocked),

@@ -80,8 +80,12 @@ export const autoGameName = (time: string, venue: string): string =>
 /** 卡片入场两字段派生（2.5 §4.1/4.2/4.4）：只对「我的局」（组织者 ∨ 正式报名；waitlist/被邀/
     游客永无入口）且在办局（open/locked/live）判定——
     账一开（liveOpened 定值）立即可进不看时间（§4.4）；必开局进两小时窗（含整点）也放行（§4.2）；
-    其余给倒计时灰字，纯展示无出口。 */
-function cardLiveEntry(g: Game): { countdown?: string; liveEnter?: boolean } {
+    其余给倒计时灰字，纯展示无出口。导出给 detail.vue 复用——「进入现场」详情页与卡片
+    同规矩同文案（2.5 附录A1），判定只此一份。 */
+export function cardLiveEntry(g: Game): {
+  countdown?: string;
+  liveEnter?: boolean;
+} {
   const mine = !!g.my?.isOrganizer || g.my?.myEntry?.standing === "formal";
   if (!mine) return {};
   if (g.status !== "open" && g.status !== "locked" && g.status !== "live")
@@ -89,7 +93,7 @@ function cardLiveEntry(g: Game): { countdown?: string; liveEnter?: boolean } {
   if (g.liveOpened) return { liveEnter: true };
   const forced = g.status !== "open";
   const start = new Date(g.startAt).getTime();
-  if (forced && Date.now() >= start - 2 * 3600_000) return { liveEnter: true };
+  if (forced && Date.now() >= start - 2 * 3600_000) return { liveEnter: true }; // 与 backend/app/services/live.py _start_gate timedelta(hours=2) 同源——2.5 §4.2 两小时窗两端各算
   const u = untilTxt(new Date(g.startAt));
   return u ? { countdown: `还有 ${u}` } : {};
 }

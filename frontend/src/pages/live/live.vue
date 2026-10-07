@@ -353,25 +353,35 @@ onLoad((options) => {
   liveId.value = Number.isFinite(n) ? n : null;
   /* 1.5 灵活首页·状态分发（冷启动仅一次；switchTab 不重跑 onLoad，用户主动点现场键回来不受影响）：
      无深链 id、store 未在打、也无 live 局 → 现场对当下无意义，落约球页过渡
-     （组织者视角/预约卡/形象页等后续档位实现后再扩这条分发链）。 */
-  if (liveId.value == null && !liveStore.hasLive && !gameStore.liveGame) {
+     （组织者视角/预约卡/形象页等后续档位实现后再扩这条分发链）。
+     pendingLiveId 是 goLive 的在途信号（switchTab 无 query）：有它说明详情/卡片正带 id
+     进场，onShow 马上会接——不弹回（2.5 修弹回 bug：参与者冷缓存三全空必踩）。 */
+  if (
+    liveId.value == null &&
+    !liveStore.hasLive &&
+    !gameStore.liveGame &&
+    liveStore.pendingLiveId == null
+  ) {
     goMeet();
   }
 });
 onShow(() => {
   if (liveStore.hasLive) {
+    liveStore.pendingLiveId = null; // 已开分支不接新局，信号位一并兜底清（残留不跨状态）
     liveStore.startPolling(liveStore.live!.g.id); // 回前台续轮询（onHide 停的；同局幂等不重开）
     maybeRemoteSweep(); // 远程散场预约：局已在现场时直接开清扫
     return;
   }
-  /* 带 id 深链（扫码/detail 进现场）优先；入口页直进（#/ 无 query）时自动接上唯一
-     进行中的局。冷启动无局已被 onLoad 分发去约球页，走到这说明是用户主动回现场键。
-     A2 加载中：ensureLive 在途（拉详情等）骨架占位不空白，成败都收骨架 */
-  const id = liveId.value ?? gameStore.liveGame?.id;
+  /* 带 id 深链（扫码/detail 进现场）优先，其次 goLive 落的信号位，最后入口页直进
+     （#/ 无 query）时自动接上唯一进行中的局。冷启动无局已被 onLoad 分发去约球页，
+     走到这说明是用户主动回现场键。A2 加载中：ensureLive 在途（拉详情等）骨架占位
+     不空白，成败都收骨架；信号位消费即清（一次性；深链 id 优先时顺带清掉残留） */
+  const id = liveId.value ?? liveStore.pendingLiveId ?? gameStore.liveGame?.id;
   if (id != null) {
     booting.value = true;
     liveStore.ensureLive(id).finally(() => {
       booting.value = false;
+      liveStore.pendingLiveId = null;
       maybeRemoteSweep(); // 开账/拉读落地后再开清扫（预约位已在对的局上）
     });
   }
