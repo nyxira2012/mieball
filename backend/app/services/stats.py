@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..core import clock
@@ -87,6 +87,28 @@ class StatsLedger:
         account = self.db.get(Account, account_id)
         return dupr.start_of(account.self_rating if account else None)
 
+    def pairing_ratings(self, account_ids: list[int | None]) -> dict[int | None, float]:
+        """pairing_rating 的批量版（view / 确认回流逐人代位分一次查齐，免 N+1）：
+        语义逐条同单发版——访客 3.0、有派分行吃派生分、查无行者回自评档起步分。"""
+        out: dict[int | None, float] = {}
+        if any(a is None for a in account_ids):
+            out[None] = dupr.GUEST_DUPR
+        ids = sorted({a for a in account_ids if a is not None})
+        if not ids:
+            return out
+        for row in self.db.execute(
+            select(DuprRating).where(DuprRating.account_id.in_(ids))
+        ).scalars():
+            out[row.account_id] = row.rating
+        missing = [a for a in ids if a not in out]
+        for account in self.db.execute(
+            select(Account).where(Account.id.in_(missing))
+        ).scalars():
+            out[account.id] = dupr.start_of(account.self_rating)
+        for a in ids:  # 账号行也已不在（注销清户）：与单发版同口径回默认起步分
+            out.setdefault(a, dupr.start_of(None))
+        return out
+
     def card(self, account_id: int) -> dict:
         """名片三件套：{rating, provisional(=未定级，明细不足 5 场), games}。"""
         row = self.db.execute(
@@ -102,17 +124,24 @@ class StatsLedger:
 
     def _recompute(self, account_id: int) -> None:
         """涉事者重算：起步分 + 窗口内明细重放 → 派生分缓存覆写（幂等）。
-        games 记明细总行数（定级门槛看总量，不看窗口）。"""
+        games 记明细总行数（定级门槛看总量，不看窗口）——窗口只搬尾部 WINDOW 行，
+        总量单查 count，老账号几百场后不再整表搬运。"""
         account = self.db.get(Account, account_id)
-        details = (
+        window = list(
             self.db.execute(
                 select(DuprDetail)
                 .where(DuprDetail.account_id == account_id)
-                .order_by(DuprDetail.id)
+                .order_by(DuprDetail.id.desc())
+                .limit(dupr.WINDOW)
+            ).scalars()
+        )[::-1]  # 倒取窗口后翻回 id 升序（重放按时间正序吃）
+        total = (
+            self.db.execute(
+                select(func.count())
+                .select_from(DuprDetail)
+                .where(DuprDetail.account_id == account_id)
             )
-            .scalars()
-            .all()
-        )
+        ).scalar_one()
         rating = dupr.replay(
             dupr.start_of(account.self_rating if account else None),
             [
@@ -124,15 +153,15 @@ class StatsLedger:
                     "score_l": r.score_l,
                     "won": r.won,
                 }
-                for r in details[-dupr.WINDOW :]
+                for r in window
             ],
         )
         row = self.db.execute(
             select(DuprRating).where(DuprRating.account_id == account_id)
         ).scalar_one_or_none()
         if row is None:
-            row = DuprRating(account_id=account_id, rating=3.0, games=0)
+            row = DuprRating(account_id=account_id, rating=dupr.GUEST_DUPR, games=0)
             self.db.add(row)
         row.rating = rating
-        row.games = len(details)
+        row.games = total
         row.updated_at = clock.now()

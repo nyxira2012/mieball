@@ -20,7 +20,8 @@
         <view class="mchips">
           <!-- alpha:1939 me-elo 位（1.4 批4v1 切 DUPR）：tierB 徽章 + DUPR 分 + 档名（chip ok） -->
           <AppChip kind="ok">
-            <TierBadge :tier="meTier" /> DUPR {{ fmtDupr(me.dupr ?? 3.0) }} · {{ meTier }}
+            <TierBadge :tier="meTier" /> DUPR
+            {{ fmtDupr(me.dupr ?? GUEST_DUPR) }} · {{ meTier }}
           </AppChip>
           <!-- alpha:656 尾号 chip：登录后是账号真实尾号，游客回落演示尾号 -->
           <AppChip>尾号 ···{{ session.phoneTail }}</AppChip>
@@ -106,7 +107,7 @@ import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import { useBillStore } from "@/stores/bill";
 import { isMe } from "@/utils/format";
-import { duprTier, fmtDupr } from "@/utils/elo";
+import { GUEST_DUPR, duprTier, fmtDupr } from "@/utils/elo";
 
 const user = useUserStore();
 const session = useSessionStore();
@@ -143,7 +144,7 @@ const record = computed(
     `${me.value.play} 场 · ${me.value.win} 胜 · 胜率 ${Math.round((me.value.win / me.value.play) * 100)}%`,
 );
 /** DUPR chip 的档名（utils/elo.ts duprTier；未填按 3.0 起步档） */
-const meTier = computed(() => duprTier(me.value.dupr ?? 3.0));
+const meTier = computed(() => duprTier(me.value.dupr ?? GUEST_DUPR));
 
 /* —— 导航（uni 路由集中在页面层，store 不碰 uni.*；路由在模板处直读） —— */
 function go(url: string): void {

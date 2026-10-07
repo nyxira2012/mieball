@@ -151,7 +151,7 @@ def test_sweep_per_court_confirm_and_cancel_then_end(client: TestClient):
         env["org"]["token"],
         env["game_id"],
         "cancel",
-        write_body(v, 2, no_redeal=True),
+        write_body(v, 2),
     )
     assert r.status_code == 200, r.text
     v = r.json()

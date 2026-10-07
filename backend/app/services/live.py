@@ -199,8 +199,7 @@ class LiveBook(LiveSweepMixin):
                     r.court_no = court.court_no
                     r.court_side = "a" if pid in c["a"] else "b"
                     r.queue_pos = None
-            for pos, pid in enumerate(rest):
-                by_id[pid].queue_pos = pos
+            self._place_queue(by_id, rest)
             self._bump_total(state)
             self.db.commit()
         return self.view(game_id=game_id, viewer_id=actor_id)
@@ -410,13 +409,14 @@ class LiveBook(LiveSweepMixin):
                 court.status = "idle"
             else:
                 stats = StatsLedger(self.db)
+                rates = stats.pairing_ratings([r.account_id for r in rows])
                 dicts = [
                     {
                         "id": r.id,
                         "court_no": r.court_no,
                         "court_side": r.court_side,
                         # 均衡配对换源吃 DUPR（1.4 §6）：rating 键恒喂当前派生分
-                        "rating": stats.pairing_rating(r.account_id),
+                        "rating": rates[r.account_id],
                     }
                     for r in rows
                 ]
@@ -440,8 +440,7 @@ class LiveBook(LiveSweepMixin):
             for r in rows:
                 if r.court_side is not None:
                     r.queue_pos = None
-            for pos, pid in enumerate(queue):
-                by_id[pid].queue_pos = pos
+            self._place_queue(by_id, queue)
             court.sa = 0
             court.sb = 0
             court.last_winner_side = None
@@ -457,13 +456,12 @@ class LiveBook(LiveSweepMixin):
         game_id: int,
         actor_id: int,
         court_no: int,
-        no_redeal: bool,
         base_total_seq: int,
         base_court_seq: int,
     ) -> dict:
         """取消对局（§4.7，全权）：整场作废——不计分不进战绩；场上的人原样回流
         候场队首（补偿没打成的，沿 2.2 §4.12）；该片腾出来（idle）等重新发牌。
-        no_redeal 与确认同参数只为清扫链路统一——取消本就不补位，带不带一个行为。"""
+        （取消本就不补位，不带确认那枚 no_redeal——清扫链路统一参数只到确认为止）"""
         with self._write(game_id=game_id, actor_id=actor_id):
             state, game = self._open_write(game_id)
             court = self._court_writable(
@@ -537,8 +535,7 @@ class LiveBook(LiveSweepMixin):
                 row.check = st
                 if row.arrive_at is None:
                     row.arrive_at = clock.now()  # 几点到：首次到场落账
-            for pos, pid in enumerate(queue):
-                by_id[pid].queue_pos = pos
+            self._place_queue(by_id, queue)
             self._bump_total(state)
             self.db.commit()
         return self.view(game_id=game_id, viewer_id=actor_id)
@@ -576,8 +573,7 @@ class LiveBook(LiveSweepMixin):
             inn.queue_pos = None
             out.court_no = None
             out.court_side = None
-            for pos, pid in enumerate(queue):
-                by_id[pid].queue_pos = pos
+            self._place_queue(by_id, queue)
             self._feed_push(
                 state,
                 {
@@ -625,8 +621,7 @@ class LiveBook(LiveSweepMixin):
                     if row.id in queue:
                         queue.remove(row.id)
                         queue.insert(0, row.id)  # 连战排队首
-                        for pos, pid in enumerate(queue):
-                            by_id[pid].queue_pos = pos
+                        self._place_queue(by_id, queue)
             self._bump_total(state)
             self.db.commit()
         return self.view(game_id=game_id, viewer_id=actor_id)
@@ -758,8 +753,7 @@ class LiveBook(LiveSweepMixin):
             by_id = {r.id: r for r in rows}
             queue = self._queue_ids(rows)
             queue.append(new.id)
-            for pos, pid in enumerate(queue):
-                by_id[pid].queue_pos = pos
+            self._place_queue(by_id, queue)
             self._bump_total(state)
             self.db.commit()
         return self.view(game_id=game_id, viewer_id=actor_id)
@@ -810,8 +804,7 @@ class LiveBook(LiveSweepMixin):
             by_id = {r.id: r for r in self._roster(game_id)}
             queue = self._queue_ids(list(by_id.values()))
             queue.extend(r.id for r in made)
-            for pos, pid in enumerate(queue):
-                by_id[pid].queue_pos = pos
+            self._place_queue(by_id, queue)
             self._bump_total(state)
             self.db.commit()
         return self.view(game_id=game_id, viewer_id=actor_id)
@@ -828,11 +821,17 @@ class LiveBook(LiveSweepMixin):
         game = self.db.get(Game, game_id)
         is_organizer = viewer_id is not None and game.organizer_id == viewer_id
         stats = StatsLedger(self.db)
+        roster = self._roster(game_id)
+        # 代位分一次查齐（3s 轮询 + 每个写动作响应都走这里，逐人查会放大成 N+1）
+        rates = stats.pairing_ratings([p.account_id for p in roster])
         rows = [
             self._player_row(
-                p, is_organizer=is_organizer, viewer_id=viewer_id, stats=stats
+                p,
+                is_organizer=is_organizer,
+                viewer_id=viewer_id,
+                dupr_value=rates[p.account_id],
             )
-            for p in self._roster(game_id)
+            for p in roster
         ]
         courts = self._courts(game_id)
         matches = (
@@ -854,7 +853,7 @@ class LiveBook(LiveSweepMixin):
             "started_at": clock.iso(state.started_at),
             "ended": game.ended_at is not None,
             "ended_at": clock.iso(game.ended_at) if game.ended_at else None,
-            "fee": self._fee_block(game),
+            "fee": self._fee_block(game, roster),
             "total_seq": state.total_seq,
             "round": state.round,
             "admins": state.admins or [],
@@ -901,12 +900,12 @@ class LiveBook(LiveSweepMixin):
 
     # ---- 内部：写动作公共件与两级号机制（全部在 _write_lock 内调用） ----
 
-    def _fee_block(self, game: Game) -> dict:
+    def _fee_block(self, game: Game, roster: list[LivePlayer] | None = None) -> dict:
         """费用亮数块（1.3 §3 散场确认页）：总价=订场登记真值（null=未定）；人头=
         账单口径的摊钱人头——正式/空降行每人 1 + 名下访客行数（与出账引擎同尺，
         亮数与实摊一个数）；per_head=floor 向下抹零，未定价局为 null 但 heads 照给
-        （亮「总价未定 · N 人」用）。"""
-        rows = self._roster(game.id)
+        （亮「总价未定 · N 人」用）。roster 由 view 顺手递入免二次查（单独调用自查）。"""
+        rows = roster if roster is not None else self._roster(game.id)
         accounts = {p.account_id for p in rows if p.account_id is not None}
         heads = len(accounts) + sum(
             1 for p in rows if p.guarantor_account_id in accounts
@@ -946,6 +945,12 @@ class LiveBook(LiveSweepMixin):
             .scalars()
             .all()
         )
+
+    def _place_queue(self, by_id: dict[int, LivePlayer], queue: list[int]) -> None:
+        """候场队落位单点（queue 即名次、队首 0）：发牌/确认/取消/换人/歇连/空降/
+        带访客/清片八处写动作的共同尾巴——漏落一行即静默错序，收进一个口。"""
+        for pos, pid in enumerate(queue):
+            by_id[pid].queue_pos = pos
 
     def _queue_ids(self, rows: list[LivePlayer]) -> list[int]:
         """候场队（队首在前）——queue_pos 升序即队列序（技术设计 §2）。"""
@@ -1028,8 +1033,7 @@ class LiveBook(LiveSweepMixin):
         for r in oncourt:
             r.court_no = None
             r.court_side = None
-        for pos, pid in enumerate(queue):
-            by_id[pid].queue_pos = pos
+        self._place_queue(by_id, queue)
         court.status = "idle"
         court.sa = 0
         court.sb = 0
@@ -1197,7 +1201,7 @@ class LiveBook(LiveSweepMixin):
         *,
         is_organizer: bool,
         viewer_id: int | None,
-        stats: StatsLedger,
+        dupr_value: float,
     ) -> dict:
         # 考勤分权（2.3 裁决 Q2）：早退迟到不展示给随便扫到的人
         visible = is_organizer or (viewer_id is not None and p.account_id == viewer_id)
@@ -1206,8 +1210,9 @@ class LiveBook(LiveSweepMixin):
             "account_id": p.account_id,
             "name": p.display_name,
             "guest": p.guest,
-            # DUPR 配平代位分（1.4 §6：访客 3.0、未定级吃派生分/自评档）
-            "dupr": stats.pairing_rating(p.account_id),
+            # DUPR 配平代位分（1.4 §6：访客 3.0、未定级吃派生分/自评档）——
+            # 值由 view 用 pairing_ratings 批量预算后递入
+            "dupr": dupr_value,
             "guarantor_account_id": p.guarantor_account_id,
             "dropin": p.dropin,
             "check": p.check,

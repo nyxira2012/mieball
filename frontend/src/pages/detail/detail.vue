@@ -292,7 +292,7 @@ import { useGameStore } from "@/stores/game";
 import { useUserStore } from "@/stores/user";
 import { useUiStore } from "@/stores/ui";
 import { isOrg, MODE_NAMES, SCORE_RULE_NAMES } from "@/utils/format";
-import { isoDay, isoHm } from "@/utils/time";
+import { durTxt, isoDay, isoHm } from "@/utils/time";
 import { goLive } from "@/utils/nav";
 
 const store = useGameStore();
@@ -368,7 +368,7 @@ const durText = computed(() => {
         60000,
     ),
   );
-  return mins % 30 === 0 ? `${mins / 60} 小时` : `${mins} 分钟`;
+  return durTxt(mins / 60);
 });
 
 const tBig = computed(() => (game.value ? isoHm(game.value.startAt) : ""));

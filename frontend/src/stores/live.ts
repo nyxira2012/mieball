@@ -177,16 +177,24 @@ export const useLiveStore = defineStore("live", () => {
   const live = ref<LiveState | null>(null);
   const hasLive = computed(() => !!live.value);
 
-  /** 待确认窗按片多值（§4.3 多片同待确认是正常情况）：courtId（0 起）→ 窗来源；
-      视图 courts[].status==='pending' 驱动、applyLiveView 同步维护——pending 即有窗
-      （窗禁遮罩关，§4.3-2）：片退出 pending 窗随之关、再 pending 窗再开，
-      无「关了不重开」的态（原 hide 位机械随遮罩禁关一并删，SC6 卫生） */
-  const settling = ref<Record<number, { origin: PendingOrigin }>>({});
-
   /** 最近一次总账视图——写动作 base 号（totalSeq/片 courtSeq）与轮询对表的最近真值 */
   const liveView = ref<LiveView | null>(null);
-  /** 散场后回看视图持有（ended 视图定格；回看 UI 批6 消费） */
-  const recap = ref<LiveView | null>(null);
+  /** 散场后回看视图（ended 视图定格派生；回看 UI 批6 消费） */
+  const recap = computed<LiveView | null>(() =>
+    liveView.value?.ended ? liveView.value : null,
+  );
+
+  /** 待确认窗按片多值（§4.3 多片同待确认是正常情况）：courtId（0 起）→ 窗来源；
+      纯派生于视图 courts[].status==='pending'——pending 即有窗（窗禁遮罩关，§4.3-2）：
+      片退出 pending 窗随之关、再 pending 窗再开，无「关了不重开」的态（原 hide 位
+      机械随遮罩禁关一并删，SC6 卫生） */
+  const settling = computed<Record<number, { origin: PendingOrigin }>>(() => {
+    const r: Record<number, { origin: PendingOrigin }> = {};
+    for (const c of liveView.value?.courts ?? [])
+      if (c.status === "pending")
+        r[c.courtNo - 1] = { origin: c.pendingOrigin ?? "manual" };
+    return r;
+  });
 
   /** 当前应渲染确认窗的片（§4.3 多片各弹各的互不等待；窗一次一扇——片号最小者顶上，
       确认/关窗后下一片接上；settlingOne 降级单值随批5b 按片化退役） */
@@ -517,50 +525,9 @@ export const useLiveStore = defineStore("live", () => {
       }
       return;
     }
-    /* ── 本地遗留路（空降行/无视图演示态；批6 切真时整段退役） ── */
-    const was = p.check;
-    if (st === "ok" || st === "late") {
-      if (p.check === "left") st = "join";
-      else if (
-        st === "ok" &&
-        p.check === "absent" &&
-        Date.now() > new Date(L.g.startAt).getTime()
-      )
-        st = "late"; // 迟到口径：未到首报且已过开球时刻
-    }
-    if (st === "late") {
-      p.check = "late";
-      const i = L.queue.indexOf(id);
-      if (i >= 0) L.queue.splice(i, 1);
-      L.queue.push(id);
-      ui.toast(`${p.name} 迟到 · 自动排到队尾等一轮`);
-    } else if (st === "left") {
-      p.check = "left";
-      clearFromPlay(L, id);
-      ui.toast(`${p.name} 早退 · 已记离场时刻`);
-    } else if (st === "join") {
-      p.check = "join";
-      if (!L.queue.includes(id)) L.queue.push(id);
-      ui.toast(`${p.name} 中途加入 · 排到队尾`);
-    } else {
-      const first = !isArrived(p.check);
-      p.check = st;
-      if (st === "ok") {
-        if (first && !L.queue.includes(id)) L.queue.push(id);
-        ui.toast(`${p.name} 已到场 · 排进候场队`);
-      }
-    }
-    if (st === "left") {
-      if (!p.leftAt) p.leftAt = toIso(new Date());
-      touchLedger(id, { leftAt: p.leftAt });
-      feedPush(`${p.name} 早退 · 已记离场时刻`);
-    } else if (st !== "absent" && !p.arriveAt) {
-      p.arriveAt = toIso(new Date());
-      touchLedger(id, { arriveAt: p.arriveAt });
-    }
-    if ((st === "ok" || st === "late" || st === "join") && !isArrived(was)) {
-      fillAllCourts(L);
-    }
+    /* 本地遗留路已随批6 切真整段退役（原空降行/无视图演示态支线）——live 只在
+       applyLiveView 重建、名册行恒为视图行（空降/带访客也走后端建行），上面的
+       isViewRow 分支即全路径；absent 只读不写（考勤底账展示口径，无写入口） */
   }
 
   /** 移出名册（本地遗留路：后端无对应端点）——人从名册消失（对付远程扫码幽灵）：
@@ -605,32 +572,7 @@ export const useLiveStore = defineStore("live", () => {
       else ui.toast(row.fire ? "连战 · 排到队首" : "取消连战");
       return;
     }
-    /* ── 本地遗留路 ── */
-    if (k === "unskip") {
-      p.skip = 0;
-      ui.toast("取消休息 · 下轮照常");
-      return;
-    }
-    if (k === "skip") {
-      if (p.fire) p.fire = false;
-      p.skip = (p.skip ?? 0) + 1;
-      ui.toast(
-        p.skip > 1
-          ? `已再跳一轮 · 共跳 ${p.skip} 轮`
-          : "已设休息 · 轮到你时自动跳一轮",
-      );
-      return;
-    }
-    p.fire = !p.fire;
-    if (p.fire) p.skip = 0;
-    if (p.fire) {
-      const i = L.queue.indexOf(id);
-      if (i >= 0) {
-        L.queue.splice(i, 1);
-        L.queue.unshift(id);
-      }
-    }
-    ui.toast(p.fire ? "连战 · 排到队首" : "取消连战");
+    /* 本地遗留路已随批6 切真整段退役：名册行恒为视图行（见 setCheck 处注） */
   }
 
   /** 封管理员（§4.6 仅组织者；靶行须正式球友）：留痕句由视图 feed 回来，toast 本地拼 */
@@ -794,7 +736,7 @@ export const useLiveStore = defineStore("live", () => {
     const s = seqs(no);
     const ok = await writeAction(
       gid,
-      () => apiLiveCancel(gid, no, noRedeal, s.baseTotalSeq, s.baseCourtSeq),
+      () => apiLiveCancel(gid, no, s.baseTotalSeq, s.baseCourtSeq),
       () => ui.toast(`对局作废 · 这场不计分 · 场上 ${n} 人回到队首`),
     );
     if (ok && !noRedeal) await maybeDeal(gid); // §4.7 该片腾出来重新发牌（清扫态除外）
@@ -845,31 +787,7 @@ export const useLiveStore = defineStore("live", () => {
       );
       return;
     }
-    /* ── 本地遗留路 ── */
-    const court = L.courts.find(
-      (c) => c.A.includes(outId) || c.B.includes(outId),
-    );
-    if (!court) return; // out 不在场上：无坑可换
-    const side = court.A.includes(outId) ? "A" : "B";
-    court[side][court[side].indexOf(outId)] = inId; // 原位顶坑
-    const j = L.queue.indexOf(inId);
-    if (j >= 0) L.queue.splice(j, 1);
-    L.queue.push(outId); // 换下排队尾（§0.2 裁定）
-    const outP = pById(L, outId);
-    if (outP) {
-      outP.tenure = 0;
-      outP.courtSeq = undefined;
-    }
-    const inP = pById(L, inId);
-    if (inP) {
-      L.courtSeqNext += 1;
-      inP.courtSeq = L.courtSeqNext;
-      inP.tenure = 0;
-    }
-    feedPush(
-      `${U.me.name} 把 ${outP?.name ?? "?"} 换下 · ${inP?.name ?? "?"} 上`,
-    );
-    ui.toast("已换人 · 对阵重排");
+    /* 本地遗留路已随批6 切真整段退役：名册行恒为视图行（见 setCheck 处注） */
   }
 
   /** 带访客（1.3 附录 B1 记账通道切真）：一次请求带 count+称呼+担保人行 id——
@@ -1194,20 +1112,9 @@ export const useLiveStore = defineStore("live", () => {
     };
     while (L.courts.length < v.courtsCount)
       L.courts.push(mkCourt(L, L.courts.length)); // 视图片行缺额补空片（差人卡口径）
-    const next: Record<number, { origin: PendingOrigin }> = {};
-    for (const c of v.courts) {
-      if (c.status === "pending")
-        next[c.courtNo - 1] = { origin: c.pendingOrigin ?? "manual" }; // pending 即有窗
-    }
-    settling.value = next;
     live.value = L;
-    liveView.value = v;
-    if (v.ended) {
-      recap.value = v; // 散场即回看（§4.10）：定格视图持有，轮询一并停（远端散场同路）
-      stopPolling();
-    } else {
-      recap.value = null; // 换局/回进行中：别让上一局的回看残留泄漏
-    }
+    liveView.value = v; // settling/recap 均由 liveView 纯派生，无需另行同步
+    if (v.ended) stopPolling(); // 散场即回看（§4.10）：定格视图派生 recap，轮询一并停（远端散场同路）
   }
 
   /** 拉总账读对表（§4.8）：totalSeq 没变不重建（画面零漂移），返回是否更新供上层
@@ -1265,6 +1172,7 @@ export const useLiveStore = defineStore("live", () => {
     isPending,
     advice,
     myRound,
+    myRowId,
     isFullPower,
     isAdmin,
     needFull,

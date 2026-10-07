@@ -326,24 +326,21 @@ describe("真账号接管「我」位后的识别回归", () => {
     Object.assign(U.me, demo);
   });
 
-  it("togglePerson 在真 id 下找得到「我」行（快照常量回归）", async () => {
+  it("togglePerson 在真 id 下找得到「我」行（快照常量回归；视图行路）", async () => {
     takeoverAs(42, "海淀反手王");
     await seedStore(viewOf());
     const live = useLiveStore();
+    liveApi.apiLiveStart.mockResolvedValue(absentMeView()); // 在册未到的我的行（row 42）
     await live.startLive(
       (await import("@/stores/game")).useGameStore().games[0]!,
     );
-    const L = live.live!;
-    // 显式把「我」放进名册并中途加入（开场全员未到——批2 起需手动搭态）
-    if (!L.roster.some((p) => p.id === 42)) L.roster.push(U.me);
-    L.queue = L.queue.filter((x) => x !== 42);
-    live.setCheck(42, "join");
-
-    live.togglePerson(42, "fire");
-
-    const me = L.roster.find((p) => p.id === 42)!;
-    expect(me.fire).toBe(true);
-    expect(L.queue[0]).toBe(42); // 连战保持队首
+    // 自服务守卫：myRowId() 兜底命中行 42（视图无 accountId=42 的行时回落 U.me.id）
+    liveApi.apiLiveCheck.mockResolvedValue(dropinView());
+    await live.setCheck(42, "ok");
+    expect(liveApi.apiLiveCheck).toHaveBeenCalledWith(107, 42, "ok", 1);
+    liveApi.apiLiveTempo.mockResolvedValue(dropinView());
+    await live.togglePerson(42, "fire");
+    expect(liveApi.apiLiveTempo).toHaveBeenCalledWith(107, 42, "fire", 2);
     Object.assign(U.me, demo);
   });
 });

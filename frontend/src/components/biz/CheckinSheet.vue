@@ -21,7 +21,8 @@
           <view class="who">
             <view class="nm"
               >{{ row.name
-              }}<text v-if="row.id === U.me.id" class="me-badge">我</text
+              }}<text v-if="row.id === liveStore.myRowId()" class="me-badge"
+                >我</text
               ><text
                 v-if="liveStore.isAdmin(row.id)"
                 class="badge admin nm-badge"
@@ -58,7 +59,8 @@
             <view class="nm"
               >{{ row.name
               }}<text v-if="row.dropin" class="badge dropin nm-badge">空降</text
-              ><text v-if="row.id === U.me.id" class="me-badge">我</text
+              ><text v-if="row.id === liveStore.myRowId()" class="me-badge"
+                >我</text
               ><text
                 v-if="liveStore.isAdmin(row.id)"
                 class="badge admin nm-badge"
@@ -131,7 +133,6 @@ import NoteCard from "@/components/ui/NoteCard.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import { useLiveStore, isArrived } from "@/stores/live";
-import { U } from "@/api";
 import { isoHm } from "@/utils/time";
 
 defineProps({
@@ -165,7 +166,7 @@ function onRemove(row: { id: number }): void {
 /* ---------- 带访客本地态：带上场后重置（名字清空、人数回 1） ---------- */
 const gName = ref("");
 const gCount = ref(1);
-const introId = ref<number>(U.me.id);
+const introId = ref<number>(liveStore.myRowId());
 
 /** 介绍人候选：已到场（谓词 isArrived）的非访客成员；「我」在册默认选中，否则取首位 */
 const introOptions = computed(() =>
@@ -173,14 +174,14 @@ const introOptions = computed(() =>
     .filter((p) => isArrived(p.check) && !p.shadow)
     .map((p) => ({
       value: p.id,
-      label: p.id === U.me.id ? "介绍人 · 我" : p.name,
+      label: p.id === liveStore.myRowId() ? "介绍人 · 我" : p.name,
     })),
 );
 watch(
   introOptions,
   (opts) => {
     if (!opts.some((o) => o.value === introId.value))
-      introId.value = opts[0]?.value ?? U.me.id;
+      introId.value = opts[0]?.value ?? liveStore.myRowId();
   },
   { immediate: true },
 );

@@ -24,7 +24,7 @@
           <view class="meta">
             {{
               r.removedAt
-                ? `已移出 · ${hm(r.removedAt)}`
+                ? `已移出 · ${isoHmOrDash(r.removedAt)}`
                 : r.guarantor
                   ? `${r.guarantor} 带的`
                   : r.dropin
@@ -34,8 +34,8 @@
           >
         </view>
         <view class="times">
-          <text class="t">到 {{ hm(r.arriveAt) }}</text>
-          <text class="t">走 {{ hm(r.leftAt) }}</text>
+          <text class="t">到 {{ isoHmOrDash(r.arriveAt) }}</text>
+          <text class="t">走 {{ isoHmOrDash(r.leftAt) }}</text>
         </view>
       </view>
     </template>
@@ -51,7 +51,7 @@ import AppSheet from "@/components/ui/AppSheet.vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
-import { isoHm } from "@/utils/time";
+import { isoHmOrDash } from "@/utils/time";
 import type { ChibiConfig, LedgerRow } from "@/api/types";
 
 defineProps({
@@ -62,8 +62,6 @@ const emit = defineEmits<{
 }>();
 
 const liveStore = useLiveStore();
-/** ISO → HH:mm，未落账「—」（组件内唯一兜底口，模板不再写三元） */
-const hm = (iso?: string): string => (iso ? isoHm(iso) : "—");
 
 /** 行视图一次解析好：底账行 + 名册头像（快照行不存 chibi——人可能被移出，名册是真源） */
 const rows = computed<(LedgerRow & { chibi: ChibiConfig })[]>(() =>

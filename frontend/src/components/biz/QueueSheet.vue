@@ -24,14 +24,13 @@
             >{{ r.u.name
             }}<text v-if="r.u.shadow" class="badge guest">访客</text
             ><text v-if="r.u.dropin" class="badge dropin nm-badge">空降</text
-            ><text
-              v-if="liveStore.isAdmin(r.id)"
-              class="badge admin nm-badge"
+            ><text v-if="liveStore.isAdmin(r.id)" class="badge admin nm-badge"
               >管理员</text
             ></view
           >
           <view class="meta"
-            >已打 {{ r.u.play }} 场 · DUPR {{ fmtDupr1(r.u.dupr ?? 3.0) }}</view
+            >已打 {{ r.u.play }} 场 · DUPR
+            {{ fmtDupr1(r.u.dupr ?? GUEST_DUPR) }}</view
           >
         </view>
         <text v-if="r.id === U.me.id && myRound != null" class="tag tag-me"
@@ -53,7 +52,7 @@ import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
 import { courtSize } from "@/utils/rotate";
-import { fmtDupr1 } from "@/utils/elo";
+import { GUEST_DUPR, fmtDupr1 } from "@/utils/elo";
 import { U } from "@/api";
 
 defineProps({
@@ -70,9 +69,7 @@ const rows = computed(() =>
   (liveStore.live?.queue ?? []).map((id) => ({ id, u: liveStore.byId(id) })),
 );
 /** 「下一场」高亮位数 = 每片人数（双打 4 / 单打 2，单一源在引擎） */
-const nextN = computed(() =>
-  courtSize(liveStore.live?.rules.singles ?? false),
-);
+const nextN = computed(() => courtSize(liveStore.live?.rules.singles ?? false));
 const myRound = computed(() => liveStore.myRound);
 </script>
 

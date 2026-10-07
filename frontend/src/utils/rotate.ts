@@ -1,7 +1,7 @@
 /* 发牌/轮换引擎（2.4 多片并行 · 纯函数：live 状态作为参数传入、原地更新 —— 与 live store 共用同一份引用）。
    旧串行引擎（avail/fillCourts/nextMatch/maxCourts + cur/lastWinners）已随批2 删除。 */
-import type { LiveCourt, LiveState, PairingMode, User } from '@/api/types';
-import { GUEST_DUPR } from './elo';
+import type { LiveCourt, LiveState, PairingMode, User } from "@/api/types";
+import { GUEST_DUPR } from "./elo";
 
 /** 按找现场玩家（alpha:1491 pById） */
 export function pById(live: LiveState, id: number): User | undefined {
@@ -15,7 +15,9 @@ export function usedCourts(live: LiveState): number {
 }
 
 /* ───────── 2.4 引擎（多片并行 · 纯函数）─────────
-   合同 docs/2.4 §4.4-4.8：只管轮换，Elo/history/round 落账归 store 编排。 */
+   合同 docs/2.4 §4.5/§4.8：只管发牌（分边/队首取人/空片补满），Elo/history/round
+   落账归 store 编排；结束对局后的回流补位（§4.4-4.7 五式）真值在后端
+   live_rotation.requeue_after_confirm——确认响应视图落地即排好，前端不再镜像。 */
 
 /** 均衡排序用分（1.4 §6 消费矩阵：配对吃 DUPR——未定级以自评档代位）：dupr 直用，
     访客/缺数兜底 3.0（GUEST_DUPR，1.4 §4 访客 DUPR 恒 3.0） */
@@ -37,7 +39,7 @@ export function activePlayers(live: LiveState): number {
   const onCourt = live.courts.reduce((s, c) => s + c.A.length + c.B.length, 0);
   const waiting = live.queue.filter((id) => {
     const p = pById(live, id);
-    return p && p.check !== 'absent' && p.check !== 'left';
+    return p && p.check !== "absent" && p.check !== "left";
   }).length;
   return onCourt + waiting;
 }
@@ -45,7 +47,7 @@ export function activePlayers(live: LiveState): number {
 /** 可发判定（单一口径）：在场且非缺席早退、不在歇轮 */
 function issuable(live: LiveState, id: number): boolean {
   const p = pById(live, id);
-  return !!p && p.check !== 'absent' && p.check !== 'left' && !p.skip;
+  return !!p && p.check !== "absent" && p.check !== "left" && !p.skip;
 }
 
 /** 候场队里此刻可发人数（在场且非缺席早退、不在歇轮）——补坑前「够不够」的判定源 */
@@ -62,14 +64,6 @@ function enterCourt(live: LiveState, id: number): void {
   p.tenure = 0;
 }
 
-/** 下场清账：资历清零、先后序注销（中途换上从换上起算由此兑现） */
-function leaveCourt(live: LiveState, id: number): void {
-  const p = pById(live, id);
-  if (!p) return;
-  p.tenure = 0;
-  p.courtSeq = undefined;
-}
-
 /** 队首取 n 人发牌（2.4 §4.8）：连战（fire）优先收——「设了的人下次发牌排最前」（与歇互斥）；
     扫描中轮到歇轮者（skip>0）跳过这一轮、消耗一次、坑由下一位顶上，取完保位回队；
     absent/left 不可发但留在队里不动。取满即停——没被轮到的歇轮不消耗。 */
@@ -77,7 +71,7 @@ export function takeFromQueue(live: LiveState, n: number): number[] {
   if (n <= 0) return [];
   const ok = (id: number): User | undefined => {
     const p = pById(live, id);
-    return p && p.check !== 'absent' && p.check !== 'left' ? p : undefined;
+    return p && p.check !== "absent" && p.check !== "left" ? p : undefined;
   };
   const pre = new Set(live.queue.filter((id) => ok(id)?.fire).slice(0, n)); // 连战优先
   const taken: number[] = [...pre];
@@ -86,7 +80,10 @@ export function takeFromQueue(live: LiveState, n: number): number[] {
     if (pre.has(id)) continue;
     if (taken.length < n) {
       const p = ok(id);
-      if (p && !p.skip) { taken.push(id); continue; }
+      if (p && !p.skip) {
+        taken.push(id);
+        continue;
+      }
       if (p) p.skip = (p.skip ?? 0) - 1; // 轮到发牌给他：跳过这一轮、消耗一次
     }
     kept.push(id); // 让位者/不可发者/余额：保位留在队里
@@ -99,9 +96,13 @@ export function takeFromQueue(live: LiveState, n: number): number[] {
     queue → 第 1、2 位一队、第 3、4 位一队；balance → DUPR 强到弱（同分按队序先后，不掷骰子），
     最强+最弱 vs 二三——不让两个高手挤同一边；上场永远队序，均衡只管分边不越序挑人。
     单打（2 人）没有分队一说：一左一右。 */
-export function splitSides(live: LiveState, ids: number[], pairing: PairingMode): { A: number[]; B: number[] } {
+export function splitSides(
+  live: LiveState,
+  ids: number[],
+  pairing: PairingMode,
+): { A: number[]; B: number[] } {
   if (ids.length < 4) return { A: [ids[0]], B: ids.length > 1 ? [ids[1]] : [] };
-  if (pairing === 'balance') {
+  if (pairing === "balance") {
     const order = ids
       .map((id, i) => ({ id, i, r: rankOf(pById(live, id)) }))
       .sort((a, b) => b.r - a.r || a.i - b.i);
@@ -132,114 +133,4 @@ export function fillCourt(live: LiveState, court: LiveCourt): void {
 /** 按片号先后补所有空片（多片同时要人时，候场队按片号先后供给） */
 export function fillAllCourts(live: LiveState): void {
   for (const c of live.courts) fillCourt(live, c);
-}
-
-/** 资历序（2.4 §4.4「待得最久」）：tenure 降序、并列按当初上场先后（courtSeq 升）——先上的先下 */
-function byTenure(live: LiveState, ids: number[]): number[] {
-  return ids.slice().sort((a, b) => {
-    const pa = pById(live, a);
-    const pb = pById(live, b);
-    return (pb?.tenure ?? 0) - (pa?.tenure ?? 0) || (pa?.courtSeq ?? 0) - (pb?.courtSeq ?? 0);
-  });
-}
-
-/** 结束对局后的轮换（2.4 §4.4-4.7 五式真值）：只动这片，别片各排各的。
-    次序：① 资历/连庄落账（全员 tenure+1；输家下模式胜边连庄+1——原班再战这场也赢了，照算）
-    ② 坑补不满 → 原班再战（各方式通用：谁也不下、比分清零、连庄资历不清零、队列不动；
-      供给口径：格式过渡含本场下场者·见②处注释，其余用下场前的候场队列）
-    ③ 格式过渡（court.singles ≠ rules.singles）：全场按资历序下、按新格式凑全新一队
-    ④ 按谁下处理：all/连庄到点 → 全场按资历序下+补全新一队（怎么配生效）；
-    loser 未到点 → 输家边下、候场首补空边成一队（不重配、新边连庄=0）；
-    n1/2/3 → 资历最久的 N 人下、候场首逐个原位顶坑（谁下补谁的坑，留下的保住半边）。 */
-export function endMatch(live: LiveState, courtId: number, winner: 'A' | 'B'): void {
-  const rules = live.rules;
-  const court = live.courts.find((c) => c.id === courtId);
-  if (!court) return;
-  const singles = court.singles;
-  const winSide = winner;
-  const loseSide = winner === 'A' ? 'B' : 'A';
-
-  // ① 资历/连庄落账
-  const streakKey = winSide === 'A' ? 'streakA' : 'streakB';
-  for (const id of [...court.A, ...court.B]) {
-    const p = pById(live, id);
-    if (p) p.tenure = (p.tenure ?? 0) + 1;
-  }
-  if (rules.down === 'loser') court[streakKey] = (court[streakKey] ?? 0) + 1;
-
-  // 坑位数：过渡按新格式整片；all/到点=整片；loser=输家边；n 系=N
-  const atCap = rules.down === 'loser' && rules.champCap > 0
-    && (court[streakKey] ?? 0) >= rules.champCap; // 上限改了立即生效（读现值）
-  const transition = singles !== rules.singles;
-  const pits = transition ? courtSize(rules.singles)
-    : rules.down === 'all' || atCap ? courtSize(singles)
-    : rules.down === 'loser' ? court[loseSide].length
-    : rules.down === 'n1' ? 1 : rules.down === 'n2' ? 2 : 3;
-
-  // ② 坑补不满：原班再战。供给口径分两支——格式过渡（③）判「下场者入队后」的队列
-  //    （4.7-3 无条件凑新队：双打切单打 4 下必出 2；单打切双打 queue+2<4 才真不足，
-  //    续旧格式原班再战·批1 裁定）；其余方式（④）仍用下场前的候场队列（4.4 规则①）。
-  const supply = transition
-    ? readyCount(live) + [...court.A, ...court.B].filter((id) => issuable(live, id)).length
-    : readyCount(live);
-  if (supply < pits) {
-    court.sa = 0;
-    court.sb = 0;
-    court.last = undefined;
-    return;
-  }
-
-  const toTail = (ids: number[]): void => {
-    for (const id of ids) {
-      leaveCourt(live, id);
-      live.queue.push(id); // 下场的人排队尾（先下的排前面）
-    }
-  };
-
-  // ③ 格式过渡（4.7-3）：全场下、按新格式凑全新一队
-  if (transition) {
-    toTail(byTenure(live, [...court.A, ...court.B]));
-    court.A = [];
-    court.B = [];
-    court.singles = rules.singles;
-    fillCourt(live, court);
-    return;
-  }
-
-  // ④ 按谁下处理
-  if (rules.down === 'all' || atCap) {
-    // 全上全下 / 连庄到点：全场按资历序下，候场首补全新一队（怎么配生效、连庄清零）
-    toTail(byTenure(live, [...court.A, ...court.B]));
-    court.A = [];
-    court.B = [];
-    fillCourt(live, court);
-    return;
-  }
-  if (rules.down === 'loser') {
-    // 未到点：赢家留场（连庄已 +1），输家边下排队尾，候场首补空边成一队挑战（不重配）
-    toTail(byTenure(live, court[loseSide]));
-    const holes = court[loseSide].length;
-    court[loseSide] = takeFromQueue(live, holes);
-    for (const id of court[loseSide]) enterCourt(live, id);
-    court[winSide === 'A' ? 'streakB' : 'streakA'] = 0; // 新挑战者连庄从零
-    court.sa = 0;
-    court.sb = 0;
-    court.last = undefined;
-    return;
-  }
-  // n1/n2/n3：资历最久的 N 人下，候场首逐个原位顶坑
-  const n = rules.down === 'n1' ? 1 : rules.down === 'n2' ? 2 : 3;
-  for (const id of byTenure(live, [...court.A, ...court.B]).slice(0, n)) {
-    const side = court.A.includes(id) ? 'A' : 'B';
-    const slot = court[side].indexOf(id);
-    const rep = takeFromQueue(live, 1)[0];
-    toTail([id]);
-    if (rep !== undefined) {
-      court[side][slot] = rep; // 谁下补谁的坑：留下的保住半边，不重新分队
-      enterCourt(live, rep);
-    }
-  }
-  court.sa = 0;
-  court.sb = 0;
-  court.last = undefined;
 }

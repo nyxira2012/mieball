@@ -25,9 +25,9 @@
         <!-- alpha:1906-1910 徽章 + 大分数 + 单位 + 本月涨跌（1.4 批4v1：主数字/徽章切 DUPR，
              涨跌仍是 Elo 轨口径 1.4 §6；未定级小 chip 1.4 §5） -->
         <view class="scorerow">
-          <TierBadge v-if="played" :tier="duprTier(u.dupr ?? 3.0)" />
+          <TierBadge v-if="played" :tier="duprTier(u.dupr ?? GUEST_DUPR)" />
           <text class="big">{{
-            played ? fmtDupr(u.dupr ?? 3.0) : "—"
+            played ? fmtDupr(u.dupr ?? GUEST_DUPR) : "—"
           }}</text>
           <text class="unit">{{ played ? "DUPR" : "起步" }}</text>
           <text v-if="played && u.provisional" class="prov">未定级</text>
@@ -79,7 +79,7 @@ import Last5Dots from "@/components/ui/Last5Dots.vue";
 import { useUserStore } from "@/stores/user";
 import { useGameStore } from "@/stores/game";
 import { useUiStore } from "@/stores/ui";
-import { duprTier, fmtDupr } from "@/utils/elo";
+import { GUEST_DUPR, duprTier, fmtDupr } from "@/utils/elo";
 import { freqName, slotName } from "@/utils/format";
 
 const props = defineProps({

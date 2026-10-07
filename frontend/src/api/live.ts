@@ -116,17 +116,15 @@ export function apiLiveSettleConfirm(
   });
 }
 
-/** 取消对局（全权，§4.7）：整场作废不计分，场上的人原样回流队首（no_redeal 仅清扫链路统一带） */
+/** 取消对局（全权，§4.7）：整场作废不计分，场上的人原样回流队首（取消本就不补位） */
 export function apiLiveCancel(
   gameId: number,
   courtNo: number,
-  noRedeal: boolean,
   baseTotalSeq: number,
   baseCourtSeq: number,
 ): Promise<LiveViewApi> {
   return request("POST", `/games/${gameId}/live/cancel`, {
     court_no: courtNo,
-    no_redeal: noRedeal,
     base_total_seq: baseTotalSeq,
     base_court_seq: baseCourtSeq,
   });

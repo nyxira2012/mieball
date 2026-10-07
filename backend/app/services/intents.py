@@ -35,8 +35,18 @@ class IntentBook:
         )
         uninvited = [r for r in rows if r.invited_at is None]
         invited = [r for r in rows if r.invited_at is not None]
-        # 未邀在前、已邀靠后，各自保持 updated_at 倒序（4.11：被邀过的标"已邀"排后面）
-        return [self._view(r, viewer_id=viewer_id) for r in (*uninvited, *invited)]
+        ordered = (
+            *uninvited,
+            *invited,
+        )  # 未邀在前、已邀靠后，各自 updated_at 倒序（4.11）
+        # 意向人账号一次查齐（约球页每次 onShow 都拉这张表，逐行 get 叠 N+1）
+        accounts = {
+            a.id: a
+            for a in self.db.execute(
+                select(Account).where(Account.id.in_({r.account_id for r in ordered}))
+            ).scalars()
+        }
+        return [self._view(r, viewer_id=viewer_id, accounts=accounts) for r in ordered]
 
     # ---- 我的一份（4.13：随时可动；没留过就是没有） ----
 
@@ -86,9 +96,20 @@ class IntentBook:
             select(Intent).where(Intent.account_id == account_id)
         ).scalar_one_or_none()
 
-    def _view(self, row: Intent, *, viewer_id: int | None) -> dict:
+    def _view(
+        self,
+        row: Intent,
+        *,
+        viewer_id: int | None,
+        accounts: dict[int, Account] | None = None,
+    ) -> dict:
+        acc = (
+            accounts.get(row.account_id)
+            if accounts is not None
+            else self.db.get(Account, row.account_id)
+        )
         return {
-            "account": person_view(self.db.get(Account, row.account_id)),
+            "account": person_view(acc),
             "slots": list(row.slots),
             "frequency": row.frequency,
             "note": row.note,

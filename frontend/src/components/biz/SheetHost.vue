@@ -9,36 +9,58 @@
   <AppSheet :visible="ui.sheet != null" @close="ui.closeSheet()">
     <ProfileSheet v-if="s?.type === 'profile'" :user-id="s.userId" />
     <JoinSheet v-else-if="s?.type === 'join'" :game-id="s.gameId" />
-    <ConfirmSheet v-else-if="s?.type === 'quit-confirm'" kind="quit" :game-id="s.gameId" />
-    <ConfirmSheet v-else-if="s?.type === 'cancel-confirm'" kind="cancel" :game-id="s.gameId" />
+    <ConfirmSheet
+      v-else-if="s?.type === 'quit-confirm'"
+      kind="quit"
+      :game-id="s.gameId"
+    />
+    <ConfirmSheet
+      v-else-if="s?.type === 'cancel-confirm'"
+      kind="cancel"
+      :game-id="s.gameId"
+    />
     <BookingSheet
       v-else-if="s?.type === 'booking'"
       :game-id="s.gameId"
       :fee-only="s.feeOnly ?? false"
     />
-    <InviteSheet v-else-if="s?.type === 'invite-to-game'" mode="to-game" :game-id="s.gameId" />
-    <InviteSheet v-else-if="s?.type === 'invite-to-slot'" mode="to-slot" :user-id="s.userId" />
+    <InviteSheet
+      v-else-if="s?.type === 'invite-to-game'"
+      mode="to-game"
+      :game-id="s.gameId"
+    />
+    <InviteSheet
+      v-else-if="s?.type === 'invite-to-slot'"
+      mode="to-slot"
+      :user-id="s.userId"
+    />
     <IntentFormSheet v-else-if="s?.type === 'intent-form'" />
     <LaunchSheet v-else-if="s?.type === 'launch'" :game-id="s.gameId" />
     <AccountSheet v-else-if="s?.type === 'logout-confirm'" kind="logout" />
     <AccountSheet v-else-if="s?.type === 'delete-confirm'" kind="delete" />
-    <SignupSheet v-else-if="s?.type === 'signup-card'" :pending-join="s.pendingJoin" :pending-launch="s.pendingLaunch" :pending-checkin="s.pendingCheckin" :pending-intent="s.pendingIntent" />
+    <SignupSheet
+      v-else-if="s?.type === 'signup-card'"
+      :pending-join="s.pendingJoin"
+      :pending-launch="s.pendingLaunch"
+      :pending-checkin="s.pendingCheckin"
+      :pending-intent="s.pendingIntent"
+    />
   </AppSheet>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useUiStore } from '@/stores/ui';
-import AppSheet from '@/components/ui/AppSheet.vue';
-import ProfileSheet from './ProfileSheet.vue';
-import JoinSheet from './JoinSheet.vue';
-import ConfirmSheet from './ConfirmSheet.vue';
-import BookingSheet from './BookingSheet.vue';
-import InviteSheet from './InviteSheet.vue';
-import IntentFormSheet from './IntentFormSheet.vue';
-import LaunchSheet from './LaunchSheet.vue';
-import AccountSheet from './AccountSheet.vue';
-import SignupSheet from './SignupSheet.vue';
+import { computed } from "vue";
+import { useUiStore } from "@/stores/ui";
+import AppSheet from "@/components/ui/AppSheet.vue";
+import ProfileSheet from "./ProfileSheet.vue";
+import JoinSheet from "./JoinSheet.vue";
+import ConfirmSheet from "./ConfirmSheet.vue";
+import BookingSheet from "./BookingSheet.vue";
+import InviteSheet from "./InviteSheet.vue";
+import IntentFormSheet from "./IntentFormSheet.vue";
+import LaunchSheet from "./LaunchSheet.vue";
+import AccountSheet from "./AccountSheet.vue";
+import SignupSheet from "./SignupSheet.vue";
 
 const ui = useUiStore();
 /** 模板里对联合类型逐支收窄用 */

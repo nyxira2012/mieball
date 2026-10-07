@@ -342,11 +342,11 @@ export interface RotationRules {
 
 /** 一片场地（2.4 多片并行）：A/B 半边存玩家 id，sa/sb 是本片自己的记分板——
     每片各打各的（补满即打，无「待开」态）；playing/idle 由 A/B 是否空区分。
-    id/name 归 store 建片，singles/sa/sb/streak 归并行引擎（endMatch 按 id 定位这片）。 */
+    id/name 归 store 建片，singles/sa/sb/streak 归并行引擎（记分族动作按 id 定位这片）。 */
 export interface LiveCourt {
   A: number[];
   B: number[];
-  id: number; // 片序 0..n-1（并行模型键，endMatch/记分族动作按此定位）
+  id: number; // 片序 0..n-1（并行模型键，记分族动作按此定位）
   name: string; // 场地号（'3号'；未登记回退序号场）
   singles: boolean; // 本片当前对局格式（换单双打过渡期可 ≠ rules.singles，2.4 §4.7-3）
   sa: number;
@@ -365,7 +365,7 @@ export interface MatchHistory {
 }
 
 /** 现场状态（alpha:1483-1485 live · 2.4 批2 起多片并行总账：无 cur/lastWinners——
-    各片自带记分板，轮换由 utils/rotate.ts 的 endMatch 按 courtId 接管）。g 是真局对象的
+    各片自带记分板，回流补位真值在后端 live_rotation——视图落地即排好）。g 是真局对象的
     浅克隆：现场改规则/场地只落在克隆上，不回写 game store 的局（派生态归后端）。 */
 export interface LiveState {
   g: Game;

@@ -69,8 +69,8 @@
       <view v-for="r in attendRows" :key="r.id" class="rp-row">
         <view class="r-nm">{{ r.name }}</view>
         <view class="r-meta att">
-          <text class="t">到 {{ hm(r.arriveAt) }}</text>
-          <text class="t">走 {{ hm(r.leftAt) }}</text>
+          <text class="t">到 {{ isoHmOrDash(r.arriveAt) }}</text>
+          <text class="t">走 {{ isoHmOrDash(r.leftAt) }}</text>
         </view>
       </view>
     </template>
@@ -85,7 +85,7 @@
    （MatchPerson.guest / EloRow.guest）；担保人按 guarantorAccountId 对回名册行解析。 */
 import { computed } from "vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
-import { isoHm } from "@/utils/time";
+import { isoHm, isoHmOrDash } from "@/utils/time";
 import type { LivePlayer, LiveView, MatchPerson } from "@/api/types";
 
 const props = defineProps({
@@ -123,7 +123,6 @@ function guarantorTxt(p: LivePlayer): string {
 const attendRows = computed(() =>
   props.view.players.filter((p) => p.arriveAt || p.leftAt),
 );
-const hm = (iso?: string | null): string => (iso ? isoHm(iso) : "—");
 </script>
 
 <style lang="scss" scoped>

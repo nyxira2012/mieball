@@ -60,9 +60,9 @@
       />
       <template v-else>
         <GameCard
-          v-for="g in ordered"
-          :key="g.id"
-          :card="newGameCard(g)"
+          v-for="{ g, card } in cards"
+          :key="card.id"
+          :card="card"
           @tap="onGameTap(g)"
         />
         <EmptyBox
@@ -286,12 +286,16 @@ const flt = computed(() =>
     .sort((a, b) => a.t - b.t)
     .map((x) => x.g),
 );
-/* alpha:1056/1088 pinned = 我参加/组织/被邀的置顶（my 块定值） */
+/* alpha:1056/1088 pinned = 我参加/组织/被邀的置顶（my 块定值）；卡面模型同拍算好——
+   模板 v-for 里直调 newGameCard 会随滚动（dockY 变值触发整页重渲）逐卡重建对象 */
 const ordered = computed(() => {
   const mine = (g: Game): boolean =>
     !!g.my && (g.my.isOrganizer || !!g.my.myEntry || g.my.invited);
   return [...flt.value.filter(mine), ...flt.value.filter((g) => !mine(g))];
 });
+const cards = computed(() =>
+  ordered.value.map((g) => ({ g, card: newGameCard(g) })),
+);
 /* 死局区三分（deadRowKind 单一源，4.8/4.9/4.10）：见模板注释 */
 const orgPending = computed(() =>
   game.myGames.filter((g) => deadRowKind(g) === "pending"),
@@ -427,7 +431,8 @@ onShow(() => {
   game.loadGames().catch((e) => ui.toast(errText(e)));
   game.loadMine().catch((e) => {
     // 游客没有「我的局」（401 no_identity 静默降级），别把「请先登录」糊游客一脸
-    if (!(e instanceof ApiError && e.code === "no_identity")) ui.toast(errText(e));
+    if (!(e instanceof ApiError && e.code === "no_identity"))
+      ui.toast(errText(e));
   });
   game.loadIntents().catch((e) => ui.toast(errText(e)));
   game.loadMyIntent().catch(() => undefined); // 游客无意向，静默

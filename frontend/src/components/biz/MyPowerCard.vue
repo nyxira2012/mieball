@@ -4,11 +4,15 @@
        段位 TierBadge（duprTier 档名）+ 未定级标记 · 大分数 fmtDupr + DUPR 单位 ·
        本月涨跌 ▲▼（Elo 轨口径，1.4 §6 消费矩阵）·
        底部运动数据行 recentStats（alpha:1858-1860，未开局两态文案逐字）。 -->
-  <view class="mycardp" :class="`bg-${me.cardBg || 'neon'}`" @click="emit('profile')">
+  <view
+    class="mycardp"
+    :class="`bg-${me.cardBg || 'neon'}`"
+    @click="emit('profile')"
+  >
     <view class="top-row">
       <!-- alpha:1846 rkbox：#N 或 —（未开局/未入榜参考区） -->
       <view class="rkbox">
-        <view class="rk">{{ played && rank > 0 ? '#' + rank : '—' }}</view>
+        <view class="rk">{{ played && rank > 0 ? "#" + rank : "—" }}</view>
         <view class="rl">MY RANK</view>
       </view>
       <!-- alpha:1847 av：event.stopPropagation();go('mine') → goTab 切我的页（nav 单一源） -->
@@ -18,18 +22,20 @@
       <!-- alpha:1848 -->
       <view class="info">
         <view class="nrow">
-          <text class="ttl">{{ played ? '我的战力卡' : '我的起步分' }}</text>
+          <text class="ttl">{{ played ? "我的战力卡" : "我的起步分" }}</text>
           <!-- 1.4 §2 段位档名；未定级小 chip（1.4 §5 可信度两态） -->
-          <TierBadge v-if="played" :tier="duprTier(me.dupr ?? 3.0)" />
+          <TierBadge v-if="played" :tier="duprTier(me.dupr ?? GUEST_DUPR)" />
           <text v-else class="tierb-fb">?</text>
           <text v-if="played && me.provisional" class="prov">未定级</text>
         </view>
         <!-- alpha:1852-1855 myscore：DUPR 三位小数主数字（未开局/未定级 dim） -->
         <view class="myscore">
-          <text class="big" :class="{ dim: !played || me.provisional }">{{ fmtDupr(me.dupr ?? 3.0) }}</text>
+          <text class="big" :class="{ dim: !played || me.provisional }">{{
+            fmtDupr(me.dupr ?? GUEST_DUPR)
+          }}</text>
           <text class="unit">DUPR</text>
           <text v-if="played" class="d" :class="me.month >= 0 ? 'up' : 'dn'">
-            {{ me.month >= 0 ? '▲' : '▼' }}{{ Math.abs(me.month) }} 本月
+            {{ me.month >= 0 ? "▲" : "▼" }}{{ Math.abs(me.month) }} 本月
           </text>
         </view>
       </view>
@@ -44,19 +50,19 @@
 /* 我的战力卡（alpha.html:1844-1861 · P9 · 1.4 批4v1 主数字切 DUPR）。business 件：
    组合 ui 件（ChibiAvatar/TierBadge）+ 业务数据。rank 位（myRank）由 power 页按
    rankRows 算好传入（0=不在榜：未开局或未满 5 场的参考区）。 */
-import { computed } from 'vue';
-import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
-import TierBadge from '@/components/ui/TierBadge.vue';
-import { useUserStore } from '@/stores/user';
-import { duprTier, fmtDupr } from '@/utils/elo';
-import { goTab } from '@/utils/nav';
+import { computed } from "vue";
+import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import TierBadge from "@/components/ui/TierBadge.vue";
+import { useUserStore } from "@/stores/user";
+import { GUEST_DUPR, duprTier, fmtDupr } from "@/utils/elo";
+import { goTab } from "@/utils/nav";
 
 defineProps({
   /** 我的排名（alpha:1826 myRank=rows.findIndex(u=>u.id===0)+1；未开局时组件内不展示） */
   rank: { type: Number, default: 0 },
 });
 
-const emit = defineEmits<{ (e: 'profile'): void }>();
+const emit = defineEmits<{ (e: "profile"): void }>();
 
 const userStore = useUserStore();
 const me = userStore.me;
@@ -64,12 +70,14 @@ const me = userStore.me;
 /** alpha:1828 played = me.play>0 */
 const played = computed(() => me.play > 0);
 /** alpha:1829 rs = me.recentStats || {win:0,loss:0,hours:0,kcal:0} */
-const rs = computed(() => me.recentStats || { win: 0, loss: 0, hours: 0, kcal: 0 });
+const rs = computed(
+  () => me.recentStats || { win: 0, loss: 0, hours: 0, kcal: 0 },
+);
 /** alpha:1859-1860 底部数据行文案（逐字口径） */
 const telemetry = computed(() =>
   played.value
-    ? `${rs.value.win} 胜 ${rs.value.loss} 负 · 运动 ${rs.value.hours} 小时 · 消耗 ${rs.value.kcal} 大卡 · 积分 ${me.month >= 0 ? '+' : ''}${me.month}`
-    : '待第一局校准 · 自评起步分',
+    ? `${rs.value.win} 胜 ${rs.value.loss} 负 · 运动 ${rs.value.hours} 小时 · 消耗 ${rs.value.kcal} 大卡 · 积分 ${me.month >= 0 ? "+" : ""}${me.month}`
+    : "待第一局校准 · 自评起步分",
 );
 </script>
 
@@ -84,7 +92,9 @@ const telemetry = computed(() =>
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  transition: border-color 0.2s, background 0.3s;
+  transition:
+    border-color 0.2s,
+    background 0.3s;
 }
 .mycardp:active {
   border-color: rgba(255, 212, 0, 0.4);
@@ -92,8 +102,16 @@ const telemetry = computed(() =>
 /* alpha.html:414-420 bg-neon */
 .mycardp.bg-neon {
   background:
-    radial-gradient(circle at 90% 10%, rgba(255, 212, 0, 0.15), transparent 55%),
-    radial-gradient(circle at 10% 90%, rgba(111, 231, 255, 0.08), transparent 60%),
+    radial-gradient(
+      circle at 90% 10%,
+      rgba(255, 212, 0, 0.15),
+      transparent 55%
+    ),
+    radial-gradient(
+      circle at 10% 90%,
+      rgba(111, 231, 255, 0.08),
+      transparent 60%
+    ),
     linear-gradient(150deg, #1c1b26, var(--ink2));
   border-color: rgba(255, 212, 0, 0.35);
   box-shadow: inset 0 0 24px rgba(255, 212, 0, 0.04);
@@ -101,7 +119,11 @@ const telemetry = computed(() =>
 /* alpha.html:421-426 bg-gold */
 .mycardp.bg-gold {
   background:
-    radial-gradient(circle at 85% 15%, rgba(255, 212, 0, 0.24), transparent 55%),
+    radial-gradient(
+      circle at 85% 15%,
+      rgba(255, 212, 0, 0.24),
+      transparent 55%
+    ),
     linear-gradient(135deg, #2b2313 0%, #181512 60%, #0e0d0c 100%);
   border-color: rgba(255, 212, 0, 0.5);
   box-shadow: inset 0 0 30px rgba(255, 212, 0, 0.08);
@@ -109,8 +131,16 @@ const telemetry = computed(() =>
 /* alpha.html:427-433 bg-cyber */
 .mycardp.bg-cyber {
   background:
-    radial-gradient(circle at 80% 20%, rgba(255, 90, 54, 0.18), transparent 50%),
-    radial-gradient(circle at 20% 80%, rgba(184, 169, 255, 0.12), transparent 50%),
+    radial-gradient(
+      circle at 80% 20%,
+      rgba(255, 90, 54, 0.18),
+      transparent 50%
+    ),
+    radial-gradient(
+      circle at 20% 80%,
+      rgba(184, 169, 255, 0.12),
+      transparent 50%
+    ),
     linear-gradient(150deg, #221426, var(--ink2));
   border-color: rgba(255, 90, 54, 0.4);
   box-shadow: inset 0 0 26px rgba(255, 90, 54, 0.06);
@@ -118,8 +148,16 @@ const telemetry = computed(() =>
 /* alpha.html:434-440 bg-aurora */
 .mycardp.bg-aurora {
   background:
-    radial-gradient(circle at 85% 15%, rgba(111, 231, 255, 0.2), transparent 55%),
-    radial-gradient(circle at 15% 85%, rgba(184, 169, 255, 0.14), transparent 55%),
+    radial-gradient(
+      circle at 85% 15%,
+      rgba(111, 231, 255, 0.2),
+      transparent 55%
+    ),
+    radial-gradient(
+      circle at 15% 85%,
+      rgba(184, 169, 255, 0.14),
+      transparent 55%
+    ),
     linear-gradient(150deg, #10222b, var(--ink2));
   border-color: rgba(111, 231, 255, 0.45);
   box-shadow: inset 0 0 26px rgba(111, 231, 255, 0.06);

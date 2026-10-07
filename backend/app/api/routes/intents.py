@@ -1,6 +1,6 @@
 """intents 路由 —— 意向簿的 HTTP 面：纯参数搬运，规则全在 IntentBook。
 
-known（与 viewer 打过没打过）是两簿组合视图：在这里用 GameBook.played_with 覆写，
+known（与 viewer 打过没打过）是两簿组合视图：在这里用 GameBook.played_mates 对表覆写，
 IntentBook 不反向依赖局簿（技术设计 §3 两簿边界）；游客 viewer 没有 known，恒 False。
 """
 
@@ -49,10 +49,11 @@ def list_intents(
     viewer_id = account.id if account else None
     out = book.list(viewer_id=viewer_id)
     if viewer_id is not None:
+        mates = games.played_mates(
+            viewer_id
+        )  # 共打集一次拉齐，逐条对表（免逐行联表 COUNT）
         for v in out:
-            v["known"] = games.played_with(
-                account_a=viewer_id, account_b=v["account"]["id"]
-            )
+            v["known"] = v["account"]["id"] in mates
     return out
 
 

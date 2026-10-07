@@ -13,8 +13,9 @@ import type {
    带访客切真）：vi.mock('@/api/live') 路数（toLiveView 保留真实现——store 对表链吃同一
    映射），写动作用例喂 crafted 响应视图（snake 形状与后端 services/live.py view 输出逐字
    对齐）断言 applyLiveView 落地 + toast；409 stale 携视图对表、断网走 errText 文案。
-   本地遗留路（后端无对应端点：subFirst/removeFromRoster/setRuleScore，及 setCheck/
-   togglePerson/swapPlayers 的视图外行支线）在视图态上直测保留；空降/带访客走
+   本地遗留路（后端无对应端点：subFirst/removeFromRoster/setRuleScore）在视图态上
+   直测保留；setCheck/togglePerson/swapPlayers 的视图外行支线已随批6 切真退役删除；
+   空降/带访客走
    apiLiveDropIn/apiLiveGuests 专例。散场链（startSweep/sweepCancelAll/endGame/
    noRedeal 透传/回看落地停轮询）各有专例。批5b 增补：settlingCourtId 按片渲染窗、
    确认窗联动纯函数（followWinner/canPickWinner）、验收官补测销号 G1-G3（G4 并入
@@ -785,7 +786,7 @@ describe("cancelMatch（§4.7 取消对局：回流队首归总账、片腾出�
       vPlay(9, { courts: [ct(1, "playing", 0, 0)] }),
     );
     await live.cancelMatch(0);
-    expect(liveApi.apiLiveCancel).toHaveBeenCalledWith(900, 1, false, 7, 5);
+    expect(liveApi.apiLiveCancel).toHaveBeenCalledWith(900, 1, 7, 5);
     expect(ui.toastMsg).toBe("对局作废 · 这场不计分 · 场上 4 人回到队首");
     expect(liveApi.apiLiveDeal).toHaveBeenCalledWith(
       900,
@@ -1001,43 +1002,6 @@ describe("swapPlayers（§4.9 球友开放：无 guard、全场写只带总号�
     expect(live.live!.courts[0].B).toEqual([104, 105]); // 原位顶坑
     expect(live.live!.queue).toEqual([103]); // 换下排队尾
     expect(ui.toastMsg).toBe("已换人 · 对阵重排");
-  });
-  it("本地行（out 不在总账）：原位顶坑旧路保留（遗留本地路）", async () => {
-    const { live } = await inPlay();
-    const L = live.live!;
-    // 本地灌两位视图外访客（不走 addGuests——已切真；此处只测 swap 的视图外行支线）
-    L.roster.push(
-      {
-        id: 9001,
-        name: "帮手·1",
-        elo: 1200,
-        play: 0,
-        win: 0,
-        month: 0,
-        chibi: {},
-        shadow: true,
-        check: "join",
-      },
-      {
-        id: 9002,
-        name: "帮手·2",
-        elo: 1200,
-        play: 0,
-        win: 0,
-        month: 0,
-        chibi: {},
-        shadow: true,
-        check: "join",
-      },
-    );
-    const [g1, g2] = L.roster.slice(4);
-    L.courts[0].A.push(g1.id); // g1 手动上片（视图外的行——本地路语义）
-    L.queue = [g2.id];
-    await live.swapPlayers(g1.id, g2.id); // out=g1 本地行 → 走本地旧路
-    expect(liveApi.apiLiveSwap).not.toHaveBeenCalled();
-    expect(L.courts[0].A).toContain(g2.id); // 原位顶坑
-    expect(L.queue).toEqual([g1.id]); // 换下排队尾
-    expect(L.feed[0]).toContain("换下"); // 留名句
   });
 });
 
@@ -1502,7 +1466,7 @@ describe("散场清扫链（§4.9，批6）", () => {
       }),
     );
     await live.cancelMatch(0, true);
-    expect(liveApi.apiLiveCancel).toHaveBeenCalledWith(900, 1, true, 7, 5);
+    expect(liveApi.apiLiveCancel).toHaveBeenCalledWith(900, 1, 7, 5);
     expect(liveApi.apiLiveDeal).not.toHaveBeenCalled();
   });
   it("sweepCancelAll 一键：载荷带总号、响应视图落地（残局清单随视图清空）+ toast", async () => {

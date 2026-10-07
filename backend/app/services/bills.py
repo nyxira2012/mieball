@@ -160,20 +160,37 @@ class BillBook:
             .order_by(Game.ended_at.desc(), Game.id.desc())
         ).all()
 
+        # 批量预取（settle/receive 每点一次也整跑 view，逐本查行、逐行查账号会叠成 N+1）：
+        # organized 各本的 BillRow 一次查齐按本分组；付款人/收款方涉事账号一次查齐
+        bill_rows: dict[int, list[BillRow]] = {}
+        for r in (
+            self.db.execute(
+                select(BillRow)
+                .where(BillRow.bill_id.in_([b.id for b, _ in organized]))
+                .order_by(BillRow.id)
+            )
+            .scalars()
+            .all()
+        ):
+            bill_rows.setdefault(r.bill_id, []).append(r)
+        acc_ids: set[int] = {game.organizer_id for _, game in organized} | {
+            game.organizer_id for _, game in mine
+        }
+        for all_rows in bill_rows.values():
+            acc_ids.update(r.account_id for r in all_rows if r.account_id is not None)
+        accounts = {
+            a.id: a
+            for a in self.db.execute(
+                select(Account).where(Account.id.in_(acc_ids))
+            ).scalars()
+        }
+
         entries: list[tuple[object, int, dict]] = []
         debtors: dict[int, dict] = {}
         receivable = 0
         for bill, game in organized:
             # 整本账的行都给组织者（§4.2 按人明细）；行序=名册行序（批3 裁定）
-            all_rows = (
-                self.db.execute(
-                    select(BillRow)
-                    .where(BillRow.bill_id == bill.id)
-                    .order_by(BillRow.id)
-                )
-                .scalars()
-                .all()
-            )
+            all_rows = bill_rows.get(bill.id, [])
             payers = [r for r in all_rows if r.account_id != game.organizer_id]
             mine_row = next(r for r in all_rows if r.account_id == game.organizer_id)
             for r in payers:
@@ -195,7 +212,7 @@ class BillBook:
                         "kind": "receivable" if unreceived else "received",
                         "game_id": game.id,
                         "game_name": game.name,
-                        "ended_day": _day(game.ended_at),
+                        "ended_day": clock.today_key(game.ended_at),
                         # 应收行金额点一人少一笔；收讫后翻全额（§4.4，翻旧账仍在）
                         "amount": unreceived or others_total,
                         "fee_total": bill.fee_total,
@@ -205,9 +222,9 @@ class BillBook:
                             {
                                 "account_id": r.account_id,
                                 "name": _frozen_name(
-                                    self.db, r.account_id, r.display_name
+                                    accounts.get(r.account_id), r.display_name
                                 ),
-                                "deactivated": _deactivated(self.db, r.account_id),
+                                "deactivated": _deactivated(accounts.get(r.account_id)),
                                 "amount": r.amount,
                                 "guest_count": r.guest_count,
                                 "paid_at": clock.iso(r.paid_at) if r.paid_at else None,
@@ -225,12 +242,10 @@ class BillBook:
                 "kind": "paid" if row.paid_at else "payable",
                 "game_id": game.id,
                 "game_name": game.name,
-                "ended_day": _day(game.ended_at),
+                "ended_day": clock.today_key(game.ended_at),
                 "amount": row.amount,
-                "payee_name": person_view(self.db.get(Account, game.organizer_id))[
-                    "nickname"
-                ],
-                "payee_deactivated": _deactivated(self.db, game.organizer_id),
+                "payee_name": person_view(accounts.get(game.organizer_id))["nickname"],
+                "payee_deactivated": _deactivated(accounts.get(game.organizer_id)),
                 # 对方（组织者）先点了我的「已收」而我还没结算（§4.3b 灰字旗；
                 # 点收落在我这行的 received_at 上，三数仍按我的 paid_at 算）
                 "peer_received": row.received_at is not None and row.paid_at is None,
@@ -267,17 +282,19 @@ class BillBook:
             "debtors": [
                 {
                     "account_id": d["account_id"],
-                    "name": person_view(self.db.get(Account, d["account_id"]))[
-                        "nickname"
-                    ],
-                    "deactivated": _deactivated(self.db, d["account_id"]),
+                    "name": person_view(accounts.get(d["account_id"]))["nickname"],
+                    "deactivated": _deactivated(accounts.get(d["account_id"])),
                     "total": d["total"],
                     "games": d["games"],
                 }
                 for d in sorted(debtors.values(), key=lambda x: -x["total"])
             ],
             "unfixed": [
-                {"game_id": g.id, "game_name": g.name, "ended_day": _day(g.ended_at)}
+                {
+                    "game_id": g.id,
+                    "game_name": g.name,
+                    "ended_day": clock.today_key(g.ended_at),
+                }
                 for g in unfixed
             ],
         }
@@ -415,16 +432,11 @@ def _period_floor(period: str):
     return clock.now() - timedelta(days=days) if days else None
 
 
-def _day(dt) -> str:
-    # 散场那天（§4.1 日期记散场日；库内 naive 北京墙钟，日期段即北京日）
-    return dt.strftime("%Y-%m-%d")
-
-
-def _deactivated(db: Session, account_id: int) -> bool:
-    acc = db.get(Account, account_id)
+def _deactivated(acc: Account | None) -> bool:
+    """账号行不在或已注销（§4.8）：账行名字/灰旗共用（账号由调用方批量预取）。"""
     return acc is None or acc.status != "active"
 
 
-def _frozen_name(db: Session, account_id: int, frozen: str) -> str:
+def _frozen_name(acc: Account | None, frozen: str) -> str:
     """账行名字：定格名（账是快照）；注销者一律占位（§4.8，沿 person_view 先例）。"""
-    return ANON_NAME if _deactivated(db, account_id) else frozen
+    return ANON_NAME if _deactivated(acc) else frozen

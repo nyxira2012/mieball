@@ -42,7 +42,9 @@
                   ><ChibiAvatar :chibi="pl.p.chibi" :size="44"
                 /></view>
                 <text class="pname">{{ pl.p.name }}</text>
-                <text class="pelo">DUPR {{ fmtDupr1(pl.p.dupr ?? 3.0) }}</text>
+                <text class="pelo"
+                  >DUPR {{ fmtDupr1(pl.p.dupr ?? GUEST_DUPR) }}</text
+                >
                 <text v-if="pl.p.shadow" class="badge guest">访客</text>
                 <text v-else-if="pl.p.skip" class="badge rest">歇</text>
               </view>
@@ -144,7 +146,7 @@ import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import type { LiveCourt } from "@/api/types";
 import { courtSize } from "@/utils/rotate";
-import { fmtDupr1 } from "@/utils/elo";
+import { GUEST_DUPR, fmtDupr1 } from "@/utils/elo";
 import { courtDisplayName } from "@/utils/format";
 import { perSide, useLiveStore } from "@/stores/live";
 

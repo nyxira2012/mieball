@@ -19,8 +19,8 @@
               ></view
             >
             <view class="ps-elo"
-              ><text class="elo-b">{{ fmtDupr1(p.dupr ?? 3.0) }}</text> · 已打
-              {{ p.play }} 场<text v-if="p.shadow" class="ps-guest">
+              ><text class="elo-b">{{ fmtDupr1(p.dupr ?? GUEST_DUPR) }}</text> ·
+              已打 {{ p.play }} 场<text v-if="p.shadow" class="ps-guest">
                 · 访客（不计积分）</text
               ></view
             >
@@ -93,7 +93,8 @@
                 ><text v-if="r.frozen" class="row-frozen">待确认</text></view
               >
               <view class="row-meta"
-                >已打 {{ r.u.play }} 场 · DUPR {{ fmtDupr1(r.u.dupr ?? 3.0) }}</view
+                >已打 {{ r.u.play }} 场 · DUPR
+                {{ fmtDupr1(r.u.dupr ?? GUEST_DUPR) }}</view
               >
             </view>
             <text class="row-go">换 ‹</text>
@@ -126,8 +127,8 @@ import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
 import { pById } from "@/utils/rotate";
-import { fmtDupr1 } from "@/utils/elo";
-import { isMe, isOrg } from "@/utils/format";
+import { GUEST_DUPR, fmtDupr1 } from "@/utils/elo";
+import { isOrg } from "@/utils/format";
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -155,8 +156,11 @@ const full = computed(() => liveStore.isFullPower);
 const isOrgViewer = computed(() =>
   liveStore.live ? isOrg(liveStore.live.g) : false,
 );
-/** 手柄钮（换人/歇/连/退场）：给自己随时可、给他人需全权 */
-const canOperate = computed(() => full.value || isMe(props.personId));
+/** 手柄钮（换人/歇/连/退场）：给自己随时可、给他人需全权——「自己」按名册行 id
+    判（store.myRowId 单一源；行 id ≠ 账号 id，与 setCheck/togglePerson 守卫同键） */
+const canOperate = computed(
+  () => full.value || props.personId === liveStore.myRowId(),
+);
 
 /** 退场：setCheck left（清队列清场上 + toast 在 store），随后关抽屉 */
 function onLeave(): void {

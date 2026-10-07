@@ -28,7 +28,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
 from ..core import clock, errors
-from ..db.models import Entry, Game, Intent, Invite
+from ..db.models import Account, Bill, BillRow, Entry, Game, Intent, Invite
 from .game_views import (
     JOINABLE_STATUSES,
     death_day,
@@ -129,6 +129,10 @@ class GameBook:
         now = clock.now()
         games = self.db.execute(select(Game).order_by(Game.id.desc())).scalars().all()
         entry_ids, invite_ids = self._viewer_game_ids(viewer_id)
+        mates = self.played_mates(
+            viewer_id
+        )  # played 档可见性一次判齐（免逐局联表 COUNT）
+        batch = self._list_batch(games, viewer_id)
         out = []
         for game in games:
             if masked(game, viewer_id, now) not in ("open", "locked", "live", "done"):
@@ -144,13 +148,10 @@ class GameBook:
                     or game.id in invite_ids
                 )
                 visible = involved or (
-                    game.visibility == "played"
-                    and self.played_with(
-                        account_a=game.organizer_id, account_b=viewer_id
-                    )
+                    game.visibility == "played" and game.organizer_id in mates
                 )
             if visible:
-                out.append(self._view(game, viewer_id=viewer_id))
+                out.append(self._view(game, viewer_id=viewer_id, batch=batch))
         return out
 
     # ---- 我的局（组织者含未成局区/恢复窗口；参加者含当日灰字；被邀未加入也挂） ----
@@ -173,6 +174,7 @@ class GameBook:
             .scalars()
             .all()
         )
+        batch = self._list_batch(games, account_id)
         out = []
         for game in games:
             status = masked(game, account_id, now)
@@ -192,7 +194,7 @@ class GameBook:
                 # 被邀未加入：局还在进行中才挂"我的局"（4.12：放着不动直到截止/被撤/打完）
                 keep = status in JOINABLE_STATUSES
             if keep:
-                out.append(self._view(game, viewer_id=account_id))
+                out.append(self._view(game, viewer_id=account_id, batch=batch))
         return out
 
     # ---- 详情（链接即门票：匿名可看、档位不拦；终态照常 200 带状态） ----
@@ -489,6 +491,28 @@ class GameBook:
         ).scalar_one()
         return hits > 0
 
+    def played_mates(self, viewer_id: int | None) -> set[int]:
+        """viewer 的共打账号集（played_with 的批量版）：与 viewer 同在一个已成局
+        （state='locked'，含之后的进行中/已结束）正式名单的其他人——列表/意向页
+        逐条判打过会叠成 N+1，一次拉齐逐条对表。"""
+        if viewer_id is None:
+            return set()
+        mine = (
+            select(Entry.game_id).where(
+                Entry.account_id == viewer_id, Entry.standing == "formal"
+            )
+        ).scalar_subquery()
+        rows = self.db.execute(
+            select(Entry.account_id)
+            .join(Game, Game.id == Entry.game_id)
+            .where(
+                Entry.game_id.in_(mine),
+                Entry.standing == "formal",
+                Game.state == "locked",
+            )
+        ).scalars()
+        return {a for a in rows if a != viewer_id}
+
     # ---- 内部 ----
 
     def _owned(self, game_id: int, organizer_id: int) -> Game:
@@ -553,6 +577,63 @@ class GameBook:
                 game.terminated_at = game.start_at  # 死于开打时刻
             if expired or zombies:
                 self.db.commit()
+
+    def _list_batch(self, games: list[Game], viewer_id: int | None) -> dict:
+        """列表读的批量预取（找局打/我的局一页几十局 × 逐局五六查会叠成 N+1）：
+        人头（GROUP BY 一把尺同口径）/账本/我的账行/报名与邀请/组织者账号一次查齐，
+        game_view 逐字段消费；单局路径不传 batch 照旧现查。"""
+        ids = [g.id for g in games]
+        batch: dict = {
+            "heads": {},
+            "bills": {},
+            "my_bill_rows": {},
+            "my_entries": {},
+            "invited": set(),
+            "accounts": {},
+        }
+        if not ids:
+            return batch
+        batch["heads"] = dict(
+            self.db.execute(
+                select(Entry.game_id, func.coalesce(func.sum(1 + Entry.bring), 0))
+                .where(Entry.game_id.in_(ids), Entry.standing == "formal")
+                .group_by(Entry.game_id)
+            ).all()
+        )
+        bills = (
+            self.db.execute(select(Bill).where(Bill.game_id.in_(ids))).scalars().all()
+        )
+        bill_game = {b.id: b.game_id for b in bills}
+        for bill in bills:
+            batch["bills"][bill.game_id] = bill
+        if viewer_id is not None:
+            for r in self.db.execute(
+                select(BillRow).where(
+                    BillRow.account_id == viewer_id,
+                    BillRow.bill_id.in_(bill_game),
+                )
+            ).scalars():
+                batch["my_bill_rows"][bill_game[r.bill_id]] = r
+            for e in self.db.execute(
+                select(Entry).where(
+                    Entry.account_id == viewer_id, Entry.game_id.in_(ids)
+                )
+            ).scalars():
+                batch["my_entries"][e.game_id] = e
+            batch["invited"] = set(
+                self.db.execute(
+                    select(Invite.game_id).where(
+                        Invite.invitee_id == viewer_id, Invite.game_id.in_(ids)
+                    )
+                ).scalars()
+            )
+        batch["accounts"] = {
+            a.id: a
+            for a in self.db.execute(
+                select(Account).where(Account.id.in_({g.organizer_id for g in games}))
+            ).scalars()
+        }
+        return batch
 
     def _heads(self, game_id: int) -> int:
         """正式名单人头 = Σ(1+bring)——全篇数人数的唯一一把尺（规格 §4 开头）。"""
@@ -626,13 +707,23 @@ class GameBook:
             seq += 1
 
     def _view(
-        self, game: Game, *, viewer_id: int | None, with_entries: bool = False
+        self,
+        game: Game,
+        *,
+        viewer_id: int | None,
+        with_entries: bool = False,
+        batch: dict | None = None,
     ) -> dict:
-        """读视图组装在 game_views（批3 拆出）；局簿只补自己的一把尺（人头）。"""
+        """读视图组装在 game_views（批3 拆出）；局簿只补自己的一把尺（人头）——
+        列表路径由 _list_batch 预取递入，单局路径现查。"""
+        heads = batch["heads"].get(game.id) if batch is not None else None
+        if heads is None:
+            heads = self._heads(game.id)
         return game_view(
             self.db,
             game,
             viewer_id=viewer_id,
-            heads=self._heads(game.id),
+            heads=int(heads),
             with_entries=with_entries,
+            batch=batch,
         )

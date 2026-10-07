@@ -63,14 +63,22 @@ def game_view(
     viewer_id: int | None,
     heads: int,
     with_entries: bool = False,
+    batch: dict | None = None,
 ) -> dict:
-    """game_view 全量定值（技术设计 §2.1 字段表）；heads 由局簿唯一一把尺算好传入。"""
+    """game_view 全量定值（技术设计 §2.1 字段表）；heads 由局簿唯一一把尺算好传入。
+    batch 是列表读的批量预取（heads/账本/我的账行/报名邀请/组织者账号，GameBook.
+    _list_batch 产）——单局路径（detail/写响应）不传，逐局现查照旧。"""
     now = clock.now()
     status = masked(game, viewer_id, now)
+    organizer = (
+        batch["accounts"].get(game.organizer_id)
+        if batch is not None
+        else db.get(Account, game.organizer_id)
+    )
     view: dict[str, Any] = {
         "id": game.id,
         "name": game.name,
-        "organizer": person_view(db.get(Account, game.organizer_id)),
+        "organizer": person_view(organizer),
         "start_at": clock.iso(game.start_at),
         "end_at": clock.iso(game.end_at),
         "deadline_at": clock.iso(game.deadline_at),
@@ -85,7 +93,7 @@ def game_view(
         "manual_lock": game.manual_lock,
         "courts": list(game.courts) if game.courts is not None else None,
         "fee_total": game.fee_total,
-        "bill": bill_block(db, game, viewer_id),
+        "bill": bill_block(db, game, viewer_id, batch=batch),
         "status": status,
         "unlocked": game.unlocked_at is not None and now < game.start_at,
         "joinable": status in JOINABLE_STATUSES,
@@ -102,25 +110,33 @@ def game_view(
     if with_entries:
         view["entries"] = entry_rows(db, game.id)
     if viewer_id is not None:
-        view["my"] = my_block(db, game, viewer_id)
+        view["my"] = my_block(db, game, viewer_id, batch=batch)
     return view
 
 
-def bill_block(db: Session, game: Game, viewer_id: int | None) -> dict | None:
+def bill_block(
+    db: Session, game: Game, viewer_id: int | None, batch: dict | None = None
+) -> dict | None:
     """已出账局的实摊定值块（1.3 §3）：fee_total/per_head/heads 是引擎定格数，
     my_share 按 viewer 在账行的 amount（不在摊钱名单/游客 → null）；未出账 → None
     ——前端以块有无区分「约（预估）」与实摊（A4）。只给自己的行：别人摊多少、
     结没结一字节不漏（§4.6 看账边界）。"""
-    bill = db.execute(select(Bill).where(Bill.game_id == game.id)).scalar_one_or_none()
+    if batch is not None:
+        bill = batch["bills"].get(game.id)
+        mine = batch["my_bill_rows"].get(game.id) if viewer_id is not None else None
+    else:
+        bill = db.execute(
+            select(Bill).where(Bill.game_id == game.id)
+        ).scalar_one_or_none()
+        mine = None
+        if bill is not None and viewer_id is not None:
+            mine = db.execute(
+                select(BillRow).where(
+                    BillRow.bill_id == bill.id, BillRow.account_id == viewer_id
+                )
+            ).scalar_one_or_none()
     if bill is None:
         return None
-    mine = None
-    if viewer_id is not None:
-        mine = db.execute(
-            select(BillRow).where(
-                BillRow.bill_id == bill.id, BillRow.account_id == viewer_id
-            )
-        ).scalar_one_or_none()
     return {
         "fee_total": bill.fee_total,
         "per_head": bill.per_head,
@@ -161,18 +177,24 @@ def entry_rows(db: Session, game_id: int) -> list[dict]:
     ]
 
 
-def my_block(db: Session, game: Game, viewer_id: int) -> dict:
-    entry = db.execute(
-        select(Entry).where(Entry.game_id == game.id, Entry.account_id == viewer_id)
-    ).scalar_one_or_none()
-    invited = (
-        db.execute(
-            select(Invite.id).where(
-                Invite.game_id == game.id, Invite.invitee_id == viewer_id
-            )
-        ).first()
-        is not None
-    )
+def my_block(
+    db: Session, game: Game, viewer_id: int, batch: dict | None = None
+) -> dict:
+    if batch is not None:
+        entry = batch["my_entries"].get(game.id)
+        invited = game.id in batch["invited"]
+    else:
+        entry = db.execute(
+            select(Entry).where(Entry.game_id == game.id, Entry.account_id == viewer_id)
+        ).scalar_one_or_none()
+        invited = (
+            db.execute(
+                select(Invite.id).where(
+                    Invite.game_id == game.id, Invite.invitee_id == viewer_id
+                )
+            ).first()
+            is not None
+        )
     return {
         "is_organizer": game.organizer_id == viewer_id,
         "my_entry": (

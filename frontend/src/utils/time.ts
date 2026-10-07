@@ -67,12 +67,8 @@ export function splitGameTime(t: string): { day: string; hm: string } {
   return { day: p.slice(0, -1).join(" "), hm: p[p.length - 1] ?? "" };
 }
 
-/** Date → 「HH:mm」（24 小时制补零；组局表单拨盘用） */
-export function hmToken(d: Date): string {
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-
-/** 打多久文案：整/半小时 → 「N 小时」（1.5 这种），其余（拨盘 5 分步进会出 115 分钟这类）→ 「N 分钟」 */
+/** 打多久文案：整/半小时 → 「N 小时」（1.5 这种），其余（拨盘 5 分步进会出 115 分钟这类）→ 「N 分钟」。
+    dur 吃小时数（detail 页 endAt-startAt 现算分钟后 /60 喂入） */
 export function durTxt(dur: number): string {
   const m = Math.round(dur * 60);
   return m % 30 === 0 ? `${m / 60} 小时` : `${m} 分钟`;
@@ -160,8 +156,13 @@ export function isoDay(iso: string): string {
   return `${p.m}.${String(p.d).padStart(2, "0")} 周${"日一二三四五六"[p.wd]}`;
 }
 
-/** ISO → 北京墙钟 'HH:mm'——真局卡面与详情 hero 大字共用 */
+/** ISO → 北京墙钟 'HH:mm'——真局卡面与 detail hero 大字共用 */
 export function isoHm(iso: string): string {
   const p = isoParts(iso);
   return `${String(p.h).padStart(2, "0")}:${String(p.min).padStart(2, "0")}`;
+}
+
+/** ISO → 北京墙钟 'HH:mm'，未落账/缺值显 '—'（LedgerSheet/LiveRecap 考勤时刻段共用） */
+export function isoHmOrDash(iso?: string | null): string {
+  return iso ? isoHm(iso) : "—";
 }

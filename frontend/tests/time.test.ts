@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   dayToken,
+  durTxt,
   gameTime,
-  hmToken,
   isoDay,
   isoDayOff,
   isoHm,
+  isoHmOrDash,
   untilTxt,
 } from "@/utils/time";
 
@@ -52,7 +53,7 @@ describe("gameTime 组局改版（3.3）：后天与精确日期", () => {
   });
 });
 
-describe("dayToken / hmToken（组局拨盘产物）", () => {
+describe("dayToken（组局拨盘产物）", () => {
   it("偏移 0/1/2 天 → 今天/明天/后天", () => {
     expect(dayToken(new Date(2026, 9, 4))).toBe("今天");
     expect(dayToken(new Date(2026, 9, 5))).toBe("明天");
@@ -62,9 +63,18 @@ describe("dayToken / hmToken（组局拨盘产物）", () => {
     expect(dayToken(new Date(2026, 9, 7))).toBe("10.07 周三");
     expect(dayToken(new Date(2026, 8, 30))).toBe("9.30 周三");
   });
-  it("hmToken 24 小时制补零", () => {
-    expect(hmToken(new Date(2026, 9, 4, 9, 5))).toBe("09:05");
-    expect(hmToken(new Date(2026, 9, 4, 21, 0))).toBe("21:00");
+});
+
+describe("durTxt / isoHmOrDash（打多久文案与考勤时刻兜底）", () => {
+  it("整/半小时 → 小时口径，其余 → 分钟", () => {
+    expect(durTxt(1)).toBe("1 小时");
+    expect(durTxt(1.5)).toBe("1.5 小时");
+    expect(durTxt(115 / 60)).toBe("115 分钟");
+  });
+  it("isoHmOrDash：有值出时刻、缺值显 —", () => {
+    expect(isoHmOrDash("2026-10-04T09:05:00+08:00")).toBe("09:05");
+    expect(isoHmOrDash(null)).toBe("—");
+    expect(isoHmOrDash(undefined)).toBe("—");
   });
 });
 

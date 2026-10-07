@@ -63,7 +63,6 @@ class SettleConfirmIn(BaseModel):
 
 class CancelIn(BaseModel):
     court_no: int
-    no_redeal: bool = False
     base_total_seq: int
     base_court_seq: int
 
@@ -107,12 +106,6 @@ class PlayerWriteIn(BaseModel):
     """按名册行定靶的全场写（封撤管理员）公共身位。"""
 
     player_id: int
-    base_total_seq: int
-
-
-class DropInIn(BaseModel):
-    """空降报到（1.3 附录 B1，本人写本人）：名册没我建行入册，有行幂等回视图。"""
-
     base_total_seq: int
 
 
@@ -261,7 +254,6 @@ def live_cancel(
         game_id=game_id,
         actor_id=account.id,
         court_no=body.court_no,
-        no_redeal=body.no_redeal,
         base_total_seq=body.base_total_seq,
         base_court_seq=body.base_court_seq,
     )
@@ -363,7 +355,7 @@ def live_unset_admin(
 @router.post("/dropin")
 def live_dropin(
     game_id: int,
-    body: DropInIn,
+    body: TotalWriteIn,  # 空降报到（1.3 附录 B1，本人写本人）：只走总号的公共身位
     account: Account = Depends(require_account),
     book: LiveBook = Depends(get_live_book),
 ):

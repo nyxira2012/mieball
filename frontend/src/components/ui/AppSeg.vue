@@ -15,22 +15,27 @@
 
 <script setup lang="ts">
 /* alpha.html:188-192 .seg 分段选择（大字 + 可选 small 副标），
-   战力页 Elo/NTRP 切换、组局表单时长/频率段均用它 */
-import type { PropType } from 'vue'
+   组局表单时长/频率段用它（战力页切换胶囊已随 1.4 批4v2 退役删除） */
+import type { PropType } from "vue";
 
 export interface SegOption {
-  value: string | number
-  label: string
-  sub?: string
+  value: string | number;
+  label: string;
+  sub?: string;
 }
 
 const props = defineProps({
   options: { type: Array as PropType<SegOption[]>, required: true },
-  modelValue: { type: [String, Number] as PropType<string | number>, default: '' },
-})
-const emit = defineEmits<{ (e: 'update:modelValue', v: string | number): void }>()
+  modelValue: {
+    type: [String, Number] as PropType<string | number>,
+    default: "",
+  },
+});
+const emit = defineEmits<{
+  (e: "update:modelValue", v: string | number): void;
+}>();
 
-const select = (v: string | number) => emit('update:modelValue', v)
+const select = (v: string | number) => emit("update:modelValue", v);
 </script>
 
 <style lang="scss" scoped>
