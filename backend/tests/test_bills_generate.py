@@ -368,6 +368,32 @@ def test_organizer_fallback_row_when_no_roster(client: TestClient):
 # ---- 补填（§4.5）：出账口子、0 元、三码拦截、管理员不碰钱 ----
 
 
+def test_open_game_end_seals_state_and_fee_backfill(client: TestClient):
+    """open 局（publish 后没锁、截止未到）直接开账再散场：end 把 state 定格成
+    locked，派生态经 masked 翻 done——补填入口（前端 status=='done' 才亮）在这条
+    真实路径不丢（1.3 走查补漏）；定格后 POST fee 照常出账。"""
+    env = open_live(client, seed=65, players=6)
+    gid = env["game_id"]
+    with db_of(client) as db:
+        assert db.get(Game, gid).state == "open"  # 前提：没手动锁、截止未到
+    v = end_live(client, env)
+    assert v["ended"] is True
+    assert detail(client, gid)["status"] == "done"  # masked/derive 路径
+    r = set_fee(client, env["org"]["token"], gid, 420)
+    assert r.status_code == 200, r.text
+    assert r.json()["bill"] == {
+        "fee_total": 420,
+        "per_head": 70,
+        "heads": 6,
+        "my_share": 70,
+        "my_guest_count": 0,
+    }
+    with db_of(client) as db:
+        bill = get_bill(db, gid)
+        assert bill.fee_total == 420
+        assert sum(r_.amount for r_ in bill_rows(db, gid)) == 420
+
+
 def test_fee_fill_bills_with_backfill_time(client: TestClient, fake):
     env = open_live(client, seed=58, players=12)
     gid = env["game_id"]

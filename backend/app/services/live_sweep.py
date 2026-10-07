@@ -66,6 +66,9 @@ class LiveSweepMixin:
                 raise errors.live_residue()
             now = clock.now()
             game.ended_at = now
+            if game.state != "locked":
+                # open 局提前开账再散场的，state 停在 open 会让派生态永不到 done——散场即定格，翻 locked 让 derive 走 locked→done（1.3 走查补漏）
+                game.state = "locked"
             for r in self._roster(game_id):
                 if r.check in ARRIVED and r.left_at is None:
                     r.left_at = now  # 考勤定格：在场者离场时刻=散场时刻
