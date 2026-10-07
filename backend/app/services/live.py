@@ -47,8 +47,9 @@ RATING_INIT = 1500
 # 败方只扣胜方涨分六成（alpha:1698）；访客按 1500 代入当正常玩家算——去半折（2.3 修订②）
 _ELO_K = 24.0
 _ELO_FLOOR = 400
-# 防线 409 退回时要在错误体里带最新视图的两个码（附录 B1：最新画面送来，前端对表用）
-_STALE_CODES = frozenset({"live_stale_total", "live_stale_court"})
+# 这些码的 409 退回要在错误体里带最新视图（附录 B1：最新画面送来，前端对表用）——
+# 防线两码之外，空降防重的 live_duplicate 同样携视图
+_VIEW_CODES = frozenset({"live_stale_total", "live_stale_court", "live_duplicate"})
 
 
 def _js_round(x: float) -> int:
@@ -705,6 +706,98 @@ class LiveBook(LiveSweepMixin):
                 self.db.commit()
         return self.view(game_id=game_id, viewer_id=actor_id)
 
+    # ---- 1.3 记账通道（附录 B1）：空降报到 / 现场带访客 ----
+    # 名册外的人进总账的唯二入口：不进账则「空降照摊、朋友份额归担保人」无从算起。
+
+    def dropin(self, *, game_id: int, actor_id: int, base_total_seq: int) -> dict:
+        """空降报到（2.2 §4.4）：没报名扫码直入——名册无本人行则新增一行
+        （dropin 标记；摊钱人头 +1，§5「没报名扫码直接打的照摊」），考勤沿用
+        check 端点归一口径（未到首报且已过开球时刻=late 否则 ok）进队尾；不建
+        Entry 不占 formal 名额。幂等重放先于号检查（沿 settle_confirm 重放先例）：
+        空降行重复点静默回最新画面；名册已有非空降本人行（正式球友误走此道，正常
+        前端路径到不了）409 live_duplicate 携视图——同账号不得建双行，防御保留。"""
+        with self._write(game_id=game_id, actor_id=actor_id):
+            state, game = self._open_write(game_id)
+            row = self._account_row(game_id, actor_id)
+            if row is not None:
+                if row.dropin:
+                    return self.view(game_id=game_id, viewer_id=actor_id)
+                raise errors.live_duplicate()
+            self._check_total(state, base_total_seq)
+            now = clock.now()
+            new = LivePlayer(
+                game_id=game_id,
+                account_id=actor_id,
+                # 对外名单一源：在册出昵称、注销者按占位名定格（同 start 展开）
+                display_name=person_view(self.db.get(Account, actor_id))["nickname"],
+                dropin=True,
+                check="late" if now > game.start_at else "ok",
+                arrive_at=now,
+            )
+            self.db.add(new)
+            self.db.flush()  # 取新行 id 进队尾（queue_pos 重排与 check 端点同款）
+            rows = self._roster(game_id)
+            by_id = {r.id: r for r in rows}
+            queue = self._queue_ids(rows)
+            queue.append(new.id)
+            for pos, pid in enumerate(queue):
+                by_id[pid].queue_pos = pos
+            self._bump_total(state)
+            self.db.commit()
+        return self.view(game_id=game_id, viewer_id=actor_id)
+
+    def guests(
+        self,
+        *,
+        game_id: int,
+        actor_id: int,
+        guarantor_id: int,
+        count: int,
+        name: str | None,
+        base_total_seq: int,
+    ) -> dict:
+        """现场带访客（§5/§8 裁决二：带朋友的份额归担保人）：count 位访客一人一行
+        挂 guarantor 名册行名下——guarantor_account_id 是出账归账键（1+名下访客
+        人头），须是账号行（访客挂不到访客名下）；到场即带（check=ok、落 arrive_at）
+        排队尾。命名沿前端 addGuests 规则后端重做：空名=担保名前两字+的球友、多人
+        具名=name·i、单人具名照给。访客不建 EloRating 行不进榜（2.3 裁决）。"""
+        with self._write(game_id=game_id, actor_id=actor_id):
+            state, game = self._open_write(game_id)
+            self._require_full_power(state, game, actor_id)
+            self._check_total(state, base_total_seq)
+            guarantor = self._roster_row(game_id, guarantor_id)
+            if guarantor.account_id is None:
+                raise errors.live_invalid("访客挂不到访客名下")
+            now = clock.now()
+            made: list[LivePlayer] = []
+            for i in range(count):
+                if not name:
+                    display = f"{guarantor.display_name[:2]}的球友"
+                elif count > 1:
+                    display = f"{name}·{i + 1}"
+                else:
+                    display = name
+                row = LivePlayer(
+                    game_id=game_id,
+                    account_id=None,
+                    display_name=display,
+                    guest=True,
+                    guarantor_account_id=guarantor.account_id,
+                    check="ok",
+                    arrive_at=now,
+                )
+                self.db.add(row)
+                made.append(row)
+            self.db.flush()  # 取新行 id 排队尾
+            by_id = {r.id: r for r in self._roster(game_id)}
+            queue = self._queue_ids(list(by_id.values()))
+            queue.extend(r.id for r in made)
+            for pos, pid in enumerate(queue):
+                by_id[pid].queue_pos = pos
+            self._bump_total(state)
+            self.db.commit()
+        return self.view(game_id=game_id, viewer_id=actor_id)
+
     # ---- 总账读视图（进行中与散场后同一形状：散场后 = 只读回看） ----
 
     def view(self, *, game_id: int, viewer_id: int | None) -> dict:
@@ -808,7 +901,7 @@ class LiveBook(LiveSweepMixin):
             try:
                 yield
             except errors.ApiError as e:
-                if e.code in _STALE_CODES and e.view is None:
+                if e.code in _VIEW_CODES and e.view is None:
                     e.view = self.view(game_id=game_id, viewer_id=actor_id)
                 raise
 
@@ -877,13 +970,17 @@ class LiveBook(LiveSweepMixin):
             return "a"
         return "b" if c.sb > c.sa else None
 
-    def _require_arrived(self, game_id: int, actor_id: int) -> None:
-        """记分类写的资格（§4.1）：名册行且算到场（absent/left 不算）。"""
-        row = self.db.execute(
+    def _account_row(self, game_id: int, account_id: int) -> LivePlayer | None:
+        """按账号取名册行（一人至多一行）：到场资格 / feed 署名 / 空降防重共用。"""
+        return self.db.execute(
             select(LivePlayer).where(
-                LivePlayer.game_id == game_id, LivePlayer.account_id == actor_id
+                LivePlayer.game_id == game_id, LivePlayer.account_id == account_id
             )
         ).scalar_one_or_none()
+
+    def _require_arrived(self, game_id: int, actor_id: int) -> None:
+        """记分类写的资格（§4.1）：名册行且算到场（absent/left 不算）。"""
+        row = self._account_row(game_id, actor_id)
         if row is None or row.check not in ARRIVED:
             raise errors.live_forbidden()
 
@@ -938,11 +1035,7 @@ class LiveBook(LiveSweepMixin):
         return row
 
     def _actor_name(self, game_id: int, actor_id: int) -> str:
-        row = self.db.execute(
-            select(LivePlayer).where(
-                LivePlayer.game_id == game_id, LivePlayer.account_id == actor_id
-            )
-        ).scalar_one_or_none()
+        row = self._account_row(game_id, actor_id)
         return row.display_name if row else "?"
 
     @staticmethod

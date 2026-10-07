@@ -188,6 +188,12 @@ def live_residue() -> ApiError:
     return ApiError(409, "live_residue", "还有没处理完的对局，先逐片处理再散场")
 
 
+def live_duplicate() -> ApiError:
+    # 空降防重（1.3 附录 B1）：同账号已有名册行不得新建——空降行重复点走幂等 200，
+    # 此码拦名册已有非空降本人行（正式球友误走空降通道）等异常路径，防御双行
+    return ApiError(409, "live_duplicate", "你已在现场名册里")
+
+
 def live_forbidden() -> ApiError:
     # 现场越权统一句式（沿 2.2）：球友点结束对局类/清零等动作的提示
     return ApiError(403, "live_forbidden", "请找组织者或管理员")

@@ -16,8 +16,9 @@
    sweepCancelAll → 全清 endGame（apiLiveEnd；响应 ended 视图即回看——recap 落地、
    轮询停、sealGate 收权写「球局已结束」）。清扫里的确认/取消照常落账但 no_redeal=true：
    不排下一场不补位（红线）。
-   遗留本地路（后端无对应端点，留 1.3 切真）：addGuests/subFirst/removeFromRoster/
-   setRuleScore 与空降入册（arriveMe 的 dropin 支）。
+   遗留本地路（后端无对应端点）：subFirst/removeFromRoster/setRuleScore，以及
+   setCheck/togglePerson/swapPlayers 对视图外行的支线（现态名册全来自总账，支线
+   仅防御残留）。空降（apiLiveDropIn）与带访客（apiLiveGuests）1.3 批2 已切真。
    硬约束：不触碰任何 uni.*；名册行 id 是写动作靶位（与 queue/片位同键），
    账号口径（isAdmin/myRound）按 view.players.accountId 匹配 U.me。 */
 import { computed, ref } from "vue";
@@ -29,7 +30,9 @@ import {
   apiLiveCheck,
   apiLiveClear,
   apiLiveDeal,
+  apiLiveDropIn,
   apiLiveEnd,
+  apiLiveGuests,
   apiLivePoint,
   apiLiveRules,
   apiLiveSetAdmin,
@@ -58,11 +61,9 @@ import type {
   LiveView,
   LiveViewApi,
   PendingOrigin,
-  Person,
   RotationRules,
   User,
 } from "@/api/types";
-import { DRESS_RANGES } from "@/utils/chibi";
 import {
   RANK_INIT,
   activePlayers,
@@ -78,9 +79,6 @@ import { toIso } from "@/utils/time";
 import { useGameStore } from "./game";
 import { useUiStore } from "./ui";
 import { useUserStore } from "./user";
-
-/** 访客 id 单调发号（批1 刺客：Math.random 撞号会让两位访客在 roster/swap 里互相串线） */
-let guestSeq = 0;
 
 /** 「算到场」谓词单一源（候场条状态文案与二维码浮层在场人数共用）：
     ok 正常 / late 迟到已到 / join 中途加入；absent 未到、left 早退不算 */
@@ -413,23 +411,6 @@ export const useLiveStore = defineStore("live", () => {
     return msg;
   }
 
-  /** 成员卡 → 名册 User（空降入册本地路用）：mock U 同 id 者直接借对象，否则造伪 User */
-  function mkPlayer(p: Person): User {
-    const known = Object.values(useUserStore().users).find(
-      (x) => x.id === p.id,
-    );
-    if (known) return known;
-    return {
-      id: p.id,
-      name: p.nickname,
-      elo: RANK_INIT,
-      play: 0,
-      win: 0,
-      month: 0,
-      chibi: { ...p.chibi },
-    };
-  }
-
   /** 确保现场开的是目标局（跳转/深链/扫码直达共用的守门口径，后端总账路）：
       - 拉读 200 → applyLiveView + startPolling（散场视图不再轮询——定格回看）；
         局簿没缓存这局时顺手 loadDetail 回填 g（深链冷设备顶条降级修复，批6 P2）；
@@ -490,27 +471,6 @@ export const useLiveStore = defineStore("live", () => {
       )
         applyLiveView(toLiveView(raw, viewerCtx(id)));
     }
-  }
-
-  /** 造一位随行访客（addGuests 本地路；随机 chibi 引用 chibi.ts 单一源 DRESS_RANGES） */
-  function mkGuest(name: string): User {
-    return {
-      id: 9000 + ++guestSeq,
-      name,
-      elo: RANK_INIT,
-      play: 0,
-      win: 0,
-      month: 0,
-      shadow: true,
-      chibi: {
-        skin: Math.floor(Math.random() * DRESS_RANGES.skin),
-        hair: Math.floor(Math.random() * DRESS_RANGES.hair),
-        hc: Math.floor(Math.random() * DRESS_RANGES.hc),
-        shirt: Math.floor(Math.random() * DRESS_RANGES.shirt),
-        face: Math.floor(Math.random() * DRESS_RANGES.face),
-        acc: Math.floor(Math.random() * DRESS_RANGES.acc),
-      },
-    };
   }
 
   /** 出勤底账单点补笔（本地路）：只按 id 合并 patch */
@@ -705,28 +665,28 @@ export const useLiveStore = defineStore("live", () => {
     );
   }
 
-  /** 扫码自签到（2.1·选项A）：名册没我（空降）→ 本地入册带「空降」标（后端无空降端点，
-      遗留本地路；批6/后续切真）→ 统一走 setCheck 到场支线（视图行走后端）。
+  /** 扫码自签到（2.1·选项A）：名册没我（空降）→ apiLiveDropIn 后端建行入册
+      （1.3 附录 B1 记账通道：考勤归一/队尾/摊钱人头 +1 全在后端，响应视图落地即
+      完成）；有行（正式球友/已空降）→ 照旧走 setCheck 报到。
       现场没开或开的是别局 → ensureLive 先行；已结束的局被 ensureLive/sealGate 拦下 */
   async function arriveMe(gameId: number): Promise<string | null> {
     await ensureLive(gameId);
     const L = live.value;
     if (!L || L.g.id !== gameId || L.endedAt) return null; // ensureLive 已 toast 兜底
-    let p = pById(L, myRowId());
+    const p = pById(L, myRowId());
     if (!p) {
-      p = mkPlayer({ id: U.me.id, nickname: U.me.name, chibi: U.me.chibi });
-      p.check = undefined; // 借回共享对象残留的 check 先重置，防幂等闸误拦
-      p.dropin = true; // 空降标记全场看得到（§4.4）
-      L.roster.push(p);
-      if (!L.ledger.some((r) => r.id === U.me.id))
-        L.ledger.push({ id: U.me.id, name: p.name, dropin: true }); // 同一人一行不累积
-      feedPush(`${p.name} 空降 · 排到队尾`);
+      const ok = await writeAction(gameId, () =>
+        apiLiveDropIn(gameId, seqs().baseTotalSeq),
+      );
+      if (!ok) return null;
+      ui.toast("空降 · 排到队尾");
+      return "已到场 · 进候场区";
     }
     if (isArrived(p.check)) {
       ui.toast("你已经在场了");
       return null;
     }
-    await setCheck(p.id, p.dropin ? "join" : "ok"); // 到场口径单点（归一/队尾/发排/toast）
+    await setCheck(p.id, "ok"); // 到场口径单点（归一/队尾/发排/toast）
     return "已到场 · 进候场区";
   }
 
@@ -912,29 +872,27 @@ export const useLiveStore = defineStore("live", () => {
     ui.toast("已换人 · 对阵重排");
   }
 
-  /** 带访客（本地遗留路：后端无对应端点）——底账加行挂担保人（§4.14 访客谁带的） */
-  function addGuests(count: number, name: string, introducer: User): void {
+  /** 带访客（1.3 附录 B1 记账通道切真）：一次请求带 count+称呼+担保人行 id——
+      访客行挂担保人账号名下进总账（出账「1+名下访客人头」归担保人）、命名与
+      排队尾都在后端；响应视图落地即完成。needFull 前置拦截，后端 _require_full_power
+      真闸；guarantorId 是名册行 id（视图行），不是账号 id */
+  async function addGuests(
+    count: number,
+    name: string,
+    guarantorId: number,
+  ): Promise<void> {
     const L = live.value;
-    if (!L || count <= 0 || !needFull()) return;
-    for (let i = 0; i < count; i++) {
-      const g = mkGuest(
-        !name
-          ? `${introducer.name.slice(0, 2)}的球友`
-          : count > 1
-            ? `${name}·${i + 1}`
-            : name,
-      );
-      g.check = "join";
-      L.roster.push(g);
-      L.queue.push(g.id); // 队尾
-      L.ledger.push({
-        id: g.id,
-        name: g.name,
-        shadow: true,
-        guarantor: introducer.name,
-      });
-    }
-    ui.toast(`已带 ${count} 位访客 · 进候场区`);
+    if (!L || count <= 0 || !needFull() || !liveView.value) return;
+    await writeAction(
+      L.g.id,
+      () =>
+        apiLiveGuests(
+          L.g.id,
+          { count, name: name || undefined, guarantor_id: guarantorId },
+          seqs().baseTotalSeq,
+        ),
+      () => ui.toast(`已带 ${count} 位访客 · 进候场区`),
+    );
   }
 
   /** 改分制（本地遗留路：后端 rules 端点不带 scoring——分制复用局列，裁决 Q1；

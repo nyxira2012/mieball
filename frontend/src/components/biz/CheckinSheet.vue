@@ -99,7 +99,13 @@
           @update:model-value="introId = $event as number"
         />
       </view>
-      <AppButton variant="pri" block @click="onBring">带上场</AppButton>
+      <AppButton
+        variant="pri"
+        block
+        :disabled="!introOptions.length"
+        @click="onBring"
+        >带上场</AppButton
+      >
     </view>
 
     <!-- ---------- 段4 空降说明 ---------- -->
@@ -113,7 +119,8 @@
 <script setup lang="ts">
 /* 签到抽屉（2.2 §4.3 代办枢纽）：到场 = setCheck ok（迟到口径 store 按 startAt 归一、队尾、自动发牌）；
    代办早退 = setCheck left（清候场清场上+离场时刻）；移出 = removeFromRoster（名册消失、底账留痕）。
-   带访客 = addGuests（访客不落积分不进榜、队尾进候场）。介绍人 = 已到场非访客成员，默认「我」在册则选中。 */
+   带访客 = addGuests（1.3 切真：一次请求 count+称呼+担保人行 id，命名/挂账/队尾在后端）。
+   介绍人 = 已到场非访客成员（选项值即名册行 id），默认「我」在册则选中。 */
 import { computed, ref, watch } from "vue";
 import AppSheet from "@/components/ui/AppSheet.vue";
 import AppButton from "@/components/ui/AppButton.vue";
@@ -179,9 +186,8 @@ watch(
 );
 
 function onBring(): void {
-  const introducer =
-    (liveStore.live?.roster ?? []).find((p) => p.id === introId.value) ?? U.me;
-  liveStore.addGuests(gCount.value, gName.value.trim(), introducer);
+  // 介绍人选项值即名册行 id（watch 保证选中项总在候选里）——后端按它挂 guarantor
+  liveStore.addGuests(gCount.value, gName.value.trim(), introId.value);
   gName.value = "";
   gCount.value = 1;
 }

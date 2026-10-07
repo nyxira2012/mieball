@@ -148,6 +148,32 @@ export function apiLiveCheck(
   });
 }
 
+/** 空降报到（本人；1.3 附录 B1 记账通道）：名册没我建行入册（考勤归一+队尾），
+    有行幂等回视图——报过到重复点静默 */
+export function apiLiveDropIn(
+  gameId: number,
+  baseTotalSeq: number,
+): Promise<LiveViewApi> {
+  return request("POST", `/games/${gameId}/live/dropin`, {
+    base_total_seq: baseTotalSeq,
+  });
+}
+
+/** 带访客（全权；1.3 附录 B1 记账通道）：count 位挂担保人名册行名下进总账、
+    队尾进候场；命名在后端（空名按担保人、多人具名 name·i）——name 空串传 undefined */
+export function apiLiveGuests(
+  gameId: number,
+  body: { count: number; name?: string; guarantor_id: number },
+  baseTotalSeq: number,
+): Promise<LiveViewApi> {
+  return request("POST", `/games/${gameId}/live/guests`, {
+    count: body.count,
+    name: body.name,
+    guarantor_id: body.guarantor_id,
+    base_total_seq: baseTotalSeq,
+  });
+}
+
 /** 换人（任意到场者，§4.9）：in 原位顶坑、out 回队尾；pending 片冻结拒收（court_frozen） */
 export function apiLiveSwap(
   gameId: number,

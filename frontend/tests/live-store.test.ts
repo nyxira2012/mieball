@@ -9,16 +9,16 @@ import type {
   LiveViewApi,
 } from "@/api/types";
 
-/* 2.3 批5a 写链·全切后端（批5b 确认窗按片化收口；批6 散场清扫链+回看）：vi.mock('@/api/live')
-   路数（toLiveView 保留真实现——store 对表链吃同一映射），写动作用例喂 crafted 响应视图
-   （snake 形状与后端 services/live.py view 输出逐字对齐）断言 applyLiveView 落地 + toast；
-   409 stale 携视图对表、断网走 errText 文案。本地遗留路（后端无对应端点：addGuests/
-   subFirst/removeFromRoster/setRuleScore/空降入册）在视图态上直测保留；散场链（startSweep/
-   sweepCancelAll/endGame/noRedeal 透传/回看落地停轮询）各有专例。批5b 增补：settlingCourtId
-   按片渲染窗、确认窗联动纯函数（followWinner/canPickWinner）、验收官补测销号 G1-G3
-   （G4 并入 openSettle）。批后销号：遮罩禁关（hide 死路机械整删）——settling 用例迁
-   「窗位纯随视图 pending 起落 + store 无关窗出口」断言；遮罩本身无点击事件是纯模板行为，
-   类型层测不了（见 live.ts 头注）。每个用例重置模块图 → 全新 mock 数据。 */
+/* 2.3 批5a 写链·全切后端（批5b 确认窗按片化收口；批6 散场清扫链+回看；1.3 批2 空降/
+   带访客切真）：vi.mock('@/api/live') 路数（toLiveView 保留真实现——store 对表链吃同一
+   映射），写动作用例喂 crafted 响应视图（snake 形状与后端 services/live.py view 输出逐字
+   对齐）断言 applyLiveView 落地 + toast；409 stale 携视图对表、断网走 errText 文案。
+   本地遗留路（后端无对应端点：subFirst/removeFromRoster/setRuleScore，及 setCheck/
+   togglePerson/swapPlayers 的视图外行支线）在视图态上直测保留；空降/带访客走
+   apiLiveDropIn/apiLiveGuests 专例。散场链（startSweep/sweepCancelAll/endGame/
+   noRedeal 透传/回看落地停轮询）各有专例。批5b 增补：settlingCourtId 按片渲染窗、
+   确认窗联动纯函数（followWinner/canPickWinner）、验收官补测销号 G1-G3（G4 并入
+   openSettle）。每个用例重置模块图 → 全新 mock 数据。 */
 
 const liveApi = vi.hoisted(() => ({
   apiLiveView: vi.fn(),
@@ -31,6 +31,8 @@ const liveApi = vi.hoisted(() => ({
   apiLiveSettleConfirm: vi.fn(),
   apiLiveCancel: vi.fn(),
   apiLiveCheck: vi.fn(),
+  apiLiveDropIn: vi.fn(),
+  apiLiveGuests: vi.fn(),
   apiLiveSwap: vi.fn(),
   apiLiveTempo: vi.fn(),
   apiLiveRules: vi.fn(),
@@ -995,7 +997,31 @@ describe("swapPlayers（§4.9 球友开放：无 guard、全场写只带总号�
   it("本地行（out 不在总账）：原位顶坑旧路保留（遗留本地路）", async () => {
     const { live } = await inPlay();
     const L = live.live!;
-    live.addGuests(2, "帮手", live.byId(101)); // 本地造两位候场访客（遗留本地路）
+    // 本地灌两位视图外访客（不走 addGuests——已切真；此处只测 swap 的视图外行支线）
+    L.roster.push(
+      {
+        id: 9001,
+        name: "帮手·1",
+        elo: 1500,
+        play: 0,
+        win: 0,
+        month: 0,
+        chibi: {},
+        shadow: true,
+        check: "join",
+      },
+      {
+        id: 9002,
+        name: "帮手·2",
+        elo: 1500,
+        play: 0,
+        win: 0,
+        month: 0,
+        chibi: {},
+        shadow: true,
+        check: "join",
+      },
+    );
     const [g1, g2] = L.roster.slice(4);
     L.courts[0].A.push(g1.id); // g1 手动上片（视图外的行——本地路语义）
     L.queue = [g2.id];
@@ -1288,22 +1314,64 @@ describe("键位修正（批4b 遗留：账号口径换视图消费）", () => {
   });
 });
 
-describe("本地遗留路（后端无对应端点，留 1.3 切真——视图态上直测）", () => {
-  it("addGuests：随行访客入册排队尾、底账挂担保人、toast", async () => {
+describe("空降与带访客（1.3 批2 切真：apiLiveGuests · 命名/挂账/队尾归后端）", () => {
+  it("addGuests：载荷（count/name/担保人行 id）+ 响应视图落地（roster/queue/ledger）+ toast", async () => {
     const { live, ui } = await inPlay();
-    const L = live.live!;
-    live.addGuests(2, "帮手", live.byId(101));
-    const gs = L.roster.slice(4);
+    liveApi.apiLiveGuests.mockResolvedValue(
+      vPlay(8, {
+        players: [
+          ...vPlay().players,
+          pl(106, null, {
+            name: "帮手·1",
+            guest: true,
+            guarantor_account_id: 0,
+            check: "ok",
+            queue_pos: 0,
+          }),
+          pl(107, null, {
+            name: "帮手·2",
+            guest: true,
+            guarantor_account_id: 0,
+            check: "ok",
+            queue_pos: 1,
+          }),
+        ],
+        queue: [106, 107],
+      }),
+    );
+    await live.addGuests(2, "帮手", 101); // 101 = 担保人名册行 id（视图行，非账号 id）
+    expect(liveApi.apiLiveGuests).toHaveBeenCalledWith(
+      900,
+      { count: 2, name: "帮手", guarantor_id: 101 },
+      7,
+    );
+    const gs = live.live!.roster.slice(4);
     expect(gs.map((g) => g.name)).toEqual(["帮手·1", "帮手·2"]);
-    expect(
-      gs.every((g) => g.shadow && g.check === "join" && g.id >= 9000),
-    ).toBe(true);
-    expect(L.queue).toEqual(gs.map((g) => g.id)); // 队尾
-    expect(
-      L.ledger.slice(4).every((r) => r.shadow && r.guarantor === "我"),
-    ).toBe(true);
+    expect(gs.every((g) => g.shadow && g.check === "ok")).toBe(true); // 到场即带
+    expect(live.live!.queue).toEqual([106, 107]); // 队尾
+    expect(live.live!.ledger.slice(4).map((r) => r.guarantor)).toEqual([
+      "我",
+      "我",
+    ]); // 底账挂担保人（视图 guarantorAccountId → 担保人名）
     expect(ui.toastMsg).toBe("已带 2 位访客 · 进候场区");
   });
+  it("G2 addGuests：空称呼不发 name（命名归后端）；needFull 前置拦截不发", async () => {
+    const { live } = await inPlay();
+    liveApi.apiLiveGuests.mockResolvedValue(vPlay(8));
+    await live.addGuests(1, "", 101);
+    expect(liveApi.apiLiveGuests).toHaveBeenCalledWith(
+      900,
+      { count: 1, name: undefined, guarantor_id: 101 },
+      7,
+    );
+    const denied = await inPlay(vPlay(7, { admins: [] }));
+    await denied.live.addGuests(1, "帮手", 101);
+    expect(denied.ui.toastMsg).toBe("请找组织者或管理员");
+    expect(liveApi.apiLiveGuests).toHaveBeenCalledTimes(1); // 被拦不发
+  });
+});
+
+describe("本地遗留路（后端无对应端点——视图态上直测）", () => {
   it("subFirst：候场队首可用者顶上人数少的一队、feed 留句（本地路）", async () => {
     const { live, ui } = await apply(
       vPlay(7, {
@@ -1529,16 +1597,6 @@ describe("批5b 补测销号（验收官批5a findings G1-G3）", () => {
     );
     // 我队列位 0：ceil((4×1+0+1)/4)=2——空片项放大一轮（无空片时同队列位=1）
     expect(live.myRound).toBe(2);
-  });
-  it("G2 addGuests：空名默认名（担保人前两字）不带序号、单个具名也不带序号", async () => {
-    const { live, ui } = await inPlay();
-    const L = live.live!;
-    live.addGuests(2, "", live.byId(101)); // 空名 ×2：都落默认名、无 ·n 尾巴
-    live.addGuests(1, "帮手", live.byId(101)); // 单个具名：不带序号
-    const gs = L.roster.slice(4);
-    expect(gs.map((g) => g.name)).toEqual(["我的球友", "我的球友", "帮手"]);
-    expect(L.queue.slice(-3)).toEqual(gs.map((g) => g.id));
-    expect(ui.toastMsg).toBe("已带 1 位访客 · 进候场区");
   });
   it("G3 subFirst 负路：满员拒 / 候场只剩歇轮者拒 / 球友收权拒", async () => {
     const full = await inPlay();

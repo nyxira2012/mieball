@@ -110,6 +110,21 @@ class PlayerWriteIn(BaseModel):
     base_total_seq: int
 
 
+class DropInIn(BaseModel):
+    """空降报到（1.3 附录 B1，本人写本人）：名册没我建行入册，有行幂等回视图。"""
+
+    base_total_seq: int
+
+
+class GuestsIn(BaseModel):
+    """带访客（1.3 附录 B1，全权）：count 位访客挂 guarantor 名册行（账号行）名下。"""
+
+    count: int = Field(ge=1)
+    name: str | None = None
+    guarantor_id: int
+    base_total_seq: int
+
+
 class TotalWriteIn(BaseModel):
     """全场写的公共身位（只走总号）。"""
 
@@ -341,6 +356,37 @@ def live_unset_admin(
         game_id=game_id,
         actor_id=account.id,
         player_id=body.player_id,
+        base_total_seq=body.base_total_seq,
+    )
+
+
+@router.post("/dropin")
+def live_dropin(
+    game_id: int,
+    body: DropInIn,
+    account: Account = Depends(require_account),
+    book: LiveBook = Depends(get_live_book),
+):
+    return book.dropin(
+        game_id=game_id,
+        actor_id=account.id,
+        base_total_seq=body.base_total_seq,
+    )
+
+
+@router.post("/guests")
+def live_guests(
+    game_id: int,
+    body: GuestsIn,
+    account: Account = Depends(require_account),
+    book: LiveBook = Depends(get_live_book),
+):
+    return book.guests(
+        game_id=game_id,
+        actor_id=account.id,
+        guarantor_id=body.guarantor_id,
+        count=body.count,
+        name=body.name,
         base_total_seq=body.base_total_seq,
     )
 

@@ -1,10 +1,11 @@
-/* 扫码自签到链路（2.1·选项A · 2.2 批2§4.4 空降改造）+ 「我」id 运行时化回归（1.2 接线重写）：
-   - arriveMe：空降（名册没我）→ 不再报名进线上名单，直入名册带「空降」标排到队尾；
-     在册未到 → 到场（口径归一在 store）；已在场 → 幂等；已结束的局 → ensureLive 拦在门外
+/* 扫码自签到链路（2.1·选项A · 1.3 批2 空降切真）+ 「我」id 运行时化回归（1.2 接线重写）：
+   - arriveMe：名册没我 → apiLiveDropIn 后端建行入册（dropin 标、队尾，响应视图落地）；
+     在册未到 → 到场（apiLiveCheck，口径归一在后端）；已在场 → 幂等；已结束的局 →
+     ensureLive 拦在门外；移出后重扫 → 再走空降通道
    - 真账号接管 U.me（id 非 0）后：isMe 认得出、togglePerson 找得到人（快照常量回归）
    局 fixture 与后端 game_view 镜像；现场链走批5a 同款 vi.mock('@/api/live')：
    读默认 404 live_not_found → ensureLive 落局簿开账路（开账视图 row id=账号 id 镜像），
-   空降/移出/休息走 store 本地遗留路（行不在视图）。 */
+   空降喂 crafted 响应视图（snake 形状与 services/live.py view 输出对齐）。 */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
 import { U } from "@/api/mock";
@@ -50,6 +51,8 @@ const liveApi = vi.hoisted(() => ({
   apiLiveSettleConfirm: vi.fn(),
   apiLiveCancel: vi.fn(),
   apiLiveCheck: vi.fn(),
+  apiLiveDropIn: vi.fn(),
+  apiLiveGuests: vi.fn(),
   apiLiveSwap: vi.fn(),
   apiLiveTempo: vi.fn(),
   apiLiveRules: vi.fn(),
@@ -115,6 +118,46 @@ beforeEach(() => {
   liveApi.apiLiveStart.mockResolvedValue(liveStartView());
 });
 
+/** 我的空降行（row id 42 · 账号 0 · dropin 标）：开账后端 dropin 的落库形状 */
+function myDropinRow(check: LivePlayerApi["check"] = "ok"): LivePlayerApi {
+  return {
+    id: 42,
+    account_id: 0,
+    name: U.me.name,
+    guest: false,
+    guarantor_account_id: null,
+    dropin: true,
+    check,
+    arrive_at: "2026-10-06T21:05:00+08:00",
+    left_at: null,
+    court_no: null,
+    court_side: null,
+    skip: 0,
+    fire: false,
+    queue_pos: 1,
+  };
+}
+
+/** 空降响应视图：开账视图 + 我的新行进队尾（总号进一） */
+function dropinView(): LiveViewApi {
+  const base = liveStartView();
+  return {
+    ...base,
+    total_seq: 2,
+    players: [...base.players, myDropinRow()],
+    queue: [6, 42],
+  };
+}
+
+/** 在册未到视图：开账视图带我的 formal 行（row id 42 · 账号 0 · absent） */
+function absentMeView(): LiveViewApi {
+  const base = liveStartView();
+  return {
+    ...base,
+    players: [...base.players, { ...myDropinRow("absent"), dropin: false }],
+  };
+}
+
 /** 模拟真账号接管「我」位（session store applyIdentity 的等价操作） */
 function takeoverAs(id: number, name: string): void {
   Object.assign(U.me, { id, name });
@@ -172,79 +215,86 @@ async function seedStore(...views: GameViewApi[]) {
 }
 
 describe("arriveMe（扫码签到）", () => {
-  it("空降：名册没我 → 直入名册带「空降」标排到队尾；线上名单/候补原样不动", async () => {
+  it("空降：名册没我 → apiLiveDropIn 建行入册（dropin 标、队尾）；线上名单/候补原样不动", async () => {
     const store = await seedStore(viewOf()); // 我未报名（my_entry null）
     const live = useLiveStore();
     await live.ensureLive(107); // 先点亮现场，造一位先到者占队
     live.live!.queue.push(6); // 搭态：组织者已在候场
     expect(api.apiJoinGame).not.toHaveBeenCalled();
+    liveApi.apiLiveDropIn.mockResolvedValue(dropinView());
 
     const msg = await live.arriveMe(107);
 
     expect(msg).toBe("已到场 · 进候场区");
     expect(api.apiJoinGame).not.toHaveBeenCalled(); // 空降不再 joinGame（§4.4：满员/候补都不拦）
+    expect(liveApi.apiLiveDropIn).toHaveBeenCalledWith(107, 1); // base 号=出发时总号
     const L = live.live!;
     expect(L.g.id).toBe(107);
-    const me = L.roster.find((p) => p.id === U.me.id);
-    expect(me?.check).toBe("join");
+    const me = L.roster.find((p) => p.id === 42);
+    expect(me?.check).toBe("ok"); // 开球时刻归一在后端
     expect(me?.dropin).toBe(true); // 空降标全场看得到
-    expect(L.queue).toEqual([6, U.me.id]); // 排到队尾（修订④翻案：原为队首）
+    expect(L.queue).toEqual([6, 42]); // 排到队尾（视图真值）
     expect(store.findGame(107)?.heads).toBe(2); // 线上名单原样不动
-    expect(L.ledger.find((r) => r.id === U.me.id)!.dropin).toBe(true); // 底账加行
-    expect(L.feed[0]).toBe("我 空降 · 排到队尾"); // 战报留痕
+    expect(L.ledger.find((r) => r.id === 42)!.dropin).toBe(true); // 底账带空降标
   });
 
-  it("空降后被改判「未到」→ 再扫标回「中途加入」，不重复进名册/底账", async () => {
+  it("在册未到（正式球友）→ 走报到通道 apiLiveCheck，不重复空降", async () => {
     await seedStore(viewOf());
     const live = useLiveStore();
-    await live.arriveMe(107);
-    const L = live.live!;
-    live.setCheck(U.me.id, "absent"); // 模拟被改判「未到」
-    const rosterLen = L.roster.length;
-    const ledgerLen = L.ledger.length;
-    api.apiJoinGame.mockClear();
+    liveApi.apiLiveStart.mockResolvedValue(absentMeView());
+    await live.ensureLive(107);
+    const seeded = absentMeView();
+    liveApi.apiLiveCheck.mockResolvedValue({
+      ...seeded,
+      total_seq: 2,
+      players: seeded.players.map((p) =>
+        p.account_id === 0 ? myDropinRow("late") : p,
+      ),
+      queue: [6, 42],
+    });
 
-    await live.arriveMe(107);
+    const msg = await live.arriveMe(107);
 
-    expect(api.apiJoinGame).not.toHaveBeenCalled(); // 该链路已与报名无关
-    expect(L.roster).toHaveLength(rosterLen); // 在册不重复进
-    expect(L.ledger).toHaveLength(ledgerLen);
-    expect(L.roster.find((p) => p.id === U.me.id)?.check).toBe("join");
+    expect(msg).toBe("已到场 · 进候场区");
+    expect(liveApi.apiLiveDropIn).not.toHaveBeenCalled(); // 有行不空降
+    expect(liveApi.apiLiveCheck).toHaveBeenCalledWith(107, 42, "ok", 1);
+    expect(live.live!.roster.find((p) => p.id === 42)?.check).toBe("late"); // 迟到归一在后端
   });
 
-  it("移出后重扫（§4.3 对手方）：回到名册、进候场队尾、底账同一人不重复加行", async () => {
+  it("移出后重扫（§4.3 对手方）：视图已无我的行 → 再走空降通道回名册进队尾", async () => {
     await seedStore(viewOf());
     const live = useLiveStore();
-    await live.arriveMe(107); // 首次空降：在场、底账一行
+    liveApi.apiLiveDropIn.mockResolvedValue(dropinView());
+    await live.arriveMe(107); // 首次空降：在场
     const L = live.live!;
-    const firstRow = L.ledger.find((r) => r.id === U.me.id)!;
-    // 移出是收权动作：我的管理员身份由开账视图烤入（isFullPower 读视图旗）
-    live.removeFromRoster(U.me.id);
-    expect(L.roster.some((p) => p.id === U.me.id)).toBe(false);
+    live.removeFromRoster(42); // 移出是收权本地路（后端无对应端点）：名册消失
+    expect(L.roster.some((p) => p.id === 42)).toBe(false);
 
-    const msg = await live.arriveMe(107); // 幽灵重扫：共享 U.me 对象残留移出前的 check
+    const msg = await live.arriveMe(107); // 幽灵重扫
 
-    expect(msg).toBe("已到场 · 进候场区"); // 不被残留 check 误拦成「你已经在场了」
-    const me = L.roster.find((p) => p.id === U.me.id);
+    expect(msg).toBe("已到场 · 进候场区");
+    expect(liveApi.apiLiveDropIn).toHaveBeenCalledTimes(2); // 再空降
+    const me = live.live!.roster.find((p) => p.id === 42);
     expect(me).toBeTruthy(); // 回到名册
-    expect(me!.check).toBe("join");
-    expect(L.queue[L.queue.length - 1]).toBe(U.me.id); // 进候场队尾
-    expect(L.ledger.filter((r) => r.id === U.me.id)).toHaveLength(1); // 底账不重复
-    expect(L.ledger.find((r) => r.id === U.me.id)).toBe(firstRow); // 复用原行
+    expect(me!.check).toBe("ok");
+    expect(live.live!.queue[live.live!.queue.length - 1]).toBe(42); // 进候场队尾
+    expect(live.live!.ledger.filter((r) => r.id === 42)).toHaveLength(1); // 底账一行
   });
 
-  it("已在场 → 幂等提示，状态不再变", async () => {
+  it("已在场 → 幂等提示，不再发空降/报到", async () => {
     await seedStore(viewOf());
     const live = useLiveStore();
+    liveApi.apiLiveDropIn.mockResolvedValue(dropinView());
     await live.arriveMe(107);
     const L1 = live.live!;
-    const checkAfterFirst = L1.roster.find((p) => p.id === U.me.id)!.check;
+    const checkAfterFirst = L1.roster.find((p) => p.id === 42)!.check;
     const queueLen = L1.queue.length;
 
     const msg = await live.arriveMe(107);
 
     expect(msg).toBeNull(); // 无新动作
-    expect(live.live!.roster.find((p) => p.id === U.me.id)!.check).toBe(
+    expect(liveApi.apiLiveDropIn).toHaveBeenCalledTimes(1);
+    expect(live.live!.roster.find((p) => p.id === 42)!.check).toBe(
       checkAfterFirst,
     );
     expect(live.live!.queue.length).toBe(queueLen);
