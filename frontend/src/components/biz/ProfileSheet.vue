@@ -7,7 +7,9 @@
   <view v-if="u" class="pf">
     <!-- alpha:1900 h3 + hint（SheetHost 未传壳层 title，档案自带，样式同 AppSheet 壳 alpha:558-561） -->
     <view class="sheet-t">球员档案</view>
-    <view class="sheet-hint">全产品同一份 · 约球意向 / 现场页 / 榜单打开的都是它</view>
+    <view class="sheet-hint"
+      >全产品同一份 · 约球意向 / 现场页 / 榜单打开的都是它</view
+    >
 
     <!-- alpha:1901-1913 头像 + 右列 -->
     <view class="hero">
@@ -23,10 +25,14 @@
         <!-- alpha:1906-1910 徽章 + 大分数 + 单位 + 本月涨跌 -->
         <view class="scorerow">
           <TierBadge v-if="played" :tier="tier(u.elo)" />
-          <text class="big">{{ played ? fmtScore(u.elo, ui.scoreMode) : '—' }}</text>
-          <text class="unit">{{ played ? (ui.scoreMode === 'elo' ? 'ELO' : 'NTRP') : '起步' }}</text>
+          <text class="big">{{
+            played ? fmtScore(u.elo, ui.scoreMode) : "—"
+          }}</text>
+          <text class="unit">{{
+            played ? (ui.scoreMode === "elo" ? "ELO" : "NTRP") : "起步"
+          }}</text>
           <text v-if="played" class="d" :class="u.month >= 0 ? 'up' : 'dn'">
-            {{ u.month >= 0 ? '▲' : '▼' }}{{ Math.abs(u.month) }} 本月
+            {{ u.month >= 0 ? "▲" : "▼" }}{{ Math.abs(u.month) }} 本月
           </text>
         </view>
         <!-- alpha:1911 摘要行（三态逐字） -->
@@ -47,10 +53,16 @@
 
     <!-- alpha:1917-1920 非我双按钮：喜欢（burn/ghost 随 liked 切换）+ 邀请入局 -->
     <view v-if="!isMe" class="btns">
-      <AppButton :variant="u.liked ? 'burn' : 'ghost'" class="flex1" @click="onLike">
-        {{ u.liked ? '♥ 已喜欢 · 再点取消' : '♡ 喜欢' }}
+      <AppButton
+        :variant="u.liked ? 'burn' : 'ghost'"
+        class="flex1"
+        @click="onLike"
+      >
+        {{ u.liked ? "♥ 已喜欢 · 再点取消" : "♡ 喜欢" }}
       </AppButton>
-      <AppButton variant="ghost" class="flex1" @click="onInvite">邀请入局</AppButton>
+      <AppButton variant="ghost" class="flex1" @click="onInvite"
+        >邀请入局</AppButton
+      >
     </view>
   </view>
 </template>
@@ -59,16 +71,16 @@
 /* 球员档案 ProfileSheet（alpha.html:1891-1929 · P9）。
    SheetHost 传 userId（SheetPayload {type:'profile',userId} 约定不变）；
    findUser（现场名册优先）取人；分数/段位随 ui.scoreMode 全局联动。 */
-import { computed } from 'vue';
-import type { PropType } from 'vue';
-import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
-import TierBadge from '@/components/ui/TierBadge.vue';
-import Last5Dots from '@/components/ui/Last5Dots.vue';
-import { useUserStore } from '@/stores/user';
-import { useGameStore } from '@/stores/game';
-import { useUiStore } from '@/stores/ui';
-import { fmtScore, tier } from '@/utils/elo';
-import { freqName, slotName } from '@/utils/format';
+import { computed } from "vue";
+import type { PropType } from "vue";
+import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import TierBadge from "@/components/ui/TierBadge.vue";
+import Last5Dots from "@/components/ui/Last5Dots.vue";
+import { useUserStore } from "@/stores/user";
+import { useGameStore } from "@/stores/game";
+import { useUiStore } from "@/stores/ui";
+import { fmtScore, tier } from "@/utils/elo";
+import { freqName, slotName } from "@/utils/format";
 
 const props = defineProps({
   /** 档案目标用户 id（我的档案传 me.id；随行访客也可开） */
@@ -89,19 +101,23 @@ const played = computed(() => !!u.value && userStore.hasPlayed(u.value));
 /** alpha:1896-1897 摘要三态：已开局 / 访客 / 未开局（逐字口径） */
 const sum = computed(() => {
   const x = u.value;
-  if (!x) return '';
+  if (!x) return "";
   if (played.value)
-    return `${x.play} 场 · 胜率 ${Math.round((x.win / x.play) * 100)}% · 本月 ${x.month >= 0 ? '+' : ''}${x.month || 0}`;
-  return x.shadow ? '访客 · 费用照常 · 积分半权重不进榜' : '还没打过 · 待第一局校准';
+    return `${x.play} 场 · 胜率 ${Math.round((x.win / x.play) * 100)}% · 本月 ${x.month >= 0 ? "+" : ""}${x.month || 0}`;
+  return x.shadow
+    ? "访客 · 费用照常 · 不计积分不进榜"
+    : "还没打过 · 待第一局校准";
 });
 
 /** alpha:1898 it = intents.find(i=>i.account.id===u.id) */
-const intent = computed(() => game.intents.find((i) => i.account.id === u.value?.id));
+const intent = computed(() =>
+  game.intents.find((i) => i.account.id === u.value?.id),
+);
 /** alpha:1915 意向行正文：slots · 频率 · note */
 const intentTxt = computed(() => {
   const it = intent.value;
-  if (!it) return '';
-  return ` · ${it.slots.map(slotName).join(' · ')} · ${freqName(it.frequency)}${it.note ? ` · 「${it.note}」` : ''}`;
+  if (!it) return "";
+  return ` · ${it.slots.map(slotName).join(" · ")} · ${freqName(it.frequency)}${it.note ? ` · 「${it.note}」` : ""}`;
 });
 
 /** alpha:1918 toggleLike：store 内置 toast（alpha:1925 文案），liked 变化由响应式联动榜单/按钮态 */
@@ -111,7 +127,7 @@ function onLike(): void {
 
 /** alpha:1919 inviteSheet(u.id)：切到「选局邀请」弹层（invite-to-slot） */
 function onInvite(): void {
-  ui.openSheet({ type: 'invite-to-slot', userId: props.userId });
+  ui.openSheet({ type: "invite-to-slot", userId: props.userId });
 }
 </script>
 

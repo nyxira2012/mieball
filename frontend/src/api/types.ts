@@ -31,7 +31,7 @@ export interface User {
   month: number;
   last5?: ("W" | "L")[];
   liked?: boolean; // 喜欢：静默单向（alpha:1922 toggleLike）
-  shadow?: boolean; // 随行访客 · 半权重不进榜（alpha:774 / 1703）
+  shadow?: boolean; // 随行访客 · 不计积分不进榜（对局按新人初始等级代入算分，2.3 修订②）
   chibi: ChibiConfig;
   cardBg?: CardBg;
   recentStats?: RecentStats;
@@ -51,7 +51,7 @@ export interface User {
 export interface LedgerRow {
   id: number;
   name: string;
-  shadow?: boolean; // 随行访客 · 半权重不进榜
+  shadow?: boolean; // 随行访客 · 不计积分不进榜
   dropin?: boolean; // 空降进场
   guarantor?: string; // 担保人名（访客谁带的）
   arriveAt?: string; // ISO · 几点到（首次到场）
@@ -265,7 +265,7 @@ export interface LiveState {
   admins: number[]; // 被封管理员 id（现场态，不回写 g；isFullPower = org ∨ 本表）
   feed: string[]; // 战报事件句（unshift 新到旧；句子在动作处拼好、含操作者，LiveTopbar 轮播消费）
   startedAt: string; // 现场点亮时刻（startLive 落 ISO；批4 底账定格/散场消费）
-  endedAt?: string; // 散场时刻（endLive 落 ISO）：有值=现场封存、二维码失效（§4.14）；live 态保留供底账查
+  endedAt?: string; // 散场时刻（apiLiveEnd 落）：有值=现场封存转只读回看（§4.9/4.10）；live 态保留供回看与底账查
   ledger: LedgerRow[]; // 出勤底账（动作处同步写：touchLedger 单点；移出/空降行留痕）
   rules: RotationRules; // 2.4 轮换四件套（startLive 起必挂：自选前 down 跟推荐走）
   courtSeqNext: number; // 上场先后序发号器（courtSeq 的源——资历并列的 tiebreak）
@@ -361,7 +361,7 @@ export interface MockGame {
 }
 
 /* ─────────── 2.3 现场总账读链（批4 阶段1·类型层） ───────────
-   与上面的 mock 期现场族（LiveState/LiveCourt/MatchHistory）并存不动——阶段2 接线后删旧。
+   与上面的 mock 期现场族（LiveState/LiveCourt/MatchHistory）双树为稳态，删旧归 1.3。
    snake 线上形状（…Api 族）逐字镜像 backend/app/services/live.py 的 view 输出（契约唯一真源）；
    camel 业务形状由 api/live.ts 的 toLiveView 单点映射（沿 1.2 stores/game.ts toGame 先例）。 */
 
@@ -446,7 +446,12 @@ export interface LiveMatchApi {
     句式拼装归前端（契约§2 后端不产中文文案） */
 export type FeedEventApi =
   | { kind: "swap"; actor: string; out: string; in: string; at: string }
-  | { kind: "set_admin" | "unset_admin"; actor: string; target: string; at: string };
+  | {
+      kind: "set_admin" | "unset_admin";
+      actor: string;
+      target: string;
+      at: string;
+    };
 
 /** 规则块（view.rules 镜像）：全场统一；scoring 复用局列（裁决 Q1，不另存第二份） */
 export interface LiveRulesApi {
@@ -532,7 +537,7 @@ export interface LiveRules {
 }
 
 /** 战报新结构（2.3）：片号/第几场/双方名单快照/比分/胜方是否 A/时刻/结算行。
-    与旧 MatchHistory 并存（阶段2 换树时删旧）；sa/sb/winA 沿旧树短名。 */
+    与旧 MatchHistory 双树为稳态，删旧归 1.3；sa/sb/winA 沿旧树短名。 */
 export interface MatchReport {
   courtNo: number;
   seq: number;

@@ -8,15 +8,16 @@ import type {
   LiveViewApi,
 } from "@/api/types";
 
-/* 2.3 批5a 写链·全切后端（批5b 确认窗按片化收口）：vi.mock('@/api/live') 路数（toLiveView
-   保留真实现——store 对表链吃同一映射），写动作用例喂 crafted 响应视图（snake 形状与后端
-   services/live.py view 输出逐字对齐）断言 applyLiveView 落地 + toast；409 stale 携视图对表、
-   断网走 errText 文案。本地遗留路（后端无对应端点：addGuests/subFirst/removeFromRoster/
-   setRuleScore/endLive/空降入册）在视图态上直测保留。批5b 增补：settlingCourtId 按片渲染窗、
-   确认窗联动纯函数（followWinner/canPickWinner）、验收官补测销号 G1-G3（G4 并入 openSettle）。
-   批后销号：遮罩禁关（hide 死路机械整删）——settling 用例迁「窗位纯随视图 pending 起落 +
-   store 无关窗出口」断言；遮罩本身无点击事件是纯模板行为，类型层测不了（见 live.ts 头注）。
-   每个用例重置模块图 → 全新 mock 数据。 */
+/* 2.3 批5a 写链·全切后端（批5b 确认窗按片化收口；批6 散场清扫链+回看）：vi.mock('@/api/live')
+   路数（toLiveView 保留真实现——store 对表链吃同一映射），写动作用例喂 crafted 响应视图
+   （snake 形状与后端 services/live.py view 输出逐字对齐）断言 applyLiveView 落地 + toast；
+   409 stale 携视图对表、断网走 errText 文案。本地遗留路（后端无对应端点：addGuests/
+   subFirst/removeFromRoster/setRuleScore/空降入册）在视图态上直测保留；散场链（startSweep/
+   sweepCancelAll/endGame/noRedeal 透传/回看落地停轮询）各有专例。批5b 增补：settlingCourtId
+   按片渲染窗、确认窗联动纯函数（followWinner/canPickWinner）、验收官补测销号 G1-G3
+   （G4 并入 openSettle）。批后销号：遮罩禁关（hide 死路机械整删）——settling 用例迁
+   「窗位纯随视图 pending 起落 + store 无关窗出口」断言；遮罩本身无点击事件是纯模板行为，
+   类型层测不了（见 live.ts 头注）。每个用例重置模块图 → 全新 mock 数据。 */
 
 const liveApi = vi.hoisted(() => ({
   apiLiveView: vi.fn(),
@@ -34,6 +35,8 @@ const liveApi = vi.hoisted(() => ({
   apiLiveRules: vi.fn(),
   apiLiveSetAdmin: vi.fn(),
   apiLiveUnsetAdmin: vi.fn(),
+  apiLiveSweepCancelAll: vi.fn(),
+  apiLiveEnd: vi.fn(),
 }));
 
 vi.mock("@/api/live", async (importOriginal) => ({
@@ -426,7 +429,8 @@ describe("applyLiveView（批4 阶段2：总账视图 → 本地 LiveState 幂�
     live.applyLiveView(toLiveView(v3([ct(1, "pending", 12, 10)]))); // 再到分
     expect(live.settlingCourtId).toBe(0); // 窗重开（无 hide 位残留可挡）
   });
-  it("散场视图：endedAt 落封存位、recap 持有回看视图", async () => {
+  it("散场视图：endedAt 落封存位、recap 持有回看视图（轮询一并停）；进进行中视图 recap 清——上一局的回看不泄漏", async () => {
+    const { toLiveView } = await import("@/api/live");
     const { live } = await apply(
       mkLiveView({
         game_id: 900,
@@ -436,6 +440,8 @@ describe("applyLiveView（批4 阶段2：总账视图 → 本地 LiveState 幂�
     );
     expect(live.live!.endedAt).toBe("2026-10-07T21:30:00+08:00");
     expect(live.recap?.ended).toBe(true);
+    live.applyLiveView(toLiveView(vMid(8), null)); // 同局又回进行中（回放/换机重进的对账面）
+    expect(live.recap).toBeNull();
   });
 });
 
@@ -692,6 +698,7 @@ describe("待确认窗（§4.3-4.6：到分 auto / 提前结算 manual / 窗内�
       winnerSide: "a",
       scoreA: 11,
       scoreB: 9,
+      noRedeal: false, // 默认平时路：排下一场
       baseTotalSeq: 7,
       baseCourtSeq: 5,
     });
@@ -1240,7 +1247,7 @@ describe("键位修正（批4b 遗留：账号口径换视图消费）", () => {
   });
 });
 
-describe("本地遗留路（后端无对应端点；批6/后续切真——视图态上直测）", () => {
+describe("本地遗留路（后端无对应端点，留 1.3 切真——视图态上直测）", () => {
   it("addGuests：随行访客入册排队尾、底账挂担保人、toast", async () => {
     const { live, ui } = await inPlay();
     const L = live.live!;
@@ -1291,18 +1298,153 @@ describe("本地遗留路（后端无对应端点；批6/后续切真——视�
     expect(live.live!.g.scoring).toBe(21);
     expect(ui.toastMsg).toBe("分制已改为 21 分 · 当场生效");
   });
-  it("endLive 本地路（批6 重造为清扫链）：过 endGate → endedAt 落 + toast「已散场 · 底账定格」", async () => {
-    await seedGame(g900());
-    const { live, ui } = await apply(
-      vPlay(7, {
-        courts: [],
-        players: [pl(101, 0, { name: "我", queue_pos: 0 })],
-        queue: [101],
+});
+
+/* ─────────── 批6：散场清扫链（§4.9 切真：startSweep → 逐片 noRedeal / 一键全取消 → endGame=回看） ─────────── */
+
+describe("散场清扫链（§4.9，批6）", () => {
+  it("startSweep：先拉最新视图对一拍再进清扫态、清单=playing/pending 片；无权拒「只有组织者能收局」不拉读", async () => {
+    const denied = await inPlay(vPlay(7, { admins: [] }));
+    await denied.live.startSweep();
+    expect(denied.ui.toastMsg).toBe("只有组织者能收局");
+    expect(denied.live.sweepState).toBe(false);
+    expect(liveApi.apiLiveView).not.toHaveBeenCalled();
+    await seedGame(g900()); // 组织者是我：canEndLive 真
+    const { live } = await inPlay();
+    liveApi.apiLiveView.mockResolvedValue(
+      vPlay(9, {
+        courts_count: 2,
+        courts: [ct(1, "pending", 11, 9), ct(2, "playing", 3, 2)],
       }),
     );
-    live.endLive();
-    expect(live.live!.endedAt).toBeTruthy();
-    expect(ui.toastMsg).toBe("已散场 · 底账定格");
+    await live.startSweep();
+    expect(liveApi.apiLiveView).toHaveBeenCalledWith(900); // 残局判定吃权威数（A4 不自算）
+    expect(live.sweepState).toBe(true);
+    expect(live.sweepResidues.map((c) => c.status)).toEqual([
+      "pending",
+      "playing",
+    ]);
+  });
+  it("管理员代收（§4.14 兜底：组织者已标早退）：canEndLive 真、照常进清扫", async () => {
+    await seedGame(g900("locked", 1)); // 组织者是别人（账号 1）
+    const { live } = await apply(
+      vPlay(7, {
+        players: [
+          ...vPlay().players,
+          pl(105, 1, { name: "组织者", check: "left" }),
+        ],
+      }),
+    );
+    expect(live.canEndLive).toBe(true);
+    liveApi.apiLiveView.mockResolvedValue(vPlay(8));
+    await live.startSweep();
+    expect(live.sweepState).toBe(true);
+    live.stopPolling();
+  });
+  it("清扫态确认（§4.9-1 不排下一场不补位）：confirmSettle noRedeal=true 透传、toast「残局已清」、不重发牌", async () => {
+    const started = await inPlay(
+      vPlay(7, { courts: [ct(1, "pending", 11, 9)] }),
+    );
+    const back = vPlay(8, {
+      round: 1,
+      courts: [],
+      players: vPlay().players.map((p) => ({
+        ...p,
+        court_no: null,
+        court_side: null,
+        queue_pos: p.id - 101,
+      })),
+      queue: [101, 102, 103, 104],
+    });
+    liveApi.apiLiveSettleConfirm.mockResolvedValue(back);
+    await started.live.confirmSettle(0, true, 11, 9, true);
+    expect(liveApi.apiLiveSettleConfirm).toHaveBeenCalledWith(900, {
+      courtNo: 1,
+      winnerSide: "a",
+      scoreA: 11,
+      scoreB: 9,
+      noRedeal: true,
+      baseTotalSeq: 7,
+      baseCourtSeq: 5,
+    });
+    expect(started.ui.toastMsg).toBe("积分落账 · 残局已清");
+    expect(liveApi.apiLiveDeal).not.toHaveBeenCalled(); // 清扫途中没有下一场
+  });
+  it("清扫态取消：cancelMatch(…, true) 载荷 no_redeal=true、片腾出来不重发", async () => {
+    const { live } = await inPlay();
+    liveApi.apiLiveCancel.mockResolvedValue(
+      vPlay(8, {
+        courts: [],
+        players: vPlay().players.map((p) => ({
+          ...p,
+          court_no: null,
+          court_side: null,
+          queue_pos: p.id - 101,
+        })),
+        queue: [101, 102, 103, 104],
+      }),
+    );
+    await live.cancelMatch(0, true);
+    expect(liveApi.apiLiveCancel).toHaveBeenCalledWith(900, 1, true, 7, 5);
+    expect(liveApi.apiLiveDeal).not.toHaveBeenCalled();
+  });
+  it("sweepCancelAll 一键：载荷带总号、响应视图落地（残局清单随视图清空）+ toast", async () => {
+    const { live, ui } = await inPlay();
+    liveApi.apiLiveSweepCancelAll.mockResolvedValue(
+      vPlay(8, {
+        courts: [],
+        players: vPlay().players.map((p) => ({
+          ...p,
+          court_no: null,
+          court_side: null,
+          queue_pos: p.id - 101,
+        })),
+        queue: [101, 102, 103, 104],
+      }),
+    );
+    expect(live.sweepResidues).toHaveLength(1); // 出发时 1 号片在打
+    await live.sweepCancelAll();
+    expect(liveApi.apiLiveSweepCancelAll).toHaveBeenCalledWith(900, 7);
+    expect(live.sweepResidues).toHaveLength(0); // 全清
+    expect(ui.toastMsg).toBe("未完对局已全部取消");
+  });
+  it("endGame 残局未清：后端 live_residue 拒 → toast 后端句、清单开关不动、不封存", async () => {
+    const { ApiError } = await import("@/api/http");
+    await seedGame(g900()); // 组织者是我：canEndLive 真
+    const { live, ui } = await inPlay();
+    liveApi.apiLiveEnd.mockRejectedValue(
+      new ApiError("live_residue", "还有没处理完的对局，先逐片处理再散场", 409),
+    );
+    live.sweepState = true; // 清单开着：被拒不关（停在那片提示重试）
+    await live.endGame();
+    expect(liveApi.apiLiveEnd).toHaveBeenCalledWith(900, 7);
+    expect(ui.toastMsg).toBe("还有没处理完的对局，先逐片处理再散场");
+    expect(live.sweepState).toBe(true);
+    expect(live.recap).toBeNull();
+  });
+  it("endGame 成功：ended 视图落地=散场即回看（endedAt/recap 落、轮询停、清单关）", async () => {
+    vi.useFakeTimers();
+    try {
+      await seedGame(g900());
+      const { live, ui } = await inPlay();
+      live.startPolling(900);
+      const ended = vPlay(8, {
+        ended: true,
+        ended_at: "2026-10-07T21:30:00+08:00",
+      });
+      liveApi.apiLiveEnd.mockResolvedValue(ended);
+      live.sweepState = true;
+      await live.endGame();
+      expect(liveApi.apiLiveEnd).toHaveBeenCalledWith(900, 7);
+      expect(live.live!.endedAt).toBe("2026-10-07T21:30:00+08:00");
+      expect(live.recap?.ended).toBe(true);
+      expect(live.sweepState).toBe(false);
+      expect(ui.toastMsg).toBe("已散场 · 战报与底账已封存");
+      await vi.advanceTimersByTimeAsync(7000);
+      expect(liveApi.apiLiveView).not.toHaveBeenCalled(); // 回看定格不轮询
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

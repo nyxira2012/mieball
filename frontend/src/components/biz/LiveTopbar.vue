@@ -14,9 +14,9 @@
           <text class="chip ok">{{ orgChip }}</text>
         </view>
       </view>
-      <!-- 右侧动作列：签到二维码（原型 qrbtn）＋ 底账/散场（2.2 批4：散场钮全权可见——
-           管理员点它得「只有组织者能收局」（§5 验收），组织者已早退时管理员靠它代收；
-           散场后现场封存，钮隐藏，底账仍可查） -->
+      <!-- 右侧动作列：签到二维码（原型 qrbtn）＋ 底账/散场（2.3 §4.9：散场钮按
+           canEndLive 可见——组织者，或组织者已标早退时的管理员代收；点它进清扫流，
+           由页面编排；散场后现场转回看，钮消失，底账仍可查） -->
       <view class="top-acts">
         <view class="qrbtn" @click="emit('qr')">
           <view class="qr-ic">
@@ -30,7 +30,7 @@
         </view>
         <view v-if="full" class="mini-act" @click="emit('ledger')">底账</view>
         <view
-          v-if="full && !L.endedAt"
+          v-if="canEnd && !L.endedAt"
           class="mini-act danger"
           @click="emit('end')"
           >散场</view
@@ -99,6 +99,8 @@ const liveStore = useLiveStore();
 const L = computed(() => liveStore.live);
 /** 全权（组织者 ∨ 管理员）单一源在 store；组织者 chip 仍按 isOrg（管理员不算组织者） */
 const full = computed(() => liveStore.isFullPower);
+/** 散场权（§4.9 组织者独占 + 组织者早退时管理员代收）：散场钮可见性单一源在 store */
+const canEnd = computed(() => liveStore.canEndLive);
 
 const orgChip = computed(() =>
   L.value && isOrg(L.value.g)

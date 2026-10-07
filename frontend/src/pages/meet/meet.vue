@@ -10,6 +10,18 @@
     <!-- alpha:1074 跑马灯：被邀请条目 + NEXT 最近参局倒计时（×2 无缝循环由 Ticker 内部负责） -->
     <Ticker :items="tickerItems" />
 
+    <!-- 组织者远程散场入口（2.3 §4.9）：我组织的进行中的局——点「散场收工」进现场
+         自动开残局清扫（sweepOnArrive 预约位 + goLive，同一链照常二次确认） -->
+    <view
+      v-for="g in myLiveOrg"
+      :key="g.id"
+      class="sweeprow"
+      @click="onRemoteSweep(g)"
+    >
+      <text class="sweep-txt">「{{ g.name }}」进行中 · 你是组织者</text>
+      <view class="sweep-btn">散场收工 ▸</view>
+    </view>
+
     <!-- alpha:1075-1080 球局区吸顶头（CSS sticky）· 筛选▾ / 收起 两钮 -->
     <view class="msec-head">
       <text class="mh-t">球局</text>
@@ -156,6 +168,7 @@ import EmptyBox from "@/components/ui/EmptyBox.vue";
 import type { Game, Intent } from "@/api/types";
 import { communityMeta } from "@/api";
 import { useGameStore } from "@/stores/game";
+import { useLiveStore } from "@/stores/live";
 import { useUiStore } from "@/stores/ui";
 import {
   deadRowKind,
@@ -166,10 +179,21 @@ import {
 } from "@/utils/format";
 import { isoDay, isoDayOff, isoHm, isoParts, untilTxt } from "@/utils/time";
 import { errText } from "@/api/http";
-import { goGame } from "@/utils/nav";
+import { goGame, goLive } from "@/utils/nav";
 
 const game = useGameStore();
+const liveStore = useLiveStore();
 const ui = useUiStore();
+
+/* ---- 远程散场（2.3 §4.9）：我组织的进行中的局；落预约位后 goLive——
+     live 页 ensureLive 落地即自动开清扫流（同一链，逐片处理照常二次确认） ---- */
+const myLiveOrg = computed(() =>
+  game.myGames.filter((g) => g.status === "live" && g.my?.isOrganizer),
+);
+function onRemoteSweep(g: Game): void {
+  liveStore.sweepOnArrive = g.id;
+  goLive(g.id);
+}
 
 /* ---- 头部（alpha:1072 日期行逐字） ---- */
 const dateLine = computed(() => {
@@ -397,6 +421,7 @@ watch(
     () => flt.value.length,
     () =>
       orgPending.value.length + orgDead.value.length + grayMine.value.length,
+    () => myLiveOrg.value.length,
     () => ipool.value.length,
   ],
   () => measureHead(),
@@ -482,6 +507,37 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 组织者远程散场入口行（2.3 §4.9）：珊瑚示警同散场钮语言 */
+.sweeprow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 90, 54, 0.4);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: rgba(255, 90, 54, 0.06);
+  cursor: pointer;
+}
+.sweep-txt {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--cream);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sweep-btn {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--coral);
+  border: 1px solid rgba(255, 90, 54, 0.4);
+  border-radius: 9px;
+  padding: 5px 9px;
+}
+
 /* alpha:387-389 意向区头：CSS 吸顶 + JS 贴底钉位双通道 */
 .isec-head {
   position: sticky;

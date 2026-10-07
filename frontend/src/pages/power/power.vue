@@ -11,13 +11,27 @@
           </view>
           <!-- alpha:1837-1840 sw-capsule：Elo/NTRP 切换（全局类 .sw-capsule 在 base.scss；行为 ui.setScoreMode，全页联动） -->
           <view class="sw-capsule">
-            <text class="sw-opt" :class="{ on: ui.scoreMode === 'elo' }" @click="ui.setScoreMode('elo')">Elo</text>
-            <text class="sw-opt" :class="{ on: ui.scoreMode === 'ntrp' }" @click="ui.setScoreMode('ntrp')">NTRP</text>
+            <text
+              class="sw-opt"
+              :class="{ on: ui.scoreMode === 'elo' }"
+              @click="ui.setScoreMode('elo')"
+              >Elo</text
+            >
+            <text
+              class="sw-opt"
+              :class="{ on: ui.scoreMode === 'ntrp' }"
+              @click="ui.setScoreMode('ntrp')"
+              >NTRP</text
+            >
           </view>
         </view>
         <!-- alpha:1842 副标题两态 -->
         <view class="sub sub-mt">
-          {{ ui.scoreMode === 'elo' ? 'Elo 默认 1500 起 · 内部引擎原始分' : 'NTRP 国际分级 (2.0-5.0) · 排阵对位参考' }}
+          {{
+            ui.scoreMode === "elo"
+              ? "Elo 默认 1500 起 · 内部引擎原始分"
+              : "NTRP 国际分级 (2.0-5.0) · 排阵对位参考"
+          }}
         </view>
       </view>
 
@@ -29,7 +43,10 @@
       <BrawlStage :top3="t3" @profile="openProfile" />
 
       <!-- 评分排行（alpha:1871-1875）：前三高亮 · 懒加载每批 5 条 -->
-      <SectionTitle title="评分排行" :more="`${rows.length} 球员在榜 · 前三高亮`" />
+      <SectionTitle
+        title="评分排行"
+        :more="`${rows.length} 球员在榜 · 前三高亮`"
+      />
       <view class="rank-frame">
         <view class="rank-list">
           <RankRow
@@ -46,12 +63,16 @@
         <!-- alpha:1874/1774-1784 尾部：点击亦可加载；全部加载完显示完毕文案（逐字） -->
         <view class="rank-tail" @click="loadMoreRank">
           <template v-if="done">
-            <text class="tl-dim">· 全圈 {{ rows.length }} 位球员已加载完毕 ·</text>
+            <text class="tl-dim"
+              >· 全圈 {{ rows.length }} 位球员已加载完毕 ·</text
+            >
           </template>
           <template v-else>
             <text class="tl-lemon">↑ 上滑显示更多</text>
             <!-- alpha:1782 两段间原有空格，这里用 4px 间距近似 -->
-            <text class="tl-dim tl-gap">({{ rankLimit }}/{{ rows.length }}) · 点击亦可加载</text>
+            <text class="tl-dim tl-gap"
+              >({{ rankLimit }}/{{ rows.length }}) · 点击亦可加载</text
+            >
           </template>
         </view>
       </view>
@@ -63,10 +84,24 @@
           <text class="q">?</text>
         </view>
         <view class="rfbody">
-          <view>· <text class="b">分制切换</text>：右上角开关随时切换 Elo (1500 起步原始分) 与 NTRP (2.0-5.0 国际分级)。</view>
-          <view>· <text class="b">赢强者涨得多</text>：K=24，爆冷大涨、碾压小涨。</view>
-          <view>· <text class="b">输了不掉肉</text>：败方只扣胜方涨分的六成，地板 400 分。</view>
-          <view>· <text class="b">访客半权重、双打按队算</text>：两队人均分结算落到个人；访客不进榜。</view>
+          <view
+            >· <text class="b">分制切换</text>：右上角开关随时切换 Elo (1500
+            起步原始分) 与 NTRP (2.0-5.0 国际分级)。</view
+          >
+          <view
+            >·
+            <text class="b">赢强者涨得多</text
+            >：K=24，爆冷大涨、碾压小涨。</view
+          >
+          <view
+            >· <text class="b">输了不掉肉</text>：败方只扣胜方涨分的六成，地板
+            400 分。</view
+          >
+          <view
+            >·
+            <text class="b">访客按新人初始等级代入、双打按队算</text
+            >：两队人均分结算落到个人；访客不计积分不进榜。</view
+          >
         </view>
       </view>
 
@@ -81,16 +116,16 @@
    分制切换调 ui.setScoreMode（alpha:1739-1744，切档 toast 由 store 发）；
    榜单懒加载 = alpha:1774-1822 的滚动通道（§2.4：IntersectionObserver → onPageScroll 距底 160px）；
    榜单/打架图/我的卡点击 → ui.openSheet({type:'profile',userId})。 */
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { onPageScroll, onShow } from '@dcloudio/uni-app';
-import PageShell from '@/components/biz/PageShell.vue';
-import MyPowerCard from '@/components/biz/MyPowerCard.vue';
-import BrawlStage from '@/components/biz/BrawlStage.vue';
-import RankRow from '@/components/biz/RankRow.vue';
-import SectionTitle from '@/components/ui/SectionTitle.vue';
-import EmptyBox from '@/components/ui/EmptyBox.vue';
-import { useUiStore } from '@/stores/ui';
-import { useUserStore } from '@/stores/user';
+import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { onPageScroll, onShow } from "@dcloudio/uni-app";
+import PageShell from "@/components/biz/PageShell.vue";
+import MyPowerCard from "@/components/biz/MyPowerCard.vue";
+import BrawlStage from "@/components/biz/BrawlStage.vue";
+import RankRow from "@/components/biz/RankRow.vue";
+import SectionTitle from "@/components/ui/SectionTitle.vue";
+import EmptyBox from "@/components/ui/EmptyBox.vue";
+import { useUiStore } from "@/stores/ui";
+import { useUserStore } from "@/stores/user";
 
 const ui = useUiStore();
 const userStore = useUserStore();
@@ -102,7 +137,9 @@ const rows = computed(() =>
     .sort((a, b) => b.elo - a.elo),
 );
 /** alpha:1826 myRank = rows.findIndex(u=>u.id===me.id)+1（响应式 me.id） */
-const myRank = computed(() => rows.value.findIndex((u) => u.id === userStore.me.id) + 1);
+const myRank = computed(
+  () => rows.value.findIndex((u) => u.id === userStore.me.id) + 1,
+);
 /** alpha:1827 t3 = rows.slice(0,3) */
 const t3 = computed(() => rows.value.slice(0, 3));
 
@@ -122,7 +159,7 @@ const rOpen = ref(false);
 
 /** alpha:1768/1755 openProfileById → openSheet profile */
 function openProfile(id: number): void {
-  ui.openSheet({ type: 'profile', userId: id });
+  ui.openSheet({ type: "profile", userId: id });
 }
 
 /* —— 懒加载（alpha:1774-1822 语义；容器滚动 → 页面 onPageScroll） —— */
@@ -135,11 +172,11 @@ let measuring = false; // Vue DOM 更新异步：本批量完页高前禁止连�
 function measure(after?: () => void): void {
   uni
     .createSelectorQuery()
-    .select('.page')
+    .select(".page")
     .boundingClientRect()
     .exec((res) => {
       const r = res && res[0];
-      if (r && typeof r.bottom === 'number') pageH = lastTop + r.bottom;
+      if (r && typeof r.bottom === "number") pageH = lastTop + r.bottom;
       if (after) after();
     });
 }
@@ -210,7 +247,9 @@ watch(rOpen, () => nextTick(() => measure()));
   padding: 11px 0 8px;
   cursor: pointer;
   border-radius: 10px;
-  transition: background 0.2s, color 0.2s;
+  transition:
+    background 0.2s,
+    color 0.2s;
   user-select: none;
 }
 .rank-tail:active {

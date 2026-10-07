@@ -21,7 +21,7 @@
             <view class="ps-elo"
               ><text class="elo-b">{{ p.elo || "新" }}</text> · 已打
               {{ p.play }} 场<text v-if="p.shadow" class="ps-guest">
-                · 访客（积分半权重）</text
+                · 访客（不计积分）</text
               ></view
             >
           </view>

@@ -3,9 +3,8 @@
        码图为前端演示图（真码后端接）——照原型 drawQr 的伪随机图案，rand 混入 g.id 作 seed 确定性渲染。 -->
   <view class="qrwrap" :class="{ on: visible }" @click="emit('close')">
     <view class="qr-card" @click.stop="emit('close')">
-      <!-- 散场后不出示码（§4.2/§4.14：现场封存二维码失效），原位换失效句 -->
-      <view v-if="ended" class="qr-dead">现场已散 · 二维码失效</view>
-      <view v-else class="qr-box">
+      <!-- 码不销毁（§4.9-4：散场转只读回看，同一张码扫出来就是回看） -->
+      <view class="qr-box">
         <!-- 三个定位角（7 格外框深 / 5 格奶油 / 3 格深，原型 finder 逐字） -->
         <view
           v-for="(f, i) in finders"
@@ -26,7 +25,12 @@
     </view>
     <view class="qr-meta">
       <view class="n">{{ metaName }}</view>
-      <view v-if="ended" class="s">扫码无效 · 球局不存在或已结束</view>
+      <template v-if="ended">
+        <view class="s">现场已散 · 扫码可回看</view>
+        <view class="hint"
+          >扫码进入只读回看 · <text class="hi">翻战报与名单</text></view
+        >
+      </template>
       <template v-else>
         <view class="s">已到场 {{ arrived }} 人 · LIVE</view>
         <view class="hint"
@@ -60,7 +64,7 @@ const metaName = computed(() => {
 const arrived = computed(
   () => (liveStore.live?.roster ?? []).filter((p) => isArrived(p.check)).length,
 );
-/** 散场封存态：endedAt 有值即不再出示码（§4.14 现场封存） */
+/** 散场回看态（§4.10）：endedAt 有值=码转只读回看入口（同一张码，扫出来是回看） */
 const ended = computed(() => !!liveStore.live?.endedAt);
 
 /* ---------- 假码图案（原型 drawQr：n=25 cell=8 pad=2；rand 混入 g.id 作 seed） ---------- */
@@ -128,20 +132,6 @@ const dots = computed<{ l: number; t: number }[]>(() => {
   height: 232px;
   background: var(--cream);
   overflow: hidden;
-}
-/* 失效态：码原位换一句（同码面尺寸，卡片不跳形） */
-.qr-dead {
-  width: 232px;
-  height: 232px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  color: var(--ink);
-  opacity: 0.7;
 }
 /* 定位角：7×7 深外框 → 5×5 奶油 → 3×3 深（嵌套缩进 1 格） */
 .finder {

@@ -105,7 +105,7 @@
     <!-- ---------- 段4 空降说明 ---------- -->
     <NoteCard>
       <text class="nk-lead">空降的人不用学：</text>没报名的直接扫场上二维码 →
-      填个称呼就进局——按访客计，积分打半折、费用照常摊。
+      填个称呼就进局——按访客计，不计积分不进榜、费用照常摊。
     </NoteCard>
   </AppSheet>
 </template>
@@ -113,7 +113,7 @@
 <script setup lang="ts">
 /* 签到抽屉（2.2 §4.3 代办枢纽）：到场 = setCheck ok（迟到口径 store 按 startAt 归一、队尾、自动发牌）；
    代办早退 = setCheck left（清候场清场上+离场时刻）；移出 = removeFromRoster（名册消失、底账留痕）。
-   带访客 = addGuests（shadow 半权重、队尾进候场）。介绍人 = 已到场非访客成员，默认「我」在册则选中。 */
+   带访客 = addGuests（访客不落积分不进榜、队尾进候场）。介绍人 = 已到场非访客成员，默认「我」在册则选中。 */
 import { computed, ref, watch } from "vue";
 import AppSheet from "@/components/ui/AppSheet.vue";
 import AppButton from "@/components/ui/AppButton.vue";

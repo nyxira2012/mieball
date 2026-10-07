@@ -1,7 +1,8 @@
-/* 现场 store（2.3 批5a 写链·全切后端；批5b 确认窗按片化收口）：现场态真值=后端总账，
-   本 store 只做 guard + 编排 + toast——写动作统一「组载荷（base 号取 liveView）→ api →
-   响应视图 applyLiveView 落地」；409 stale 携视图对表（toast「现场已更新」）；断网/他错走
-   errText（网络错文案「网络不给力，请稍后再试」）并把本地预变回滚成所持视图。
+/* 现场 store（2.3 批5a 写链·全切后端；批5b 确认窗按片化收口；批6 散场清扫链+回看）：
+   现场态真值=后端总账，本 store 只做 guard + 编排 + toast——写动作统一「组载荷
+   （base 号取 liveView）→ api → 响应视图 applyLiveView 落地」；409 stale 携视图对表
+   （toast「现场已更新」）；断网/他错走 errText（网络错文案「网络不给力，请稍后再试」）
+   并把本地预变回滚成所持视图。
    发牌算法仍在前端 rotate.ts（总账把关）：到场/取消/开账后够人的空片本地算完
    apiLiveDeal 上报；「排下一场」由确认响应视图驱动（回流补位真值在后端）。
    积分不再本地落账（settleElo 退役到组件预览）；确认响应的 elo_rows 随视图持有。
@@ -10,8 +11,13 @@
    （批5b 验收官销号，§4.3-2 出口全在窗内）：store 不设前端关窗动作，窗只随
    视图 pending 起落——确认/清零/取消成功、auto 窗撤到分线下，响应视图关窗；
    遮罩是否可关是纯模板行为（EndSettleModal 遮罩无点击事件），类型层测不了。
-   遗留本地路（后端无对应端点，批6/后续切真）：addGuests/subFirst/removeFromRoster/
-   setRuleScore/endLive（散场清扫流批6 重造）与空降入册（arriveMe 的 dropin 支）。
+   散场走清扫链（§4.9，批6 切真）：startSweep 进清扫态（拉最新视图判定残局，
+   SweepSheet 由 live.vue 编排）→ 逐片 confirmSettle(noRedeal)/cancelMatch(noRedeal)/
+   sweepCancelAll → 全清 endGame（apiLiveEnd；响应 ended 视图即回看——recap 落地、
+   轮询停、sealGate 收权写「球局已结束」）。清扫里的确认/取消照常落账但 no_redeal=true：
+   不排下一场不补位（红线）。
+   遗留本地路（后端无对应端点，留 1.3 切真）：addGuests/subFirst/removeFromRoster/
+   setRuleScore 与空降入册（arriveMe 的 dropin 支）。
    硬约束：不触碰任何 uni.*；名册行 id 是写动作靶位（与 queue/片位同键），
    账号口径（isAdmin/myRound）按 view.players.accountId 匹配 U.me。 */
 import { computed, ref } from "vue";
@@ -23,12 +29,14 @@ import {
   apiLiveCheck,
   apiLiveClear,
   apiLiveDeal,
+  apiLiveEnd,
   apiLivePoint,
   apiLiveRules,
   apiLiveSetAdmin,
   apiLiveSettleConfirm,
   apiLiveSettleOpen,
   apiLiveStart,
+  apiLiveSweepCancelAll,
   apiLiveSwap,
   apiLiveTempo,
   apiLiveUndo,
@@ -227,12 +235,12 @@ export const useLiveStore = defineStore("live", () => {
     return !!L && (isOrg(L.g) || isAdmin(U.me.id));
   });
 
-  /** 封存闸（§4.14 现场封存）：endedAt 有值=已散场，收权动作一律拒——
+  /** 封存闸（§4.10 回看态）：endedAt 有值=已散场，写动作一律拒——
       所有 needFull 检查处与 setCheck/togglePerson 的自报免检路径共用；
-      后端散场后写一律拒 live_ended，这里是前置拦截 */
+      后端散场后写一律拒 live_ended，这里是前置拦截（提示句对齐规格） */
   function sealGate(): boolean {
     if (live.value?.endedAt) {
-      ui.toast("现场已散 · 不能再操作");
+      ui.toast("球局已结束");
       return false;
     }
     return true;
@@ -759,14 +767,17 @@ export const useLiveStore = defineStore("live", () => {
     );
   }
 
-  /** 确认终局 · 排下一场（§4.6 出口 A，收权）：一本账原子在后端（战报+积分+回流补位），
+  /** 确认终局（§4.6 出口 A，收权）：一本账原子在后端（战报+积分+回流补位），
       响应视图落地即「排好」——确认响应的 elo_rows 随视图持有（预览修正消费面批5b）。
+      noRedeal=清扫态（§4.9）：回流定格、不排下一场不补位（EndSettleModal 随
+      sweepState 透传；toast 分叉——清扫途中没有下一场）。
       幂等闸：窗没开不落账（前端版；真值在后端——重放幂等回 200） */
   async function confirmSettle(
     courtId: number,
     winA: boolean,
     sa: number,
     sb: number,
+    noRedeal = false,
   ): Promise<void> {
     if (!settling.value[courtId]) return;
     if (!needFull()) return;
@@ -782,16 +793,19 @@ export const useLiveStore = defineStore("live", () => {
           winnerSide: winA ? "a" : "b",
           scoreA: sa,
           scoreB: sb,
+          noRedeal,
           baseTotalSeq: s.baseTotalSeq,
           baseCourtSeq: s.baseCourtSeq,
         }),
-      () => ui.toast("积分落账 · 下一场已排好"),
+      () =>
+        ui.toast(noRedeal ? "积分落账 · 残局已清" : "积分落账 · 下一场已排好"),
     );
   }
 
   /** 取消对局（§4.7 出口 B，收权）：整场作废不计分，场上的人原样回流队首（后端）；
-      片腾出来由本地重新发牌（发牌在前端）。先确认在页面层（A3） */
-  async function cancelMatch(courtId: number): Promise<void> {
+      片腾出来由本地重新发牌（发牌在前端）——清扫态（noRedeal，§4.9）不重发。
+      先确认在页面层（A3） */
+  async function cancelMatch(courtId: number, noRedeal = false): Promise<void> {
     const L = live.value;
     const c = courtOf(courtId);
     if (!L || !c || (!c.A.length && !c.B.length) || !needFull()) return;
@@ -801,10 +815,10 @@ export const useLiveStore = defineStore("live", () => {
     const s = seqs(no);
     const ok = await writeAction(
       gid,
-      () => apiLiveCancel(gid, no, false, s.baseTotalSeq, s.baseCourtSeq),
+      () => apiLiveCancel(gid, no, noRedeal, s.baseTotalSeq, s.baseCourtSeq),
       () => ui.toast(`对局作废 · 这场不计分 · 场上 ${n} 人回到队首`),
     );
-    if (ok) await maybeDeal(gid); // §4.7 该片腾出来重新发牌
+    if (ok && !noRedeal) await maybeDeal(gid); // §4.7 该片腾出来重新发牌（清扫态除外）
   }
 
   /** 紧急替补（本地遗留路：后端无独立端点——换人 apiLiveSwap 可覆盖同型操作）：
@@ -974,34 +988,64 @@ export const useLiveStore = defineStore("live", () => {
     ui.toast("牌已发 · 按当前规则排好");
   }
 
-  /** 散场两道闸（§4.14 旧路保留；清扫流批6 重造）：①权限（canEndLive）②在打防线 */
-  function endGate(): boolean {
+  /* ─────── 散场清扫链（§4.9，批6 切真） ─────── */
+
+  /** 清扫中标记：SweepSheet 的挂载开关（live.vue 编排；开始 startSweep / 关闭页面置 false） */
+  const sweepState = ref(false);
+  /** 远程散场预约（meet 页「我的局」入口落）：进了目标局现场由 live.vue 自动开清扫，
+      落地即清——跨页一次性的信号位，非持久态 */
+  const sweepOnArrive = ref<number | null>(null);
+
+  /** 残局清单（§4.9 强制逐片处理的对象）：playing/pending 的片，按片号升序。
+      真值=最近视图（startSweep 先对一拍再判定——A4 画面不自算）。
+      组装处预带 courtId（片号 1 起 ↔ 片序 0 起，沿 toLiveView 同款单点口径）——
+      SweepSheet 只消费不自算 */
+  const sweepResidues = computed(() =>
+    (liveView.value?.courts.filter((c) => c.status !== "idle") ?? []).map(
+      (c) => ({ ...c, courtId: c.courtNo - 1 }),
+    ),
+  );
+
+  /** 点「散场 / 结束球局」进清扫态：权限闸（canEndLive——组织者或组织者早退时的
+      管理员代收）→ 先拉最新视图对一拍（残局清单判定吃权威数）→ 开 SweepSheet。
+      无残局时清单为空、直接走「确认散场」二次确认（同一扇窗不分支） */
+  async function startSweep(): Promise<void> {
     const L = live.value;
-    if (!L || !canEndLive.value) {
+    if (!L || L.endedAt || !canEndLive.value) {
       ui.toast("只有组织者能收局");
-      return false;
+      return;
     }
-    if (L.courts.some((c) => c.A.length || c.B.length)) {
-      ui.toast("还有片在打 · 先收局或作废");
-      return false;
-    }
-    return true;
+    await pollLiveView(L.g.id);
+    sweepState.value = true;
   }
 
-  /** 散场收局（本地遗留路；批6 重造为清扫链+apiLiveEnd）：endedAt 落 → 底账定格
-      → live 态保留（回看消费面批6）。已封存直调不重放 */
-  function endLive(): void {
+  /** 未完对局全部取消（§4.9 一键，收权）：逐片 cancel 语义一个事务在后端；
+      无残局幂等 no-op。先确认在页面层（A3） */
+  async function sweepCancelAll(): Promise<void> {
     const L = live.value;
-    if (!L || L.endedAt || !endGate()) return;
-    const at = toIso(new Date());
-    L.endedAt = at;
-    for (const p of L.roster)
-      if (isArrived(p.check) && !p.leftAt) {
-        p.leftAt = at;
-        touchLedger(p.id, { leftAt: at });
-      }
-    feedPush("现场已散 · 二维码失效");
-    ui.toast("已散场 · 底账定格");
+    if (!L || !liveView.value || !needFull()) return;
+    await writeAction(
+      L.g.id,
+      () => apiLiveSweepCancelAll(L.g.id, seqs().baseTotalSeq),
+      () => ui.toast("未完对局已全部取消"),
+    );
+  }
+
+  /** 散场收工（§4.9 二次确认后的执行件）：残局不清完后端拒 live_residue（清单留在
+      那片提示重试，不放行）；成功响应=ended 视图——applyLiveView 落 recap、停轮询、
+      sealed（sealGate 收权），散场即回看 */
+  async function endGame(): Promise<void> {
+    const L = live.value;
+    if (!L || L.endedAt || !canEndLive.value) {
+      ui.toast("只有组织者能收局");
+      return;
+    }
+    const ok = await writeAction(
+      L.g.id,
+      () => apiLiveEnd(L.g.id, seqs().baseTotalSeq),
+      () => ui.toast("已散场 · 战报与底账已封存"),
+    );
+    if (ok) sweepState.value = false;
   }
 
   /** 名册按找（视图层 byId 的共享口径） */
@@ -1149,7 +1193,12 @@ export const useLiveStore = defineStore("live", () => {
     settling.value = next;
     live.value = L;
     liveView.value = v;
-    if (v.ended) recap.value = v;
+    if (v.ended) {
+      recap.value = v; // 散场即回看（§4.10）：定格视图持有，轮询一并停（远端散场同路）
+      stopPolling();
+    } else {
+      recap.value = null; // 换局/回进行中：别让上一局的回看残留泄漏
+    }
   }
 
   /** 拉总账读对表（§4.8）：totalSeq 没变不重建（画面零漂移），返回是否更新供上层
@@ -1211,7 +1260,6 @@ export const useLiveStore = defineStore("live", () => {
     isAdmin,
     needFull,
     canEndLive,
-    endGate,
     byId,
     startLive,
     ensureLive,
@@ -1234,7 +1282,12 @@ export const useLiveStore = defineStore("live", () => {
     setRules,
     setCourtsInput,
     autoDeal,
-    endLive,
+    sweepState,
+    sweepOnArrive,
+    sweepResidues,
+    startSweep,
+    sweepCancelAll,
+    endGame,
     liveView,
     recap,
     applyLiveView,

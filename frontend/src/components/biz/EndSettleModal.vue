@@ -6,8 +6,8 @@
        §4.6 联动：点胜方可改预选（防左右记反、分低方选不中）；± 改分胜方自动跟分高方、
        平分清空禁确认。§4.5 窗内撤一分走后端 undo，响应视图驱动两路（auto 不够线自动关
        回在打 / manual 保窗只改比分），窗内比分显示吃视图。
-       §4.11 ±积分预览当场算（settleElo，访客按新人初始等级 1500 代入当正常玩家、
-       不带旧半折——与后端 elo 镜像同口径）：预览只展示不落账，落账以确认响应 elo_rows
+       §4.11 ±积分预览当场算（settleElo，访客按新人初始等级 1500 代入当正常玩家——
+       与后端 elo 镜像同口径）：预览只展示不落账，落账以确认响应 elo_rows
        为准（显示吃视图）。§4.3-2 清零重开与取消对局的待确认入口收在窗里（仅全权可见，
        emit 由页面危险确认槽接）；球友看窗只读：确认灰+旁注「请组织者或管理员确认」。
        z-110 fixed 居中；遮罩不可关（批5b 验收官销号，§4.3-2 出口全在窗内——遮罩纯视觉
@@ -110,8 +110,8 @@
    响应视图回来重新对齐；确认/撤分直调 store（落账·关窗·toast 都在 store），
    清零/取消 emit 由页面确认槽接（A3 危险动作先确认）。
    联动纯函数（followWinner/canPickWinner）单一源在 store 模块，测试落 live-store.test.ts。
-   球友看窗只读：点选/±/撤置灰、确认灰+旁注；预览行复用 settleElo（访客代入 1500、
-   带旧半折的 shadow 位不传——与后端镜像同口径，elo.ts 半折清理归末批）。 */
+   球友看窗只读：点选/±/撤置灰、确认灰+旁注；预览行复用 settleElo（访客代入 1500——
+   与后端镜像同口径）。清扫态（store.sweepState）确认走 noRedeal=true：不排下一场不补位。 */
 import { computed, ref, watch } from "vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import {
@@ -226,7 +226,7 @@ const preview = computed(() => {
   const w = sideRows(winA.value ? "a" : "b");
   const l = sideRows(winA.value ? "b" : "a");
   const asPlayer = (p: LivePlayer): EloPlayer => ({
-    // 访客代入初始等级、不带 shadow（elo.ts 的半折是待清旧口径，后端镜像已去半折）
+    // 访客代入新人初始等级（与后端 elo 镜像同口径：同公式全额，访客自己不落账）
     elo: p.guest ? RANK_INIT : liveStore.byId(p.id).elo,
   });
   const all = [...w, ...l];
@@ -240,7 +240,14 @@ const preview = computed(() => {
 
 function onConfirm(): void {
   if (winA.value === null) return;
-  void liveStore.confirmSettle(props.courtId, winA.value, sa.value, sb.value);
+  // 清扫态（§4.9）确认不排下一场不补位——noRedeal 随 store.sweepState 透传
+  void liveStore.confirmSettle(
+    props.courtId,
+    winA.value,
+    sa.value,
+    sb.value,
+    liveStore.sweepState,
+  );
 }
 </script>
 
