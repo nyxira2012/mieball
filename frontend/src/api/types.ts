@@ -26,6 +26,9 @@ export interface User {
   id: number;
   name: string;
   elo: number;
+  dupr?: number; // 1.4 双轨：DUPR 核心轨展示位；elo 继续 Elo 娱乐轨（弹窗±/撒花）
+  provisional?: boolean; // DUPR 未定级（已结算 <5 场）
+  duprGames?: number; // DUPR 已结算场数
   play: number;
   win: number;
   month: number;
@@ -389,6 +392,7 @@ export interface LivePlayerApi {
   account_id: number | null; // 访客 null
   name: string; // 开账定格名（注销者占位名；访客=担保人前两字+编号）
   guest: boolean; // 随行访客：代入 1500 算分但不落积分账
+  dupr: number; // DUPR 配平代位分（1.4 §6：访客 3.0、未定级吃派生分/自评档）
   guarantor_account_id: number | null; // 访客挂谁名下（考勤底账「谁带的」）
   dropin: boolean; // 空降进场（没报名扫码直入名册）
   check: CheckStatus; // ok/late/join/left/absent 五态
@@ -498,6 +502,7 @@ export interface LivePlayer {
   accountId: number | null;
   name: string;
   guest: boolean;
+  dupr: number;
   guarantorAccountId: number | null;
   dropin: boolean;
   check: CheckStatus;

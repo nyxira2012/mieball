@@ -11,18 +11,23 @@ export interface AccountView {
   name: string;
   chibi: ChibiConfig;
   card_bg: CardBg | null;
+  dupr_rating: number; // 1.4 DUPR 核心轨派生分（未定级=起步分，访客档语义 3.0）
+  dupr_provisional: boolean; // 未定级（已结算 <5 场）
+  dupr_games: number; // 已结算场数
   deactivated: boolean;
   phone?: string;
   phone_tail?: string;
 }
 
-/** 名片三行。*_set 是"用户确实填了这一项"的显式标志（接管合并 D5 用，不做值推断） */
+/** 名片三行。*_set 是"用户确实填了这一项"的显式标志（接管合并 D5 用，不做值推断）；
+    self_rating 是建号自评五档（1.4 §5）：None=未填，语义无歧义，故不设 *_set 旗 */
 export interface CardPayload {
   phone: string;
   nickname?: string;
   nickname_set?: boolean;
   chibi?: ChibiConfig;
   chibi_set?: boolean;
+  self_rating?: number;
 }
 
 export interface SessionPayload {
