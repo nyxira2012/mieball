@@ -27,6 +27,11 @@
         </view>
       </AppField>
 
+      <AppField label="你大概什么水平">
+        <view class="preset-note">当个起步分就行 · 打满 5 场按战绩自动定级</view>
+        <AppSeg v-model="selfRating" :options="SELF_RATING_OPTS" />
+      </AppField>
+
       <AppField label="手机号">
         <AppInput v-model="phone" type="number" placeholder="11 位手机号" :maxlength="11" />
         <view class="pnote">用于球局紧急通知、防鸽子和跨设备找回；同局球友会看到你的尾号 4 位</view>
@@ -77,6 +82,7 @@ import type { PropType } from 'vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppField from '@/components/ui/AppField.vue';
 import AppInput from '@/components/ui/AppInput.vue';
+import AppSeg from '@/components/ui/AppSeg.vue';
 import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
 import { useGameStore } from '@/stores/game';
 import { useLiveStore } from '@/stores/live';
@@ -123,6 +129,15 @@ const phone = ref('');
 const code = ref('');
 /** 选中的预设下标；null=没选（跳过 → 服务端默认小人） */
 const picked = ref<number | null>(null);
+/** 自评五档（1.4 §5，默认 3.0）：建号起步分档位，提交落 self_rating（后端校验五档值） */
+const selfRating = ref<number>(3.0);
+const SELF_RATING_OPTS = [
+  { value: 2.0, label: '2.0', sub: '刚上手' },
+  { value: 2.5, label: '2.5', sub: '会一点' },
+  { value: 3.0, label: '3.0', sub: '中等' },
+  { value: 3.5, label: '3.5', sub: '进阶' },
+  { value: 4.0, label: '4.0+', sub: '高手' },
+];
 const busy = ref(false);
 const { countdown, start: startCountdown } = useSmsCountdown();
 
@@ -151,11 +166,17 @@ const standalone = computed(
 
 /* ---- 草稿：本机持久化（断网重进内容还在）。
      打字密集场景，300ms 防抖再落存储，卸载/提交前 flush 补一次，防丢语义不变 ---- */
-const draft = readCardDraft<{ nickname: string; phone: string; picked: number | null }>();
+const draft = readCardDraft<{
+  nickname: string;
+  phone: string;
+  picked: number | null;
+  selfRating: number;
+}>();
 if (draft) {
   nickname.value = draft.nickname ?? '';
   phone.value = draft.phone ?? '';
   picked.value = draft.picked ?? null;
+  selfRating.value = draft.selfRating ?? 3.0;
 }
 let draftTimer: ReturnType<typeof setTimeout> | null = null;
 let draftDirty = false;
@@ -166,9 +187,14 @@ function flushDraft(): void {
   }
   if (!draftDirty) return;
   draftDirty = false;
-  writeCardDraft({ nickname: nickname.value, phone: phone.value, picked: picked.value });
+  writeCardDraft({
+    nickname: nickname.value,
+    phone: phone.value,
+    picked: picked.value,
+    selfRating: selfRating.value,
+  });
 }
-watch([nickname, phone, picked], () => {
+watch([nickname, phone, picked, selfRating], () => {
   draftDirty = true;
   if (draftTimer) clearTimeout(draftTimer);
   draftTimer = setTimeout(flushDraft, 300);
@@ -200,6 +226,7 @@ async function onSubmitCard(): Promise<void> {
       nickname_set: !!nickname.value.trim(),
       chibi: picked.value != null ? PRESETS[picked.value].c : undefined,
       chibi_set: picked.value != null,
+      self_rating: selfRating.value,
     });
     afterSuccess(
       props.pendingJoin

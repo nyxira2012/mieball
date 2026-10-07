@@ -1,10 +1,11 @@
 <template>
-  <!-- 榜单单行（alpha.html:1765-1773 rankRowHtml 逐字）：
-       名次大字 · 头像 40 · 名 + 我徽章 + ♥ + TierBadge · Last5Dots + 近 5 场 · N 战 ·
-       右列 fmtScore + (NTRP 单位) + 本月涨跌。前三 top-1/2/3 高亮，新批次行 lazy-in 入场。 -->
+  <!-- 榜单单行（alpha.html:1765-1773 rankRowHtml 结构 · 1.4 批4v1 切 DUPR）：
+       名次大字（参考区行 unrated → 「—」不参与排名）· 头像 40 · 名 + 我徽章 + ♥ + 未定级 +
+       TierBadge（duprTier 档名）· Last5Dots + 近 5 场 · N 战 ·
+       右列 fmtDupr + DUPR 单位 + 本月涨跌（Elo 轨口径）。前三 top-1/2/3 高亮，新批次行 lazy-in 入场。 -->
   <view class="rank-row" :class="[topCls, { 'lazy-in': lazy }]" @click="emit('profile', user.id)">
-    <!-- alpha:1769 名次 -->
-    <view class="no">{{ index + 1 }}</view>
+    <!-- alpha:1769 名次（参考区行无位次） -->
+    <view class="no">{{ unrated ? '—' : index + 1 }}</view>
     <ChibiAvatar :chibi="user.chibi" :size="40" />
     <view class="mid">
       <view class="nm">
@@ -12,7 +13,8 @@
         <!-- alpha:1770 u.id===CURRENT_USER_ID → 「我」徽章 · liked → ♥ -->
         <text v-if="user.id === userStore.me.id" class="badge fire">我</text>
         <text v-if="user.liked" class="hrt">♥</text>
-        <TierBadge :tier="tier(user.elo)" />
+        <TierBadge :tier="duprTier(user.dupr ?? 3.0)" />
+        <text v-if="user.provisional" class="prov">未定级</text>
       </view>
       <view class="st">
         <Last5Dots :results="user.last5 || []" />
@@ -20,9 +22,8 @@
       </view>
     </view>
     <view class="elo">
-      <text class="sc">{{ fmtScore(user.elo, ui.scoreMode) }}</text>
-      <!-- alpha:1772 ntrp 分制下才带 NTRP 角标 -->
-      <text v-if="ui.scoreMode === 'ntrp'" class="unit">NTRP</text>
+      <text class="sc">{{ fmtDupr(user.dupr ?? 3.0) }}</text>
+      <text class="unit">DUPR</text>
       <text class="d" :class="user.month >= 0 ? 'up' : 'dn'">
         {{ user.month >= 0 ? '▲' : '▼' }}{{ Math.abs(user.month) }} 本月
       </text>
@@ -31,33 +32,45 @@
 </template>
 
 <script setup lang="ts">
-/* 评分排行单行 RankRow（alpha.html:1765-1773 · P9）。business 件：组合 ChibiAvatar/TierBadge/Last5Dots。 */
+/* 评分排行单行 RankRow（alpha.html:1765-1773 · P9 · 1.4 批4v1 切 DUPR）。
+   business 件：组合 ChibiAvatar/TierBadge/Last5Dots。
+   unrated=参考区行（1.4 §6：未满 5 场不参与排名，位次列「—」、不吃前三高亮）。 */
 import { computed } from 'vue';
 import type { PropType } from 'vue';
 import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
 import TierBadge from '@/components/ui/TierBadge.vue';
 import Last5Dots from '@/components/ui/Last5Dots.vue';
-import { useUiStore } from '@/stores/ui';
 import { useUserStore } from '@/stores/user';
 import type { User } from '@/api/types';
-import { fmtScore, tier } from '@/utils/elo';
+import { duprTier, fmtDupr } from '@/utils/elo';
 
 const props = defineProps({
   /** 榜单行球员（rankRows 过滤 !shadow && play>0 后的有序一条） */
   user: { type: Object as PropType<User>, required: true },
   /** 0 起榜单位次（alpha:1766/1769） */
   index: { type: Number, required: true },
-  /** 本批懒加载新行 → lazy-in 入场动画（alpha:1768 isLazy） */
+  /** 本批懒加载新行 → lazy-in 入场动画（alpha:1768 isLazy，初始 5 行不带） */
   lazy: { type: Boolean, default: false },
+  /** 参考区行（未满 5 场，1.4 §6）：无位次、不参与排名 */
+  unrated: { type: Boolean, default: false },
 });
 
 const emit = defineEmits<{ (e: 'profile', userId: number): void }>();
 
-const ui = useUiStore();
 const userStore = useUserStore();
 
-/** alpha:1766 topCls = i===0?'top-1':i===1?'top-2':i===2?'top-3':'' */
-const topCls = computed(() => (props.index === 0 ? 'top-1' : props.index === 1 ? 'top-2' : props.index === 2 ? 'top-3' : ''));
+/** alpha:1766 topCls = i===0?'top-1':i===1?'top-2':i===2?'top-3':''（参考区行不吃高亮） */
+const topCls = computed(() =>
+  props.unrated
+    ? ''
+    : props.index === 0
+      ? 'top-1'
+      : props.index === 1
+        ? 'top-2'
+        : props.index === 2
+          ? 'top-3'
+          : '',
+);
 </script>
 
 <style lang="scss" scoped>
@@ -179,6 +192,15 @@ const topCls = computed(() => (props.index === 0 ? 'top-1' : props.index === 1 ?
 .badge.fire {
   background: rgba(255, 90, 54, 0.18);
   color: var(--coral);
+}
+/* 未定级小 chip（1.4 §5：DUPR 可信度两态，浅丁香角标） */
+.prov {
+  font-family: var(--mono);
+  font-size: 9px;
+  border-radius: 6px;
+  padding: 1px 5px;
+  background: rgba(184, 169, 255, 0.15);
+  color: var(--lilac);
 }
 /* alpha.html:519 懒加载新行入场（rankFadeIn keyframes 全局 animations.scss alpha:520） */
 .rank-row.lazy-in {

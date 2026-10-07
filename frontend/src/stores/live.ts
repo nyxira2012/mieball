@@ -72,7 +72,7 @@ import {
   pById,
   usedCourts,
 } from "@/utils/rotate";
-import { ELO_INIT } from "@/utils/elo";
+import { ELO_INIT, GUEST_DUPR } from "@/utils/elo";
 import { recommend } from "@/utils/recommend";
 import { isOrg } from "@/utils/format";
 import { toIso } from "@/utils/time";
@@ -1033,7 +1033,7 @@ export const useLiveStore = defineStore("live", () => {
         id: -1,
         name: "—",
         elo: 0,
-        dupr: 3.0, // 查无行展示兜底＝GUEST_DUPR（1.4 §4）
+        dupr: GUEST_DUPR, // 查无行展示兜底＝访客标准分（1.4 §4）
         play: 0,
         win: 0,
         month: 0,

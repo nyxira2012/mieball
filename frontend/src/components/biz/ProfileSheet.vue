@@ -22,15 +22,15 @@
           <text v-if="isMe" class="badge fire">我</text>
           <text v-if="u.liked" class="hrt">♥</text>
         </view>
-        <!-- alpha:1906-1910 徽章 + 大分数 + 单位 + 本月涨跌 -->
+        <!-- alpha:1906-1910 徽章 + 大分数 + 单位 + 本月涨跌（1.4 批4v1：主数字/徽章切 DUPR，
+             涨跌仍是 Elo 轨口径 1.4 §6；未定级小 chip 1.4 §5） -->
         <view class="scorerow">
-          <TierBadge v-if="played" :tier="tier(u.elo)" />
+          <TierBadge v-if="played" :tier="duprTier(u.dupr ?? 3.0)" />
           <text class="big">{{
-            played ? fmtScore(u.elo, ui.scoreMode) : "—"
+            played ? fmtDupr(u.dupr ?? 3.0) : "—"
           }}</text>
-          <text class="unit">{{
-            played ? (ui.scoreMode === "elo" ? "ELO" : "NTRP") : "起步"
-          }}</text>
+          <text class="unit">{{ played ? "DUPR" : "起步" }}</text>
+          <text v-if="played && u.provisional" class="prov">未定级</text>
           <text v-if="played" class="d" :class="u.month >= 0 ? 'up' : 'dn'">
             {{ u.month >= 0 ? "▲" : "▼" }}{{ Math.abs(u.month) }} 本月
           </text>
@@ -68,9 +68,9 @@
 </template>
 
 <script setup lang="ts">
-/* 球员档案 ProfileSheet（alpha.html:1891-1929 · P9）。
+/* 球员档案 ProfileSheet（alpha.html:1891-1929 · P9 · 1.4 批4v1 主数字切 DUPR）。
    SheetHost 传 userId（SheetPayload {type:'profile',userId} 约定不变）；
-   findUser（现场名册优先）取人；分数/段位随 ui.scoreMode 全局联动。 */
+   findUser（现场名册优先）取人；未开局沿「—/起步」分支改 DUPR 语义。 */
 import { computed } from "vue";
 import type { PropType } from "vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
@@ -79,7 +79,7 @@ import Last5Dots from "@/components/ui/Last5Dots.vue";
 import { useUserStore } from "@/stores/user";
 import { useGameStore } from "@/stores/game";
 import { useUiStore } from "@/stores/ui";
-import { fmtScore, tier } from "@/utils/elo";
+import { duprTier, fmtDupr } from "@/utils/elo";
 import { freqName, slotName } from "@/utils/format";
 
 const props = defineProps({
@@ -177,6 +177,15 @@ function onInvite(): void {
   font-family: var(--mono);
   font-size: 10px;
   color: var(--dim);
+}
+/* 未定级小 chip（1.4 §5：DUPR 可信度两态，浅丁香角标） */
+.prov {
+  font-family: var(--mono);
+  font-size: 9px;
+  border-radius: 6px;
+  padding: 1px 5px;
+  background: rgba(184, 169, 255, 0.15);
+  color: var(--lilac);
 }
 /* alpha.html:449 涨跌两色 */
 .d.up {

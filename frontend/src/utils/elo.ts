@@ -54,6 +54,10 @@ export const ELO_FLOOR = 800; // 1.4 §3：地板 800（娱乐轨收窄波动区
 
 /* ───────── DUPR 展示（1.4 §1：2.0-8.0 三位小数；消费方批4v1 接线）───────── */
 
+/** 访客/查无者 DUPR 标准分（1.4 §4 恒 3.0 = 自评默认档；对齐后端 dupr.py GUEST_DUPR）。
+    rankOf/live 兜底/mock zhao 三处消费 */
+export const GUEST_DUPR = 3.0;
+
 /** DUPR 主数字：三位小数（1.4 §1 形态，如 3.52 → "3.520"） */
 export function fmtDupr(d: number): string {
   return d.toFixed(3);
@@ -72,6 +76,24 @@ export function duprTier(d: number): string {
   if (d >= 2.5) return "2.5";
   return "2.0";
 }
+
+/** DUPR 段位徽章配色（按档名给，TierBadge 消费）：沿旧 TIER_BG/TIER_FG 风格重排——
+    4.0+ 最高档珊瑚、3.5 柠檬、3.0 电青、2.5 丁香、2.0 入门近中性；
+    档名单一源在 duprTier，键不会 miss。旧 TIER_BG/TIER_FG 映射归批4v2 删 */
+export const DUPR_TIER_BG: Record<string, string> = {
+  "4.0+": "rgba(255,90,54,.2)",
+  "3.5": "rgba(255,212,0,.18)",
+  "3.0": "rgba(111,231,255,.16)",
+  "2.5": "rgba(184,169,255,.16)",
+  "2.0": "rgba(245,241,232,.1)",
+};
+export const DUPR_TIER_FG: Record<string, string> = {
+  "4.0+": "var(--coral)",
+  "3.5": "var(--lemon)",
+  "3.0": "var(--ice)",
+  "2.5": "var(--lilac)",
+  "2.0": "var(--dim)",
+};
 
 export interface EloPlayer {
   elo: number;

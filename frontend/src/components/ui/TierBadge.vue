@@ -1,15 +1,16 @@
 <template>
-  <view class="tierb" :style="{ background: TIER_BG[tier], color: TIER_FG[tier] }">{{ tier }}</view>
+  <view class="tierb" :style="{ background: DUPR_TIER_BG[tier], color: DUPR_TIER_FG[tier] }">{{ tier }}</view>
 </template>
 
 <script setup lang="ts">
-/* alpha.html:408-409 .tierb 段位徽章 + 861-862 TIER_BG/TIER_FG 配色（配色唯一真值在 utils/elo.ts）
-   段位值由 utils/elo.ts 的 tier()（P2）从 Elo 分算出后传入，本组件只管展示 */
+/* alpha.html:408-409 .tierb 段位徽章。批4v1 起吃 string 档名（"2.0"~"4.0+"，DUPR 段位口径），
+   档名由 utils/elo.ts 的 duprTier() 算出后传入，配色唯一真值也在 utils/elo.ts
+   （DUPR_TIER_BG/FG；旧 Tier 型与 TIER_BG/TIER_FG 归批4v2 删），本组件只管展示 */
 import type { PropType } from 'vue';
-import { TIER_BG, TIER_FG, type Tier } from '@/utils/elo';
+import { DUPR_TIER_BG, DUPR_TIER_FG } from '@/utils/elo';
 
 defineProps({
-  tier: { type: String as PropType<Tier>, required: true },
+  tier: { type: String as PropType<string>, required: true },
 });
 </script>
 

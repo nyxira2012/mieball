@@ -19,7 +19,7 @@
               ></view
             >
             <view class="ps-elo"
-              ><text class="elo-b">{{ p.elo || "新" }}</text> · 已打
+              ><text class="elo-b">{{ fmtDupr1(p.dupr ?? 3.0) }}</text> · 已打
               {{ p.play }} 场<text v-if="p.shadow" class="ps-guest">
                 · 访客（不计积分）</text
               ></view
@@ -93,7 +93,7 @@
                 ><text v-if="r.frozen" class="row-frozen">待确认</text></view
               >
               <view class="row-meta"
-                >已打 {{ r.u.play }} 场 · ELO {{ r.u.elo || "—" }}</view
+                >已打 {{ r.u.play }} 场 · DUPR {{ fmtDupr1(r.u.dupr ?? 3.0) }}</view
               >
             </view>
             <text class="row-go">换 ‹</text>
@@ -126,6 +126,7 @@ import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
 import { pById } from "@/utils/rotate";
+import { fmtDupr1 } from "@/utils/elo";
 import { isMe, isOrg } from "@/utils/format";
 
 const props = defineProps({

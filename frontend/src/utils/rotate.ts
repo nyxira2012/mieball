@@ -1,6 +1,7 @@
 /* 发牌/轮换引擎（2.4 多片并行 · 纯函数：live 状态作为参数传入、原地更新 —— 与 live store 共用同一份引用）。
    旧串行引擎（avail/fillCourts/nextMatch/maxCourts + cur/lastWinners）已随批2 删除。 */
 import type { LiveCourt, LiveState, PairingMode, User } from '@/api/types';
+import { GUEST_DUPR } from './elo';
 
 /** 按找现场玩家（alpha:1491 pById） */
 export function pById(live: LiveState, id: number): User | undefined {
@@ -17,9 +18,9 @@ export function usedCourts(live: LiveState): number {
    合同 docs/2.4 §4.4-4.8：只管轮换，Elo/history/round 落账归 store 编排。 */
 
 /** 均衡排序用分（1.4 §6 消费矩阵：配对吃 DUPR——未定级以自评档代位）：dupr 直用，
-    访客/缺数兜底 3.0（对齐后端 GUEST_DUPR，1.4 §4 访客 DUPR 恒 3.0） */
+    访客/缺数兜底 3.0（GUEST_DUPR，1.4 §4 访客 DUPR 恒 3.0） */
 export function rankOf(p: User | undefined): number {
-  return p?.dupr ?? 3.0;
+  return p?.dupr ?? GUEST_DUPR;
 }
 
 /** 每片人数单一源（双打 4 / 单打 2）——myRound/差人卡/发牌同口径，消灭 4 人硬编码 */

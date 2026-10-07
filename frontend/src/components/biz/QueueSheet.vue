@@ -1,6 +1,6 @@
 <template>
   <!-- 完整候场队列抽屉（temp/打球页原型 sh-queue 逐字）：首 N 行 .next 高亮（已排进下一场，
-       N=每片人数，双打 4 / 单打 2——2.4 批2 size-aware），每行 mono 小注（已打/ ELO）+
+       N=每片人数，双打 4 / 单打 2——2.4 批2 size-aware），每行 mono 小注（已打 / DUPR 一位小数）+
        右侧 tag（下一场 / 我还有 N 轮）；点行开点人抽屉（页面编排）。 -->
   <AppSheet
     :visible="visible"
@@ -31,7 +31,7 @@
             ></view
           >
           <view class="meta"
-            >已打 {{ r.u.play }} 场 · ELO {{ r.u.elo || "—" }}</view
+            >已打 {{ r.u.play }} 场 · DUPR {{ fmtDupr1(r.u.dupr ?? 3.0) }}</view
           >
         </view>
         <text v-if="r.id === U.me.id && myRound != null" class="tag tag-me"
@@ -53,6 +53,7 @@ import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
 import { courtSize } from "@/utils/rotate";
+import { fmtDupr1 } from "@/utils/elo";
 import { U } from "@/api";
 
 defineProps({

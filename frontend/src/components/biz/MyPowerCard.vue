@@ -1,13 +1,14 @@
 <template>
-  <!-- 我的战力卡（alpha.html:1844-1861 逐字结构）：
+  <!-- 我的战力卡（alpha.html:1844-1861 结构 · 1.4 批4v1 主数字切 DUPR）：
        rank 位 #N / 未开局 — · ChibiAvatar 76（点卡开我的档案、点头像去「我的」页 stopPropagation alpha:1847）·
-       段位 TierBadge / 未开局 ? 徽章 · 大分数 fmtScore + ELO/NTRP 单位 · 本月涨跌 ▲▼ ·
+       段位 TierBadge（duprTier 档名）+ 未定级标记 · 大分数 fmtDupr + DUPR 单位 ·
+       本月涨跌 ▲▼（Elo 轨口径，1.4 §6 消费矩阵）·
        底部运动数据行 recentStats（alpha:1858-1860，未开局两态文案逐字）。 -->
   <view class="mycardp" :class="`bg-${me.cardBg || 'neon'}`" @click="emit('profile')">
     <view class="top-row">
-      <!-- alpha:1846 rkbox：#N 或 —（未开局） -->
+      <!-- alpha:1846 rkbox：#N 或 —（未开局/未入榜参考区） -->
       <view class="rkbox">
-        <view class="rk">{{ played ? '#' + rank : '—' }}</view>
+        <view class="rk">{{ played && rank > 0 ? '#' + rank : '—' }}</view>
         <view class="rl">MY RANK</view>
       </view>
       <!-- alpha:1847 av：event.stopPropagation();go('mine') → goTab 切我的页（nav 单一源） -->
@@ -18,14 +19,15 @@
       <view class="info">
         <view class="nrow">
           <text class="ttl">{{ played ? '我的战力卡' : '我的起步分' }}</text>
-          <!-- alpha:1851 已开局 tierB(me.elo)，未开局灰 ? 徽章 -->
-          <TierBadge v-if="played" :tier="tier(me.elo)" />
+          <!-- 1.4 §2 段位档名；未定级小 chip（1.4 §5 可信度两态） -->
+          <TierBadge v-if="played" :tier="duprTier(me.dupr ?? 3.0)" />
           <text v-else class="tierb-fb">?</text>
+          <text v-if="played && me.provisional" class="prov">未定级</text>
         </view>
-        <!-- alpha:1852-1855 myscore -->
+        <!-- alpha:1852-1855 myscore：DUPR 三位小数主数字（未开局/未定级 dim） -->
         <view class="myscore">
-          <text class="big" :class="{ dim: !played }">{{ fmtScore(me.elo, ui.scoreMode) }}</text>
-          <text class="unit">{{ ui.scoreMode === 'elo' ? 'ELO' : 'NTRP' }}</text>
+          <text class="big" :class="{ dim: !played || me.provisional }">{{ fmtDupr(me.dupr ?? 3.0) }}</text>
+          <text class="unit">DUPR</text>
           <text v-if="played" class="d" :class="me.month >= 0 ? 'up' : 'dn'">
             {{ me.month >= 0 ? '▲' : '▼' }}{{ Math.abs(me.month) }} 本月
           </text>
@@ -39,14 +41,14 @@
 </template>
 
 <script setup lang="ts">
-/* 我的战力卡（alpha.html:1844-1861 · P9）。business 件：组合 ui 件（ChibiAvatar/TierBadge）+ 业务数据。
-   rank 位（myRank）由 power 页按 rankRows（alpha:865/1826）算好传入。 */
+/* 我的战力卡（alpha.html:1844-1861 · P9 · 1.4 批4v1 主数字切 DUPR）。business 件：
+   组合 ui 件（ChibiAvatar/TierBadge）+ 业务数据。rank 位（myRank）由 power 页按
+   rankRows 算好传入（0=不在榜：未开局或未满 5 场的参考区）。 */
 import { computed } from 'vue';
 import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
 import TierBadge from '@/components/ui/TierBadge.vue';
 import { useUserStore } from '@/stores/user';
-import { useUiStore } from '@/stores/ui';
-import { fmtScore, tier } from '@/utils/elo';
+import { duprTier, fmtDupr } from '@/utils/elo';
 import { goTab } from '@/utils/nav';
 
 defineProps({
@@ -57,7 +59,6 @@ defineProps({
 const emit = defineEmits<{ (e: 'profile'): void }>();
 
 const userStore = useUserStore();
-const ui = useUiStore();
 const me = userStore.me;
 
 /** alpha:1828 played = me.play>0 */
@@ -184,6 +185,16 @@ const telemetry = computed(() =>
   vertical-align: middle;
   background: rgba(245, 241, 232, 0.1);
   color: var(--dim);
+}
+/* 未定级小 chip（1.4 §5：DUPR 可信度两态，浅丁香角标） */
+.prov {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 9px;
+  border-radius: 6px;
+  padding: 1px 5px;
+  background: rgba(184, 169, 255, 0.15);
+  color: var(--lilac);
 }
 /* alpha.html:446-448 .myscore/.big/.unit */
 .myscore {

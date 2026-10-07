@@ -25,13 +25,9 @@
             >
           </view>
         </view>
-        <!-- alpha:1842 副标题两态 -->
+        <!-- alpha:1842 副标题（1.4 批4v1 改双轨说明） -->
         <view class="sub sub-mt">
-          {{
-            ui.scoreMode === "elo"
-              ? "Elo 默认 1500 起 · 内部引擎原始分"
-              : "NTRP 国际分级 (2.0-5.0) · 排阵对位参考"
-          }}
+          DUPR 积分 2.0-8.0 管排名与配平 · 积分（Elo）另记涨跌
         </view>
       </view>
 
@@ -42,7 +38,7 @@
       <SectionTitle title="前三 · 对峙中" more="点人看档案" />
       <BrawlStage :top3="t3" @profile="openProfile" />
 
-      <!-- 评分排行（alpha:1871-1875）：前三高亮 · 懒加载每批 5 条 -->
+      <!-- 评分排行（alpha:1871-1875）：前三高亮 · 懒加载每批 5 条 · 满 5 场才入榜（1.4 §6） -->
       <SectionTitle
         title="评分排行"
         :more="`${rows.length} 球员在榜 · 前三高亮`"
@@ -77,7 +73,24 @@
         </view>
       </view>
 
-      <!-- 规则折叠（alpha:1876-1885，四条文案逐字） -->
+      <!-- 参考区（1.4 §6 榜单门槛）：打过但未满 5 场的未定级者，列此不参与排名 -->
+      <template v-if="refs.length">
+        <SectionTitle title="参考 · 未定级" :more="`满 ${RATED_PLAY} 场自动入榜`" />
+        <view class="rank-frame">
+          <view class="rank-list">
+            <RankRow
+              v-for="(u, i) in refs"
+              :key="u.id"
+              :user="u"
+              :index="i"
+              unrated
+              @profile="openProfile"
+            />
+          </view>
+        </view>
+      </template>
+
+      <!-- 规则折叠（alpha:1876-1885 结构 · 1.4 批4v1 文案改双轨说明） -->
       <view class="rulefold" :class="{ open: rOpen }">
         <view class="rfhead" @click="rOpen = !rOpen">
           <text>积分怎么算的？</text>
@@ -85,22 +98,24 @@
         </view>
         <view class="rfbody">
           <view
-            >· <text class="b">分制切换</text>：右上角开关随时切换 Elo (1500
-            起步原始分) 与 NTRP (2.0-5.0 国际分级)。</view
+            >·
+            <text class="b">双轨记分</text
+            >：同一场球落两本账——DUPR 积分管配平、榜单与段位；积分（Elo）管结束对局的涨跌爽感。</view
           >
           <view
             >·
-            <text class="b">赢强者涨得多</text
-            >：K=24，爆冷大涨、碾压小涨。</view
-          >
-          <view
-            >· <text class="b">输了不掉肉</text>：败方只扣胜方涨分的六成，地板
-            400 分。</view
+            <text class="b">DUPR 积分</text
+            >：2.0-8.0 三位小数；建号自评五档起步，满 5 场定级，只算近 30 场。</view
           >
           <view
             >·
-            <text class="b">访客按新人初始等级代入、双打按队算</text
-            >：两队人均分结算落到个人；访客不计积分不进榜。</view
+            <text class="b">积分（Elo）</text
+            >：初始 1200 · 地板 800 · K=24，赢强者涨得多；结束对局弹窗里 ± 的就是它。</view
+          >
+          <view
+            >·
+            <text class="b">访客与双打</text
+            >：双打按两队人均算、败方只扣胜方涨分的六成；访客不计分不进榜。</view
           >
         </view>
       </view>
@@ -112,8 +127,8 @@
 </template>
 
 <script setup lang="ts">
-/* 战力页（alpha.html:1824-1889 renderPower · P9）。
-   分制切换调 ui.setScoreMode（alpha:1739-1744，切档 toast 由 store 发）；
+/* 战力页（alpha.html:1824-1889 renderPower · P9 · 1.4 批4v1 榜单切 DUPR）。
+   分制切换胶囊暂留（ui.setScoreMode 不再有消费面，归批4v2 删）；
    榜单懒加载 = alpha:1774-1822 的滚动通道（§2.4：IntersectionObserver → onPageScroll 距底 160px）；
    榜单/打架图/我的卡点击 → ui.openSheet({type:'profile',userId})。 */
 import { computed, nextTick, onMounted, ref, watch } from "vue";
@@ -126,15 +141,26 @@ import SectionTitle from "@/components/ui/SectionTitle.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useUiStore } from "@/stores/ui";
 import { useUserStore } from "@/stores/user";
+import { rankOf } from "@/utils/rotate";
 
 const ui = useUiStore();
 const userStore = useUserStore();
 
-/** alpha:865 rankRows：hasPlayed（!shadow && play>0，谓词单一源在 user store），按 elo 降序 */
+/** 定级门槛（1.4 §5/§6：满 5 场入榜=定级；mock 以 play 场数近似 duprGames） */
+const RATED_PLAY = 5;
+
+/** rankRows（1.4 批4v1：消费矩阵吃 DUPR）：hasPlayed（!shadow && play>0，谓词单一源
+    在 user store）且满 5 场，按 DUPR 降序（rankOf 兜底 3.0）；不足者进参考区不参与排名 */
 const rows = computed(() =>
   Object.values(userStore.users)
-    .filter(userStore.hasPlayed)
-    .sort((a, b) => b.elo - a.elo),
+    .filter((u) => userStore.hasPlayed(u) && u.play >= RATED_PLAY)
+    .sort((a, b) => rankOf(b) - rankOf(a)),
+);
+/** 参考区（1.4 §6）：打过但未满 5 场的未定级者，同序排列但无位次 */
+const refs = computed(() =>
+  Object.values(userStore.users)
+    .filter((u) => userStore.hasPlayed(u) && u.play < RATED_PLAY)
+    .sort((a, b) => rankOf(b) - rankOf(a)),
 );
 /** alpha:1826 myRank = rows.findIndex(u=>u.id===me.id)+1（响应式 me.id） */
 const myRank = computed(
