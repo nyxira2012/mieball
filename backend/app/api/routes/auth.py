@@ -18,13 +18,16 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class CardIn(BaseModel):
-    """名片三行（4.2）。*_set 是"用户确实填了这一项"的显式标志（D5：不做值推断）。"""
+    """名片三行（4.2）。*_set 是"用户确实填了这一项"的显式标志（D5：不做值推断）。
+
+    self_rating 是建号自评五档（1.4 §5）：None=未填，语义无歧义，故不设 *_set 旗。"""
 
     phone: str
     nickname: str | None = None
     nickname_set: bool = False
     chibi: dict[str, Any] | None = None
     chibi_set: bool = False
+    self_rating: float | None = None
 
 
 class SignupIn(BaseModel):
@@ -68,6 +71,7 @@ def signup(
         nickname_set=body.card.nickname_set,
         chibi=body.card.chibi,
         chibi_set=body.card.chibi_set,
+        self_rating=body.card.self_rating,
     )
     return {"token": token, "account": view}
 

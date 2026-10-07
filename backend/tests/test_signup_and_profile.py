@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from app.db.models import Account
+
 from .conftest import me, signup
 
 
@@ -62,6 +64,42 @@ def test_logout_revokes_only_this_device(client: TestClient):
     assert client.post("/api/auth/logout", headers={"Authorization": f"Bearer {t1}"}).status_code == 200
     assert me(client, t1) is None                    # 这台失效
     assert me(client, t2) is not None                # 另一把（同设备续发的）不受影响
+
+
+# ---- 建号自评五档（1.4 §5）与名片 dupr 三件套（1.4 §6） ----
+
+
+def _self_rating_of(client: TestClient, account_id: int) -> float | None:
+    db = client.app.state.session_factory()
+    try:
+        return db.get(Account, account_id).self_rating
+    finally:
+        db.close()
+
+
+def test_signup_self_rating_tier(client: TestClient):
+    out = signup(client, "13800007771", "dev-a", self_rating=3.5)
+    acc = out["account"]
+    assert acc["dupr_rating"] == 3.5          # 起步分=自评档
+    assert acc["dupr_provisional"] is True and acc["dupr_games"] == 0
+    assert _self_rating_of(client, acc["id"]) == 3.5
+    assert me(client, out["token"])["dupr_rating"] == 3.5   # /me 同一 view 形状
+
+
+def test_signup_self_rating_invalid_rejected(client: TestClient):
+    r = client.post(
+        "/api/auth/signup",
+        json={"device_marker": "d", "card": {"phone": "13800007772", "self_rating": 4.5}},
+    )
+    assert r.status_code == 422 and r.json()["error"]["code"] == "self_rating_invalid"
+
+
+def test_signup_without_self_rating_stays_unset(client: TestClient):
+    out = signup(client, "13800007773", "dev-a")
+    acc = out["account"]
+    # 未填：列存 None，起步 3.0 由 dupr 缺行语义出（不是存 3.0 字面）
+    assert acc["dupr_rating"] == 3.0 and acc["dupr_provisional"] is True and acc["dupr_games"] == 0
+    assert _self_rating_of(client, acc["id"]) is None
 
 
 def test_profile_update_rules(client: TestClient):

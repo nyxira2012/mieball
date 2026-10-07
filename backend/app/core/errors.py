@@ -50,6 +50,11 @@ def chibi_invalid() -> ApiError:
     return ApiError(422, "chibi_invalid", "形象配置不合法")
 
 
+def self_rating_invalid() -> ApiError:
+    # 建号自评只认五档（1.4 §5），档外值一律拒
+    return ApiError(422, "self_rating_invalid", "自评档位不合法，请从五个档位里选")
+
+
 def sms_cooldown(retry_after: int) -> ApiError:
     return ApiError(429, "sms_cooldown", f"发送太频繁，{retry_after} 秒后再试")
 

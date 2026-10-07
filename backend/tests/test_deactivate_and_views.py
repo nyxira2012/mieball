@@ -29,6 +29,7 @@ def test_deactivate_anonymizes_and_releases_phone(client: TestClient, sent, fake
     acc = r.json()["account"]
     assert acc["name"] == "已注销球友" and acc["deactivated"] is True
     assert "phone_tail" not in acc and "phone" not in acc
+    assert "dupr_rating" not in acc  # 已注销不留痕：战力也一并匿名掉
 
     # 同一个号重新注册 → 全新账号（历史不继承）
     again = signup(client, phone, "dev-new")
@@ -59,9 +60,10 @@ def test_privacy_outlet_three_viewers(client: TestClient):
     out = signup(client, phone, "dev-a", nickname="国贸截击手", nickname_set=True)
     uid, token = out["account"]["id"], out["token"]
 
-    # 游客/陌生人：只有昵称+小人（+卡背），无尾号无全号
+    # 游客/陌生人：只有昵称+小人（+卡背），无尾号无全号；名片主数字 DUPR 照给（1.4 §6）
     acc = client.get(f"/api/users/{uid}").json()["account"]
     assert acc["name"] == "国贸截击手"
+    assert acc["dupr_rating"] == 3.0 and acc["dupr_provisional"] is True and acc["dupr_games"] == 0
     assert "phone" not in acc and "phone_tail" not in acc
 
     # 1.2 收口：same_game 自报参数废弃，服务端核名单——陌生人带老参数也拿不到尾号

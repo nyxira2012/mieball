@@ -24,8 +24,10 @@ from sqlalchemy.orm import Session
 
 from ..core import clock, errors
 from ..db.models import Account
+from . import dupr
 from .keys import KeyVault
 from .sms import SmsGate
+from .stats import StatsLedger
 
 PHONE_RE = re.compile(r"^1[3-9]\d{9}$")
 # 与前端 utils/chibi.ts DRESS_RANGES 同一真值（六部件各自的变体数）
@@ -74,9 +76,15 @@ class AccountBook:
         nickname_set: bool = False,
         chibi: dict[str, Any] | None = None,
         chibi_set: bool = False,
+        self_rating: float | None = None,
     ) -> tuple[dict, str]:
-        """返回 (本人视图, 钥匙原文)。手机号已被占用且不可续接时抛 phone_taken。"""
+        """返回 (本人视图, 钥匙原文)。手机号已被占用且不可续接时抛 phone_taken。
+
+        self_rating 建号自评五档（1.4 §5）：None=未填（落列 None，起步按 3.0 语义
+        由 dupr 缺行侧给），与 nickname/chibi 不同——None 即未填，无需 *_set 旗。"""
         _check_phone(phone)
+        if self_rating is not None and self_rating not in dupr.SELF_RATINGS:
+            raise errors.self_rating_invalid()
         nickname = _resolve_nickname(nickname if nickname_set else None)
         chibi_json = json.dumps(_validate_chibi(chibi) if chibi_set else DEFAULT_CHIBI)
 
@@ -91,6 +99,7 @@ class AccountBook:
             chibi=chibi_json,
             status="active",
             device_marker=device_marker,
+            self_rating=self_rating,
             created_at=clock.now(),
         )
         self.db.add(account)
@@ -216,19 +225,24 @@ class AccountBook:
         if account is None:
             raise errors.no_account()
         if account.status != "active":
-            # 已注销：任何人（含旧设备）都只见占位形象，尾号也不给
+            # 已注销：任何人（含旧设备）都只见占位形象，尾号也不给（dupr 也不给——历史不留痕）
             return {
                 "id": account.id,
                 "name": ANON_NAME,
                 "chibi": dict(DEFAULT_CHIBI),
                 "deactivated": True,
             }
+        dupr_card = StatsLedger(self.db).card(account.id)
         out: dict[str, Any] = {
             "id": account.id,
             "name": account.nickname,
             "chibi": json.loads(account.chibi),
             "card_bg": account.card_bg,
             "deactivated": False,
+            # 名片主数字 → DUPR（1.4 §6）：三件套平铺直出，缺行语义=起步分/未定级/0 场
+            "dupr_rating": dupr_card["rating"],
+            "dupr_provisional": dupr_card["provisional"],
+            "dupr_games": dupr_card["games"],
         }
         if viewer in ("self", "same_game") and account.phone:
             out["phone_tail"] = account.phone[-4:]
