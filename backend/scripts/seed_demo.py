@@ -7,9 +7,10 @@
 行为：
 - 清空全部业务表，主体经服务层重建（AccountBook.signup / GameBook.publish·join·book·lock·
   invite / IntentBook.save）——唯一键、人头账、两簿来往这些不变量由服务层自己保。
-- 三处绕服务层的直写（都带注释）：①局4 提前落定 locked、②局6 整体回拨上周并落 ended_at
-  （都是懒判定本就会做的同一动作，只是不等那一刻）、③积分底数 EloRating 直插（ 正路在
-  LiveBook 确认结算，演示底数没有可复用的服务层入口）。
+- 四处绕服务层的直写（都带注释）：①局4 提前落定 locked、②局6 整体回拨上周并落 ended_at
+  （都是懒判定本就会做的同一动作，只是不等那一刻）、③积分底数 EloRating 直插、④DUPR
+  派生分底数 DuprRating 直插（正路分别在 LiveBook/StatsLedger 确认结算，演示底数
+  没有可复用的服务层入口）。
 - 时间全部以服务层同一个 clock.now() 为基准做相对偏移：本机不是东八区时，
   publish 的「截止须晚于现在」校验也照样通过；脚本重复跑结果稳定（时间随当下顺延）。
 - 「开发库专用」是约定非防护：脚本按 MIEBALL_DB（默认开发库）清库，不拦线上误指。
@@ -351,6 +352,39 @@ def main() -> None:
             models.EloRating(account_id=uid("板鸭"), rating=1355, play=6, win=1),
             models.EloRating(
                 account_id=uid("五道口教练"), rating=1988, play=78, win=57
+            ),
+        ]
+    )
+
+    # ④DUPR 派生分底数直插（1.4：已定级满 5 场与未定级混排，games 与档位手感对齐）
+    db.add_all(
+        [
+            models.DuprRating(
+                account_id=uid("海淀反手王"), rating=4.21, games=9, updated_at=base
+            ),
+            models.DuprRating(
+                account_id=uid("二环吊球手"), rating=3.55, games=7, updated_at=base
+            ),
+            models.DuprRating(
+                account_id=uid("朝阳扣杀王"), rating=4.58, games=12, updated_at=base
+            ),
+            models.DuprRating(
+                account_id=uid("回龙观搭子"), rating=3.12, games=3, updated_at=base
+            ),
+            models.DuprRating(
+                account_id=uid("老周"), rating=3.42, games=6, updated_at=base
+            ),
+            models.DuprRating(
+                account_id=uid("小雨"), rating=2.84, games=2, updated_at=base
+            ),
+            models.DuprRating(
+                account_id=uid("Kevin"), rating=3.87, games=10, updated_at=base
+            ),
+            models.DuprRating(
+                account_id=uid("板鸭"), rating=2.97, games=1, updated_at=base
+            ),
+            models.DuprRating(
+                account_id=uid("五道口教练"), rating=4.35, games=11, updated_at=base
             ),
         ]
     )
