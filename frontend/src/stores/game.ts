@@ -352,11 +352,13 @@ export const useGameStore = defineStore("game", () => {
     ui.toast("意向已删 · 随时可以再留");
   }
 
-  /** 进行中的局（live 入口页冷启动分发在用；真局来自后端派生态） */
+  /** 进行中的局（live 入口页冷启动分发在用；真局来自后端派生态）。manual_lock 局截止前
+      簿 state 仍 open——账开即现场（2.5 §4.4），liveOpened 定值一并算数，现场页 reload
+      才不会被 onLoad 弹回约球页 */
   const liveGame = computed(
     () =>
-      games.value.find((g) => g.status === "live") ??
-      myGames.value.find((g) => g.status === "live") ??
+      games.value.find((g) => g.status === "live" || g.liveOpened) ??
+      myGames.value.find((g) => g.status === "live" || g.liveOpened) ??
       null,
   );
 

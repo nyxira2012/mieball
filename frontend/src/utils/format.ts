@@ -91,7 +91,14 @@ export function cardLiveEntry(g: Game): {
   if (g.status !== "open" && g.status !== "locked" && g.status !== "live")
     return {};
   if (g.liveOpened) return { liveEnter: true };
-  const forced = g.status !== "open";
+  // 必开与 backend/app/services/game_views.py is_forced（订场∨手动锁）同构：手动锁/订场后
+  // 截止懒判定前簿 state 仍 open，开账闸已放行——口径不同构就漏亮入口（2.5 §4.2 锁了必打、
+  // 订了场即必开；locked/live 时 forced 天然真，写全四条为可读）
+  const forced =
+    g.manualLock ||
+    !!(g.courts && g.courts.length) ||
+    g.status === "locked" ||
+    g.status === "live";
   const start = new Date(g.startAt).getTime();
   if (forced && Date.now() >= start - 2 * 3600_000) return { liveEnter: true }; // 与 backend/app/services/live.py _start_gate timedelta(hours=2) 同源——2.5 §4.2 两小时窗两端各算
   const u = untilTxt(new Date(g.startAt));

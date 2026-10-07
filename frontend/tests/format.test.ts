@@ -206,6 +206,32 @@ describe("newGameCard 三态（进入现场入口 / 倒计时 / 均无）", () =
     );
     expect(card.liveEnter).toBe(true);
   });
+
+  /* 批1 闸裂缝回归：手动锁/订场后、截止懒判定前簿 state 仍 open——必开口径必须与
+     backend is_forced（订场∨手动锁）同构，否则此窗内后端放行开账、前端不亮入口 */
+  it("open+manualLock 局进两小时窗：入口亮（必开）", () => {
+    const card = newGameCard(
+      org({ manualLock: true, startAt: hoursFromNow(1.5) }),
+    );
+    expect(card.liveEnter).toBe(true);
+    expect(card.countdown).toBeUndefined();
+  });
+
+  it("open+courts 局进两小时窗：入口亮（订场即必开）", () => {
+    const card = newGameCard(
+      org({ courts: ["3号"], startAt: hoursFromNow(1.5) }),
+    );
+    expect(card.liveEnter).toBe(true);
+    expect(card.countdown).toBeUndefined();
+  });
+
+  it("open+manualLock 局窗外：仍只是倒计时（必开也要等两小时窗）", () => {
+    const card = newGameCard(
+      org({ manualLock: true, startAt: hoursFromNow(3) }),
+    );
+    expect(card.liveEnter).toBeUndefined();
+    expect(card.countdown).toMatch(/^还有 /);
+  });
 });
 
 describe("mockGameCard（快照局 → 卡面模型：5.1 口径逐字）", () => {

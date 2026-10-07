@@ -73,7 +73,11 @@
           />
         </view>
 
-        <QueueBar @queue="liveSheet = { k: 'queue' }" @checkin="onCheckin" />
+        <QueueBar
+          @queue="liveSheet = { k: 'queue' }"
+          @checkin="onCheckin"
+          @arrive="onArriveMe"
+        />
       </view>
 
       <!-- 本地弹层：点人（含换人二段）/ 签到 / 队列 / 规则；开新的自动顶旧的（单槽） -->
@@ -258,7 +262,7 @@ function openProfile(id: number): void {
 }
 
 /** ＋到场：游客先名片建号（选项A 扫码自签到链路保留）；抽屉是代办工具（§4.3 代办到场/带访客），
-    非全权不开（A3 入口即拦，needFull 单一源）——球友自己报到走扫码 arriveMe */
+    非全权不开（A3 入口即拦，needFull 单一源）——球友自己报到走「我到了」钮或扫码 arriveMe */
 function onCheckin(): void {
   const g = L.value?.g;
   if (!g) return;
@@ -268,6 +272,19 @@ function onCheckin(): void {
   }
   if (!liveStore.needFull()) return;
   liveSheet.value = { k: "checkin" };
+}
+
+/** 我到了（A1 自己那行的醒目签到键；§5-2 断裂修复）：显式点一下才算签（§4.2 深链不自动签）。
+    已登录成员直走 arriveMe——未入册空降建行、在册未到 setCheck 自报、已到场吃
+    「你已经在场了」句，全在链内；游客照旧先名片建号（同 ＋到场，建号成功自动签到） */
+function onArriveMe(): void {
+  const g = L.value?.g;
+  if (!g) return;
+  if (session.isGuest) {
+    ui.signupThen({ pendingCheckin: { gameId: g.id } });
+    return;
+  }
+  void liveStore.arriveMe(g.id);
 }
 
 /** 规则抽屉入口（2.4 §4.1 推翻 2.2 批1 入口拦截）：球友照开、抽屉内只读化

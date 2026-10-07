@@ -354,3 +354,32 @@ describe('feePreview / setFee（补填链，1.3 §4.5）', () => {
     expect(ui.toastMsg).toBe('费用已定为 ¥0 · 免费场，不出账');
   });
 });
+
+describe('liveGame（live 入口页冷启动分发）', () => {
+  it('账开（live_opened）而簿 state 仍 open 的 manual_lock 局也算进行中：reload 不弹回约球页', async () => {
+    api.apiListGames.mockResolvedValue([
+      mkView({ id: 1, status: 'open', manual_lock: true, live_opened: true }),
+    ]);
+    const { store } = await loadStore();
+    await store.loadGames();
+    expect(store.liveGame?.id).toBe(1);
+  });
+
+  it('games 无命中时回落 myGames；status=live 照常命中', async () => {
+    api.apiListGames.mockResolvedValue([]);
+    api.apiMyGames.mockResolvedValue([mkView({ id: 2, status: 'live' })]);
+    const { store } = await loadStore();
+    await store.loadGames();
+    await store.loadMine();
+    expect(store.liveGame?.id).toBe(2);
+  });
+
+  it('普通 open 局（未锁未订未开账）：不命中', async () => {
+    api.apiMyGames.mockResolvedValue([
+      mkView({ id: 3, status: 'open', live_opened: false }),
+    ]);
+    const { store } = await loadStore();
+    await store.loadMine();
+    expect(store.liveGame).toBeNull();
+  });
+});

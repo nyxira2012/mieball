@@ -1,6 +1,7 @@
 <template>
   <!-- 块三置底候场条（temp/打球页原型 .queuebar 逐字）：下一场头像×4 柠檬描边叠压 +
-       我的轮次一句话 + ＋到场钮。点队列区开完整队列抽屉，＋到场开签到抽屉（页面编排）。 -->
+       我的轮次一句话 + 「我到了」自签到钮 + ＋到场钮。点队列区开完整队列抽屉，
+       我到了走自签到链（页面编排）、＋到场开代办签到抽屉（页面编排）。 -->
   <view v-if="L" class="queuebar">
     <view class="q-mid" @click="emit('queue')">
       <view class="q-label">{{ L.queue.length ? '下一场' : '全员都在场上' }}</view>
@@ -16,13 +17,14 @@
       </view>
     </view>
     <view class="q-me" :class="{ hot: myRound === 1 }" @click="emit('queue')">{{ meTxt }}</view>
+    <view class="q-arrive" @click.stop="emit('arrive')">我到了</view>
     <view class="q-check" @click.stop="emit('checkin')">＋ 到场</view>
   </view>
 </template>
 
 <script setup lang="ts">
-/* 置底候场条（2.1 §3 · 2.4 批2 size-aware）：无 props，读 live store；emit queue/checkin
-   由页面开对应抽屉。下一场头像数=每片人数（courtSize：双打 4 / 单打 2，单一源在引擎）。
+/* 置底候场条（2.1 §3 · 2.4 批2 size-aware）：无 props，读 live store；emit queue/arrive/checkin
+   由页面开对应抽屉/走自签到。下一场头像数=每片人数（courtSize：双打 4 / 单打 2，单一源在引擎）。
    我的轮次三态：队列里「还有 N 轮到我」（=1 加粗强调）/ 场上「场上打拼中」/ 未签到「还没签到」。 */
 import { computed } from 'vue';
 import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
@@ -30,7 +32,11 @@ import { useLiveStore, isArrived } from '@/stores/live';
 import { courtSize } from '@/utils/rotate';
 import { U } from '@/api';
 
-const emit = defineEmits<{ (e: 'queue'): void; (e: 'checkin'): void }>();
+const emit = defineEmits<{
+  (e: 'queue'): void;
+  (e: 'arrive'): void;
+  (e: 'checkin'): void;
+}>();
 
 const liveStore = useLiveStore();
 const L = computed(() => liveStore.live);
@@ -106,6 +112,23 @@ const meTxt = computed(() => {
 .q-me.hot {
   font-size: 13px;
   text-shadow: 0 0 12px rgba(255, 212, 0, 0.55);
+}
+/* 「我到了」自签到钮（A1 自己那行的醒目签到键）：实心柠檬压过描边的代办钮——
+   签到是球友进场的主动作；对已签到者不隐藏，点了吃 arriveMe 现有「你已经在场了」句 */
+.q-arrive {
+  flex: none;
+  background: var(--lemon);
+  color: #1b1b1d;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--sans);
+  border-radius: 12px;
+  padding: 9px 13px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.q-arrive:active {
+  transform: scale(0.93);
 }
 .q-check {
   flex: none;
