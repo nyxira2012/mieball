@@ -10,12 +10,13 @@
       </view>
     </template>
 
-    <!-- ===== delete：应付提示（提示去结清，不硬拦——别人的账不受你注销影响） ===== -->
-    <template v-else-if="step === 'guard' && dueTotal > 0">
+    <!-- ===== delete：注销双检提示（1.3 §4.8：未结清应付 + 没收完应收，提醒一次
+         不拦死——仍可继续注销） ===== -->
+    <template v-else-if="step === 'guard' && guardTotal > 0">
       <view class="sheet-t">注销账号</view>
-      <view class="sheet-hint">还有应付 ¥{{ dueTotal }} 未结清 · 建议先结清再走，账目两清不扯皮</view>
+      <view class="sheet-hint">{{ guardHint }}</view>
       <view class="btns">
-        <AppButton variant="ghost" class="flex1" @click="onGoSettle">去结清 ¥{{ dueTotal }}</AppButton>
+        <AppButton variant="ghost" class="flex1" @click="onGoSettle">去处理 ¥{{ guardTotal }}</AppButton>
         <AppButton variant="burn" class="flex1" @click="step = 'explain'">仍要注销</AppButton>
       </view>
     </template>
@@ -70,8 +71,9 @@
 </template>
 
 <script setup lang="ts">
-/* 账号弹层 AccountSheet（1.1/5.1 对齐）：logout 单步 / delete 应付提示(不硬拦) → 后果说明
-   → 二次确认 → 短信验证本人。动作全走 session store（深模块）；守卫态只提示不阻拦。 */
+/* 账号弹层 AccountSheet（1.1/5.1 对齐 · 1.3 §4.8 双检）：logout 单步 / delete 应付+应收
+   提示(不硬拦) → 后果说明 → 二次确认 → 短信验证本人。动作全走 session store（深模块）；
+   守卫态只提示不阻拦。 */
 import { computed, ref } from 'vue';
 import type { PropType } from 'vue';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -91,11 +93,22 @@ const session = useSessionStore();
 const bill = useBillStore();
 const ui = useUiStore();
 
-/** delete 步进：guard(有应付才出现) → explain → confirm → sms；logout 不走步骤 */
+/** delete 步进：guard(有应付/应收才出现，1.3 §4.8) → explain → confirm → sms；logout 不走步骤 */
 const step = ref<'guard' | 'explain' | 'confirm' | 'sms'>('guard');
 
-/** 应付总额：store 全量口径 totalSummary（不随 period ref 漂移，勿换成 summary） */
+/** 应付/应收总额：store 全量口径 totalSummary（不随 period ref 漂移，勿换成 summary）。
+    注销双检（1.3 §4.8）：两样任一有账都先提醒去结清/收清——提醒不拦死 */
 const dueTotal = computed(() => bill.totalSummary.due);
+const recvTotal = computed(() => bill.totalSummary.receivable);
+const guardTotal = computed(() => dueTotal.value + recvTotal.value);
+
+/** 提醒句按单/双有分叉（spec 4.8：去结清 / 收清，各提各的账） */
+const guardHint = computed(() => {
+  const parts: string[] = [];
+  if (dueTotal.value > 0) parts.push(`应付 ¥${dueTotal.value} 未结清`);
+  if (recvTotal.value > 0) parts.push(`应收 ¥${recvTotal.value} 没收完`);
+  return `还有${parts.join(' · ')} · 建议先结清/收清再走，账目两清不扯皮`;
+});
 
 /** 本人手机号（注销验证码发这个号；完整号只给自己看）；打码口径在 session store 单一源 */
 const ownPhone = computed(() => session.account?.phone ?? '');
@@ -111,7 +124,7 @@ const CONSEQ = [
   { k: '形象', v: '装扮与档案匿名化，各处显示「已注销球友」' },
   { k: '打球记录', v: '历史封存不再显示，别人的战绩和积分不受影响' },
   { k: '手机号', v: '释放，将来可用同一个号注册全新账号（历史不继承）' },
-  { k: '账单', v: '已结清的留档；还有应付建议先结清' },
+  { k: '账单', v: '往来留档、名字变「已注销球友」；还有应付/应收建议先结清收清' },
 ] as const;
 
 /** 去结清：关弹层 → 账单页（导航由组件层承担，同 ConfirmSheet.goMeet 先例） */

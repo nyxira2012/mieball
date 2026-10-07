@@ -271,7 +271,7 @@ export interface BillsViewApi {
 /** 账单状态（=行四态；导出名沿 5.1 mock 期，定义体已切真形状） */
 export type BillStatus = BillKind;
 
-/** 该收按人明细一行（camel）：paidAt 有而 receivedAt 空 = 「已转 · 待收」 */
+/** 应收按人明细一行（camel）：paidAt 有而 receivedAt 空 = 「已转 · 待收」 */
 export interface BillPayer {
   accountId: number;
   name: string;

@@ -41,9 +41,19 @@
               game.feeTotal != null ? `¥${game.feeTotal}` : "未定"
             }}</view>
           </view>
-          <view v-if="game.perHead != null" class="kv">
+          <!-- A4 人均口径：未出账=预估（标「约」）；已出账=实摊（bill 块后端定格数，
+               顶层 per_head 仍是订场时按报名人数的预估，出账后弃用） -->
+          <view v-if="perHeadTxt" class="kv">
             <view class="k">人均</view>
-            <view class="v v-lemon">¥{{ game.perHead }}</view>
+            <view class="v v-lemon">{{ perHeadTxt }}</view>
+          </view>
+          <!-- 1.3 §4.1：局页「我自己那份」与账单行同一个数（含朋友份、同样带小字） -->
+          <view v-if="game.bill?.myShare != null" class="kv">
+            <view class="k">我自己那份</view>
+            <view class="v v-lemon">¥{{ game.bill.myShare }}</view>
+            <view v-if="(game.bill?.myGuestCount ?? 0) > 0" class="kv-sub"
+              >含带来的朋友 ×{{ game.bill?.myGuestCount }}</view
+            >
           </view>
           <view v-if="game.status !== 'done'" class="kv">
             <view class="k">场地</view>
@@ -185,7 +195,8 @@
           >已到截止 · 不能退出</AppChip
         >
         <!-- 锁升级三态一入口（BookingSheet；这里把动作与文案接上）。
-             live 态也开：改价窗口到散场确认前（1.3 §4.5 修订①，开打后加片/买水的钱改总价）；
+             live 态也开：改价窗口到散场确认前（1.3 §4.5 修订①，开打后加片/买水的钱改总价），
+             但文案只谈订场——空锁窗口在开打前（后端 lock 422），必打语义不再提；
              done 态走下面的补填形态——只有从未填过价的局留这一个口子 -->
         <template
           v-if="
@@ -198,9 +209,11 @@
           <AppButton variant="ghost" class="grow sure-btn" @click="onBooking">{{
             game.courts?.length
               ? `🔒 已订场 · ${game.courts.join("、")} · ¥${game.feeTotal}`
-              : game.manualLock
-                ? "🔒 已锁定必打 · 去登记场地"
-                : "🔒 锁定必打 · 可登记订场"
+              : game.status === "live"
+                ? "🏟 订场登记 · 加一片场 / 改总价"
+                : game.manualLock
+                  ? "🔒 已锁定必打 · 去登记场地"
+                  : "🔒 锁定必打 · 可登记订场"
           }}</AppButton>
         </template>
         <!-- 补填费用（1.3 §4.5）：散场过且从未填价（bill 未出、fee 未定）——只让填总价 -->
@@ -373,10 +386,21 @@ const brandB = computed(() => {
   return i >= 0 ? game.value.name.slice(i + 3) : "";
 });
 
-/* 人均口径提示：费用未定时提示截止判局；费用落定即按实际人数摊（4.7） */
+/* 人均亮数（A4：预估与实摊要分得清）：未出账=按当前名单预估标「约」；
+   已出账切 bill 块实摊定值（后端定格，界面不自算） */
+const perHeadTxt = computed(() => {
+  const g = game.value;
+  if (!g) return "";
+  if (g.bill) return `¥${g.bill.perHead}`;
+  return g.perHead != null ? `约 ¥${g.perHead}` : "";
+});
+
+/* 人均口径提示：已出账切实摊说明；未出账费用已定=按当前人数预估（原句保持兼容）；
+   费用未定时提示截止判局（4.7） */
 const perNote = computed(() => {
   const g = game.value;
   if (!g) return "";
+  if (g.bill) return "费用已出账 · 人均为实摊（按摊钱名单）";
   if (g.feeTotal != null) return `费用已落定 · 人均按当前 ${g.heads} 人摊`;
   if (g.heads < g.minPlayers && !g.forced)
     return `还差 ${g.minPlayers - g.heads} 人到最少 · 截止人数不足且未锁必打会自动终止`;
@@ -501,6 +525,12 @@ const onPlayer = (uid: number) => {
 .kv .v.v-court {
   font-size: 13px;
   line-height: 1.7;
+}
+/* 「我自己那份」小字（4.1 同款：含带来的朋友 ×N） */
+.kv .kv-sub {
+  font-size: 9px;
+  color: var(--dim);
+  margin-top: 2px;
 }
 .sub.hero-note {
   margin-top: 10px;

@@ -110,8 +110,10 @@
           @click="onSave"
           >保存 · 已订场必开</AppButton
         >
-        <!-- 空锁：已手动锁定则不再出现；点第一下只出确认，再点才落锁 -->
-        <template v-else-if="!g.manualLock">
+        <!-- 空锁：已手动锁定则不再出现；点第一下只出确认，再点才落锁。
+             窗口=开打前的工具箱三态（后端 lock 口径 TOOLBOX_STATUSES，pending 锁必打是
+             待处置出口）——开打后空锁 422，钮不露出、live 只能订场登记（book 窗到散场前） -->
+        <template v-else-if="canLock && !g.manualLock">
           <AppButton
             v-if="sureArmed"
             variant="ghost"
@@ -162,6 +164,14 @@ const busy = ref(false);
 const g = computed(() => game.findGame(props.gameId));
 const forced = computed(() => !!g.value?.forced);
 const hasBooking = computed(() => !!g.value?.courts?.length);
+/** 空锁窗口（对齐后端 TOOLBOX_STATUSES）：开打后 lock 端点 game_not_open 422 */
+const canLock = computed(
+  () =>
+    g.value != null &&
+    (g.value.status === "open" ||
+      g.value.status === "locked" ||
+      g.value.status === "pending"),
+);
 
 /** 场地号解析（公共口径）：分隔符切 → 去空 → 去重保序 */
 const courts = computed<string[]>(() => {
@@ -182,7 +192,9 @@ const feeText = ref(g.value?.feeTotal != null ? String(g.value.feeTotal) : "");
 const parseHint = computed(() =>
   courts.value.length
     ? `识别到 ${courts.value.length} 片：${courts.value.join("、")}`
-    : "不填场地号 = 只锁定必打，不登记订场",
+    : canLock.value
+      ? "不填场地号 = 只锁定必打，不登记订场"
+      : "开打后不办空锁 · 填好场地号和总价即可订场",
 );
 
 const feeHint = computed(() => {

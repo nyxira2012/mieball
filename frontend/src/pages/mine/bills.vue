@@ -1,7 +1,7 @@
 <template>
   <!-- 账单页（5.1 子页 · 1.3 批4 切真）：期间筛选 + 三数总览 + 费用未定提醒 + 谁还欠你 +
        逐笔列表（结算/收款行内动作，点行进原局详情）。数据全在 bill store（后端定值直读，
-       A4 界面不自算）；确认问句/断网重试精修批5，本批动作直调 + 整树换新 -->
+       A4 界面不自算）；终态动作先过本地确认槽（批5：问句逐字 + 在途禁用 + 失败可重试） -->
   <PageShell>
     <!-- 子页统一返回行（BackRow；uni 多页无返回手势兜底） -->
     <BackRow />
@@ -62,6 +62,9 @@
             <view class="lmain">
               <view class="gname">{{ b.gameName }}</view>
               <view class="gdate">{{ rowSub(b) }}</view>
+              <view v-if="(b.guestCount ?? 0) > 0" class="gray-flag"
+                >含带来的朋友 ×{{ b.guestCount }}</view
+              >
               <view v-if="b.peerReceived" class="gray-flag"
                 >对方已收款 · 记得回来点结算</view
               >
@@ -75,7 +78,8 @@
                 }}</view
               >
             </view>
-            <!-- 行内动作（4.3）：待付行「结算」；终态不可逆，确认问句批5 接 -->
+            <!-- 行内动作（4.3）：待付行「结算」，确认后才调 store；成功整树换、
+                 kind 翻 paid 本钮随之消失（重复点天然防重） -->
             <view
               v-if="b.kind === 'payable'"
               class="tbtn"
@@ -88,6 +92,9 @@
             <view v-for="p in b.payerRows" :key="p.accountId" class="prow">
               <view class="pcol">
                 <text class="pname">{{ p.name }}</text>
+                <text v-if="p.guestCount > 0" class="gray-flag"
+                  >含带来的朋友 ×{{ p.guestCount }}</text
+                >
                 <text v-if="p.paidAt && !p.receivedAt" class="gray-flag"
                   >已转 · 待收</text
                 >
@@ -116,6 +123,32 @@
     <view v-else class="ph retry" @click="refresh()"
       >账单没打开 · 点这里重试</view
     >
+
+    <!-- 终态确认层（4.3/4.4/A3）：先问一句（spec 逐字）→ 确认才落 → 不可撤销。
+         本地槽沿 live.vue askConfirm 先例，不进全局 SheetPayload。在途禁用双钮防双击
+         （4.10 幂等的第一道）；失败层不关，toast 后原钮可重试，行状态不变 -->
+    <AppSheet :visible="!!ask" @close="closeAsk">
+      <view v-if="ask" class="cfm">
+        <view class="sheet-t">确定要这么做？</view>
+        <view class="sheet-hint">{{ ask.msg }}</view>
+        <view class="cf-btns">
+          <AppButton
+            variant="ghost"
+            class="flex1"
+            :disabled="acting"
+            @click="closeAsk"
+            >再想想</AppButton
+          >
+          <AppButton
+            variant="burn"
+            class="flex1"
+            :disabled="acting"
+            @click="confirmGo"
+            >{{ acting ? "处理中…" : "确认" }}</AppButton
+          >
+        </view>
+      </view>
+    </AppSheet>
   </PageShell>
 </template>
 
@@ -127,6 +160,8 @@ import { onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import BackRow from "@/components/biz/BackRow.vue";
 import BillSummaryCard from "@/components/biz/BillSummaryCard.vue";
+import AppButton from "@/components/ui/AppButton.vue";
+import AppSheet from "@/components/ui/AppSheet.vue";
 import FilterChips from "@/components/ui/FilterChips.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import {
@@ -173,7 +208,8 @@ function goLogin(): void {
   uni.navigateTo({ url: "/pages/mine/login" });
 }
 
-/** 行副标题：待付写明欠谁（4.1），其余只记散场那天；带了朋友加一行小字（5.1 小改①） */
+/** 行副标题：待付写明欠谁（4.1），其余只记散场那天；
+    「含带来的朋友 ×N」小字在模板行内另起一行（4.1，复用 .gray-flag） */
 function rowSub(b: Bill): string {
   const day = dayTxt(b.endedDay);
   return (b.kind === "payable" || b.kind === "paid") && b.payeeName
@@ -206,12 +242,42 @@ function amtTxt(b: Bill): string {
   return b.kind === "received" ? `✓ ¥${b.amount}` : `¥${b.amount}`;
 }
 
-/** 两向记账动作：store 内调 API + 整树换新 + toast；失败原样抛，这里兜 toast */
+/** 两向记账动作（4.3/4.4）：终态不可逆，先过一句确认（spec 逐字），确认才调 store。
+    动作闭包在问句弹出时抓定行 id——层开着时树变了也照原行落账（后端幂等/404 兜底） */
 function onSettle(b: Bill): void {
-  bill.settleBill(b.gameId).catch((e) => ui.toast(errText(e)));
+  askConfirm("钱已经转出了吗？点了就不能改回", () => bill.settleBill(b.gameId));
 }
 function onReceive(b: Bill, p: BillPayer): void {
-  bill.receivePayer(b.gameId, p.accountId).catch((e) => ui.toast(errText(e)));
+  askConfirm("钱已经收到了吗？点了就不能改回", () =>
+    bill.receivePayer(b.gameId, p.accountId),
+  );
+}
+
+/** 本地确认槽（A3）：msg + 动作，确认才跑；action 成功即关层（整树已在 store 换新） */
+const ask = ref<{ msg: string; action: () => Promise<void> } | null>(null);
+const acting = ref(false);
+
+function askConfirm(msg: string, action: () => Promise<void>): void {
+  ask.value = { msg, action };
+}
+
+function closeAsk(): void {
+  if (acting.value) return; // 请求在途不许半路抽手——成没成要等响应落地才知道
+  ask.value = null;
+}
+
+async function confirmGo(): Promise<void> {
+  if (!ask.value || acting.value) return;
+  acting.value = true;
+  try {
+    await ask.value.action();
+    ask.value = null;
+  } catch (e) {
+    // 4.10：断网/失败行状态不变（整树只在成功响应后换），层留着原钮重试
+    ui.toast(errText(e));
+  } finally {
+    acting.value = false;
+  }
 }
 </script>
 
@@ -419,5 +485,14 @@ function onReceive(b: Bill, p: BillPayer): void {
 .retry {
   cursor: pointer;
   text-decoration: underline;
+}
+
+/* ---------- 终态确认层（壳样式走全局 .sheet-t/.sheet-hint；双钮排同 live.vue 确认槽） ---------- */
+.cf-btns {
+  display: flex;
+  gap: 10px;
+}
+.flex1 {
+  flex: 1;
 }
 </style>

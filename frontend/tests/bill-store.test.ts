@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import type { BillPayerApi, BillsViewApi, BillRowApi } from "@/api/types";
 import { demoBillsView } from "@/api/mock";
+import { ApiError } from "@/api/http";
 
 /* 1.3 批4 切真重写：bill store 动作全是真接口调用——api 层整体 mock，用例喂 crafted
    BillsViewApi（形状与后端 bills.py view 输出逐字对齐），测的是游客回落演示（4.9）、
@@ -187,7 +188,7 @@ describe("登录读链（三数/rows/debtors 直读定值，A4）", () => {
         period: p as "7d" | "30d" | "all",
         summary:
           p === "all"
-            ? { due: 999, paid: 0, receivable: 0 }
+            ? { due: 999, paid: 0, receivable: 321 }
             : { due: 1, paid: 0, receivable: 0 },
       }),
     );
@@ -198,6 +199,17 @@ describe("登录读链（三数/rows/debtors 直读定值，A4）", () => {
     expect(api.apiBills).toHaveBeenLastCalledWith("all");
     expect(store.summary.due).toBe(1); // 账单页卡随筛选
     expect(store.totalSummary.due).toBe(999); // 我的页卡/注销守卫看全部
+    expect(store.totalSummary.receivable).toBe(321); // 注销双检（1.3 §4.8）：没收完的应收也在全量口径
+  });
+});
+
+describe("N2 化石清理：calcPeriodFrom 零外部消费，收归模块私有", () => {
+  it("模块出口不再含 calcPeriodFrom；PERIOD_FROM/PERIOD_OPTS 仍导出（logs 页契约）", async () => {
+    const mod = await import("@/stores/bill");
+    expect(Object.keys(mod)).not.toContain("calcPeriodFrom");
+    expect(Object.keys(mod)).toEqual(
+      expect.arrayContaining(["PERIOD_FROM", "PERIOD_OPTS"]),
+    );
   });
 });
 
@@ -315,5 +327,21 @@ describe("settle / receive（调 API + 响应整树换新）", () => {
       "网络不给力，请稍后再试",
     );
     expect(store.view).toBe(before); // 失败不换树
+  });
+
+  it("receive 断网（4.10）：真实 ApiError 形状上抛、文案 spec 逐字（errText 直出）、视图不动可重试", async () => {
+    const { store, session } = await loadStore();
+    session.status = "ready";
+    api.apiBills.mockResolvedValue(mkView());
+    await store.load();
+    const before = store.view;
+    // http.ts 断网路抛 ApiError("network", …)，页面 catch 里 errText(e) 原样进 toast
+    api.apiBillReceive.mockRejectedValue(
+      new ApiError("network", "网络不给力，请稍后再试"),
+    );
+    await expect(store.receivePayer(seq, 5)).rejects.toThrow(
+      "网络不给力，请稍后再试",
+    );
+    expect(store.view).toBe(before); // 行状态不变，确认层留着可重试
   });
 });

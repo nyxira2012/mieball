@@ -3,7 +3,7 @@
    - 登录用户 load 失败不吞——抛给页面（A2 出错态：toast + 重试）；
    - 三数/rows/debtors/unfixed 全部直读后端定值（A4：界面不自算），期间切换=重新 load；
    - settle/receive 调后端、响应直出最新视图整树换（「应收与按人明细同一个数」单点保证；
-     确认问句/断网重试 UX 批5 精修，本批直调）；
+     确认问句/在途防双击在 bills.vue 本地确认槽——store 只管落账与 toast，失败原样上抛）；
    硬约束不变：动作只改状态与弹出文案 —— 不做路由跳转、不直接调 uni.*。 */
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
@@ -24,11 +24,9 @@ export const BILL_STATUS_NAMES: Record<BillStatus, string> = {
 export type BillPeriod = "7d" | "30d" | "all";
 
 /** 期间下界计算（含当天）：根据基准日期（mock 为 2026-10-04）动态推算 M.DD。
-    只剩打球记录页（logs）在用——记录页的期间语义是 mock 快照域，与账单真数据无关 */
-export function calcPeriodFrom(
-  days: number,
-  baseStr = MOCK_BASE_DATE_STR,
-): string {
+    模块私有（N2：导出零外部消费方——logs 只吃 PERIOD_FROM/PERIOD_OPTS），
+    PERIOD_FROM 专用；记录页的期间语义是 mock 快照域，与账单真数据无关 */
+function calcPeriodFrom(days: number, baseStr = MOCK_BASE_DATE_STR): string {
   const [y, m, d] = baseStr.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
   dt.setDate(dt.getDate() - days);
@@ -143,7 +141,7 @@ export const useBillStore = defineStore("bill", () => {
     total.value = toBillView(await apiBills("all"));
   }
 
-  /** 点「结算」（4.3）：自己那行 paid_at 置位，终态不可逆，重放幂等 */
+  /** 点「结算」（4.3）：自己那行 paid_at 置位，终态不可逆（确认步在 bills.vue），重放幂等 */
   async function settleBill(gameId: number): Promise<void> {
     if (isDemo.value) {
       ui.toast("演示数据 · 登录后才能记真账");
