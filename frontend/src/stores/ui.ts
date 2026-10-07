@@ -17,7 +17,7 @@ export const useUiStore = defineStore('ui', () => {
 
   function openSheet(p: SheetPayload): void { sheet.value = p; }
   function closeSheet(): void { sheet.value = null; }
-  /** 1.1 D3「先看后报」统一入口：游客点报名/建局/到场 → 关当前弹层开名片建号卡，
+  /** 1.1 D3「先看后报」统一入口：游客点报名/建局/留意向/到场 → 关当前弹层开名片建号卡，
       建号成功后由 SignupSheet 接着完成挂起动作（pending 原样透传）。
       此前 JoinSheet/LaunchSheet/live 页三处各手写一遍「关-开」门。 */
   function signupThen(pending: Omit<Extract<SheetPayload, { type: 'signup-card' }>, 'type'>): void {

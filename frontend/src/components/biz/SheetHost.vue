@@ -18,7 +18,7 @@
     <LaunchSheet v-else-if="s?.type === 'launch'" :game-id="s.gameId" />
     <AccountSheet v-else-if="s?.type === 'logout-confirm'" kind="logout" />
     <AccountSheet v-else-if="s?.type === 'delete-confirm'" kind="delete" />
-    <SignupSheet v-else-if="s?.type === 'signup-card'" :pending-join="s.pendingJoin" :pending-launch="s.pendingLaunch" :pending-checkin="s.pendingCheckin" />
+    <SignupSheet v-else-if="s?.type === 'signup-card'" :pending-join="s.pendingJoin" :pending-launch="s.pendingLaunch" :pending-checkin="s.pendingCheckin" :pending-intent="s.pendingIntent" />
   </AppSheet>
 </template>
 

@@ -52,10 +52,12 @@ import AppInput from '@/components/ui/AppInput.vue';
 import AppSeg from '@/components/ui/AppSeg.vue';
 import { slots as slotDefs } from '@/api';
 import { useGameStore } from '@/stores/game';
+import { useSessionStore } from '@/stores/session';
 import { useUiStore } from '@/stores/ui';
 import { errText } from '@/api/http';
 
 const game = useGameStore();
+const session = useSessionStore();
 const ui = useUiStore();
 const busy = ref(false);
 
@@ -79,10 +81,21 @@ function ifTog(k: string): void {
   else ifSlots.value = [...ifSlots.value, k];
 }
 
-/* alpha:1286-1292 saveIntent：至少一个时段（本地先拦，省一跳）；note 随保存透传（trim 去手滑空格） */
+/* alpha:1286-1292 saveIntent：至少一个时段（本地先拦，省一跳）；note 随保存透传（trim 去手滑空格）。
+   游客先看后报（D3）：选完时段点保存 → 名片建号卡，建号成功自动落意向（pendingIntent 全量带走） */
 async function save(): Promise<void> {
   if (!ifSlots.value.length) {
     ui.toast('至少选一个时段');
+    return;
+  }
+  if (session.isGuest) {
+    ui.signupThen({
+      pendingIntent: {
+        slots: [...ifSlots.value],
+        frequency: Number(ifFreq.value),
+        note: ifNote.value.trim(),
+      },
+    });
     return;
   }
   if (busy.value) return;

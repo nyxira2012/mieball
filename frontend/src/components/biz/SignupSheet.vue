@@ -1,7 +1,7 @@
 <template>
   <!-- 名片建号卡（1.1 A1 · 三态）：填卡 → 手机号被占（接管/重填）→ 短信验证进入。
-       游客点报名/建局时弹出，成功后自动接着完成挂起动作（D3：用户看一步，系统拆两步）。
-       草稿落本机：断网/中断后已填内容不丢（§5 出错条目）。 -->
+       游客点报名/建局/留意向时弹出（或从约球页游客入口直开），成功后自动接着完成挂起动作
+       （D3：用户看一步，系统拆两步）。草稿落本机：断网/中断后已填内容不丢（§5 出错条目）。 -->
   <view class="ss">
     <!-- ===== 态一：填名片 ===== -->
     <template v-if="mode === 'card'">
@@ -35,6 +35,10 @@
       <AppButton variant="pri" block :disabled="busy" @click="onSubmitCard">
         {{ busy ? '提交中…' : actionLabel }}
       </AppButton>
+      <!-- 独立打开（无挂起动作）时给老球友找回出口；带挂起的场景走占卡态的短信接管，不留此门 -->
+      <view v-if="standalone" class="oldfriend" @click="goLogin">
+        我是老球友 · 手机号找回登录 ▸
+      </view>
     </template>
 
     <!-- ===== 态二：手机号已被占用（4.5） ===== -->
@@ -89,6 +93,11 @@ const props = defineProps({
   pendingLaunch: { type: Object as PropType<PublishGameInput>, default: undefined },
   /** 扫码签到（2.1·选项A）：游客在现场页点「我到了」→ 建号成功后自动签到进候场区 */
   pendingCheckin: { type: Object as PropType<{ gameId: number }>, default: undefined },
+  /** 留意向（1.2 4.13）：游客在意向表单点保存 → 建号成功自动落意向簿 */
+  pendingIntent: {
+    type: Object as PropType<{ slots: string[]; frequency: number; note: string }>,
+    default: undefined,
+  },
 });
 
 const session = useSessionStore();
@@ -117,8 +126,28 @@ const picked = ref<number | null>(null);
 const busy = ref(false);
 const { countdown, start: startCountdown } = useSmsCountdown();
 
-const title = computed(() => (props.pendingJoin ? '填张名片，报名' : props.pendingLaunch ? '填张名片，建局' : '填张名片'));
-const actionLabel = computed(() => (props.pendingJoin ? '确定报名' : props.pendingLaunch ? '确定建局' : '确定'));
+const title = computed(() =>
+  props.pendingJoin
+    ? '填张名片，报名'
+    : props.pendingLaunch
+      ? '填张名片，建局'
+      : props.pendingIntent
+        ? '填张名片，留意向'
+        : '填张名片',
+);
+const actionLabel = computed(() =>
+  props.pendingJoin
+    ? '确定报名'
+    : props.pendingLaunch
+      ? '确定建局'
+      : props.pendingIntent
+        ? '确定留下意向'
+        : '确定',
+);
+/** 独立打开 = 没有任何挂起动作（约球页/注册入口直开）：底部才亮老球友找回出口 */
+const standalone = computed(
+  () => !props.pendingJoin && !props.pendingLaunch && !props.pendingCheckin && !props.pendingIntent,
+);
 
 /* ---- 草稿：本机持久化（断网重进内容还在）。
      打字密集场景，300ms 防抖再落存储，卸载/提交前 flush 补一次，防丢语义不变 ---- */
@@ -150,6 +179,12 @@ function pick(i: number): void {
   picked.value = picked.value === i ? null : i;
 }
 
+/* 老球友出口（仅独立打开时显示）：关弹层去「我是老球友」找回页 */
+function goLogin(): void {
+  ui.closeSheet();
+  uni.navigateTo({ url: '/pages/mine/login' });
+}
+
 /* ---- 提交名片 ---- */
 async function onSubmitCard(): Promise<void> {
   const p = phone.value.trim();
@@ -166,7 +201,13 @@ async function onSubmitCard(): Promise<void> {
       chibi: picked.value != null ? PRESETS[picked.value].c : undefined,
       chibi_set: picked.value != null,
     });
-    afterSuccess(props.pendingJoin ? '报名完成，已在名单中' : '账号建好了');
+    afterSuccess(
+      props.pendingJoin
+        ? '报名完成，已在名单中'
+        : props.pendingIntent
+          ? '账号建好了 · 意向已留下'
+          : '账号建好了',
+    );
   } catch (e) {
     if (e instanceof ApiError && e.code === 'phone_taken') {
       mode.value = 'occupied';
@@ -245,6 +286,9 @@ async function followUp(): Promise<void> {
       goMeet(); // 建局成功回约球页（与 LaunchSheet.publish 同径）
     } else if (props.pendingCheckin) {
       await liveStore.arriveMe(props.pendingCheckin.gameId); // 2.1 选项A：建号即球友，自动「我到了」
+    } else if (props.pendingIntent) {
+      const { slots, frequency, note } = props.pendingIntent;
+      await game.saveIntent(slots, frequency, note); // 文案由 store 发（单一源）
     }
   } catch (e) {
     ui.toast(errText(e));
@@ -311,5 +355,17 @@ async function followUp(): Promise<void> {
   color: var(--dim);
   margin-top: 12px;
   text-align: center;
+}
+/* 老球友找回出口（仅独立打开时）：比客服行醒目一档，可点 */
+.oldfriend {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--lemon);
+  margin-top: 14px;
+  text-align: center;
+  cursor: pointer;
+}
+.oldfriend:active {
+  opacity: 0.7;
 }
 </style>

@@ -314,9 +314,11 @@ export type SheetPayload =
       pendingJoin?: { gameId: number; bring: number };
       pendingLaunch?: PublishGameInput;
       pendingCheckin?: { gameId: number };
+      pendingIntent?: { slots: string[]; frequency: number; note: string };
     };
-// 名片建号卡（1.1 A1）：游客点报名/建局/扫码签到时弹出；建号成功自动接着完成挂起的动作（D3 两步拆分）
+// 名片建号卡（1.1 A1）：游客点报名/建局/留意向/扫码签到时弹出；建号成功自动接着完成挂起的动作（D3 两步拆分）
 // pendingCheckin（2.1·选项A）：扫码到场一律走名片建号，建号成功后自动「我到了」进候场区
+// pendingIntent（1.2 4.13）：游客留意向同走先看后报——建号成功自动把意向落进意向簿
 
 /** 结算 ±积分一行（2.1 打球页改版：终局结算弹窗 EndSettleModal 的预览行复用本形状） */
 export interface WinChange {

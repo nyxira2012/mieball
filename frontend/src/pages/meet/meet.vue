@@ -7,6 +7,15 @@
       <view class="sub">{{ dateLine }}</view>
     </view>
 
+    <!-- 游客注册/登录入口（1.1 先看后报的补口）：约球页是游客的主进场口——
+         报名/发局/留意向的建号卡都在动作深处，这里给一扇明门；登录后整块消失 -->
+    <view v-if="session.isGuest" class="guestgate">
+      <view class="gg-main" @click="onSignup">
+        ＋ 填张名片建号 —— 报名 · 发局 · 留意向都要用
+      </view>
+      <view class="gg-sub" @click="goLogin">老球友？手机号找回登录 ▸</view>
+    </view>
+
     <!-- alpha:1074 跑马灯：被邀请条目 + NEXT 最近参局倒计时（×2 无缝循环由 Ticker 内部负责） -->
     <Ticker :items="tickerItems" />
 
@@ -169,6 +178,7 @@ import type { Game, Intent } from "@/api/types";
 import { communityMeta } from "@/api";
 import { useGameStore } from "@/stores/game";
 import { useLiveStore } from "@/stores/live";
+import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import {
   deadRowKind,
@@ -178,12 +188,21 @@ import {
   slotName,
 } from "@/utils/format";
 import { isoDay, isoDayOff, isoHm, isoParts, untilTxt } from "@/utils/time";
-import { errText } from "@/api/http";
+import { ApiError, errText } from "@/api/http";
 import { goGame, goLive } from "@/utils/nav";
 
 const game = useGameStore();
 const liveStore = useLiveStore();
+const session = useSessionStore();
 const ui = useUiStore();
+
+/* ---- 游客入口（见模板注释）：建号直开名片卡（无挂起动作）；老球友去找回页 ---- */
+function onSignup(): void {
+  ui.openSheet({ type: "signup-card" });
+}
+function goLogin(): void {
+  uni.navigateTo({ url: "/pages/mine/login" });
+}
 
 /* ---- 远程散场（2.3 §4.9）：我组织的进行中的局；落预约位后 goLive——
      live 页 ensureLive 落地即自动开清扫流（同一链，逐片处理照常二次确认） ---- */
@@ -406,7 +425,10 @@ onMounted(() => {
 onShow(() => {
   // 每次回页重拉：真局状态随时刻翻（懒判定发生在任何人打开的那一刻），本地不能装「最新」
   game.loadGames().catch((e) => ui.toast(errText(e)));
-  game.loadMine().catch((e) => ui.toast(errText(e)));
+  game.loadMine().catch((e) => {
+    // 游客没有「我的局」（401 no_identity 静默降级），别把「请先登录」糊游客一脸
+    if (!(e instanceof ApiError && e.code === "no_identity")) ui.toast(errText(e));
+  });
   game.loadIntents().catch((e) => ui.toast(errText(e)));
   game.loadMyIntent().catch(() => undefined); // 游客无意向，静默
   nextTick(() => measureHead());
@@ -430,6 +452,36 @@ watch(
 
 <style lang="scss" scoped>
 /* alpha:1070 头部 brand 走全局 .brand/.bem 类（base.scss） */
+
+/* 游客注册/登录入口（.useentry 同族的柠檬虚线主行 + dim 副行） */
+.guestgate {
+  margin: 0 0 14px;
+}
+.gg-main {
+  border: 1px dashed rgba(255, 212, 0, 0.34);
+  border-radius: var(--r-md);
+  padding: 14px;
+  text-align: center;
+  color: var(--lemon);
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(255, 212, 0, 0.04);
+  cursor: pointer;
+}
+.gg-main:active {
+  background: rgba(255, 212, 0, 0.1);
+}
+.gg-sub {
+  margin-top: 8px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  cursor: pointer;
+}
+.gg-sub:active {
+  color: var(--lemon);
+}
 
 /* alpha:370-372 分区头：球局 · 悬浮置顶（CSS sticky） */
 .msec-head {
