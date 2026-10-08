@@ -527,7 +527,10 @@ class GameBook:
     def _check_booking_window(self, game: Game) -> None:
         """订场/清空的改价窗口（1.3 §4.5 修订①）：散场确认前随时可改——只锚
         ended_at 与存储终态，不看派生态（开打中 live、到点未散场的 done 都在窗内）；
-        散场确认后总价定死（game_ended）。终态局仍走 game_not_open（语义不变）。"""
+        散场确认后总价定死（game_ended）。终态局仍走 game_not_open（语义不变）。
+        窗口规则四份拷贝之一（改窗四处同步，开发日志 2026-10-08 债登记）：本处 +
+        bills.set_fee（补填窗·互补）+ detail.vue 订场入口与补填入口（按钮镜像）——
+        改漏不出错，只会「前端给钮、后端打回」"""
         if game.ended_at is not None:
             raise errors.game_ended()
         if game.state in ("terminated", "cancelled"):

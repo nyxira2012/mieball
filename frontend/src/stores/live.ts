@@ -5,7 +5,8 @@
    并把本地预变回滚成所持视图。
    发牌算法仍在前端 rotate.ts（总账把关）：到场/取消/开账后够人的空片本地算完
    apiLiveDeal 上报；「排下一场」由确认响应视图驱动（回流补位真值在后端）。
-   积分不再本地落账（settleElo 退役到组件预览）；确认响应的 elo_rows 随视图持有。
+   积分不在前端算（settleElo 已随 2026-10-08 收归后端退役）：确认窗 ±预演吃视图
+   elo_preview 双分支（预演=落账），确认响应的 elo_rows 随视图持有。
    待确认窗按片多值：settling Record（courtId→来源）由视图 pending 驱动，
    settlingCourtId=当前应渲染窗的片（一次一扇、片号最小者顶上）。窗禁遮罩关
    （批5b 验收官销号，§4.3-2 出口全在窗内）：store 不设前端关窗动作，窗只随
@@ -20,7 +21,9 @@
    setCheck/togglePerson/swapPlayers 对视图外行的支线（现态名册全来自总账，支线
    仅防御残留）。空降（apiLiveDropIn）与带访客（apiLiveGuests）1.3 批2 已切真。
    硬约束：不触碰任何 uni.*；名册行 id 是写动作靶位（与 queue/片位同键），
-   账号口径（isAdmin/myRound）按 view.players.accountId 匹配 U.me。 */
+   账号口径（isAdmin/myRound）按 view.players.accountId 匹配 U.me；身份两旗
+   （isOrganizer/isFullPower）视图身份块直读（2026-10-08 起后端下发，
+   批4a 的 viewerCtx 本地拼装已退役）。 */
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { U } from "@/api";
@@ -46,7 +49,6 @@ import {
   apiLiveUnsetAdmin,
   apiLiveView,
   toLiveView,
-  type LiveViewer,
 } from "@/api/live";
 import type {
   CheckInAction,
@@ -74,7 +76,6 @@ import {
 } from "@/utils/rotate";
 import { ELO_INIT, GUEST_DUPR } from "@/utils/elo";
 import { recommend } from "@/utils/recommend";
-import { isOrg } from "@/utils/format";
 import { toIso } from "@/utils/time";
 import { useGameStore } from "./game";
 import { useUiStore } from "./ui";
@@ -143,7 +144,8 @@ function feedSentences(events: FeedEvent[]): string[] {
 }
 
 /** 冷扫兜底局（现场态与局簿都没有时的最小 Game，applyLiveView 重建用）：
-    组织者未知给 -1——viewer 两旗降级 false；ensureLive 先行后此路罕见 */
+    纯展示占位（顶条局名/倒计时）——身份两旗视图直读后不再担旗；组织者 -1 是
+    「待真局让位」的印记（applyLiveView 消费）；ensureLive 回填后此路罕见 */
 function stubGame(v: LiveView): Game {
   return {
     id: v.gameId,
@@ -232,22 +234,18 @@ export const useLiveStore = defineStore("live", () => {
     );
   }
 
-  /** 管理员谓词（id 兼两键：视图行 id → 换账号对表；本地路直当账号 id）：
-      PersonSheet/CheckinSheet/QueueSheet 徽章与全权判定共用 */
+  /** 管理员谓词（id 兼两键：视图行 id → 换账号对表；查无直当账号 id）：
+      PersonSheet/CheckinSheet/QueueSheet 徽章共用。admins 只在视图
+      （live ⟺ liveView 同生灭，无视图即无现场） */
   function isAdmin(id: number): boolean {
     const row = liveView.value?.players.find((p) => p.id === id);
     const acc = row ? row.accountId : id;
-    const admins = liveView.value?.admins ?? live.value?.admins ?? [];
-    return acc != null && admins.includes(acc);
+    return acc != null && (liveView.value?.admins ?? []).includes(acc);
   }
 
-  /** 现场权限单一源（2.2 §4.7）：组织者 ∨ 被封管理员 = 全权（同一套手柄）；
-      视图时代读映射派生旗（toLiveView 按 viewer 算好），无视图回落本地判 */
-  const isFullPower = computed(() => {
-    if (liveView.value) return liveView.value.isFullPower;
-    const L = live.value;
-    return !!L && (isOrg(L.g) || isAdmin(U.me.id));
-  });
+  /** 现场权限单一源（2.2 §4.7）：组织者 ∨ 被封管理员 = 全权（同一套手柄）——
+      视图身份块直读（后端按 viewer 发，深链冷启动首拍即真） */
+  const isFullPower = computed(() => liveView.value?.isFullPower ?? false);
 
   /** 封存闸（§4.10 回看态）：endedAt 有值=已散场，写动作一律拒——
       所有 needFull 检查处与 setCheck/togglePerson 的自报免检路径共用；
@@ -267,31 +265,25 @@ export const useLiveStore = defineStore("live", () => {
     ui.toast("请找组织者或管理员");
     return false;
   }
-  /** 组织者独占（§4.6；后端 organizer_only 兜底同句） */
+  /** 组织者独占（§4.6；后端 organizer_only 兜底同句）——视图身份旗直读 */
   function needOrg(): boolean {
     if (!sealGate()) return false;
-    const L = live.value;
-    if (L && isOrg(L.g)) return true;
+    if (liveView.value?.isOrganizer) return true;
     ui.toast("只有组织者能做");
     return false;
   }
 
-  /** 散场权（§4.14 组织者独占 + 兜底）：组织者已标「早退」离场时管理员可代收；
-      视图时代组织者名册行按 accountId 找 */
+  /** 散场权（§4.14 组织者独占 + 兜底）：组织者已标「早退」离场时管理员可代收——
+      代收判定找组织者名册行吃视图 organizerAccountId（不依赖局簿缓存，
+      深链冷扫 stub 期也成立） */
   const canEndLive = computed(() => {
-    const L = live.value;
     const v = liveView.value;
-    if (!L) return false;
-    if (v)
-      return (
-        v.isOrganizer ||
-        (v.isFullPower &&
-          v.players.find((p) => p.accountId === L.g.organizer.id)?.check ===
-            "left")
-      );
+    if (!v) return false;
     return (
-      isOrg(L.g) ||
-      (isAdmin(U.me.id) && pById(L, L.g.organizer.id)?.check === "left")
+      v.isOrganizer ||
+      (v.isFullPower &&
+        v.players.find((p) => p.accountId === v.organizerAccountId)?.check ===
+          "left")
     );
   });
 
@@ -378,7 +370,7 @@ export const useLiveStore = defineStore("live", () => {
   ): Promise<boolean> {
     try {
       const raw = await run();
-      applyLiveView(toLiveView(raw, viewerCtx(gameId)));
+      applyLiveView(toLiveView(raw));
       onDone?.();
       return true;
     } catch (e) {
@@ -409,14 +401,12 @@ export const useLiveStore = defineStore("live", () => {
 
   /** 开始打球（后端开账路）：apiLiveStart（幂等——已开账直接回视图）→ 视图落地 →
       开场发牌（已够人的片本地算完上报；新开账全员未到通常为空拍）。
-      签名沿旧（吃真局对象）——g 只取 id 与组织者（viewer 旗派生），名册展开归后端 */
+      签名沿旧（吃真局对象）——g 只取 id（身份旗在视图），名册展开归后端 */
   async function startLive(g: Game): Promise<string | null> {
     const msg = "球局开始 · 现场已点亮";
     try {
       const raw = await apiLiveStart(g.id);
-      applyLiveView(
-        toLiveView(raw, { myId: U.me.id, organizerId: g.organizer.id }),
-      );
+      applyLiveView(toLiveView(raw));
       startPolling(g.id);
     } catch (e) {
       handleWriteError(e);
@@ -466,26 +456,28 @@ export const useLiveStore = defineStore("live", () => {
       await startLive(g);
       return;
     }
-    const first = toLiveView(raw, viewerCtx(id));
+    const first = toLiveView(raw);
     applyLiveView(first);
     if (!first.ended) startPolling(id);
-    /* 深链冷设备（新 origin 无局详情缓存）直达已开局（批6 走查 P2）：视图 200 直达
-       不经局详情——g 走 stub 兜底（批5a 裁定保留），顶条局名「现场」/倒计时 NaN/
-       组织者缺。局簿没这局时顺手 loadDetail 回填缓存后重放首拍：applyLiveView 的 g
-       局部重建吃真局（stub 让位），viewer 两旗借真组织者重派生；比分/名册/规则等
-       真值仍全以视图为准，不被详情覆盖。拉不到（无权限/已删）留 stub 不拦路 */
+    /* 深链冷设备（新 origin 无局详情缓存）直达已开局（批6 走查 P2 的残留职责）：
+       身份两旗已随视图直读、不经这段；留它纯为展示——视图 200 直达不经局详情时
+       g 走 stub 兜底（顶条局名「现场」/倒计时失真），局簿没这局时顺手 loadDetail
+       回填缓存后重放首拍，applyLiveView 的 g 局部重建吃真局（stub 让位）。
+       比分/名册/规则等真值仍全以视图为准，不被详情覆盖。
+       拉不到（无权限/已删）留 stub 不拦路 */
     if (!useGameStore().findGame(id)) {
       try {
         await useGameStore().loadDetail(id);
       } catch {
         return;
       }
-      // 期间视图没被轮询推进才重放首拍（推进过的那拍已带最新号，重放旧的会回拨）
+      // 期间视图没被轮询推进才重放首拍（推进过的那拍已带最新号，重放旧的会回拨；
+      // 轮询对表 totalSeq 不变不 apply——没有这步 stub 会一直占着顶条）
       if (
         liveView.value?.gameId === id &&
         liveView.value.totalSeq === first.totalSeq
       )
-        applyLiveView(toLiveView(raw, viewerCtx(id)));
+        applyLiveView(toLiveView(raw));
     }
   }
 
@@ -524,10 +516,11 @@ export const useLiveStore = defineStore("live", () => {
         ui.toast(`${row.name} 早退 · 已记离场时刻`);
       } else if (isArrived(row.check)) {
         // 自动管理员提示（2.5 §4.2）：授予在后端落账时办，这里只认账——
-        // apply 前后 admins 新增含我且我非组织者，唯一 toast 用合同原句
-        // （获授者不显统一签到句：签到已成功，spec 句信息量更高）；不获授走统一句
+        // apply 前后 admins 新增含我且我非组织者（视图身份旗），唯一 toast 用
+        // 合同原句（获授者不显统一签到句：签到已成功，spec 句信息量更高）；
+        // 不获授走统一句
         const granted =
-          !isOrg(L.g) &&
+          !liveView.value?.isOrganizer &&
           !adminsBefore.includes(U.me.id) &&
           (liveView.value?.admins ?? []).includes(U.me.id);
         // 签到统一句（§4.7 不分迟到与否，队位真值在响应视图）
@@ -977,22 +970,6 @@ export const useLiveStore = defineStore("live", () => {
 
   /* ─────── 读链（总账视图 → 本地重建 · 轮询 · 409 对表） ─────── */
 
-  /** viewer 上下文（批4a 裁定：view 不带身份块，toLiveView 映射时派生两旗）：
-      本人在 session（过渡期写到 U.me 位）、组织者在局簿——现场态或局缓存先找，
-      都没有给 -1（游客/冷扫降级：两旗 false） */
-  function viewerCtx(gameId: number): LiveViewer {
-    const L = live.value;
-    const orgCached = useGameStore().findGame(gameId)?.organizer.id;
-    let org: number;
-    if (L && L.g.id === gameId) {
-      org = L.g.organizer.id;
-      if (org < 0 && orgCached != null) org = orgCached; // stub 兜底局：局簿详情到位后借真组织者（批6 P2 深链回填）
-    } else {
-      org = orgCached ?? -1;
-    }
-    return { myId: U.me.id, organizerId: org };
-  }
-
   /** 总账视图 → 本地 LiveState 重建器（幂等、纯重建：不落牌不发 toast 不自动补片——
       发牌/轮换真值已归后端）：
       - roster 整拷 mock U 同 accountId 者的展示位（chibi/elo/战绩）——不借引用：
@@ -1001,8 +978,9 @@ export const useLiveStore = defineStore("live", () => {
         访客/查无者补默认位（elo=ELO_INIT 1200、dupr 吃视图行——后端访客回 3.0）；
         fire/shadow/dropin 对称覆写（借来的旧位不残留）；
       - g 只局部重建（现场克隆不回写局簿的旧约不变）：scoring/片名回填，片数吃
-        courts_count 真值（courtCount 单一源读到即对表）；stub 兜底局（组织者 -1）
-        在局簿详情到位后让位真局（深链冷设备两段路，批6 P2）；
+        courts_count 真值（courtCount 单一源读到即对表）；stub 兜底局（组织者 -1
+        印记）在局簿详情到位后让位真局（深链冷设备两段路——纯展示让位，
+        身份旗不经过 g，批6 P2）；
       - history/feed 适配旧形状（view 升序 → 旧新到旧）；
       - settling 按片多值：pending 片进 Record（窗禁遮罩关、纯随视图起落）；streak/资历
         视图不带——旧引擎值位留 0/空。 */
@@ -1137,7 +1115,7 @@ export const useLiveStore = defineStore("live", () => {
       对表另走 applyStaleView */
   async function pollLiveView(gameId: number): Promise<boolean> {
     try {
-      const view = toLiveView(await apiLiveView(gameId), viewerCtx(gameId));
+      const view = toLiveView(await apiLiveView(gameId));
       if (
         liveView.value?.gameId === view.gameId &&
         view.totalSeq === liveView.value.totalSeq
@@ -1175,7 +1153,7 @@ export const useLiveStore = defineStore("live", () => {
     if (!(e instanceof ApiError) || !e.view) return false;
     if (e.code !== "live_stale_total" && e.code !== "live_stale_court")
       return false;
-    applyLiveView(toLiveView(e.view, viewerCtx(e.view.game_id)));
+    applyLiveView(toLiveView(e.view));
     return true;
   }
 

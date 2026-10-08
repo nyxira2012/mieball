@@ -1,9 +1,10 @@
-/* 5.1 分数体系：Elo 娱乐轨引擎（1.4 §3：初始 1200/地板 800，只担弹窗±等情绪反馈）+
-   DUPR 展示函数（1.4 §1/§2） */
+/* 5.1 分数体系：Elo 展示残留位 + DUPR 展示函数（1.4 §1/§2）。
+   Elo 公式与常量已收归后端唯一源（2026-10-08：backend/app/services/live.py 的
+   _ELO_K/_ELO_FLOOR/RATING_INIT 与 _elo_settle；确认窗 ±预演由视图 elo_preview
+   双分支下发，预演=落账）——前端零公式零镜像，调参只改后端一处。
+   本文件只剩 ELO_INIT 展示兜底与 DUPR 展示族 */
 
-export const ELO_K = 24; // alpha:1697 K=24：赢强者涨得多（1.4 §3：K 不动）
-export const ELO_INIT = 1200; // 1.4 §3：初始 1200（推翻 2.3 的 1500）；访客/新人代入
-export const ELO_FLOOR = 800; // 1.4 §3：地板 800（娱乐轨收窄波动区间；推翻 2.3 的 400）
+export const ELO_INIT = 1200; // 展示兜底位：名册无积分行的默认显示（公式与真值在后端）
 
 /* ───────── DUPR 展示（1.4 §1：2.0-8.0 三位小数；消费方批4v1 接线）───────── */
 
@@ -47,36 +48,9 @@ export const DUPR_TIER_FG: Record<string, string> = {
   "2.0": "var(--dim)",
 };
 
-export interface EloPlayer {
-  elo: number;
-}
-
-/** 结算结果（按「胜队在前、败队在后」的顺序返回每人一项） */
-export interface EloOutcome {
-  up: boolean;
-  d: number;
-  elo: number;
-}
-
-/** K=24 结算（alpha:1688-1714 公式逐条对齐）：
-    - 双打按两队人均分算期望、落到个人（alpha:1692 唯一算得平的办法）；
-    - delta = max(1, round(K*(1-exp)))，loss = max(1, round(delta*0.6))（败方只扣胜方涨分的六成）；
-    - 地板 800（1.4 §3）。
-    随行访客没有「另册」：调用方按初始等级 1200 代入（1.4 §4 访客 Elo 恒 1200——
-    不计积分不进榜，代入值与正式球友同公式全额算），本函数不认访客身份。
-    输入只需每人的 elo，不产生副作用（终局弹窗的 ±积分预览调它；落账真值在后端镜像）。 */
-export function settleElo(
-  winners: EloPlayer[],
-  losers: EloPlayer[],
-): EloOutcome[] {
-  const wAvg = winners.reduce((a, b) => a + b.elo, 0) / winners.length; // alpha:1694
-  const lAvg = losers.reduce((a, b) => a + b.elo, 0) / losers.length; // alpha:1695
-  const exp = 1 / (1 + Math.pow(10, (lAvg - wAvg) / 400)); // alpha:1696
-  const delta = Math.max(1, Math.round(ELO_K * (1 - exp))); // alpha:1697
-  const loss = Math.max(1, Math.round(delta * 0.6)); // alpha:1698 败方只扣胜方涨分的六成
-  return winners.concat(losers).map((p, i) => {
-    const up = i < winners.length;
-    const d = up ? delta : -loss;
-    return { up, d, elo: Math.max(ELO_FLOOR, p.elo + d) }; // 地板 800（1.4 §3）
-  });
-}
+/* ───────── 以下为 1.4 §3 的公式口径备忘（settleElo 已随 2026-10-08 收归后端
+   退役，实现见 backend/app/services/live.py _elo_settle）：
+   - 双打按两队人均分算期望、落到个人；
+   - delta = max(1, round(K*(1-exp)))，loss = max(1, round(delta*0.6))（败方只扣胜方涨分六成）；
+   - 访客按初始 1200 代入当正常玩家全额算，自己不落账不进榜（1.4 §4）；
+   - 地板 800。调参与改公式都在后端一处完成。 ───────── */

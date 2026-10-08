@@ -91,7 +91,10 @@ function liveStartView(): LiveViewApi {
     ended_at: null,
     total_seq: 1,
     round: 0,
-    admins: [0], // 视图烤入我的全权旗：removeFromRoster 的 needFull 读视图旗（非 L.admins）
+    admins: [0],
+    is_organizer: false, // 身份块（2026-10-08 起）：我(0)非组织者(6)、被列管理员 → 全权（needFull 读视图旗）
+    is_full_power: true,
+    organizer_account_id: 6,
     feed: [],
     courts_count: 1,
     rules: {

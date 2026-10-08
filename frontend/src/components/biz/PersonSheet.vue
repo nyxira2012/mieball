@@ -128,7 +128,6 @@ import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
 import { pById } from "@/utils/rotate";
 import { GUEST_DUPR, fmtDupr1 } from "@/utils/elo";
-import { isOrg } from "@/utils/format";
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -152,10 +151,8 @@ const p = computed(() =>
 
 /** 全权（组织者 ∨ 管理员）单一源在 store */
 const full = computed(() => liveStore.isFullPower);
-/** 封撤管理员入口只给组织者本人 */
-const isOrgViewer = computed(() =>
-  liveStore.live ? isOrg(liveStore.live.g) : false,
-);
+/** 封撤管理员入口只给组织者本人——视图身份旗直读（2026-10-08 起） */
+const isOrgViewer = computed(() => liveStore.liveView?.isOrganizer ?? false);
 /** 手柄钮（换人/歇/连/退场）：给自己随时可、给他人需全权——「自己」按名册行 id
     判（store.myRowId 单一源；行 id ≠ 账号 id，与 setCheck/togglePerson 守卫同键） */
 const canOperate = computed(

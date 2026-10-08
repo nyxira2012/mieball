@@ -34,6 +34,10 @@ _NEW_COLUMNS = {
         # 2.5 批1：开账人（可空——旧账没有这笔记录）
         "started_by": "INTEGER",
     },
+    # 2.6 批1：片分制快照（在打片照旧旧制、新开片用新制——开赛定格 game.scoring）
+    "live_courts": {
+        "scoring": "INTEGER NOT NULL DEFAULT 11",
+    },
 }
 
 

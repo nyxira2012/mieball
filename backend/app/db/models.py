@@ -263,8 +263,9 @@ class LiveState(Base):
     """现场总账头（2.3 技术设计 §2）：每局一行，开了账才有现场。
 
     total_seq 是全场总号（任何现场写 +1），与各片的 LiveCourt.court_seq 构成两级号
-    并发防线（2.3 附录 B1）；round 为全场第几场的轮次计数。scoring 不落本表——
-    复用 game 列，全场统一一个分制（2.3 裁决 Q1）。
+    并发防线（2.3 附录 B1）；round 为全场第几场的轮次计数。分制真值复用 game 列
+    （2.3 裁决 Q1），片上另有开赛快照 LiveCourt.scoring——改分制在打片照旧、
+    新开片用新制（2.6 机制A）。
     """
 
     __tablename__ = "live_state"
@@ -274,7 +275,8 @@ class LiveState(Base):
         ForeignKey("games.id"), unique=True, nullable=False
     )
     total_seq: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    # rules 四件套快照（scoring 在 game 列）：双打 / 谁下 / 怎么配 / 连庄上限
+    # rules 四件套快照（分制真值在 game 列、片快照在 LiveCourt.scoring）：
+    # 双打 / 谁下 / 怎么配 / 连庄上限
     doubles: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     down: Mapped[str] = mapped_column(String(8), default="all", nullable=False)
     pairing: Mapped[str] = mapped_column(String(8), default="queue", nullable=False)
@@ -356,6 +358,9 @@ class LiveCourt(Base):
     court_seq: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # null|auto|manual —— 仅 pending 态有值
     pending_origin: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    # 片分制快照（2.6 机制A）：开赛定格当时 game.scoring，_reached 单一消费源——
+    # 改分制在打片照旧打完旧制、新开片用新制；default 11 只是行不裸奔（创建点显式起笔）
+    scoring: Mapped[int] = mapped_column(Integer, default=11, nullable=False)
 
 
 class LiveMatch(Base):

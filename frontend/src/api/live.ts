@@ -8,6 +8,7 @@ import { request } from "./http";
 import type {
   CheckInAction,
   DealCourt,
+  EloRowApi,
   LiveRulesInput,
   LiveSide,
   LiveView,
@@ -264,20 +265,20 @@ export function apiLiveEnd(
 
 /* ---- 映射 ---- */
 
-/** viewer 上下文：view 不带身份块——本人在 session（U.me.id，游客 null）、组织者在局簿 */
-export interface LiveViewer {
-  myId: number | null;
-  organizerId: number;
-}
+/** 结算行（snake→camel）：战报 elo_rows 与待确认片 elo_preview 双分支共用 */
+const eloRow = (r: EloRowApi) => ({
+  accountId: r.account_id,
+  name: r.name,
+  guest: r.guest,
+  ratingBefore: r.rating_before,
+  ratingAfter: r.rating_after,
+  delta: r.delta,
+});
 
 /** LiveViewApi（线上 snake）→ LiveView（camel）唯一映射点（沿 stores/game.ts toGame 先例）。
-    传 viewer 时一并派生 isOrganizer/isFullPower；匿名/不传两旗为 false（游客本就无权）。 */
-export function toLiveView(
-  v: LiveViewApi,
-  viewer?: LiveViewer | null,
-): LiveView {
-  const isOrganizer =
-    viewer != null && viewer.myId != null && viewer.myId === viewer.organizerId;
+    身份块（两旗+组织者账号）视图直读——2026-10-08 修订前由本层按 viewer 上下文
+    拼装（批4a 裁定），深链冷启动的「组织者按不了按钮」补丁族由此而生，已退役 */
+export function toLiveView(v: LiveViewApi): LiveView {
   return {
     gameId: v.game_id,
     startedAt: v.started_at,
@@ -326,6 +327,9 @@ export function toLiveView(
       courtSeq: c.court_seq,
       pendingOrigin: c.pending_origin,
       preselect: c.preselect,
+      eloPreview: c.elo_preview
+        ? { a: c.elo_preview.a.map(eloRow), b: c.elo_preview.b.map(eloRow) }
+        : null,
     })),
     courtSeqs: Object.fromEntries(
       v.courts.map((c) => [c.court_no, c.court_seq]),
@@ -339,17 +343,10 @@ export function toLiveView(
       sb: m.score_b,
       winA: m.winner_side === "a",
       endedAt: m.ended_at,
-      eloRows: m.elo_rows.map((r) => ({
-        accountId: r.account_id,
-        name: r.name,
-        guest: r.guest,
-        ratingBefore: r.rating_before,
-        ratingAfter: r.rating_after,
-        delta: r.delta,
-      })),
+      eloRows: m.elo_rows.map(eloRow),
     })),
-    isOrganizer,
-    isFullPower:
-      isOrganizer || (viewer?.myId != null && v.admins.includes(viewer.myId)),
+    isOrganizer: v.is_organizer,
+    isFullPower: v.is_full_power,
+    organizerAccountId: v.organizer_account_id,
   };
 }

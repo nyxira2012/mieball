@@ -6,9 +6,10 @@
        §4.6 联动：点胜方可改预选（防左右记反、分低方选不中）；± 改分胜方自动跟分高方、
        平分清空禁确认。§4.5 窗内撤一分走后端 undo，响应视图驱动两路（auto 不够线自动关
        回在打 / manual 保窗只改比分），窗内比分显示吃视图。
-       §4.11 ±积分预览当场算（settleElo，访客按初始等级 1200 代入当正常玩家——
-       与后端 elo 镜像同口径）：预览只展示不落账，落账以确认响应 elo_rows
-       为准（显示吃视图）。§4.3-2 清零重开与取消对局的待确认入口收在窗里（仅全权可见，
+       §4.11 ±积分预演读视图 elo_preview 双分支（2026-10-08 收归后端单源：A 胜/B
+       胜两套数随画面给、与落账同一条公式路——预演即落账数字）：点胜方在两套现成
+       数间切换，仍当场变不等网络；访客行带「不计积分」标识（1.4 §4 不落账不进榜）。
+       §4.3-2 清零重开与取消对局的待确认入口收在窗里（仅全权可见，
        emit 由页面危险确认槽接）；球友看窗只读：确认灰+旁注「请组织者或管理员确认」。
        z-110 fixed 居中；遮罩不可关（批5b 验收官销号，§4.3-2 出口全在窗内——遮罩纯视觉
        背板，无点击事件）：窗只按合同路径关——确认/清零/取消成功、auto 窗撤到分线下，
@@ -80,7 +81,7 @@
           r.up ? `+${r.d}` : `−${Math.abs(r.d)}`
         }}</text>
       </view>
-      <view class="md-note">±积分为当场估算 · 落账以结算为准</view>
+      <view class="md-note">±积分为结算预演 · 确认后落账生效</view>
 
       <view class="md-btns">
         <AppButton
@@ -110,8 +111,9 @@
    响应视图回来重新对齐；确认/撤分直调 store（落账·关窗·toast 都在 store），
    清零/取消 emit 由页面确认槽接（A3 危险动作先确认）。
    联动纯函数（followWinner/canPickWinner）单一源在 store 模块，测试落 live-store.test.ts。
-   球友看窗只读：点选/±/撤置灰、确认灰+旁注；预览行复用 settleElo（访客代入 1200——
-   与后端镜像同口径）。清扫态（store.sweepState）确认走 noRedeal=true：不排下一场不补位。 */
+   球友看窗只读：点选/±/撤置灰、确认灰+旁注；预演行读视图 elo_preview 双分支
+   （后端 _elo_settle 同路，预演=落账）。清扫态（store.sweepState）确认走
+   noRedeal=true：不排下一场不补位。 */
 import { computed, ref, watch } from "vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import {
@@ -120,7 +122,6 @@ import {
   followWinner,
   useLiveStore,
 } from "@/stores/live";
-import { ELO_INIT, settleElo, type EloPlayer } from "@/utils/elo";
 import { courtDisplayName } from "@/utils/format";
 import type { LivePlayer } from "@/api/types";
 
@@ -218,22 +219,16 @@ function undoInWindow(): void {
   void liveStore.undoPoint(props.courtId);
 }
 
-/** ±积分预览（§4.11 当场估算，只展示不落账）：settleElo 与后端 elo 镜像同公式口径
-    （K=24；访客按初始等级 1200 代入当正常玩家——1.4 §4 访客 Elo 恒 1200）；胜队在前 */
+/** ±积分预演（§4.11）：读视图 elo_preview 双分支——后端 _elo_settle 同一条路算好
+    随画面给（A 胜/B 胜各一套，胜队在前），预演=落账；点胜方只是切换分支 */
 const preview = computed(() => {
   if (winA.value === null) return [];
-  const w = sideRows(winA.value ? "a" : "b");
-  const l = sideRows(winA.value ? "b" : "a");
-  const asPlayer = (p: LivePlayer): EloPlayer => ({
-    // 访客代入初始等级（与后端 elo 镜像同口径：同公式全额，访客自己不落账）
-    elo: p.guest ? ELO_INIT : liveStore.byId(p.id).elo,
-  });
-  const all = [...w, ...l];
-  return settleElo(w.map(asPlayer), l.map(asPlayer)).map((r, i) => ({
-    name: all[i]!.name,
-    guest: all[i]!.guest,
-    up: r.up,
-    d: r.d,
+  const rows = courtRow.value?.eloPreview?.[winA.value ? "a" : "b"] ?? [];
+  return rows.map((r) => ({
+    name: r.name,
+    guest: r.guest,
+    up: r.delta > 0,
+    d: r.delta,
   }));
 });
 

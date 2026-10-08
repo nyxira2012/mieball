@@ -686,6 +686,36 @@ def test_rules_patch_and_court_shrink(client: TestClient):
     assert court(v, 1)["status"] == "playing"
 
 
+def test_rules_scoring_writes_game_column_and_court_snapshot(client: TestClient):
+    """改分制切真（2.6 机制A）：rules 带 scoring 写 game 列真值（view rules 块回
+    新值），在打片快照不回头；不带 scoring 的调用不动原值。"""
+    env = open_live(client, seed=35)
+    gid = env["game_id"]
+    v = deal_one(client, env)
+    r = live_call(
+        client,
+        env["org"]["token"],
+        gid,
+        "rules",
+        {"doubles": False, "base_total_seq": v["total_seq"]},
+    )
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert v["rules"]["scoring"] == 11  # 不带 scoring：不动原值
+    assert court(v, 1)["scoring"] == 11  # 开赛片自带快照字段
+    r = live_call(
+        client,
+        env["org"]["token"],
+        gid,
+        "rules",
+        {"scoring": 21, "base_total_seq": v["total_seq"]},
+    )
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert v["rules"]["scoring"] == 21
+    assert court(v, 1)["scoring"] == 11  # 在打片照旧打完旧制
+
+
 def test_deal_rejected_beyond_courts_count(client: TestClient):
     env = open_live(client, seed=34)
     rows = env["view"]["players"]

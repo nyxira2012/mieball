@@ -92,13 +92,15 @@ class TempoIn(BaseModel):
 
 
 class RulesIn(BaseModel):
-    """规则四件套+场地片数（2.2 §4.7 收权）：全可选，只动显式给的字段。"""
+    """规则四件套+场地片数+分制（2.2 §4.7 收权 / 2.6 机制A）：全可选，只动显式给的字段。"""
 
     doubles: bool | None = None
     down: Literal["all", "loser", "n1", "n2", "n3"] | None = None
     pairing: Literal["queue", "balance"] | None = None
     streak_max: int | None = Field(default=None, ge=1)
     courts_count: int | None = Field(default=None, ge=1)
+    # 分制写 game 列（组局口径）；改后在打片照旧打完旧制、新开片用新制
+    scoring: int | None = Field(default=None, ge=1)
     base_total_seq: int
 
 

@@ -1,72 +1,15 @@
 import { describe, expect, it } from "vitest";
-import {
-  ELO_FLOOR,
-  ELO_INIT,
-  ELO_K,
-  duprTier,
-  fmtDupr,
-  fmtDupr1,
-  settleElo,
-} from "@/utils/elo";
+import { ELO_INIT, duprTier, fmtDupr, fmtDupr1 } from "@/utils/elo";
 
-/** 手工对照 alpha:1688-1714 公式的推演值：
-    exp = 1/(1+10^((lAvg-wAvg)/400))，delta=max(1,round(24*(1-exp)))，loss=max(1,round(delta*0.6)) */
-describe("elo settleElo（K=24 · 败方六成 · 地板 800 · 访客 1200 全额 · 双打人均）", () => {
-  it("常量：初始 1200 / 地板 800 / K=24（1.4 §3 参数迁移）", () => {
+/* settleElo 的公式用例已随 2026-10-08 收归后端退役（前端零公式零镜像）——数字
+   守门移至后端 test_live_score.py 的 test_pending_elo_preview_two_branches_equal_
+   settlement（预演双分支与落账 elo_rows 逐行相等）。本文件只剩展示位。
+   1.4 §3 公式口径备忘（实现=backend/app/services/live.py _elo_settle）：
+   双打按两队人均分算期望落到个人；delta=max(1,round(K*(1-exp)))、败方只扣涨分
+   六成（loss=max(1,round(delta*0.6))）；访客按 1200 代入全额算、自己不落账；地板 800。 */
+describe("elo 展示残留位（公式已收归后端唯一源）", () => {
+  it("ELO_INIT=1200：名册无积分行的展示兜底（1.4 §3；真值在后端）", () => {
     expect(ELO_INIT).toBe(1200);
-    expect(ELO_FLOOR).toBe(800);
-    expect(ELO_K).toBe(24);
-  });
-
-  it("同分 1200 vs 1200：涨 12 / 扣 7", () => {
-    const r = settleElo([{ elo: 1200 }], [{ elo: 1200 }]);
-    // exp=0.5 → delta=round(24*0.5)=12；loss=round(12*0.6)=round(7.2)=7
-    expect(r[0]).toEqual({ up: true, d: 12, elo: 1212 });
-    expect(r[1]).toEqual({ up: false, d: -7, elo: 1193 });
-  });
-
-  it("强者胜弱者：小涨（1600 胜 1400 → +6 / -4）", () => {
-    const r = settleElo([{ elo: 1600 }], [{ elo: 1400 }]);
-    // lAvg-wAvg=-200 → exp≈0.7597 → delta=round(5.767)=6 → loss=round(3.6)=4
-    expect(r[0].d).toBe(6);
-    expect(r[0].elo).toBe(1606);
-    expect(r[1].d).toBe(-4);
-    expect(r[1].elo).toBe(1396);
-  });
-
-  it("爆冷大涨（1400 胜 1600 → +18 / -11）", () => {
-    const r = settleElo([{ elo: 1400 }], [{ elo: 1600 }]);
-    // lAvg-wAvg=200 → exp≈0.2403 → delta=round(18.23)=18 → loss=round(10.8)=11
-    expect(r[0].d).toBe(18);
-    expect(r[0].elo).toBe(1418);
-    expect(r[1].d).toBe(-11);
-    expect(r[1].elo).toBe(1589);
-  });
-
-  it("访客按初始 1200 代入、同公式全额（1.4 §4：访客 Elo 恒 1200，自己不落账）", () => {
-    // 访客代入 1200 打 1400 正式球友并赢：lAvg-wAvg=200 → exp≈0.2403 → delta=round(18.23)=18
-    // → loss=round(10.8)=11；无半折无另册——代入值当正常玩家算
-    const r = settleElo([{ elo: 1200 }], [{ elo: 1400 }]);
-    expect(r[0]).toEqual({ up: true, d: 18, elo: 1218 });
-    expect(r[1]).toEqual({ up: false, d: -11, elo: 1389 });
-  });
-
-  it("地板 800：801 输 1 分也只到 800", () => {
-    const r = settleElo([{ elo: 1200 }], [{ elo: 801 }]);
-    // 碾压 → exp≈0.909 → delta=round(2.19)=2 → loss=round(1.2)=1 → max(800, 800)=800
-    expect(r[1].elo).toBe(800);
-    expect(r[1].d).toBe(-1);
-  });
-
-  it("双打按两队人均分结算到个人", () => {
-    const r = settleElo(
-      [{ elo: 1600 }, { elo: 1400 }],
-      [{ elo: 1500 }, { elo: 1500 }],
-    );
-    // 两队人均都是 1500 → 每人同样涨跌：+12 / -7
-    expect(r.map((x) => x.d)).toEqual([12, 12, -7, -7]);
-    expect(r.map((x) => x.elo)).toEqual([1612, 1412, 1493, 1493]);
-    expect(r.map((x) => x.up)).toEqual([true, true, false, false]);
   });
 });
 
@@ -98,4 +41,3 @@ describe("DUPR 展示（1.4 §1/§2：三位小数 + 段位档）", () => {
     expect(duprTier(4.6)).toBe("4.0+");
   });
 });
-

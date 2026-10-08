@@ -101,7 +101,10 @@ class BillBook:
         """补填：组织者本人（管理员不碰钱，C2）；仅散场过且从未填过价可用——
         未散场 game_not_ended、已填过（含 0）fee_already_set、负数 fee_invalid。
         fee>0 当场出账（billed_at=补填刻，账单日期仍取 game.ended_at 散场那天）；
-        fee=0 只定值不出账（提醒消失）。价格就此定死。"""
+        fee=0 只定值不出账（提醒消失）。价格就此定死。
+        窗口规则四份拷贝之一（改窗四处同步，开发日志 2026-10-08 债登记）：本处 +
+        games._check_booking_window（订场/清空窗·互补）+ detail.vue 订场入口与
+        补填入口（按钮镜像）——改漏不出错，只会「前端给钮、后端打回」"""
         with _write_lock:
             game = self._owned_game(game_id, organizer_id)
             if game.ended_at is None:

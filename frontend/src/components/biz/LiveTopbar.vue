@@ -84,7 +84,7 @@
 /* 块一顶条（2.1 §3）：无 props——数据全读 live store；emit 只留页面编排：qr / rules。 */
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useLiveStore } from "@/stores/live";
-import { isOrg, DOWN_NAMES } from "@/utils/format";
+import { DOWN_NAMES } from "@/utils/format";
 import { pById } from "@/utils/rotate";
 import { U } from "@/api";
 
@@ -97,13 +97,13 @@ const emit = defineEmits<{
 
 const liveStore = useLiveStore();
 const L = computed(() => liveStore.live);
-/** 全权（组织者 ∨ 管理员）单一源在 store；组织者 chip 仍按 isOrg（管理员不算组织者） */
+/** 全权（组织者 ∨ 管理员）单一源在 store；组织者 chip 按视图身份旗（管理员不算组织者） */
 const full = computed(() => liveStore.isFullPower);
 /** 散场权（§4.9 组织者独占 + 组织者早退时管理员代收）：散场钮可见性单一源在 store */
 const canEnd = computed(() => liveStore.canEndLive);
 
 const orgChip = computed(() =>
-  L.value && isOrg(L.value.g)
+  L.value && liveStore.liveView?.isOrganizer
     ? `组织者 · ${L.value.g.organizer.nickname}`
     : `球友 · ${U.me.name}`,
 );

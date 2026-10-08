@@ -329,7 +329,8 @@ def test_start_organizer_anytime_after_locked(client: TestClient, fake):
 
 
 def test_start_idempotent_keeps_started_by(client: TestClient, fake):
-    """已开账重复调（换人也一样）→ 幂等回视图，started_by 不改写。"""
+    """已开账重复调（换人也一样）→ 幂等回视图，started_by 不改写；
+    身份两旗随 viewer 各算各的（2026-10-08 身份块起视图含 viewer 旗）。"""
     org = signup(client, "13800020101", "o")
     b = signup(client, "13800020102", "b")
     g = publish(client, org["token"], visibility="public")
@@ -339,7 +340,15 @@ def test_start_idempotent_keeps_started_by(client: TestClient, fake):
     first = start_live(client, g["id"], b["account"]["id"])
     second = start_live(client, g["id"], org["account"]["id"])
 
-    assert second == first
+    def strip_flags(v: dict) -> dict:
+        return {
+            k: w for k, w in v.items() if k not in ("is_organizer", "is_full_power")
+        }
+
+    assert strip_flags(second) == strip_flags(first)  # 账面全同（幂等）
+    assert (
+        first["is_organizer"] is False and second["is_organizer"] is True
+    )  # 旗随 viewer
     assert started_by_of(client, g["id"]) == b["account"]["id"]
 
 
@@ -387,6 +396,38 @@ def test_view_attendance_visibility(client: TestClient, fake):
     assert row_of(as_other, c["account"]["id"])["arrive_at"] is None
     as_anon = view_live(client, g["id"], None)  # 随便扫到的人
     assert row_of(as_anon, c["account"]["id"])["arrive_at"] is None
+
+
+# ---- view 身份块：两旗+组织者账号随视图直读（2026-10-08 修订，翻批4a） ----
+
+
+def test_view_identity_flags(client: TestClient, fake):
+    org = signup(client, "13800020061", "o")
+    b = signup(client, "13800020062", "b")
+    c = signup(client, "13800020063", "c")
+    g = publish(client, org["token"], visibility="public")
+    join_ok(client, b["token"], g["id"])
+    join_ok(client, c["token"], g["id"])
+    lock_past_deadline(client, fake, g["id"])  # 2.5：成局才可开账
+    start_live(client, g["id"], org["account"]["id"])
+    db = client.app.state.session_factory()  # 直落一任管理员（授予链路归 2.5 册测）
+    try:
+        state = db.get(LiveState, g["id"])
+        state.admins = [b["account"]["id"]]
+        db.commit()
+    finally:
+        db.close()
+
+    as_org = view_live(client, g["id"], org["account"]["id"])
+    assert as_org["is_organizer"] is True and as_org["is_full_power"] is True
+    assert as_org["organizer_account_id"] == org["account"]["id"]
+    as_admin = view_live(client, g["id"], b["account"]["id"])  # 管理员：非组织者但全权
+    assert as_admin["is_organizer"] is False and as_admin["is_full_power"] is True
+    as_player = view_live(client, g["id"], c["account"]["id"])  # 普通球友两旗皆 false
+    assert as_player["is_organizer"] is False and as_player["is_full_power"] is False
+    assert as_player["organizer_account_id"] == org["account"]["id"]
+    as_anon = view_live(client, g["id"], None)  # 游客恒 false（组织者账号照给）
+    assert as_anon["is_organizer"] is False and as_anon["is_full_power"] is False
 
 
 # ---- EloRating 首见 1200（访客不入行） ----

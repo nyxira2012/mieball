@@ -70,15 +70,23 @@ async function load() {
   return { live: liveMod.useLiveStore(), ui: uiMod.useUiStore() };
 }
 
-/** 应用一版视图进 store（多数写用例的出发点）——viewer 上下文按局簿解组织者
-    （seed 过 900 的用例即得 isOrganizer；查无 -1 降级、全权看 admins），与 store
-    内部 viewerCtx 同一口径，否则权限旗烤不进视图、needFull 全被误拦 */
+/** 应用一版视图进 store（多数写用例的出发点）——身份旗按「后端会发的口径」
+    注入载荷（组织者解局簿、全权看 admins；seed 过 900 的用例即得 isOrganizer）。
+    2026-10-08 身份块起旗随视图走，不再经映射参数派生 */
 async function apply(v: LiveViewApi) {
   const h = await load();
   const { toLiveView } = await import("@/api/live");
   const gs = (await import("@/stores/game")).useGameStore();
   const org = gs.findGame(v.game_id)?.organizer.id ?? -1;
-  h.live.applyLiveView(toLiveView(v, { myId: U.me.id, organizerId: org }));
+  const isOrganizer = org >= 0 && org === U.me.id;
+  h.live.applyLiveView(
+    toLiveView({
+      ...v,
+      is_organizer: isOrganizer,
+      is_full_power: isOrganizer || v.admins.includes(U.me.id),
+      organizer_account_id: org,
+    }),
+  );
   return h;
 }
 
@@ -99,6 +107,9 @@ function mkLiveView(p: Partial<LiveViewApi> = {}): LiveViewApi {
     total_seq: 1,
     round: 0,
     admins: [],
+    is_organizer: false, // 身份块（2026-10-08 起）：默认游客/普通球友视角——apply() 注入真旗
+    is_full_power: false,
+    organizer_account_id: -1,
     feed: [],
     courts_count: 1,
     rules: {
@@ -168,6 +179,9 @@ function vMid(seq = 7): LiveViewApi {
     total_seq: seq,
     round: 2,
     admins: [5],
+    is_organizer: true, // 身份块基准：900 = 我开的局（响应视图走生产 toLiveView，旗烤进载荷）
+    is_full_power: true,
+    organizer_account_id: 0,
     courts_count: 2,
     rules: {
       scoring: 11,
@@ -284,6 +298,9 @@ function vPlay(seq = 7, over: Partial<LiveViewApi> = {}): LiveViewApi {
     game_id: 900,
     total_seq: seq,
     admins: [0],
+    is_organizer: true, // 身份块基准：900 = 我开的局（响应视图走生产 toLiveView，旗烤进载荷）
+    is_full_power: true,
+    organizer_account_id: 0,
     courts_count: 1,
     players: [
       pl(101, 0, { name: "我", court_no: 1, court_side: "a" }),
@@ -492,7 +509,7 @@ describe("applyLiveView（批4 阶段2：总账视图 → 本地 LiveState 幂�
     );
     expect(live.live!.endedAt).toBe("2026-10-07T21:30:00+08:00");
     expect(live.recap?.ended).toBe(true);
-    live.applyLiveView(toLiveView(vMid(8), null)); // 同局又回进行中（回放/换机重进的对账面）
+    live.applyLiveView(toLiveView(vMid(8))); // 同局又回进行中（回放/换机重进的对账面）
     expect(live.recap).toBeNull();
   });
 });
@@ -519,14 +536,25 @@ describe("pollLiveView（拉读对表：totalSeq 变才重建 · 返回是否更
     await expect(live.pollLiveView(900)).resolves.toBe(false);
     expect(live.liveView!.totalSeq).toBe(8); // 失败不动现场（下一拍再试）
   });
-  it("viewer 两旗随视图派生：admins 含我 → isFullPower；组织者未知（局簿没有）→ isOrganizer 降级 false", async () => {
+  it("身份两旗视图直读（2026-10-08 身份块）：载荷带的旗原样落地，store 不再本地拼——换旗即换权", async () => {
     const { live } = await load();
     liveApi.apiLiveView.mockResolvedValue(
-      mkLiveView({ game_id: 900, admins: [U.me.id, 5] }),
+      mkLiveView({
+        game_id: 900,
+        is_organizer: true,
+        is_full_power: true,
+        organizer_account_id: 0,
+      }),
     );
     await live.pollLiveView(900);
-    expect(live.liveView!.isFullPower).toBe(true); // 管理员表含我
-    expect(live.liveView!.isOrganizer).toBe(false); // 组织者 -1 降级
+    expect(live.liveView!.isOrganizer).toBe(true); // 组织者视角
+    expect(live.isFullPower).toBe(true); // store 单一源直读视图旗
+    liveApi.apiLiveView.mockResolvedValue(
+      mkLiveView({ game_id: 900, total_seq: 2, admins: [5] }), // 普通球友视角载荷：两旗 false
+    );
+    await live.pollLiveView(900);
+    expect(live.liveView!.isOrganizer).toBe(false);
+    expect(live.isFullPower).toBe(false);
   });
 });
 
@@ -810,6 +838,9 @@ describe("setCheck（§4.2/4.3 报到四态：归一与队位归总账，发牌�
       game_id: 900,
       total_seq: 7,
       admins: [0],
+      is_organizer: true, // 身份块基准：900 = 我开的局（组织者首签不授面等用例按需覆写）
+      is_full_power: true,
+      organizer_account_id: 0,
       players: [pl(101, 0, { name: "我", check: "absent" })],
       ...over,
     });
@@ -920,6 +951,8 @@ describe("setCheck（§4.2/4.3 报到四态：归一与队位归总账，发牌�
       vCheck({
         total_seq: 8,
         admins: [0],
+        is_organizer: false, // 非组织者首签获授：后端按 viewer 发旗（组织者旗 false、全权随授管 true）
+        is_full_power: true,
         players: [pl(101, 0, { name: "我", check: "ok", queue_pos: 0 })],
         queue: [101],
         feed: [
@@ -1495,7 +1528,13 @@ describe("散场清扫链（§4.9，批6）", () => {
       }),
     );
     expect(live.canEndLive).toBe(true);
-    liveApi.apiLiveView.mockResolvedValue(vPlay(8));
+    liveApi.apiLiveView.mockResolvedValue(
+      vPlay(8, {
+        is_organizer: false, // 代收者视角的旗：非组织者、全权（组织者旗归账号 1）
+        is_full_power: true,
+        organizer_account_id: 1,
+      }),
+    );
     await live.startSweep();
     expect(live.sweepState).toBe(true);
     live.stopPolling();
@@ -1678,13 +1717,40 @@ describe("批5b 补测销号（验收官批5a findings G1-G3）", () => {
    改名 cfm 后恢复。vitest 无组件渲染基建，视觉/可点性测不了（注明）——这里测确认槽
    所踩的 store 状态位：settling 窗位在视图重放（P2 回填重放首拍的场面）间不丢不闪。 */
 describe("批6 走查销号（P1/P2/P3）", () => {
-  it("P1 确认槽状态位：待确认窗随视图 pending 起、同视图重放不丢窗（深链回填重放首拍不闪关）、片退出 pending 窗关", async () => {
+  it("P1 确认槽状态位：待确认窗随视图 pending 起、同视图重放不丢窗（深链回填重放首拍不闪关）、片退出 pending 窗关；elo_preview 双分支映射通透（2026-10-08 收归后端）", async () => {
     const { toLiveView } = await import("@/api/live");
     const { live } = await load();
     const vp = vPlay(7, { courts: [ct(1, "pending", 11, 9, "manual")] });
+    vp.courts[0]!.elo_preview = {
+      a: [
+        {
+          account_id: 0,
+          name: "我",
+          guest: false,
+          rating_before: 1200,
+          rating_after: 1212,
+          delta: 12,
+        },
+      ],
+      b: [
+        {
+          account_id: 5,
+          name: "亮马河快攻",
+          guest: false,
+          rating_before: 1200,
+          rating_after: 1193,
+          delta: -7,
+        },
+      ],
+    };
     live.applyLiveView(toLiveView(vp));
     expect(live.settling).toEqual({ 0: { origin: "manual" } }); // pending 即有窗
     expect(live.settlingCourtId).toBe(0); // 确认槽挂在这扇窗上（live.vue confirmOpen）
+    expect(live.liveView!.courts[0]!.eloPreview?.a[0]).toMatchObject({
+      accountId: 0,
+      delta: 12,
+    }); // 双分支随映射落地（确认窗点胜方切换消费）
+    expect(live.liveView!.courts[0]!.eloPreview?.b[0]!.delta).toBe(-7);
     live.applyLiveView(toLiveView(vp)); // 同视图重放（回填重放首拍）：窗位原样不闪
     expect(live.settling).toEqual({ 0: { origin: "manual" } });
     live.applyLiveView(
@@ -1694,10 +1760,15 @@ describe("批6 走查销号（P1/P2/P3）", () => {
     expect(live.settlingCourtId).toBeNull();
   });
 
-  it("P2 深链冷设备直达已开局（ensureLive 200 路）：局簿没缓存 → loadDetail 回填 g（局名/时刻/组织者）+ viewer 旗重派生；比分名册仍以视图为准", async () => {
+  it("P2 深链冷设备直达已开局（ensureLive 200 路）：身份旗首拍即真（视图身份块，组织者的按钮不等局簿）；局簿没缓存 → loadDetail 回填 g（局名/时刻/组织者，纯展示让位）；比分名册仍以视图为准", async () => {
     const { live } = await load();
     gamesApi.apiGameDetail.mockResolvedValue(d900());
-    liveApi.apiLiveView.mockResolvedValue(vMid(7));
+    liveApi.apiLiveView.mockResolvedValue({
+      ...vMid(7),
+      is_organizer: true, // 组织者深链：后端按 viewer 发旗，首拍就是全权（不再等回填重派生）
+      is_full_power: true,
+      organizer_account_id: 0,
+    });
     await live.ensureLive(900);
     expect(gamesApi.apiGameDetail).toHaveBeenCalledTimes(1);
     expect(gamesApi.apiGameDetail).toHaveBeenCalledWith(900);
@@ -1705,7 +1776,7 @@ describe("批6 走查销号（P1/P2/P3）", () => {
     expect(g.name).toBe("九百局"); // 不再是 stub 的「现场」
     expect(g.endAt).toBe("2026-10-07T21:00:00+08:00"); // 倒计时源（stub 是 "" → NaN）
     expect(g.organizer.id).toBe(0); // 组织者回到顶条 chip（stub 是 -1）
-    expect(live.liveView!.isOrganizer).toBe(true); // 两旗借真组织者重派生（首拍 -1 降级 false）
+    expect(live.liveView!.isOrganizer).toBe(true); // 首拍即真：冷启动散场钮直接可用（本批修的根）
     expect(live.live!.roster.map((p) => p.name)).toEqual([
       "亮马河快攻",
       "亮的球友·1",

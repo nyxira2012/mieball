@@ -245,6 +245,36 @@ def test_deal_opens_match_then_auto_pending_at_11_9(client: TestClient):
     assert c["last_winner_side"] == "a"
 
 
+# ---- 待确认片 ±积分预演双分支（§4.11 预演收归后端单源，2026-10-08） ----
+
+
+def test_pending_elo_preview_two_branches_equal_settlement(client: TestClient):
+    """预演=落账：待确认片 elo_preview 给 A/B 两套（胜队在前、访客同路），
+    settle-confirm 所选分支的 elo_rows 与预演逐行一致；在打片无预演。"""
+    env = open_live(client, seed=1)
+    v = settled_11_9(client, env)
+    pre = court(v, 1)["elo_preview"]
+    ids_a = side_ids(v, 1, "a")
+    ids_b = side_ids(v, 1, "b")
+    # 行序胜队在前（与 settle_confirm 同走名册序）：两分支都是先涨后扣，
+    # 区别在前两行是谁——A 分支 A 队在前、B 分支 B 队在前
+    assert [r["delta"] > 0 for r in pre["a"]] == [True, True, False, False]
+    assert [r["delta"] > 0 for r in pre["b"]] == [True, True, False, False]
+    assert {r["account_id"] for r in pre["a"][:2]} == {
+        p["account_id"] for p in v["players"] if p["id"] in ids_a
+    }
+    assert {r["account_id"] for r in pre["b"][:2]} == {
+        p["account_id"] for p in v["players"] if p["id"] in ids_b
+    }
+    # 确认 A 胜：落账 elo_rows 与预演 A 分支逐行相等（同一条公式路，前端零公式）
+    r = confirm(client, env["org"]["token"], env["game_id"], v)
+    assert r.status_code == 200, r.text
+    assert r.json()["matches"][-1]["elo_rows"] == pre["a"]
+
+    env2 = open_live(client, seed=2)  # 在打片不随附预演（只有待确认片给）
+    assert court(deal_one(client, env2), 1)["elo_preview"] is None
+
+
 def test_pending_court_frozen_point_and_player_undo(client: TestClient):
     env = open_live(client, seed=2)
     v = settled_11_9(client, env)
@@ -272,6 +302,84 @@ def test_deuce_not_triggered_until_lead_two(client: TestClient):
     assert court(v, 1)["status"] == "playing"  # 11:10 净胜不够：不弹窗
     v = pt(client, env["org"]["token"], env["game_id"], v, 1, "a", 1)
     assert court(v, 1)["status"] == "pending"  # 12:10 弹窗
+
+
+# ---- 改分制切真（2.6 机制A）：在打片照旧旧制结算、新开片用新制 ----
+
+
+def test_scoring_switch_inplay_court_settles_old_scoring(client: TestClient):
+    """在打片照旧边界：11 分制在打片 8:5 时改 21——该片段续记到 11:9 照样弹
+    auto 窗（按片快照旧制结算，新制 21 下本不够线）；窗内 undo 撤回 10:9，
+    旧制分线下窗自动关。"""
+    env = open_live(client, seed=40)
+    gid = env["game_id"]
+    token = env["org"]["token"]
+    v = pt(client, token, gid, deal_one(client, env), 1, "a", 8)
+    v = pt(client, token, gid, v, 1, "b", 5)
+    r = live_call(
+        client, token, gid, "rules", {"scoring": 21, "base_total_seq": v["total_seq"]}
+    )
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert v["rules"]["scoring"] == 21 and court(v, 1)["scoring"] == 11
+    v = pt(client, token, gid, v, 1, "b", 4)
+    v = pt(client, token, gid, v, 1, "a", 3)  # 11:9 —— 快照旧制照样弹窗
+    c = court(v, 1)
+    assert c["status"] == "pending" and c["pending_origin"] == "auto"
+    assert (c["score_a"], c["score_b"]) == (11, 9)
+    v = live_call(client, token, gid, "undo", write_body(v, 1)).json()
+    c = court(v, 1)
+    assert c["status"] == "playing" and c["pending_origin"] is None
+    assert (c["score_a"], c["score_b"]) == (10, 9)
+
+
+def test_scoring_switch_new_court_uses_new_scoring(client: TestClient):
+    """改后新开片吃到新分制：改 21 后再开的片自带 21 快照，11:9 不弹——
+    一路打到 21:19 才按新制弹 auto。"""
+    env = open_live(client, seed=41)
+    gid = env["game_id"]
+    token = env["org"]["token"]
+    v = live_get(client, gid, token)
+    r = live_call(
+        client, token, gid, "rules", {"scoring": 21, "base_total_seq": v["total_seq"]}
+    )
+    assert r.status_code == 200, r.text
+    v = deal_one(client, env)
+    assert court(v, 1)["scoring"] == 21
+    v = to_11_9(client, token, gid, v)
+    c = court(v, 1)
+    assert c["status"] == "playing" and (c["score_a"], c["score_b"]) == (11, 9)
+    v = pt(client, token, gid, v, 1, "b", 10)
+    v = pt(client, token, gid, v, 1, "a", 10)  # 21:19 —— 新制够线才弹
+    c = court(v, 1)
+    assert c["status"] == "pending" and c["pending_origin"] == "auto"
+    assert (c["score_a"], c["score_b"]) == (21, 19)
+
+
+def test_scoring_switch_confirm_redeal_uses_new_scoring(client: TestClient):
+    """确认即续场也是新开一场：11 制打到 11:9 后改 21、确认续场——同片下一场
+    吃到 21 快照，11:9 不弹，一路打到 21:19 才按新制弹 auto。"""
+    env = open_live(client, seed=42)
+    gid = env["game_id"]
+    token = env["org"]["token"]
+    v = settled_11_9(client, env)  # 11:9 待确认（片快照旧制 11）
+    r = live_call(
+        client, token, gid, "rules", {"scoring": 21, "base_total_seq": v["total_seq"]}
+    )
+    assert r.status_code == 200, r.text
+    r = confirm(client, token, gid, r.json())  # 确认即续场：同片直接开下一场
+    assert r.status_code == 200, r.text
+    v = r.json()
+    c = court(v, 1)
+    assert c["status"] == "playing" and c["seq"] == 2 and c["scoring"] == 21
+    v = to_11_9(client, token, gid, v)
+    c = court(v, 1)
+    assert c["status"] == "playing" and (c["score_a"], c["score_b"]) == (11, 9)
+    v = pt(client, token, gid, v, 1, "b", 10)
+    v = pt(client, token, gid, v, 1, "a", 10)  # 21:19 —— 新制够线才弹
+    c = court(v, 1)
+    assert c["status"] == "pending" and c["pending_origin"] == "auto"
+    assert (c["score_a"], c["score_b"]) == (21, 19)
 
 
 def test_clear_from_pending_back_to_playing_people_stay(client: TestClient):

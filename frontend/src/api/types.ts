@@ -529,6 +529,7 @@ export interface LiveCourtApi {
   court_seq: number; // 片号版本：该片记分类写 +1（写动作带它作 base_court_seq）
   pending_origin: PendingOrigin | null; // 待确认窗来源；非 pending 恒 null
   preselect: LiveSide | null; // 窗内预选胜方定值：领先方 / 平分与非 pending 均 null（A4 不自算）
+  elo_preview?: { a: EloRowApi[]; b: EloRowApi[] } | null; // 待确认片的 ±积分预演双分支（§4.11，后端 _elo_settle 同路=预演即落账；非 pending null）
 }
 
 /** 战报人员快照（winners/losers 元素镜像）：落账时定格，id 是名册行 id */
@@ -544,7 +545,7 @@ export interface EloRowApi {
   name: string;
   guest: boolean;
   rating_before: number;
-  rating_after: number; // 地板 400
+  rating_after: number; // 地板 800（1.4 §3）
   delta: number; // 胜 +delta / 败 -delta（败方只扣胜方涨分六成）
 }
 
@@ -602,6 +603,9 @@ export interface LiveViewApi {
   total_seq: number; // 全场总号：任何现场写 +1（轮询对表与写动作 base_total_seq 的基准）
   round: number; // 全场第几场（散场时收口定总数）
   admins: number[]; // 管理员 account_id 表（组织者 ∨ 本表 = 全权）
+  is_organizer: boolean; // viewer 是组织者（身份块，2026-10-08 修订起随视图直读）
+  is_full_power: boolean; // 组织者 ∨ 管理员（收权动作入口把关；游客恒 false）
+  organizer_account_id: number; // 组织者账号（前端代收判定找其名册行）
   feed: FeedEventApi[];
   courts_count: number; // 场地片数真值（缩片先撤空闲片）
   rules: LiveRulesApi;
@@ -641,6 +645,7 @@ export interface LiveCourtView {
   courtSeq: number;
   pendingOrigin: PendingOrigin | null;
   preselect: LiveSide | null;
+  eloPreview: { a: EloRow[]; b: EloRow[] } | null; // 待确认片 ±积分预演双分支（非 pending null）
 }
 
 /** 战报人员快照（camel）：键与线上同形，不另建映射 */
@@ -690,8 +695,8 @@ export interface MatchReport {
 }
 
 /** 总账读视图（camel，store/页面消费）：toLiveView 映射产物，画面一个字不自算（A4）。
-    isOrganizer/isFullPower 是映射时按 viewer 上下文派生（view 本身不带身份块——
-    组织者 id 在局簿、本人在 session，两块都在 store 手里）。 */
+    身份块（isOrganizer/isFullPower/organizerAccountId）视图直读（2026-10-08 修订，
+    翻批4a 的「视图不带身份块」——本地拼 viewer 在深链冷启动依赖异步身份）。 */
 export interface LiveView {
   gameId: number;
   startedAt: string;
@@ -709,8 +714,9 @@ export interface LiveView {
   courts: LiveCourtView[];
   courtSeqs: Record<number, number>; // 片号→court_seq（片级写的 base_court_seq 直取处）
   matches: MatchReport[];
-  isOrganizer: boolean; // viewer 是组织者
+  isOrganizer: boolean; // viewer 是组织者（视图身份块直读）
   isFullPower: boolean; // 组织者 ∨ 管理员：收权动作入口把关（沿 2.2 越权前置拦截）
+  organizerAccountId: number; // 组织者账号（canEndLive 代收分支找组织者名册行）
 }
 
 /* ---- 写动作载荷（镜像 routes/live.py 请求模型，camel 参数形；snake 线上体在 api/live.ts 逐端点内联） ---- */

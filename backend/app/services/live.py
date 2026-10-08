@@ -18,7 +18,6 @@ from __future__ import annotations
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta
-from math import floor
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -43,21 +42,19 @@ from .stats import StatsLedger
 # 开账起笔的 rules 快照默认值（镜像前端 startLive 起笔，2.2 批2 §4.1）：
 # 双打 / 谁下挂 all 占位（推荐重算在前端）/ 按候场队序 / 连庄上限 3
 _DEFAULT_RULES = {"doubles": True, "down": "all", "pairing": "queue", "streak_max": 3}
-# Elo 娱乐轨初始分单一源（1.4 §3：初始 1200、访客代入同值；对齐前端 utils/elo.ts 镜像）
+# Elo 娱乐轨初始分（1.4 §3：初始 1200、访客代入同值；前端 utils/elo.ts 的
+# ELO_INIT 同值仅作展示兜底位，不担公式）
 RATING_INIT = 1200
 
-# Elo 镜像源 frontend/src/utils/elo.ts：K=24、地板 800、败方只扣胜方涨分六成；
-# 访客按 1200 代入当正常玩家算——去半折（2.3 修订②；1.4 §3 调参收窄波动区间）
+# Elo 公式与常量唯一源（2026-10-08 收归后端）：K=24、地板 800、败方只扣胜方涨分
+# 六成；访客按 1200 代入当正常玩家算——去半折（2.3 修订②；1.4 §3 调参收窄波动
+# 区间）。确认窗的 ±预演由 view 的 elo_preview 双分支随视图给出（预演与落账同走
+# _elo_settle）——前端零公式零镜像，调参只改这一处
 _ELO_K = 24.0
 _ELO_FLOOR = 800
 # 这些码的 409 退回要在错误体里带最新视图（附录 B1：最新画面送来，前端对表用）——
 # 防线两码之外，空降防重的 live_duplicate 同样携视图
 _VIEW_CODES = frozenset({"live_stale_total", "live_stale_court", "live_duplicate"})
-
-
-def _js_round(x: float) -> int:
-    # JS Math.round 半向上取整；Python round 是银行家舍入，镜像公式要绕开
-    return floor(x + 0.5)
 
 
 def _snapshot(p: LivePlayer) -> dict:
@@ -156,7 +153,7 @@ class LiveBook(LiveSweepMixin):
         名单必须是候场队头顺位那拨（fillAllCourts 按片号先后取队首）；过关即
         落片行 status=playing、seq+1 开打，人从候场队摘下。"""
         with self._write(game_id=game_id, actor_id=actor_id):
-            state, _game = self._open_write(game_id)
+            state, game = self._open_write(game_id)
             self._require_arrived(game_id, actor_id)
             self._check_total(state, base_total_seq)
             rows = self._roster(game_id)
@@ -173,7 +170,9 @@ class LiveBook(LiveSweepMixin):
                     raise errors.live_invalid("片号超出场地数")
                 court = self._court_or_none(game_id, c["court_no"])
                 if court is None:
-                    court = LiveCourt(game_id=game_id, court_no=c["court_no"])
+                    court = LiveCourt(
+                        game_id=game_id, court_no=c["court_no"], scoring=game.scoring
+                    )
                     self.db.add(court)
                 elif court.status == "pending":
                     raise errors.court_frozen()
@@ -197,6 +196,8 @@ class LiveBook(LiveSweepMixin):
                 court.last_winner_side = None
                 court.pending_origin = None
                 court.court_seq = 1 if fresh else court.court_seq + 1
+                # 分制快照开赛定格（2.6 机制A）：改分制只影响此后新开的片
+                court.scoring = game.scoring
                 for pid in c["a"] + c["b"]:
                     r = by_id[pid]
                     r.court_no = court.court_no
@@ -220,7 +221,7 @@ class LiveBook(LiveSweepMixin):
         """记一分（§4.1）：点哪边哪边 +1、片行自记最后得分方；记分落账时当即判
         到分（分制数且净胜 2，§4.3）——够线该片转 pending(origin='auto')，别片照打。"""
         with self._write(game_id=game_id, actor_id=actor_id):
-            state, game = self._open_write(game_id)
+            state, _game = self._open_write(game_id)
             self._require_arrived(game_id, actor_id)
             self._check_total(state, base_total_seq)
             court = self._court_writable(game_id, court_no)
@@ -230,7 +231,7 @@ class LiveBook(LiveSweepMixin):
             else:
                 court.sb += 1
             court.last_winner_side = side
-            if self._reached(court.sa, court.sb, game.scoring):
+            if self._reached(court.sa, court.sb, court.scoring):
                 court.status = "pending"
                 court.pending_origin = "auto"
             self._bump_court(court)
@@ -274,7 +275,7 @@ class LiveBook(LiveSweepMixin):
                 if (
                     court.status == "pending"
                     and court.pending_origin == "auto"
-                    and not self._reached(court.sa, court.sb, game.scoring)
+                    and not self._reached(court.sa, court.sb, court.scoring)
                 ):
                     court.status = "playing"  # auto 窗撤到分线下：窗自动关（§4.5）
                     court.pending_origin = None
@@ -440,6 +441,8 @@ class LiveBook(LiveSweepMixin):
                     r.court_side = d["court_side"]
                 court.status = "playing"
                 court.seq += 1
+                # 分制快照续场同刷新（2.6 机制A）：确认即开的下一场也是"新开片"
+                court.scoring = game.scoring
             for r in rows:
                 if r.court_side is not None:
                     r.queue_pos = None
@@ -644,10 +647,12 @@ class LiveBook(LiveSweepMixin):
         pairing: str | None = None,
         streak_max: int | None = None,
         courts_count: int | None = None,
+        scoring: int | None = None,
     ) -> dict:
-        """规则四件套+场地片数（2.2 §4.7 收权，全场号拦）：只动显式给的字段。
+        """规则四件套+场地片数+分制（2.2 §4.7 收权，全场号拦）：只动显式给的字段。
         四件套落总账头（下一场起按新规，在打片照旧打完）；courts_count 改片数——
-        不得少于在用片数，缩片先撤空闲片（在打/待确认的片不能收）。"""
+        不得少于在用片数，缩片先撤空闲片（在打/待确认的片不能收）。分制切真
+        （2.6 机制A）：写 game 列真值，在打片快照不回头、新开片用新制。"""
         with self._write(game_id=game_id, actor_id=actor_id):
             state, game = self._open_write(game_id)
             self._require_full_power(state, game, actor_id)
@@ -660,6 +665,8 @@ class LiveBook(LiveSweepMixin):
                 state.doubles = doubles
             if streak_max is not None:
                 state.streak_max = streak_max
+            if scoring is not None:
+                game.scoring = scoring
             if courts_count is not None:
                 courts = self._courts(game_id)
                 if courts_count < sum(c.status != "idle" for c in courts):
@@ -823,7 +830,10 @@ class LiveBook(LiveSweepMixin):
     def view(self, *, game_id: int, viewer_id: int | None) -> dict:
         """总账读（2.3 附录 A4：画面一个字不自算，全给定值）。考勤时刻按 viewer
         分权——组织者或本人见 arrive/left，其他人 null；带队 total_seq 与各片
-        court_seq（契约总则 §4 预留的轮次/版本字段落地）。未开账 → 404。"""
+        court_seq（契约总则 §4 预留的轮次/版本字段落地）。身份块（两旗+组织者
+        账号）随视图直读，前端不再本地拼 viewer（2026-10-08 修订，翻批4a 的
+        「视图不带身份块」）。待确认片随附 ±积分预演双分支（elo_preview——
+        预演与落账同走 _elo_settle，2026-10-08 收归后端单源）。未开账 → 404。"""
         state = self._state_or_none(game_id)
         if state is None:
             raise errors.live_not_found()
@@ -866,9 +876,17 @@ class LiveBook(LiveSweepMixin):
             "total_seq": state.total_seq,
             "round": state.round,
             "admins": state.admins or [],
+            # 身份块（2026-10-08 修订）：viewer 旗直发——本就按 viewer 逐请求现算
+            # （考勤分权同路），无缓存代价；organizer_account_id 供代收判定找
+            # 组织者名册行。游客（无钥匙）两旗恒 false
+            "is_organizer": is_organizer,
+            "is_full_power": is_organizer
+            or (viewer_id is not None and viewer_id in (state.admins or [])),
+            "organizer_account_id": game.organizer_id,
             "feed": state.feed or [],
             "courts_count": state.courts_count,
             "rules": {
+                # 当前生效分制（改后下一场起生效）；在打片自己定格的旧制看 courts[].scoring
                 "scoring": game.scoring,  # 全场统一分制复用局列（2.3 裁决 Q1）
                 "doubles": state.doubles,
                 "down": state.down,
@@ -887,7 +905,14 @@ class LiveBook(LiveSweepMixin):
                     "last_winner_side": c.last_winner_side,
                     "court_seq": c.court_seq,
                     "pending_origin": c.pending_origin,
+                    # 片分制快照（开赛定格）：在打片卡头按它亮数与结算，不吃 rules 块新值
+                    "scoring": c.scoring,
                     "preselect": self._preselect(c),
+                    # 待确认片的 ±积分预演双分支（§4.11，2026-10-08 收归后端单源）；
+                    # 其余片 null
+                    "elo_preview": (
+                        self._elo_preview(c, roster) if c.status == "pending" else None
+                    ),
                 }
                 for c in courts
             ],
@@ -1159,12 +1184,29 @@ class LiveBook(LiveSweepMixin):
         ).scalar_one_or_none()
         return RATING_INIT if row is None else row.rating
 
+    def _elo_preview(self, court: LiveCourt, roster: list[LivePlayer]) -> dict:
+        """待确认片的 ±积分预演双分支（§4.11，2026-10-08 收归后端单源）：Elo 分差
+        只看两队现分与谁胜、与比分无关——A 胜 / B 胜各算一套随视图给出，确认窗点
+        胜方在两套现成数间切换（当场变、不等网络仍成立）。取序与 settle_confirm
+        同一条路（_oncourt 语义：名册序 + 片位过滤），预演=落账：确认响应所选分支
+        的 elo_rows 与这里逐行一致。"""
+        oncourt = [
+            p
+            for p in roster
+            if p.court_no == court.court_no and p.court_side in ("a", "b")
+        ]
+        a = [p for p in oncourt if p.court_side == "a"]
+        b = [p for p in oncourt if p.court_side == "b"]
+        return {"a": self._elo_settle(a, b), "b": self._elo_settle(b, a)}
+
     def _elo_settle(
         self, winners: list[LivePlayer], losers: list[LivePlayer]
     ) -> list[dict]:
-        """结算每人一行、胜队在前（§4.6-2/§4.11）——镜像 utils/elo.ts settleElo：
-        双打按两队人均分算期望落到个人、delta=max(1,K*(1-exp))、败方只扣涨分六成、
-        地板 800；访客代入 1200 当正常玩家算（去半折口径），行内记 delta 但不落账。"""
+        """结算每人一行、胜队在前（§4.6-2/§4.11）——Elo 唯一算路（2026-10-08 起
+        前端零公式：确认窗预演的 elo_preview 与落账 elo_rows 都出自本函数）：
+        双打按两队人均分算期望落到个人、delta=max(1,K*(1-exp))、败方只扣涨分
+        六成、地板 800；访客代入 1200 当正常玩家算（去半折口径），行内记 delta
+        但不落账。"""
 
         def eff(p: LivePlayer) -> int:
             return RATING_INIT if p.guest else self._rating_of(p.account_id)
@@ -1172,8 +1214,8 @@ class LiveBook(LiveSweepMixin):
         w_avg = sum(eff(p) for p in winners) / len(winners)
         l_avg = sum(eff(p) for p in losers) / len(losers)
         exp = 1 / (1 + 10 ** ((l_avg - w_avg) / 400))
-        delta = max(1, _js_round(_ELO_K * (1 - exp)))
-        loss = max(1, _js_round(delta * 0.6))
+        delta = max(1, round(_ELO_K * (1 - exp)))
+        loss = max(1, round(delta * 0.6))
         return [
             {
                 "account_id": p.account_id,
