@@ -113,6 +113,10 @@ export interface MyBlock {
     waitSeq: number | null;
   } | null;
   invited: boolean;
+  /** 能力旗（闸旗同源）：组织者 × 写窗真值——钮显隐直读，不再拿 status 拼窗口 */
+  canBook: boolean; // 订场/改价窗（散场确认前）
+  canFillFee: boolean; // 补填窗（散场过且从未填价）
+  canLock: boolean; // 空锁必打窗（开打前三态）
 }
 
 /** 已出账局的实摊定值块（game_view bill 镜像，1.3 批3）：fee_total/per_head/heads
@@ -151,6 +155,7 @@ export interface Game {
   unlocked: boolean; // 改约解锁：锁定局改了时间/地点，开打前可退
   joinable: boolean; // 派生态 ∈ {open, locked, live}——加入按钮显隐直接读
   liveOpened: boolean; // 现场账已开（LiveState 行存在；2.5 §4.4：账一开卡片立显「进入现场」，不看时间）
+  ended: boolean; // 散场确认过（流程锚，与派生显示态 done 不同——到点未散场 done 但 ended 假，2.3 §4.9）
   heads: number; // 人头（自己+带的人，后端定值）
   slotsLeft: number; // 剩几坑
   perHead: number | null; // 人均（half-up）；null=未定

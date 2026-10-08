@@ -78,19 +78,21 @@ export const autoGameName = (time: string, venue: string): string =>
   `${time.split(" ")[0]} · ${venue.split(" · ").pop()}`;
 
 /** 卡片入场两字段派生（2.5 §4.1/4.2/4.4）：只对「我的局」（组织者 ∨ 正式报名；waitlist/被邀/
-    游客永无入口）且在办局（open/locked/live）判定——
-    账一开（liveOpened 定值）立即可进不看时间（§4.4）；必开局进两小时窗（含整点）也放行（§4.2）；
-    其余给倒计时灰字，纯展示无出口。导出给 detail.vue 复用——「进入现场」详情页与卡片
-    同规矩同文案（2.5 附录A1），判定只此一份。 */
+    游客永无入口）判定——
+    账已开且未散场（liveOpened ∧ ¬ended）入口常在：组织者随时回去补散场确认，锚散场
+    确认而非派生 done——到点未散场的局显示态已是 done 但流程没散场，收入口会把局挂死在
+    「回不了现场、散不了场」的吸收态（2026-10-08 债清偿）；未开账的在办局（open/locked/live）
+    里，必开局进两小时窗（含整点）放行（§4.2）；其余给倒计时灰字，纯展示无出口。
+    导出给 detail.vue 复用——「进入现场」详情页与卡片同规矩同文案（2.5 附录A1），判定只此一份。 */
 export function cardLiveEntry(g: Game): {
   countdown?: string;
   liveEnter?: boolean;
 } {
   const mine = !!g.my?.isOrganizer || g.my?.myEntry?.standing === "formal";
   if (!mine) return {};
+  if (g.liveOpened && !g.ended) return { liveEnter: true };
   if (g.status !== "open" && g.status !== "locked" && g.status !== "live")
     return {};
-  if (g.liveOpened) return { liveEnter: true };
   // 必开与 backend/app/services/game_views.py is_forced（订场∨手动锁）同构：手动锁/订场后
   // 截止懒判定前簿 state 仍 open，开账闸已放行——口径不同构就漏亮入口（2.5 §4.2 锁了必打、
   // 订了场即必开；locked/live 时 forced 天然真，写全四条为可读）

@@ -6,10 +6,9 @@ FakeClock 基点 2026-10-04 12:00（conftest），局的标准时刻：10-06 19:
 
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
-
 from app.core import clock
 from app.db.models import Entry
+from fastapi.testclient import TestClient
 
 from .conftest import signup
 
@@ -126,6 +125,11 @@ def test_publish_organizer_is_first_row_and_fee_undecided(client: TestClient):
         "is_organizer": True,
         "my_entry": {"bring": 0, "standing": "formal", "wait_seq": None},
         "invited": False,
+        # 能力旗（闸旗同源，2026-10-08 债清偿）：新发 open 局——订场窗开着、
+        # 没散场没得补填、开打前可空锁
+        "can_book": True,
+        "can_fill_fee": False,
+        "can_lock": True,
     }
     assert g["start_at"] == "2026-10-06T19:00:00+08:00"  # 出参统一补 +08:00
 

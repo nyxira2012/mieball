@@ -111,8 +111,9 @@
           >保存 · 已订场必开</AppButton
         >
         <!-- 空锁：已手动锁定则不再出现；点第一下只出确认，再点才落锁。
-             窗口=开打前的工具箱三态（后端 lock 口径 TOOLBOX_STATUSES，pending 锁必打是
-             待处置出口）——开打后空锁 422，钮不露出、live 只能订场登记（book 窗到散场前） -->
+             显隐直读能力旗 my.canLock（闸旗同源：后端 lock_window_error 同一份，开打前的
+             工具箱三态，pending 锁必打是待处置出口）——开打后空锁 422，钮不露出、
+             live 只能订场登记（book 窗到散场前，2026-10-08 债清偿：窗口拷贝归一） -->
         <template v-else-if="canLock && !g.manualLock">
           <AppButton
             v-if="sureArmed"
@@ -164,14 +165,9 @@ const busy = ref(false);
 const g = computed(() => game.findGame(props.gameId));
 const forced = computed(() => !!g.value?.forced);
 const hasBooking = computed(() => !!g.value?.courts?.length);
-/** 空锁窗口（对齐后端 TOOLBOX_STATUSES）：开打后 lock 端点 game_not_open 422 */
-const canLock = computed(
-  () =>
-    g.value != null &&
-    (g.value.status === "open" ||
-      g.value.status === "locked" ||
-      g.value.status === "pending"),
-);
+/** 空锁窗口：直读能力旗 my.canLock（后端 lock_window_error 同一份——开打后
+    lock 端点 game_not_open 422，旗与闸不再各写一份 status 三态拼条件） */
+const canLock = computed(() => !!g.value?.my?.canLock);
 
 /** 场地号解析（公共口径）：分隔符切 → 去空 → 去重保序 */
 const courts = computed<string[]>(() => {

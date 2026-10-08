@@ -195,19 +195,13 @@
           >已到截止 · 不能退出</AppChip
         >
         <!-- 锁升级三态一入口（BookingSheet；这里把动作与文案接上）。
-             live 态也开：改价窗口到散场确认前（1.3 §4.5 修订①，开打后加片/买水的钱改总价），
-             但文案只谈订场——空锁窗口在开打前（后端 lock 422），必打语义不再提；
-             done 态走下面的补填形态——只有从未填过价的局留这一个口子。
-             窗口规则四份拷贝之一（改窗四处同步，开发日志 2026-10-08 债登记）：后端真值
-             games._check_booking_window（ended_at 锚）+ bills.set_fee + 下方补填入口 -->
-        <template
-          v-if="
-            org &&
-            (game.status === 'open' ||
-              game.status === 'locked' ||
-              game.status === 'live')
-          "
-        >
+             显隐直读能力旗 my.canBook（闸旗同源：后端 booking_window_error 同一份，
+             散场确认前随时可改——开打中加片/买水、到点未散场照改、pending 待处置也走此门）；
+             文案只谈订场——空锁窗口在开打前（canLock 旗同源），必打语义不再提；
+             done+未填价的补填形态走 canFillFee 入口（只有散场过的局留这一个口子）。
+             2026-10-08 债清偿：此前拿派生 status 拼 open|locked|live，到点未散场的
+             派生 done 把钮收走（后端窗其实开着）——四份窗口拷贝就此归一 -->
+        <template v-if="!!game.my?.canBook">
           <AppButton variant="ghost" class="grow sure-btn" @click="onBooking">{{
             game.courts?.length
               ? `🔒 已订场 · ${game.courts.join("、")} · ¥${game.feeTotal}`
@@ -218,13 +212,9 @@
                   : "🔒 锁定必打 · 可登记订场"
           }}</AppButton>
         </template>
-        <!-- 补填费用（1.3 §4.5）：散场过且从未填价（bill 未出、fee 未定）——只让填总价。
-             后端真值 bills.set_fee；改窗四处同步（见上方订场入口注释） -->
-        <template
-          v-if="
-            org && game.status === 'done' && game.feeTotal == null && !game.bill
-          "
-        >
+        <!-- 补填费用（1.3 §4.5）：显隐直读 my.canFillFee（后端 fill_fee_error 同一份：
+             散场过且从未填价才亮——到点未散场的派生 done 不亮，点了必 game_not_ended） -->
+        <template v-if="!!game.my?.canFillFee">
           <AppButton variant="ghost" class="grow sure-btn" @click="onBookingFee"
             >补填费用 · 只填总价（免费填 0）</AppButton
           >
@@ -241,8 +231,10 @@
 
       <!-- 状态动作（2.5 附录A1：详情与卡片同一套规矩）。组织者——报名中未定必开给指引句
            （无按钮语义，后端 live_requires_forced 同闸）、已锁/已订场随时开始（goLive 内
-           ensureLive 开账，幂等）、开着回现场，done/终态无按钮。正式成员——「进入现场」
-           吃卡片同源判定 cardLiveEntry（账已开 ∨ 必开两小时窗）；
+           ensureLive 开账，幂等）、开着回现场，done/终态无按钮。「回现场」补一类：账已开
+           且未散场（liveOpened ∧ ¬ended）——到点未散场的局派生已是 done 但流程没散场，
+           组织者要能回去补散场确认，否则局挂死在吸收态（2026-10-08 债清偿）。正式成员——
+           「进入现场」吃卡片同源判定 cardLiveEntry（账开 ∨ 必开两小时窗）；
            候补/未报名/游客无按钮（上场唯一路=现场扫码） -->
       <AppChip v-if="orgGuide" class="mt12">先锁定必打，才能开始打球</AppChip>
       <AppButton
@@ -254,7 +246,9 @@
         >▶ 开始打球</AppButton
       >
       <AppButton
-        v-else-if="org && game.status === 'live'"
+        v-else-if="
+          org && (game.status === 'live' || (game.liveOpened && !game.ended))
+        "
         variant="burn"
         block
         class="mt12"

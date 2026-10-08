@@ -46,6 +46,7 @@ function mkGame(p: Partial<Game> = {}): Game {
     unlocked: false,
     joinable: true,
     liveOpened: false,
+    ended: false,
     heads: 1,
     slotsLeft: 7,
     perHead: null,
@@ -194,10 +195,26 @@ describe("newGameCard 三态（进入现场入口 / 倒计时 / 均无）", () =
     expect(card.countdown).toBeUndefined();
   });
 
-  it("done 局：终态两字段均无（哪怕账开过）", () => {
-    const card = newGameCard(org({ status: "done", liveOpened: true }));
+  it("真散场（ended）的 done 局：终态两字段均无（哪怕账开过）", () => {
+    const card = newGameCard(
+      org({ status: "done", liveOpened: true, ended: true }),
+    );
     expect(card.liveEnter).toBeUndefined();
     expect(card.countdown).toBeUndefined();
+  });
+
+  /* 2026-10-08 债清偿回归：到点未散场的局派生已是 done 但 ended 仍假——入口必须
+     常在（组织者要回去补散场确认），否则局挂死在「回不了现场、散不了场」的吸收态 */
+  it("到点未散场（done ∧ ¬ended ∧ 账已开）：现场入口仍亮", () => {
+    const card = newGameCard(
+      org({ status: "done", liveOpened: true, ended: false }),
+    );
+    expect(card.liveEnter).toBe(true);
+    // 成员同规矩：回现场看轮转/记分同一条路
+    const mateCard = newGameCard(
+      member("formal")({ status: "done", liveOpened: true, ended: false }),
+    );
+    expect(mateCard.liveEnter).toBe(true);
   });
 
   it("正式报名成员与组织者同规矩：窗内 locked 局入口亮", () => {

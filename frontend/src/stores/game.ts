@@ -71,6 +71,7 @@ function toGame(v: GameViewApi): Game {
     unlocked: v.unlocked,
     joinable: v.joinable,
     liveOpened: v.live_opened,
+    ended: v.ended,
     heads: v.heads,
     slotsLeft: v.slots_left,
     perHead: v.per_head,
@@ -90,6 +91,10 @@ function toGame(v: GameViewApi): Game {
             waitSeq: v.my.my_entry.wait_seq,
           },
           invited: v.my.invited,
+          // 能力旗（闸旗同源）：窗口显隐直读，页面不再拿派生 status 拼
+          canBook: v.my.can_book,
+          canFillFee: v.my.can_fill_fee,
+          canLock: v.my.can_lock,
         }
       : undefined,
   };

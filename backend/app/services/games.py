@@ -31,17 +31,18 @@ from ..core import clock, errors
 from ..db.models import Account, Bill, BillRow, Entry, Game, Intent, Invite
 from .game_views import (
     JOINABLE_STATUSES,
+    TOOLBOX_STATUSES,
+    booking_window_error,
     death_day,
     derive,
     game_view,
+    lock_window_error,
     masked,
 )
 
 VISIBILITIES = ("played", "public", "invite_only")
-# 工具箱（锁必打/撤局）的受理窗口：开打前；pending 是恢复后的待处置，
-# 锁/撤局是它的处置出口（4.9）。订场/清空不在此列——改价窗口已放宽到散场确认前
-# （1.3 §4.5 修订①），book/clear_booking 自行判窗（_check_booking_window）
-TOOLBOX_STATUSES = ("open", "locked", "pending")
+# 工具箱受理窗口 TOOLBOX_STATUSES 已随写窗谓词迁 game_views（闸旗同源，
+# 2026-10-08 债清偿）——lock 走 lock_window_error，cancel 仍直用三态判据
 
 # 局簿写动作全串行：SQLite 无行锁，靠它保住"正式人头 ≤ max"的不变承诺（技术设计 §3）
 _write_lock = threading.Lock()
@@ -367,12 +368,14 @@ class GameBook:
 
     def lock(self, *, game_id: int, organizer_id: int) -> dict:
         """空锁必打（4.7）：不订场也锁"人数不足照开"；一锁不撤（清订场不松、无解锁）。
-        已锁再锁当没事（幂等）；pending 锁了即处置完、回正常局。"""
+        已锁再锁当没事（幂等）；pending 锁了即处置完、回正常局。窗口真值收在
+        game_views.lock_window_error（闸旗同源，my 块 can_lock 同一份）。"""
         self._evaluate()
         with _write_lock:
             game = self._owned(game_id, organizer_id)
-            if derive(game, clock.now()) not in TOOLBOX_STATUSES:
-                raise errors.game_not_open()
+            err = lock_window_error(game, clock.now())
+            if err is not None:
+                raise err
             game.manual_lock = True
             if game.state == "pending":
                 game.state = "locked"  # 待处置的锁必打出口（4.9）
@@ -525,16 +528,12 @@ class GameBook:
         return game
 
     def _check_booking_window(self, game: Game) -> None:
-        """订场/清空的改价窗口（1.3 §4.5 修订①）：散场确认前随时可改——只锚
-        ended_at 与存储终态，不看派生态（开打中 live、到点未散场的 done 都在窗内）；
-        散场确认后总价定死（game_ended）。终态局仍走 game_not_open（语义不变）。
-        窗口规则四份拷贝之一（改窗四处同步，开发日志 2026-10-08 债登记）：本处 +
-        bills.set_fee（补填窗·互补）+ detail.vue 订场入口与补填入口（按钮镜像）——
-        改漏不出错，只会「前端给钮、后端打回」"""
-        if game.ended_at is not None:
-            raise errors.game_ended()
-        if game.state in ("terminated", "cancelled"):
-            raise errors.game_not_open()
+        """订场/清空的改价窗口（1.3 §4.5 修订①）——真值收在 game_views.
+        booking_window_error（闸旗同源）：本闸与 my 块 can_book 同一份代码，
+        窗口规则改动只改那一处，前后端自动同步（2026-10-08 债清偿，开发日志）。"""
+        err = booking_window_error(game)
+        if err is not None:
+            raise err
 
     def _viewer_game_ids(self, viewer_id: int | None) -> tuple[set[int], set[int]]:
         """该账号 (报过名的局 id 集, 被邀的局 id 集)；匿名两集皆空。"""

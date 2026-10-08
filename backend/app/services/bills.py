@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from ..core import clock, errors
 from ..db.models import Account, Bill, BillRow, Game, LivePlayer
 from .accounts import ANON_NAME, person_view
+from .game_views import fill_fee_error
 
 # 补填写串行（沿两簿先例）：SQLite 无行锁，「查未填→落价→出账」check-then-act 全锁内；
 # 与散场链（live 的锁）的竞态由 ended_at 守卫互斥——未散场进不了补填、散场后进不了 end
@@ -99,18 +100,15 @@ class BillBook:
         self, *, game_id: int, organizer_id: int, fee_total: int
     ) -> Bill | None:
         """补填：组织者本人（管理员不碰钱，C2）；仅散场过且从未填过价可用——
-        未散场 game_not_ended、已填过（含 0）fee_already_set、负数 fee_invalid。
+        窗口真值收在 game_views.fill_fee_error（闸旗同源：my 块 can_fill_fee 同一份，
+        未散场 game_not_ended、已填过含 0 fee_already_set），负数 fee_invalid。
         fee>0 当场出账（billed_at=补填刻，账单日期仍取 game.ended_at 散场那天）；
-        fee=0 只定值不出账（提醒消失）。价格就此定死。
-        窗口规则四份拷贝之一（改窗四处同步，开发日志 2026-10-08 债登记）：本处 +
-        games._check_booking_window（订场/清空窗·互补）+ detail.vue 订场入口与
-        补填入口（按钮镜像）——改漏不出错，只会「前端给钮、后端打回」"""
+        fee=0 只定值不出账（提醒消失）。价格就此定死（2026-10-08 债清偿，开发日志）。"""
         with _write_lock:
             game = self._owned_game(game_id, organizer_id)
-            if game.ended_at is None:
-                raise errors.game_not_ended()
-            if game.fee_total is not None:
-                raise errors.fee_already_set()
+            err = fill_fee_error(game)
+            if err is not None:
+                raise err
             if fee_total < 0:
                 raise errors.fee_invalid()
             game.fee_total = fee_total

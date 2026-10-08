@@ -1,10 +1,13 @@
-"""game_views —— 局簿读视图：派生态与 game_view 组装（技术设计 §2.4，批3 自 games.py 拆出）。
+"""game_views —— 局簿读视图：派生态、game_view 组装与写窗谓词（技术设计 §2.4，批3 自 games.py 拆出）。
 
 GameBook 的读出口要把"局行 + 时刻 + 观看者"变成前端直接可用的定值形状（A4：画面不自算），
-这里管两件事：
+这里管三件事：
 - 派生：存储 5 态 × 时刻 × 观看者 → 视图 7 态；pending 待处置只组织者可见（4.9），
   其他人按 terminated 出（masked）；灰字"当日"的锚（death_day）。
-- 组装：game_view 全量字段——人头/剩坑/人均/forced 都在此算定值。
+- 组装：game_view 全量字段——人头/剩坑/人均/forced/ended 都在此算定值，
+  my 块带能力旗（can_book/can_fill_fee/can_lock，闸旗同源）。
+- 写窗谓词：booking/fill_fee/lock 三个窗口的拦路错只此一份——写端点拿它把关、
+  my 块拿它亮旗，窗口规则改动不出本模块（2026-10-08 债清偿，沿 is_forced 先例）。
 局簿写路径也用 derive 做窗口判断（游戏规则的"现在算什么态"只有这一份）。
 """
 
@@ -16,12 +19,17 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..core import clock
+from ..core import clock, errors
 from ..db.models import Account, Bill, BillRow, Entry, Game, Invite, LiveState
 from .accounts import person_view
 
 # 截止后照常可加到局结束（4.14）；done/terminated/cancelled/pending 不可加
 JOINABLE_STATUSES = ("open", "locked", "live")
+
+# 工具箱（锁必打/撤局）的受理窗口：开打前；pending 是恢复后的待处置，
+# 锁/撤局是它的处置出口（4.9）。订场/清空不在此列——改价窗口已放宽到散场确认前
+# （1.3 §4.5 修订①），走 booking_window_error
+TOOLBOX_STATUSES = ("open", "locked", "pending")
 
 
 def is_forced(game: Game) -> bool:
@@ -59,6 +67,40 @@ def death_day(game: Game) -> date:
     if game.state == "cancelled":
         return game.cancelled_at.date()
     return (game.terminated_at or game.deadline_at).date()
+
+
+# ---- 写窗谓词（闸旗同源，2026-10-08 债清偿）：写端点拿它把关（有拦路错就抛），
+#      my 块拿它亮能力旗（无拦路错才 true）——窗口规则只剩这一份，改一处两端同步。
+#      沿 is_forced 先例（开账闸与卡片 forced 同源）落在读视图模块。 ----
+
+
+def booking_window_error(game: Game) -> errors.ApiError | None:
+    """订场/清空改价窗口的拦路错（1.3 §4.5 修订①）：散场确认前随时可改——只锚
+    ended_at 与存储终态，不看派生态（开打中 live、到点未散场的 done 都在窗内）；
+    散场确认后总价定死（game_ended），终态局仍 game_not_open。"""
+    if game.ended_at is not None:
+        return errors.game_ended()
+    if game.state in ("terminated", "cancelled"):
+        return errors.game_not_open()
+    return None
+
+
+def fill_fee_error(game: Game) -> errors.ApiError | None:
+    """补填窗口的拦路错（1.3 §4.5）：只有散场过且从未填过价（fee_total 空）的局
+    留这一个口子——未散场 game_not_ended、填过（含 0）fee_already_set。"""
+    if game.ended_at is None:
+        return errors.game_not_ended()
+    if game.fee_total is not None:
+        return errors.fee_already_set()
+    return None
+
+
+def lock_window_error(game: Game, now: datetime) -> errors.ApiError | None:
+    """空锁必打窗口的拦路错（4.7/4.9）：开打前的工具箱三态——pending 锁必打是
+    恢复局的处置出口，开打后 game_not_open（空锁语义只存在开打前）。"""
+    if derive(game, now) not in TOOLBOX_STATUSES:
+        return errors.game_not_open()
+    return None
 
 
 def game_view(
@@ -118,11 +160,15 @@ def game_view(
             select(LiveState.id).where(LiveState.game_id == game.id)
         ).first()
         is not None,
+        # 散场确认锚（与 live 视图 ended 同名同义）：流程态 done 与派生显示态 done
+        # 不是一回事——到点未散场的局派生出 done 但 ended 仍 false，现场回口/补填
+        # 都要锚它（2.3 §4.9）
+        "ended": game.ended_at is not None,
     }
     if with_entries:
         view["entries"] = entry_rows(db, game.id)
     if viewer_id is not None:
-        view["my"] = my_block(db, game, viewer_id, batch=batch)
+        view["my"] = my_block(db, game, viewer_id, batch=batch, now=now)
     return view
 
 
@@ -190,7 +236,11 @@ def entry_rows(db: Session, game_id: int) -> list[dict]:
 
 
 def my_block(
-    db: Session, game: Game, viewer_id: int, batch: dict | None = None
+    db: Session,
+    game: Game,
+    viewer_id: int,
+    batch: dict | None = None,
+    now: datetime | None = None,
 ) -> dict:
     if batch is not None:
         entry = batch["my_entries"].get(game.id)
@@ -207,8 +257,9 @@ def my_block(
             ).first()
             is not None
         )
+    is_org = game.organizer_id == viewer_id
     return {
-        "is_organizer": game.organizer_id == viewer_id,
+        "is_organizer": is_org,
         "my_entry": (
             {
                 "bring": entry.bring,
@@ -219,4 +270,10 @@ def my_block(
             else None
         ),
         "invited": invited,
+        # 能力旗（闸旗同源）：组织者身份 × 写窗真值一次算定——前端显隐直读，不再拿
+        # 派生 status 拼窗口（到点未散场的派生 done 曾把订场钮收走、补填钮错亮，
+        # 2026-10-08 债清偿）。旗是读取刻的快照，过期由写端点的闸兜底
+        "can_book": is_org and booking_window_error(game) is None,
+        "can_fill_fee": is_org and fill_fee_error(game) is None,
+        "can_lock": is_org and lock_window_error(game, now or clock.now()) is None,
     }

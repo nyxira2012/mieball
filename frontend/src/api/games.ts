@@ -19,7 +19,7 @@ export interface EntryRowApi {
   wait_seq: number | null;
 }
 
-/** viewer 视角块（my_block 镜像）；匿名请求不带 */
+/** viewer 视角块（my_block 镜像）；匿名请求不带。能力旗与后端写窗同源（闸旗同源） */
 export interface MyBlockApi {
   is_organizer: boolean;
   my_entry: {
@@ -28,6 +28,9 @@ export interface MyBlockApi {
     wait_seq: number | null;
   } | null;
   invited: boolean;
+  can_book: boolean;
+  can_fill_fee: boolean;
+  can_lock: boolean;
 }
 
 /** 已出账局的实摊定值块（game_view bill 镜像，1.3 批3；my_* 按 viewer，不在名单 → null） */
@@ -71,6 +74,7 @@ export interface GameViewApi {
   unlocked: boolean;
   joinable: boolean;
   live_opened: boolean; // 现场账已开（game_view 定值；2.5 批1）
+  ended: boolean; // 散场确认过（流程锚；到点未散场 done 但 ended 假）
   heads: number;
   slots_left: number;
   per_head: number | null;
