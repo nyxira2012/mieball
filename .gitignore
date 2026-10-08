@@ -234,3 +234,6 @@ frontend/.vite/
 
 # mieball 后端本地库（SQLite）
 backend/*.db
+
+# 根目录误跑测试生成的库（pytest 从根目录跑会落在这）
+/mieball.db
