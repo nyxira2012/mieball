@@ -4,7 +4,7 @@
      idle = 空片差人卡（还差 N 人 · courtSize-aware + 自动排阵/去拉人双钮）。
      卡头 = 场地号 + 单双打标识（读 court.singles，选了什么显什么）+ 分制 +
      连庄 chip（仅 down=loser 且该边 streak>0 显示，2.4 新增显示）。
-     点数字记分与撤回对所有人开放（2.2 §4.8）；清零/提前结算/取消/找替补是全权手柄，
+     点数字记分与撤回对所有人开放（2.2 §4.8）；清零/提前结算/取消是全权手柄，
      其中清零/取消先弹后果确认（A3，确认槽在页面层）。
      待确认态（2.3 §4.3）：卡头「待确认」chip + 记分框压暗不可点 + 工具行收起——
      整片冻结（记分/撤分/换人锁死），清零/取消/调分出口收进确认窗。 -->
@@ -90,13 +90,9 @@
       </view>
 
       <!-- 全权工具行（非 full 不渲染；换人不设独立入口，走「点人」抽屉）：
-          找替补只在缺人且候场有人时出现（§4.11）；清零/取消先确认由页面接（A3）；
-          撤回已挪记分行对所有人开放（§4.8），不再占工具行；
-          待确认片整行收起（§4.3-2：清零/取消/提前结算入口收进确认窗） -->
+          清零/取消先确认由页面接（A3）；撤回已挪记分行对所有人开放（§4.8），
+          不再占工具行；待确认片整行收起（§4.3-2：清零/取消/提前结算入口收进确认窗） -->
       <view v-if="full && !frozen" class="match-card-tools">
-        <text v-if="needSub" class="tool-link" @click="emit('sub', court.id)"
-          >找替补</text
-        >
         <text class="tool-link" @click="emit('clear', court.id)">清零</text>
         <text class="tool-link" @click="emit('settle', court.id)"
           >提前结算</text
@@ -148,7 +144,7 @@ import type { LiveCourt } from "@/api/types";
 import { courtSize } from "@/utils/rotate";
 import { GUEST_DUPR, fmtDupr1 } from "@/utils/elo";
 import { courtDisplayName } from "@/utils/format";
-import { perSide, useLiveStore } from "@/stores/live";
+import { useLiveStore } from "@/stores/live";
 
 const props = defineProps({
   /** 本片（playing/idle 由 A/B 空否自判） */
@@ -162,7 +158,6 @@ const emit = defineEmits<{
   (e: "clear", courtId: number): void;
   (e: "settle", courtId: number): void;
   (e: "cancel", courtId: number): void;
-  (e: "sub", courtId: number): void;
   (e: "autodeal"): void;
   (e: "pull"): void;
   (e: "profile", id: number): void;
@@ -180,9 +175,13 @@ const playing = computed(
    工具行收起，处理入口在确认窗 */
 const frozen = computed(() => liveStore.isPending(props.court.id));
 
-/** 显示名（court.name 存场地号 '3号' → '3号场'，单一源 format.courtDisplayName）与分制 */
+/** 显示名（court.name 存场地号 '3号' → '3号场'，单一源 format.courtDisplayName）与
+    分制（片快照优先：在打片定格开赛分制、改分制下一场起生效，2.6；视图缺行的
+    本地补空片无快照 → 回落全局 g.scoring） */
 const label = computed(() => courtDisplayName(props.court.name));
-const scoring = computed(() => liveStore.live?.g.scoring ?? 11);
+const scoring = computed(
+  () => props.court.scoring ?? liveStore.live?.g.scoring ?? 11,
+);
 
 /** 连庄 chip（2.4 §4.6 新增显示）：只有输家下才有连庄，且该边 streak>0 才显 */
 function streakOf(k: "a" | "b"): number {
@@ -205,13 +204,6 @@ const sides = computed(() =>
 /** idle 差人卡：还差几人按当前格式每片人数算（双打 4 / 单打 2） */
 const size = computed(() => courtSize(liveStore.live?.rules.singles ?? false));
 const waiting = computed(() => liveStore.live?.queue.length ?? 0);
-
-/** 找替补入口（§4.11）：该片任一队缺人且候场有人才亮（每边满员=每片人数的一半） */
-const needSub = computed(() => {
-  const c = props.court;
-  const per = perSide(c.singles);
-  return (c.A.length < per || c.B.length < per) && waiting.value > 0;
-});
 
 /* 得分数字弹跳（Scoreboard 同法）：watch sa/sb，上涨侧挂 .bump（撤回回落不弹）；
    :key 自增重挂载，连点同侧也能重触发 */

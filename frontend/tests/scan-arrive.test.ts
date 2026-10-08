@@ -1,7 +1,8 @@
 /* 扫码自签到链路（2.1·选项A · 1.3 批2 空降切真）+ 「我」id 运行时化回归（1.2 接线重写）：
    - arriveMe：名册没我 → apiLiveDropIn 后端建行入册（dropin 标、队尾，响应视图落地）；
      在册未到 → 到场（apiLiveCheck，口径归一在后端）；已在场 → 幂等；已结束的局 →
-     ensureLive 拦在门外；移出后重扫 → 再走空降通道
+     ensureLive 拦在门外；视图无我的行时重扫 → 再走空降通道（原「移出后重扫」，
+     2.6 移出退役后用视图重建造该态）
    - 真账号接管 U.me（id 非 0）后：isMe 认得出、togglePerson 找得到人（快照常量回归）
    局 fixture 与后端 game_view 镜像；现场链走批5a 同款 vi.mock('@/api/live')：
    读默认 404 live_not_found → ensureLive 落局簿开账路（开账视图 row id=账号 id 镜像），
@@ -264,16 +265,17 @@ describe("arriveMe（扫码签到）", () => {
     expect(live.live!.roster.find((p) => p.id === 42)?.check).toBe("late"); // 迟到归一在后端
   });
 
-  it("移出后重扫（§4.3 对手方）：视图已无我的行 → 再走空降通道回名册进队尾", async () => {
+  it("视图无我的行时重扫（原「移出后重扫」§4.3 对手方；移出本地路已随 2.6 退役，改用视图重建造态）→ 再走空降通道回名册进队尾", async () => {
     await seedStore(viewOf());
     const live = useLiveStore();
     liveApi.apiLiveDropIn.mockResolvedValue(dropinView());
     await live.arriveMe(107); // 首次空降：在场
-    const L = live.live!;
-    live.removeFromRoster(42); // 移出是收权本地路（后端无对应端点）：名册消失
-    expect(L.roster.some((p) => p.id === 42)).toBe(false);
+    // 总账视图重建为无我的行（名册真值随视图）：我的行从名册消失
+    const { toLiveView } = await import("@/api/live");
+    live.applyLiveView(toLiveView(liveStartView()));
+    expect(live.live!.roster.some((p) => p.id === 42)).toBe(false);
 
-    const msg = await live.arriveMe(107); // 幽灵重扫
+    const msg = await live.arriveMe(107); // 重扫
 
     expect(msg).toBe("已签到 · 进候场区");
     expect(liveApi.apiLiveDropIn).toHaveBeenCalledTimes(2); // 再空降

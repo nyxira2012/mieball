@@ -86,8 +86,9 @@
 </template>
 
 <script setup lang="ts">
-/* 规则抽屉（2.1 §3 · 2.4 批3 重造）：直调 store——分制 setRuleScore 当场生效、四件套
-   setRules 点选即生效（toast 在 store）；推荐消费 store 已导出的 advice computed
+/* 规则抽屉（2.1 §3 · 2.4 批3 重造）：直调 store——分制 setRuleScore 下一场起生效
+   （在打片照旧打完，2.6 切真）、四件套 setRules 点选即生效（toast 在 store）；
+   推荐消费 store 已导出的 advice computed
    （总账算好定值，画面不自算、不造假延时——A2 无加载态）。只读三保险：.ro 罩层
    pointer-events / 处理器 full 判 / store needFull guard（双保险不动）。 */
 import { computed } from "vue";

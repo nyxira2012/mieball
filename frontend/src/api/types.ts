@@ -49,8 +49,8 @@ export interface User {
   tenure?: number; // 现场态 · 连续在场场数（上场=0 起，每结束一场 +1，下场清 0——2.4 N人下按此排「待得最久」）
 }
 
-/** 出勤底账一行（§4.14 观察点：几点到/几点走/访客谁带的/移出留痕）。
-    一人一行快照式、不引用 User——人被移出名册后行必须保留（removedAt 留痕），故复制字段。 */
+/** 出勤底账一行（§4.14 观察点：几点到/几点走/访客谁带的）。
+    一人一行快照式、不引用 User（applyLiveView 随视图 players 重建，故复制字段）。 */
 export interface LedgerRow {
   id: number;
   name: string;
@@ -59,7 +59,6 @@ export interface LedgerRow {
   guarantor?: string; // 担保人名（访客谁带的）
   arriveAt?: string; // ISO · 几点到（首次到场）
   leftAt?: string; // ISO · 几点走（早退）
-  removedAt?: string; // ISO · 被移出名册时刻（行保留=留痕）
 }
 
 /** alpha:762 recentStats（我的页运动数据条） */
@@ -354,6 +353,7 @@ export interface LiveCourt {
   singles: boolean; // 本片当前对局格式（换单双打过渡期可 ≠ rules.singles，2.4 §4.7-3）
   sa: number;
   sb: number;
+  scoring?: number; // 片分制快照（视图缺行时本地补空片走 g.scoring 兜底，2.6）
   last?: "a" | "b"; // 本片最后得分方（undoPoint 回退用——多片各记各的）
   streakA: number; // 连庄数——跟半边不跟人（手动换人不动连庄，2.4 §4.9）
   streakB: number;
@@ -381,7 +381,7 @@ export interface LiveState {
   feed: string[]; // 战报事件句（unshift 新到旧；句子在动作处拼好、含操作者，LiveTopbar 轮播消费）
   startedAt: string; // 现场点亮时刻（startLive 落 ISO；批4 底账定格/散场消费）
   endedAt?: string; // 散场时刻（apiLiveEnd 落）：有值=现场封存转只读回看（§4.9/4.10）；live 态保留供回看与底账查
-  ledger: LedgerRow[]; // 出勤底账（动作处同步写：touchLedger 单点；移出/空降行留痕）
+  ledger: LedgerRow[]; // 出勤底账（applyLiveView 随视图 players 重建：到/走/访客谁带的）
   rules: RotationRules; // 2.4 轮换四件套（startLive 起必挂：自选前 down 跟推荐走）
   courtSeqNext: number; // 上场先后序发号器（courtSeq 的源——资历并列的 tiebreak）
 }
@@ -529,6 +529,7 @@ export interface LiveCourtApi {
   court_seq: number; // 片号版本：该片记分类写 +1（写动作带它作 base_court_seq）
   pending_origin: PendingOrigin | null; // 待确认窗来源；非 pending 恒 null
   preselect: LiveSide | null; // 窗内预选胜方定值：领先方 / 平分与非 pending 均 null（A4 不自算）
+  scoring: number; // 片分制快照（开赛定格 game.scoring，改分制下一场起生效——在打片照旧，2.6）
   elo_preview?: { a: EloRowApi[]; b: EloRowApi[] } | null; // 待确认片的 ±积分预演双分支（§4.11，后端 _elo_settle 同路=预演即落账；非 pending null）
 }
 
@@ -645,6 +646,7 @@ export interface LiveCourtView {
   courtSeq: number;
   pendingOrigin: PendingOrigin | null;
   preselect: LiveSide | null;
+  scoring: number; // 片分制快照（在打片定格开赛分制，改分制只影响新开片——2.6）
   eloPreview: { a: EloRow[]; b: EloRow[] } | null; // 待确认片 ±积分预演双分支（非 pending null）
 }
 
@@ -739,11 +741,12 @@ export interface SettleConfirmInput {
   baseCourtSeq: number;
 }
 
-/** 规则四件套+片数（RulesIn 镜像）：全可选，只动显式给的字段（undefined 不进 JSON 体） */
+/** 规则四件套+片数+分制（RulesIn 镜像）：全可选，只动显式给的字段（undefined 不进 JSON 体） */
 export interface LiveRulesInput {
   doubles?: boolean;
   down?: DownMode;
   pairing?: PairingMode;
   streakMax?: number;
   courtsCount?: number; // 不得少于在用片数（缩片先撤空闲片）
+  scoring?: number; // 分制 target（写局列，全局当前生效；在打片照旧、新开片用新制——2.6）
 }

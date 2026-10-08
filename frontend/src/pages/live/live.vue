@@ -66,7 +66,6 @@
             @clear="onClearScore"
             @settle="liveStore.openSettle"
             @cancel="onCancelMatch"
-            @sub="liveStore.subFirst"
             @autodeal="liveStore.autoDeal"
             @pull="goPull"
             @profile="openProfile"

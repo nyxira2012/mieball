@@ -201,7 +201,7 @@ export function apiLiveTempo(
   });
 }
 
-/** 规则四件套+片数（全权，§4.7 收权）：只动显式给的字段——undefined 键不进 JSON 体 */
+/** 规则四件套+片数+分制（全权，§4.7 收权）：只动显式给的字段——undefined 键不进 JSON 体 */
 export function apiLiveRules(
   gameId: number,
   input: LiveRulesInput,
@@ -213,6 +213,7 @@ export function apiLiveRules(
     pairing: input.pairing,
     streak_max: input.streakMax,
     courts_count: input.courtsCount,
+    scoring: input.scoring,
     base_total_seq: baseTotalSeq,
   });
 }
@@ -327,6 +328,7 @@ export function toLiveView(v: LiveViewApi): LiveView {
       courtSeq: c.court_seq,
       pendingOrigin: c.pending_origin,
       preselect: c.preselect,
+      scoring: c.scoring,
       eloPreview: c.elo_preview
         ? { a: c.elo_preview.a.map(eloRow), b: c.elo_preview.b.map(eloRow) }
         : null,

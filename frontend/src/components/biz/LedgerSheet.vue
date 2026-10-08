@@ -1,10 +1,10 @@
 <template>
-  <!-- 出勤底账抽屉（§4.14）：每人几点到/几点走、访客谁带的、移出留痕——留给事后摊钱用。
-       纯渲染 live.ledger 快照行（一人一行、不引用名册，被移出者行保留），散场前后都可查。 -->
+  <!-- 出勤底账抽屉（§4.14）：每人几点到/几点走、访客谁带的——留给事后摊钱用。
+       纯渲染 live.ledger 快照行（一人一行、不引用名册），散场前后都可查。 -->
   <AppSheet
     :visible="visible"
     title="出勤底账"
-    hint="几点到 · 几点走 · 访客谁带的 · 移出留痕——摊钱有据"
+    hint="几点到 · 几点走 · 访客谁带的——摊钱有据"
     @close="emit('close')"
   >
     <template v-if="rows.length">
@@ -16,22 +16,15 @@
           <view class="nm"
             >{{ r.name
             }}<text v-if="r.dropin" class="badge dropin nm-badge">空降</text
-            ><text v-if="r.removedAt" class="badge guest nm-badge">已移出</text
-            ><text v-if="r.shadow && !r.removedAt" class="badge guest nm-badge"
+            ><text v-if="r.shadow" class="badge guest nm-badge"
               >访客</text
             ></view
           >
           <view class="meta">
             {{
-              r.removedAt
-                ? `已移出 · ${isoHmOrDash(r.removedAt)}`
-                : r.guarantor
-                  ? `${r.guarantor} 带的`
-                  : r.dropin
-                    ? "空降进场"
-                    : ""
-            }}</view
-          >
+              r.guarantor ? `${r.guarantor} 带的` : r.dropin ? "空降进场" : ""
+            }}
+          </view>
         </view>
         <view class="times">
           <text class="t">到 {{ isoHmOrDash(r.arriveAt) }}</text>
@@ -45,7 +38,7 @@
 
 <script setup lang="ts">
 /* 底账抽屉（2.2 批4）：无本地态，读 live store 的 ledger 快照；头像借名册同 id 者
-   （被移出者名册查不到 → byId 兜底空配置）。时刻 isoHm 北京墙钟（未落 = 「—」）。 */
+   （底账与名册同源于视图 players，byId 兜底空配置纯防御）。时刻 isoHm 北京墙钟（未落 = 「—」）。 */
 import { computed } from "vue";
 import AppSheet from "@/components/ui/AppSheet.vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";

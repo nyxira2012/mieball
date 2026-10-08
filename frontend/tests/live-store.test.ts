@@ -13,13 +13,13 @@ import type {
    带访客切真）：vi.mock('@/api/live') 路数（toLiveView 保留真实现——store 对表链吃同一
    映射），写动作用例喂 crafted 响应视图（snake 形状与后端 services/live.py view 输出逐字
    对齐）断言 applyLiveView 落地 + toast；409 stale 携视图对表、断网走 errText 文案。
-   本地遗留路（后端无对应端点：subFirst/removeFromRoster/setRuleScore）在视图态上
-   直测保留；setCheck/togglePerson/swapPlayers 的视图外行支线已随批6 切真退役删除；
-   空降/带访客走
+   原本地遗留路已收口（2026-10-08 2.6 裁决）：subFirst/removeFromRoster 退役删除
+   （用例随删）、setRuleScore 切真走 apiLiveRules（scoring 写局列，专例见后）；
+   setCheck/togglePerson/swapPlayers 的视图外行支线已随批6 切真退役；空降/带访客走
    apiLiveDropIn/apiLiveGuests 专例。散场链（startSweep/sweepCancelAll/endGame/
    noRedeal 透传/回看落地停轮询）各有专例。批5b 增补：settlingCourtId 按片渲染窗、
-   确认窗联动纯函数（followWinner/canPickWinner）、验收官补测销号 G1-G3（G4 并入
-   openSettle）。每个用例重置模块图 → 全新 mock 数据。 */
+   确认窗联动纯函数（followWinner/canPickWinner）、验收官补测销号 G1（G3 随 subFirst
+   退役删；G4 并入 openSettle）。每个用例重置模块图 → 全新 mock 数据。 */
 
 const liveApi = vi.hoisted(() => ({
   apiLiveView: vi.fn(),
@@ -151,7 +151,8 @@ const pl = (
   ...o,
 });
 
-/** 片行速造（court_seq=5 与总号 7 可分辨） */
+/** 片行速造（court_seq=5 与总号 7 可分辨；scoring 片快照默认 11=与全局一致，
+    改分制用例靠 rules.scoring 覆写区分全局与快照，2.6） */
 const ct = (
   no: number,
   status: "idle" | "playing" | "pending",
@@ -168,6 +169,7 @@ const ct = (
   court_seq: 5,
   pending_origin: status === "pending" ? (origin ?? "auto") : null,
   preselect: null,
+  scoring: 11,
 });
 
 /** 中场快照（900 局）：li(101) 与访客(102) 在 1 号片在打 3:2、我(103) 候场队首；
@@ -256,6 +258,7 @@ function vMid(seq = 7): LiveViewApi {
         court_seq: 5,
         pending_origin: null,
         preselect: null,
+        scoring: 11,
       },
     ],
     matches: [
@@ -1454,41 +1457,31 @@ describe("空降与带访客（1.3 批2 切真：apiLiveGuests · 命名/挂账/
   });
 });
 
-describe("本地遗留路（后端无对应端点——视图态上直测）", () => {
-  it("subFirst：候场队首可用者顶上人数少的一队、feed 留句（本地路）", async () => {
-    const { live, ui } = await apply(
-      vPlay(7, {
-        players: [
-          ...vPlay().players.slice(0, 3), // B 只剩北苑小钢炮（打短）
-          pl(105, 6, { name: "老赵", queue_pos: 0 }),
-        ],
-        courts: [ct(1, "playing", 3, 2)],
-        queue: [105],
-      }),
+describe("setRuleScore（2.6 切真：scoring 写局列，在打片快照照旧）", () => {
+  it("成功：apiLiveRules 收 scoring 键 + toast「下一场起生效」；全局 g.scoring 随视图翻新、在打片快照照旧 11", async () => {
+    const { live, ui } = await inPlay();
+    liveApi.apiLiveRules.mockResolvedValue(
+      vPlay(8, { rules: { ...vPlay().rules, scoring: 21 } }),
     );
-    live.subFirst(0);
-    expect(live.live!.courts[0].B).toEqual([103, 105]); // 人数少的 B 队补上老赵
-    expect(live.live!.queue).toEqual([]);
-    expect(live.live!.feed[0]).toBe("替补：老赵 顶上 · 比赛继续");
-    expect(ui.toastMsg).toBe("替补已顶上 · 比赛继续");
-    expect(liveApi.apiLiveDeal).not.toHaveBeenCalled(); // 本地路不发请求
+    await live.setRuleScore(21);
+    expect(liveApi.apiLiveRules).toHaveBeenCalledWith(900, { scoring: 21 }, 7);
+    expect(live.live!.g.scoring).toBe(21); // 全局当前生效（rules 块随视图回填 g）
+    expect(live.live!.courts[0]!.scoring).toBe(11); // 在打片快照不动：这局照旧 11 分打完
+    expect(ui.toastMsg).toBe("分制已改为 21 分 · 下一场起生效");
   });
-  it("removeFromRoster：名册/候场/在打全清、底账行留痕 removedAt、feed+toast", async () => {
+  it("失败：断网 toast「网络不给力，请稍后再试」、现场不动（g.scoring 与总号原样）", async () => {
     const { live, ui } = await inPlay();
-    const L = live.live!;
-    live.removeFromRoster(103);
-    expect(L.roster.some((p) => p.id === 103)).toBe(false);
-    expect(L.courts[0].B).toEqual([104]); // 场上同清
-    const row = L.ledger.find((r) => r.id === 103)!;
-    expect(row.removedAt).toBeTruthy(); // 行保留=留痕
-    expect(L.feed[0]).toBe("北苑小钢炮 被移出名册");
-    expect(ui.toastMsg).toBe("北苑小钢炮 被移出名册");
+    liveApi.apiLiveRules.mockRejectedValue(new TypeError("boom"));
+    await live.setRuleScore(21);
+    expect(ui.toastMsg).toBe("网络不给力，请稍后再试");
+    expect(live.live!.g.scoring).toBe(11); // 未落地
+    expect(live.liveView!.totalSeq).toBe(7);
   });
-  it("setRuleScore：本地落 g.scoring + toast（后端 rules 端点不带 scoring——遗留）", async () => {
-    const { live, ui } = await inPlay();
-    live.setRuleScore(21);
-    expect(live.live!.g.scoring).toBe(21);
-    expect(ui.toastMsg).toBe("分制已改为 21 分 · 当场生效");
+  it("收权：球友被拒「请找组织者或管理员」不发（needFull 前置保留）", async () => {
+    const { live, ui } = await inPlay(vPlay(7, { admins: [] }));
+    await live.setRuleScore(21);
+    expect(ui.toastMsg).toBe("请找组织者或管理员");
+    expect(liveApi.apiLiveRules).not.toHaveBeenCalled();
   });
 });
 
@@ -1668,7 +1661,7 @@ describe("确认窗联动纯函数（§4.4/4.6：EndSettleModal 消费；组件�
   });
 });
 
-describe("批5b 补测销号（验收官批5a findings G1-G3）", () => {
+describe("批5b 补测销号（验收官批5a findings G1；G3 随 2.6 subFirst 退役删）", () => {
   it("G1 myRound 有空片放大分支：ceil((每片人数×空片数+队列位+1)/每片人数)", async () => {
     const { live } = await apply(
       mkLiveView({
@@ -1686,28 +1679,6 @@ describe("批5b 补测销号（验收官批5a findings G1-G3）", () => {
     );
     // 我队列位 0：ceil((4×1+0+1)/4)=2——空片项放大一轮（无空片时同队列位=1）
     expect(live.myRound).toBe(2);
-  });
-  it("G3 subFirst 负路：满员拒 / 候场只剩歇轮者拒 / 球友收权拒", async () => {
-    const full = await inPlay();
-    full.live.subFirst(0);
-    expect(full.ui.toastMsg).toBe("场上没有缺位"); // 4 人满员（双打每边 2）
-    expect(full.live.live!.courts[0].B).toEqual([103, 104]); // 没动
-    const resting = await apply(
-      vPlay(7, {
-        players: [
-          ...vPlay().players.slice(0, 3), // B 只剩北苑小钢炮（打短）
-          pl(105, 6, { name: "老赵", queue_pos: 0, skip: 1 }), // 队首唯一人在歇
-        ],
-        queue: [105],
-      }),
-    );
-    resting.live.subFirst(0);
-    expect(resting.ui.toastMsg).toBe("候场没人能顶 · 先拉人吧");
-    expect(resting.live.live!.courts[0].B).toEqual([103]);
-    const denied = await inPlay(vPlay(7, { admins: [] }));
-    denied.live.subFirst(0);
-    expect(denied.ui.toastMsg).toBe("请找组织者或管理员"); // needFull gate 前置
-    expect(denied.live.live!.courts[0].B).toEqual([103, 104]);
   });
 });
 

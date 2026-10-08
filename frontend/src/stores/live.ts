@@ -17,9 +17,11 @@
    sweepCancelAll → 全清 endGame（apiLiveEnd；响应 ended 视图即回看——recap 落地、
    轮询停、sealGate 收权写「球局已结束」）。清扫里的确认/取消照常落账但 no_redeal=true：
    不排下一场不补位（红线）。
-   遗留本地路（后端无对应端点）：subFirst/removeFromRoster/setRuleScore，以及
-   setCheck/togglePerson/swapPlayers 对视图外行的支线（现态名册全来自总账，支线
-   仅防御残留）。空降（apiLiveDropIn）与带访客（apiLiveGuests）1.3 批2 已切真。
+   原遗留本地路三动作已收口（2026-10-08 2.6 裁决）：subFirst/removeFromRoster
+   退役删除（作废重排已覆盖替补位、防幽灵统一走代办早退）、setRuleScore 切真走
+   apiLiveRules（scoring 写局列）；setCheck/togglePerson/swapPlayers 对视图外行的
+   支线仅防御残留（现态名册全来自总账）。空降（apiLiveDropIn）与带访客
+   （apiLiveGuests）1.3 批2 已切真。
    硬约束：不触碰任何 uni.*；名册行 id 是写动作靶位（与 queue/片位同键），
    账号口径（isAdmin/myRound）按 view.players.accountId 匹配 U.me；身份两旗
    （isOrganizer/isFullPower）视图身份块直读（2026-10-08 起后端下发，
@@ -56,7 +58,6 @@ import type {
   DealCourt,
   FeedEvent,
   Game,
-  LedgerRow,
   LiveCourt,
   LiveRulesInput,
   LiveState,
@@ -76,7 +77,6 @@ import {
 } from "@/utils/rotate";
 import { ELO_INIT, GUEST_DUPR } from "@/utils/elo";
 import { recommend } from "@/utils/recommend";
-import { toIso } from "@/utils/time";
 import { useGameStore } from "./game";
 import { useUiStore } from "./ui";
 import { useUserStore } from "./user";
@@ -85,9 +85,6 @@ import { useUserStore } from "./user";
     ok 正常 / late 迟到已到 / join 中途加入；absent 未到、left 早退不算 */
 export const isArrived = (c?: CheckStatus): boolean =>
   c === "ok" || c === "late" || c === "join";
-
-/** 每边满员口径单一源（双打 2 / 单打 1）：subFirst 缺位判定与 CourtMatchCard 找替补入口共用 */
-export const perSide = (singles: boolean): number => courtSize(singles) / 2;
 
 /** 片序换算单点（旧片序 0 起 ↔ 视图/载荷片号 1 起）：记分族动作、确认窗取数、
     发牌载荷共用——换算散写已在批5b 验收官 Nit 销号，新增一律走本函数 */
@@ -111,20 +108,6 @@ export function canPickWinner(
   side: "a" | "b",
 ): boolean {
   return side === "a" ? sa >= sb : sb >= sa;
-}
-
-/** 清场单点（早退/移出本地路共用）：把人从候场队和各片 A/B 同时清掉；在场资历一并注销 */
-function clearFromPlay(L: LiveState, id: number): void {
-  L.queue = L.queue.filter((x) => x !== id);
-  L.courts.forEach((c) => {
-    c.A = c.A.filter((x) => x !== id);
-    c.B = c.B.filter((x) => x !== id);
-  });
-  const p = pById(L, id);
-  if (p) {
-    p.tenure = 0;
-    p.courtSeq = undefined;
-  }
 }
 
 /** 总账结构化事件句 → 中文句（契约§2 后端不产文案；句式与 2.2 动作处留痕同款）：
@@ -286,11 +269,6 @@ export const useLiveStore = defineStore("live", () => {
           "left")
     );
   });
-
-  /** 战报 feed（unshift 新到旧）：句子由视图结构化事件拼好（feedSentences 单点） */
-  function feedPush(sentence: string): void {
-    live.value?.feed.unshift(sentence);
-  }
 
   /** 推荐快照（2.4 §4.2：总账算好随时可取；RulesSheet 消费） */
   const advice = computed(() => {
@@ -481,12 +459,6 @@ export const useLiveStore = defineStore("live", () => {
     }
   }
 
-  /** 出勤底账单点补笔（本地路）：只按 id 合并 patch */
-  function touchLedger(id: number, patch: Partial<LedgerRow>): void {
-    const row = live.value?.ledger.find((r) => r.id === id);
-    if (row) Object.assign(row, patch);
-  }
-
   /** 行是否在后端总账（视图行走后端写；空降/本地造的行走本地旧路） */
   function isViewRow(id: number): boolean {
     return !!liveView.value?.players.some((r) => r.id === id);
@@ -536,20 +508,6 @@ export const useLiveStore = defineStore("live", () => {
     /* 本地遗留路已随批6 切真整段退役（原空降行/无视图演示态支线）——live 只在
        applyLiveView 重建、名册行恒为视图行（空降/带访客也走后端建行），上面的
        isViewRow 分支即全路径；absent 只读不写（考勤底账展示口径，无写入口） */
-  }
-
-  /** 移出名册（本地遗留路：后端无对应端点）——人从名册消失（对付远程扫码幽灵）：
-      候场/各片全清，底账行保留只落 removedAt（留痕）；与早退的区别：早退还留在名册 */
-  function removeFromRoster(id: number): void {
-    if (!needFull()) return;
-    const L = live.value;
-    const p = L ? pById(L, id) : undefined;
-    if (!L || !p) return;
-    L.roster = L.roster.filter((x) => x.id !== id);
-    clearFromPlay(L, id);
-    touchLedger(id, { removedAt: toIso(new Date()) });
-    feedPush(`${p.name} 被移出名册`);
-    ui.toast(`${p.name} 被移出名册`);
   }
 
   /** 休息/连战/取消休息（§4.10；视图行走 apiLiveTempo，本地行沿旧路）：
@@ -750,36 +708,6 @@ export const useLiveStore = defineStore("live", () => {
     if (ok && !noRedeal) await maybeDeal(gid); // §4.7 该片腾出来重新发牌（清扫态除外）
   }
 
-  /** 紧急替补（本地遗留路：后端无独立端点——换人 apiLiveSwap 可覆盖同型操作）：
-      候场队首可用者顶上该片人数少的一队，这局接着打完 */
-  function subFirst(courtId: number): void {
-    const L = live.value;
-    const c = courtOf(courtId);
-    if (!L || !c || !needFull()) return;
-    const per = perSide(c.singles);
-    if (c.A.length >= per && c.B.length >= per) {
-      ui.toast("场上没有缺位");
-      return;
-    }
-    const id = L.queue.find((qid) => {
-      const p = pById(L, qid);
-      return p && isArrived(p.check) && !p.skip;
-    });
-    if (id === undefined) {
-      ui.toast("候场没人能顶 · 先拉人吧");
-      return;
-    }
-    const short = c.A.length <= c.B.length ? c.A : c.B;
-    L.queue.splice(L.queue.indexOf(id), 1);
-    short.push(id);
-    const p = pById(L, id)!;
-    L.courtSeqNext += 1;
-    p.courtSeq = L.courtSeqNext;
-    p.tenure = 0;
-    feedPush(`替补：${p.name} 顶上 · 比赛继续`);
-    ui.toast("替补已顶上 · 比赛继续");
-  }
-
   /** 换人（§4.9 球友开放，无 guard）：场上 outId 原位顶坑给候场 inId——
       视图行走后端（out 回队尾、feed 留名、pending 片冻结拒收全在总账）；
       本地行沿旧路（原位顶坑/资历注销） */
@@ -821,13 +749,17 @@ export const useLiveStore = defineStore("live", () => {
     );
   }
 
-  /** 改分制（本地遗留路：后端 rules 端点不带 scoring——分制复用局列，裁决 Q1；
-      改局归 3.2 改局链，本动作待后端定夺后切真） */
-  function setRuleScore(v: number): void {
+  /** 改分制（2.6 批2 切真：apiLiveRules 收 scoring 写局列——分制复用局列，裁决 Q1）：
+      写的是全局当前生效分制（rules 块随视图回填 g）；在打片分制已快照进片、
+      照旧打完旧制，新开片用新制（toast 口径「下一场起生效」） */
+  async function setRuleScore(v: number): Promise<void> {
     const L = live.value;
-    if (!L || !needFull()) return;
-    L.g.scoring = v;
-    ui.toast(`分制已改为 ${v} 分 · 当场生效`);
+    if (!L || !needFull() || !liveView.value) return;
+    await writeAction(
+      L.g.id,
+      () => apiLiveRules(L.g.id, { scoring: v }, seqs().baseTotalSeq),
+      () => ui.toast(`分制已改为 ${v} 分 · 下一场起生效`),
+    );
   }
 
   /** 改轮换四件套（§4.7 收权，视图路）：点选即生效、在打对局照旧打完；
@@ -1064,6 +996,7 @@ export const useLiveStore = defineStore("live", () => {
         sa: c.scoreA,
         sb: c.scoreB,
         last: c.lastWinnerSide ?? undefined,
+        scoring: c.scoring, // 片分制快照（卡头读它——在打片照旧、新开片用新制，2.6）
         streakA: 0,
         streakB: 0,
       })),
@@ -1177,7 +1110,6 @@ export const useLiveStore = defineStore("live", () => {
     setCheck,
     arriveMe,
     addGuests,
-    removeFromRoster,
     setAdmin,
     unsetAdmin,
     point,
@@ -1186,7 +1118,6 @@ export const useLiveStore = defineStore("live", () => {
     openSettle,
     confirmSettle,
     cancelMatch,
-    subFirst,
     togglePerson,
     swapPlayers,
     setRuleScore,

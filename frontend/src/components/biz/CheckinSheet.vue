@@ -1,9 +1,9 @@
 <template>
   <!-- 签到抽屉（temp/打球页原型 sh-check 逐字 · 2.2 批2§4.3 代办枢纽）：
-       段1 未到（「到场」= setCheck ok，迟到口径由 store 按开球时刻归一；「移出」直接摘出名册）
-       · 段2 已到场（「代办早退」= setCheck left 落离场时刻；「移出」对付扫码幽灵；空降标/几点到的）
+       段1 未到（「到场」= setCheck ok，迟到口径由 store 按开球时刻归一）
+       · 段2 已到场（「代办早退」= setCheck left 落离场时刻——扫码幽灵同走这条，2.6 裁决；空降标/几点到的）
        · 段3 带访客（AppInput 称呼 + AppStepper 人数 + OptionChips 介绍人 + 带上场）
-       · 段4 空降说明 NoteCard。动作直调 live store（toast 在 store；移出确认弹层批3统一做）。 -->
+       · 段4 空降说明 NoteCard。动作直调 live store（toast 在 store）。 -->
   <AppSheet
     :visible="visible"
     title="签到 · 到场"
@@ -37,9 +37,6 @@
               size="sm"
               @click="liveStore.setCheck(row.id, 'ok')"
               >到场</AppButton
-            >
-            <AppButton variant="ghost" size="sm" @click="onRemove(row)"
-              >移出</AppButton
             >
           </view>
         </view>
@@ -77,9 +74,6 @@
               size="sm"
               @click="liveStore.setCheck(row.id, 'left')"
               >代办早退</AppButton
-            >
-            <AppButton variant="ghost" size="sm" @click="onRemove(row)"
-              >移出</AppButton
             >
           </view>
         </view>
@@ -120,7 +114,7 @@
 
 <script setup lang="ts">
 /* 签到抽屉（2.2 §4.3 代办枢纽）：到场 = setCheck ok（迟到口径 store 按 startAt 归一、队尾、自动发牌）；
-   代办早退 = setCheck left（清候场清场上+离场时刻）；移出 = removeFromRoster（名册消失、底账留痕）。
+   代办早退 = setCheck left（清候场清场上+离场时刻；2.6 裁决移出名册已退役，防幽灵统一走这条）。
    带访客 = addGuests（1.3 切真：一次请求 count+称呼+担保人行 id，命名/挂账/队尾在后端）。
    介绍人 = 已到场非访客成员（选项值即名册行 id），默认「我」在册则选中。 */
 import { computed, ref, watch } from "vue";
@@ -157,11 +151,6 @@ const absents = computed(() =>
 const arriveds = computed(() =>
   (liveStore.live?.roster ?? []).filter((p) => isArrived(p.check)),
 );
-
-/** 移出名册：直接执行（toast 在 store；确认弹层批3统一做） */
-function onRemove(row: { id: number }): void {
-  liveStore.removeFromRoster(row.id);
-}
 
 /* ---------- 带访客本地态：带上场后重置（名字清空、人数回 1） ---------- */
 const gName = ref("");
@@ -253,7 +242,7 @@ function onBring(): void {
   margin-left: 6px;
   vertical-align: 1px;
 }
-/* 行尾动作组：到场/代办早退/移出竖排会撑高行，横排窄钮 */
+/* 行尾动作组：到场/代办早退竖排会撑高行，横排窄钮 */
 .ck-row .acts {
   display: flex;
   gap: 6px;
