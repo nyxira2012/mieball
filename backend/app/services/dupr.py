@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
-# 访客标准分（1.4 §4：恒定 3.0 = 自评默认档，不落账）
-GUEST_DUPR = 3.0
+# 无档案标准分（1.4 §4+§5 修订：访客代位与新号起步同源 2.5——自评五档废除后
+# 唯一起步锚，未定级快涨 K 把人迅速拉回真实水平）
+GUEST_DUPR = 2.5
 # 期望压缩尺度：差 1.0 档 ≈ 76:24、差 2.0 档 ≈ 91:9（对应 Elo 400 差体感）
 SPREAD = 2.0
 # K 双速：未定级快（迅速归位）、已定级慢而稳
@@ -23,13 +24,6 @@ RATED_GAMES = 5
 # 量表极值（1.4 §2：2.0–8.0 三位小数）
 FLOOR = 2.0
 CEILING = 8.0
-# 建号自评五档（1.4 §5；校验消费在账号域 signup，此处是唯一字面源）
-SELF_RATINGS = (2.0, 2.5, 3.0, 3.5, 4.0)
-
-
-def start_of(self_rating: float | None) -> float:
-    """起步分：自评档，null=未填按 3.0（自评默认档，与访客分同值）。"""
-    return GUEST_DUPR if self_rating is None else self_rating
 
 
 def expectation(team_own: float, team_opp: float) -> float:

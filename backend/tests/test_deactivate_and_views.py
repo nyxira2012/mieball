@@ -63,7 +63,11 @@ def test_privacy_outlet_three_viewers(client: TestClient):
     # 游客/陌生人：只有昵称+小人（+卡背），无尾号无全号；名片主数字 DUPR 照给（1.4 §6）
     acc = client.get(f"/api/users/{uid}").json()["account"]
     assert acc["name"] == "国贸截击手"
-    assert acc["dupr_rating"] == 3.0 and acc["dupr_provisional"] is True and acc["dupr_games"] == 0
+    assert (
+        acc["dupr_rating"] == 2.5
+        and acc["dupr_provisional"] is True
+        and acc["dupr_games"] == 0
+    )
     assert "phone" not in acc and "phone_tail" not in acc
 
     # 1.2 收口：same_game 自报参数废弃，服务端核名单——陌生人带老参数也拿不到尾号

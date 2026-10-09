@@ -305,7 +305,7 @@ export function toLiveView(v: LiveViewApi): LiveView {
       accountId: p.account_id,
       name: p.name,
       guest: p.guest,
-      dupr: p.dupr, // DUPR 配平代位分（1.4 §6：访客 3.0、未定级吃派生分/自评档）
+      dupr: p.dupr, // DUPR 配平代位分（1.4 §6 修订：访客/无派分行统一 2.5、有派分行吃派生分）
       guarantorAccountId: p.guarantor_account_id,
       dropin: p.dropin,
       check: p.check,

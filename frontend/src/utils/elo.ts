@@ -8,9 +8,9 @@ export const ELO_INIT = 1200; // 展示兜底位：名册无积分行的默认�
 
 /* ───────── DUPR 展示（1.4 §1：2.0-8.0 三位小数；消费方批4v1 接线）───────── */
 
-/** 访客/查无者 DUPR 标准分（1.4 §4 恒 3.0 = 自评默认档；对齐后端 dupr.py GUEST_DUPR）。
-    rankOf/live 兜底/mock zhao 三处消费 */
-export const GUEST_DUPR = 3.0;
+/** 访客/查无者 DUPR 标准分（1.4 §4+§5 修订：与新号起步同源 2.5——自评废除；
+    对齐后端 dupr.py GUEST_DUPR）。rankOf/live 兜底/mock zhao 三处消费 */
+export const GUEST_DUPR = 2.5;
 
 /** DUPR 主数字：三位小数（1.4 §1 形态，如 3.52 → "3.520"） */
 export function fmtDupr(d: number): string {

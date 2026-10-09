@@ -1,9 +1,11 @@
 """DUPR 核心轨（1.4 批1）—— 引擎单测（纯函数）+ 结算 seam 集成。
 
 引擎：期望（队伍均值/SPREAD）、分差权重、K 双速切换点、每步 round 3 + clamp。
-集成：确认结算双写两本账（明细+派生缓存）、访客不落账（3.0 代入快照）、
+集成：确认结算双写两本账（明细+派生缓存）、访客不落账（2.5 代入快照）、
 5 场定级门槛、30 场窗口挤出、view 回 dupr、均衡配对换源吃 DUPR、
 Elo 娱乐轨新参数（初始 1200/地板 800）。helpers 复用 test_live_score。
+自评废除后（1.4 §10 修订）：起步锚统一 GUEST_DUPR 2.5，分差场景靠直插
+DuprRating 缓存行（代位分唯一来源，重放仍从 2.5 起）。
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.core import clock
-from app.db.models import Account, DuprDetail, DuprRating, EloRating, LiveMatch
+from app.db.models import DuprDetail, DuprRating, EloRating, LiveMatch
 from app.services import dupr
 from app.services.stats import StatsLedger
 
@@ -56,10 +58,16 @@ def dupr_rows(client: TestClient, *account_ids: int) -> dict[int, DuprRating]:
         db.close()
 
 
-def set_self_rating(client: TestClient, account_id: int, value: float | None) -> None:
+def seed_dupr_row(client: TestClient, account_id: int, rating: float) -> None:
+    """直插派生缓存行造分差（自评废除后的代位分唯一来源）：
+    pairing 读它、重放不读它（锚恒 GUEST_DUPR），games=0 不冒充定级。"""
     db = client.app.state.session_factory()
     try:
-        db.get(Account, account_id).self_rating = value
+        db.add(
+            DuprRating(
+                account_id=account_id, rating=rating, games=0, updated_at=clock.now()
+            )
+        )
         db.commit()
     finally:
         db.close()
@@ -93,12 +101,6 @@ def test_delta_two_speeds_and_signs():
     assert dupr.delta(0.5, 1.0, won=False, provisional=False) == pytest.approx(-0.05)
 
 
-def test_start_of_self_rating_fallback():
-    assert dupr.start_of(None) == 3.0
-    assert dupr.start_of(3.5) == 3.5
-    assert dupr.SELF_RATINGS == (2.0, 2.5, 3.0, 3.5, 4.0)
-
-
 def test_replay_single_step_rounds_three_decimals():
     # 均势 11:9：±0.25×0.80909…×0.5 = ±0.101136… → 三位小数落账
     assert dupr.replay(3.0, [_detail()]) == 3.101
@@ -127,7 +129,7 @@ def test_settle_confirm_double_writes_dupr(client: TestClient):
     env = open_live(client, seed=101, players=6, bring=1)
     rows = env["view"]["players"]
     org_row, b_row, _guest_row, c_row = rows[0], rows[1], rows[2], rows[3]
-    set_self_rating(client, b_row["account_id"], 4.0)
+    seed_dupr_row(client, b_row["account_id"], 4.0)
 
     v = settled_11_9(client, env)
     body = write_body(v, 1, winner_side="a", score_a=11, score_b=9)
@@ -165,29 +167,30 @@ def test_settle_confirm_double_writes_dupr(client: TestClient):
     d_c = details[c_row["account_id"]]
     assert (d_org.partner_rating, d_org.opp_a, d_org.opp_b, d_org.won) == (
         4.0,
-        3.0,
-        3.0,
+        2.5,
+        2.5,
         True,
     )
-    assert (d_b.partner_rating, d_b.opp_a, d_b.opp_b, d_b.won) == (3.0, 3.0, 3.0, True)
-    # c 的搭档是访客（3.0 代入）、对面快照是 org(3.0)+b(4.0)
+    assert (d_b.partner_rating, d_b.opp_a, d_b.opp_b, d_b.won) == (2.5, 2.5, 2.5, True)
+    # c 的搭档是访客（2.5 代入）、对面快照是 org(2.5)+b(4.0)
     assert (d_c.partner_rating, d_c.opp_a, d_c.opp_b, d_c.won) == (
-        3.0,
-        3.0,
+        2.5,
+        2.5,
         4.0,
         False,
     )
     assert (d_c.score_w, d_c.score_l) == (11, 9)
     assert d_c.game_id == env["game_id"] and d_c.ended_at == m.ended_at
 
-    # 派生缓存：起步 3.0/4.0，0.25×0.809×(1−0.640) 落三位小数
+    # 派生缓存：重放锚统一 2.5（b 的 4.0 只是结算时代位快照，重放不读它）——
+    # b 均势胜 +0.101；org/c 强弱两翼对称 ±0.060
     dr = dupr_rows(
         client, org_row["account_id"], b_row["account_id"], c_row["account_id"]
     )
     assert [
         (dr[a].rating, dr[a].games)
         for a in (org_row["account_id"], b_row["account_id"], c_row["account_id"])
-    ] == [(3.073, 1), (4.073, 1), (2.927, 1)]
+    ] == [(2.560, 1), (2.601, 1), (2.440, 1)]
 
     # 断网重发同一笔确认：幂等回 200，明细不翻倍
     again = live_call(
@@ -210,15 +213,14 @@ def test_view_players_carry_dupr(client: TestClient):
     env = open_live(client, seed=102, players=6, bring=1)
     rows = env["view"]["players"]
     org_row, b_row, guest_row = rows[0], rows[1], rows[2]
-    set_self_rating(client, b_row["account_id"], 2.5)
 
     v = live_get(client, env["game_id"], env["org"]["token"])
     by_id = {r["id"]: r for r in v["players"]}
-    # 未结算：自评档代位、null 按 3.0（1.4 §5 配对代位口径）；访客恒 3.0
+    # 未结算：新号无派分行按起步 2.5（1.4 §5 修订统一口径）；访客恒 2.5
     assert [by_id[r["id"]]["dupr"] for r in (org_row, b_row, guest_row)] == [
-        3.0,
         2.5,
-        3.0,
+        2.5,
+        2.5,
     ]
 
     r = confirm(client, env["org"]["token"], env["game_id"], settled_11_9(client, env))
@@ -226,11 +228,11 @@ def test_view_players_carry_dupr(client: TestClient):
     v = r.json()
     by_id = {r_["id"]: r_ for r_ in v["players"]}
     # 结算后：参与者吃派生分（胜方涨/败方跌）；访客与没上场的人零动
-    assert by_id[org_row["id"]]["dupr"] > 3.0
+    assert by_id[org_row["id"]]["dupr"] > 2.5
     assert by_id[b_row["id"]]["dupr"] > 2.5
-    assert by_id[rows[3]["id"]]["dupr"] < 3.0
-    assert by_id[guest_row["id"]]["dupr"] == 3.0
-    assert by_id[rows[4]["id"]]["dupr"] == 3.0
+    assert by_id[rows[3]["id"]]["dupr"] < 2.5
+    assert by_id[guest_row["id"]]["dupr"] == 2.5
+    assert by_id[rows[4]["id"]]["dupr"] == 2.5
 
 
 def test_rated_after_five_confirmed_games(client: TestClient):
@@ -244,7 +246,7 @@ def test_rated_after_five_confirmed_games(client: TestClient):
         finally:
             db.close()
 
-    assert card() == {"rating": 3.0, "provisional": True, "games": 0}
+    assert card() == {"rating": 2.5, "provisional": True, "games": 0}
 
     v = deal_one(client, env)
     seen = {0: True}
@@ -268,9 +270,9 @@ def test_window_keeps_last_30_details(client: TestClient):
     rows = env["view"]["players"]
     org_id, m1_id = rows[0]["account_id"], rows[1]["account_id"]
     fake = {
-        "partner_rating": 3.0,
-        "opp_a": 3.0,
-        "opp_b": 3.0,
+        "partner_rating": 2.5,
+        "opp_a": 2.5,
+        "opp_b": 2.5,
         "score_w": 5,
         "score_l": 0,
         "won": True,
@@ -303,23 +305,24 @@ def test_window_keeps_last_30_details(client: TestClient):
 
     dr = dupr_rows(client, org_id, m1_id)
     assert (dr[org_id].games, dr[m1_id].games) == (31, 30)
-    assert dr[org_id].rating == dr[m1_id].rating == dupr.replay(3.0, [fake] * 30)
-    assert dr[org_id].rating != dupr.replay(3.0, [fake] * 31)  # 最老一行真被挤出
+    assert dr[org_id].rating == dr[m1_id].rating == dupr.replay(2.5, [fake] * 30)
+    assert dr[org_id].rating != dupr.replay(2.5, [fake] * 31)  # 最老一行真被挤出
 
 
 def test_balance_pairing_snakes_by_dupr(client: TestClient):
     env = open_live(client, seed=105, players=6, rules={"pairing": "balance"})
     rows = env["view"]["players"]
     org, m1, _m2, _m3, m4, m5 = rows
-    # 候场首 4 人（m4、m5 与回流的 org、m1）拉开档位差
-    set_self_rating(client, m5["account_id"], 4.0)
-    set_self_rating(client, m1["account_id"], 3.5)
-    set_self_rating(client, m4["account_id"], 2.5)
+    # 回流发牌在结算事务内、派分行覆写前——代位分靠预埋缓存行拉开档位差
+    # （m5 4.0 / m1 3.5 / org 3.0；m4 无行=起步 2.5）
+    seed_dupr_row(client, m5["account_id"], 4.0)
+    seed_dupr_row(client, m1["account_id"], 3.5)
+    seed_dupr_row(client, org["account_id"], 3.0)
 
     r = confirm(client, env["org"]["token"], env["game_id"], settled_11_9(client, env))
     assert r.status_code == 200, r.text
     v = r.json()
-    # 蛇形吃 DUPR：最强 m5(4.0)+最弱 m4(2.5) vs m1(3.6 派生)+org(3.1 派生)
+    # 蛇形吃 DUPR：最强 m5(4.0)+最弱 m4(2.5) vs m1(3.5)+org(3.0)
     # （旧 1500 默认会按队序排成 [m4,m5] vs [org,m1]）
     assert side_ids(v, 1, "a") == {m5["id"], m4["id"]}
     assert side_ids(v, 1, "b") == {m1["id"], org["id"]}
@@ -362,8 +365,8 @@ def test_confirm_level_score_settles_dupr_min_weight(client: TestClient):
     )
     assert r.status_code == 200, r.text  # 0:0 平分胜方任选：不炸、照常落明细
     dr = dupr_rows(client, rows[0]["account_id"], rows[2]["account_id"])
-    assert dr[rows[0]["account_id"]].rating > 3.0
-    assert dr[rows[2]["account_id"]].rating < 3.0
+    assert dr[rows[0]["account_id"]].rating > 2.5
+    assert dr[rows[2]["account_id"]].rating < 2.5
 
 
 # ---- Elo 娱乐轨新参数（1.4 §3：初始 1200、地板 800、K=24 不动） ----

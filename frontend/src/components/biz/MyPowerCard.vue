@@ -41,7 +41,7 @@
       </view>
     </view>
     <!-- alpha:1858-1860 运动数据行：已开局「N 胜 N 负 · 运动 N 小时 · 消耗 N 大卡 · 积分 ±N」，
-         未开局「待第一局校准 · 自评起步分」（文案逐字） -->
+         未开局「待第一局校准 · 起步 2.5」（1.4 §10 修订：自评废除，统一 2.5 起步） -->
     <view class="telemetry">{{ telemetry }}</view>
   </view>
 </template>
@@ -73,11 +73,11 @@ const played = computed(() => me.play > 0);
 const rs = computed(
   () => me.recentStats || { win: 0, loss: 0, hours: 0, kcal: 0 },
 );
-/** alpha:1859-1860 底部数据行文案（逐字口径） */
+/** alpha:1859-1860 底部数据行文案 */
 const telemetry = computed(() =>
   played.value
     ? `${rs.value.win} 胜 ${rs.value.loss} 负 · 运动 ${rs.value.hours} 小时 · 消耗 ${rs.value.kcal} 大卡 · 积分 ${me.month >= 0 ? "+" : ""}${me.month}`
-    : "待第一局校准 · 自评起步分",
+    : "待第一局校准 · 起步 2.5",
 );
 </script>
 

@@ -1345,7 +1345,7 @@ class LiveBook(LiveSweepMixin):
             "account_id": p.account_id,
             "name": p.display_name,
             "guest": p.guest,
-            # DUPR 配平代位分（1.4 §6：访客 3.0、未定级吃派生分/自评档）——
+            # DUPR 配平代位分（1.4 §6 修订：访客/无派分行统一 2.5、有派分行吃派生分）——
             # 值由 view 用 pairing_ratings 批量预算后递入
             "dupr": dupr_value,
             "guarantor_account_id": p.guarantor_account_id,

@@ -6,14 +6,22 @@
     <!-- ===== 态一：填名片 ===== -->
     <template v-if="mode === 'card'">
       <view class="sheet-t">{{ title }}</view>
-      <view class="sheet-hint">填张名片就同时建号 · 以后永远免密，不用记密码</view>
+      <view class="sheet-hint"
+        >填张名片就同时建号 · 以后永远免密，不用记密码</view
+      >
 
       <AppField label="叫什么">
-        <AppInput v-model="nickname" placeholder="常用球友名，如 海淀反手王（可跳过）" :maxlength="16" />
+        <AppInput
+          v-model="nickname"
+          placeholder="常用球友名，如 海淀反手王（可跳过）"
+          :maxlength="16"
+        />
       </AppField>
 
       <AppField label="选个头像">
-        <view class="preset-note">点一下秒选；跳过用默认图案（装扮页可细调）</view>
+        <view class="preset-note"
+          >点一下秒选；跳过用默认图案（装扮页可细调）</view
+        >
         <view class="presets">
           <view
             v-for="(p, i) in PRESETS"
@@ -27,18 +35,21 @@
         </view>
       </AppField>
 
-      <AppField label="你大概什么水平">
-        <view class="preset-note">当个起步分就行 · 打满 5 场按战绩自动定级</view>
-        <AppSeg v-model="selfRating" :options="SELF_RATING_OPTS" />
-      </AppField>
-
       <AppField label="手机号">
-        <AppInput v-model="phone" type="number" placeholder="11 位手机号" :maxlength="11" />
-        <view class="pnote">用于球局紧急通知、防鸽子和跨设备找回；同局球友会看到你的尾号 4 位</view>
+        <AppInput
+          v-model="phone"
+          type="number"
+          placeholder="11 位手机号"
+          :maxlength="11"
+        />
+        <view class="pnote"
+          >用于球局紧急通知、防鸽子和跨设备找回；同局球友会看到你的尾号 4
+          位</view
+        >
       </AppField>
 
       <AppButton variant="pri" block :disabled="busy" @click="onSubmitCard">
-        {{ busy ? '提交中…' : actionLabel }}
+        {{ busy ? "提交中…" : actionLabel }}
       </AppButton>
       <!-- 独立打开（无挂起动作）时给老球友找回出口；带挂起的场景走占卡态的短信接管，不留此门 -->
       <view v-if="standalone" class="oldfriend" @click="goLogin">
@@ -49,27 +60,55 @@
     <!-- ===== 态二：手机号已被占用（4.5） ===== -->
     <template v-else-if="mode === 'occupied'">
       <view class="sheet-t">这个手机号已经有人用了</view>
-      <view class="sheet-hint">手机号永远归手机的主人——短信验证是最终裁决，验证后立即进入那个账号</view>
+      <view class="sheet-hint"
+        >手机号永远归手机的主人——短信验证是最终裁决，验证后立即进入那个账号</view
+      >
       <view class="btns">
-        <AppButton variant="ghost" class="flex1" @click="mode = 'card'">不是我的号？返回重填</AppButton>
-        <AppButton variant="pri" class="flex1" :disabled="busy" @click="onTakeover">用短信验证，进入</AppButton>
+        <AppButton variant="ghost" class="flex1" @click="mode = 'card'"
+          >不是我的号？返回重填</AppButton
+        >
+        <AppButton
+          variant="pri"
+          class="flex1"
+          :disabled="busy"
+          @click="onTakeover"
+          >用短信验证，进入</AppButton
+        >
       </view>
     </template>
 
     <!-- ===== 态三：短信验证（接管） ===== -->
     <template v-else>
       <view class="sheet-t">短信验证</view>
-      <view class="sheet-hint">验证码已发至 {{ phone }}（找回/接管都走这里，手机在谁手里号就归谁）</view>
+      <view class="sheet-hint"
+        >验证码已发至
+        {{ phone }}（找回/接管都走这里，手机在谁手里号就归谁）</view
+      >
       <AppField label="6 位验证码">
         <view class="frow">
-          <AppInput v-model="code" type="number" placeholder="6 位数字" :maxlength="6" class="flex1" />
-          <AppButton variant="ghost" size="sm" :disabled="countdown > 0 || busy" @click="onResend">
-            {{ countdown > 0 ? `${countdown}s` : '重新发送' }}
+          <AppInput
+            v-model="code"
+            type="number"
+            placeholder="6 位数字"
+            :maxlength="6"
+            class="flex1"
+          />
+          <AppButton
+            variant="ghost"
+            size="sm"
+            :disabled="countdown > 0 || busy"
+            @click="onResend"
+          >
+            {{ countdown > 0 ? `${countdown}s` : "重新发送" }}
           </AppButton>
         </view>
       </AppField>
-      <AppButton variant="pri" block :disabled="busy" @click="onVerify">{{ busy ? '验证中…' : '验证并进入' }}</AppButton>
-      <view class="kefu">收不到码且发码不是你本人操作的 · 联系平台客服微信 mieball-kefu</view>
+      <AppButton variant="pri" block :disabled="busy" @click="onVerify">{{
+        busy ? "验证中…" : "验证并进入"
+      }}</AppButton>
+      <view class="kefu"
+        >收不到码且发码不是你本人操作的 · 联系平台客服微信 mieball-kefu</view
+      >
     </template>
   </view>
 </template>
@@ -77,31 +116,49 @@
 <script setup lang="ts">
 /* 名片建号卡：表单态 + 占用态 + 短信态。动作全走 session store（深模块），
    本组件只管状态机与草稿；错误按 ApiError.code 分支提示。 */
-import { computed, onUnmounted, ref, watch } from 'vue';
-import type { PropType } from 'vue';
-import AppButton from '@/components/ui/AppButton.vue';
-import AppField from '@/components/ui/AppField.vue';
-import AppInput from '@/components/ui/AppInput.vue';
-import AppSeg from '@/components/ui/AppSeg.vue';
-import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
-import { useGameStore } from '@/stores/game';
-import { useLiveStore } from '@/stores/live';
-import { useSessionStore } from '@/stores/session';
-import { useUiStore } from '@/stores/ui';
-import { ApiError, clearCardDraft, errText, readCardDraft, writeCardDraft } from '@/api/http';
-import { useSmsCountdown } from '@/composables/useSmsCountdown';
-import { isValidPhone } from '@/utils/validate';
-import { goMeet } from '@/utils/nav';
-import type { ChibiConfig, PublishGameInput } from '@/api/types';
+import { computed, onUnmounted, ref, watch } from "vue";
+import type { PropType } from "vue";
+import AppButton from "@/components/ui/AppButton.vue";
+import AppField from "@/components/ui/AppField.vue";
+import AppInput from "@/components/ui/AppInput.vue";
+import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import { useGameStore } from "@/stores/game";
+import { useLiveStore } from "@/stores/live";
+import { useSessionStore } from "@/stores/session";
+import { useUiStore } from "@/stores/ui";
+import {
+  ApiError,
+  clearCardDraft,
+  errText,
+  readCardDraft,
+  writeCardDraft,
+} from "@/api/http";
+import { useSmsCountdown } from "@/composables/useSmsCountdown";
+import { isValidPhone } from "@/utils/validate";
+import { goMeet } from "@/utils/nav";
+import type { ChibiConfig, PublishGameInput } from "@/api/types";
 
 const props = defineProps({
-  pendingJoin: { type: Object as PropType<{ gameId: number; bring: number }>, default: undefined },
-  pendingLaunch: { type: Object as PropType<PublishGameInput>, default: undefined },
+  pendingJoin: {
+    type: Object as PropType<{ gameId: number; bring: number }>,
+    default: undefined,
+  },
+  pendingLaunch: {
+    type: Object as PropType<PublishGameInput>,
+    default: undefined,
+  },
   /** 扫码签到（2.1·选项A）：游客在现场页点「我到了」→ 建号成功后自动签到进候场区 */
-  pendingCheckin: { type: Object as PropType<{ gameId: number }>, default: undefined },
+  pendingCheckin: {
+    type: Object as PropType<{ gameId: number }>,
+    default: undefined,
+  },
   /** 留意向（1.2 4.13）：游客在意向表单点保存 → 建号成功自动落意向簿 */
   pendingIntent: {
-    type: Object as PropType<{ slots: string[]; frequency: number; note: string }>,
+    type: Object as PropType<{
+      slots: string[];
+      frequency: number;
+      note: string;
+    }>,
     default: undefined,
   },
 });
@@ -123,45 +180,40 @@ const PRESETS: { c: ChibiConfig }[] = [
   { c: { skin: 1, hair: 1, hc: 5, shirt: 3, face: 0, acc: 1 } },
 ];
 
-const mode = ref<'card' | 'occupied' | 'sms'>('card');
-const nickname = ref('');
-const phone = ref('');
-const code = ref('');
+const mode = ref<"card" | "occupied" | "sms">("card");
+const nickname = ref("");
+const phone = ref("");
+const code = ref("");
 /** 选中的预设下标；null=没选（跳过 → 服务端默认小人） */
 const picked = ref<number | null>(null);
-/** 自评五档（1.4 §5，默认 3.0）：建号起步分档位，提交落 self_rating（后端校验五档值） */
-const selfRating = ref<number>(3.0);
-const SELF_RATING_OPTS = [
-  { value: 2.0, label: '2.0', sub: '刚上手' },
-  { value: 2.5, label: '2.5', sub: '会一点' },
-  { value: 3.0, label: '3.0', sub: '中等' },
-  { value: 3.5, label: '3.5', sub: '进阶' },
-  { value: 4.0, label: '4.0+', sub: '高手' },
-];
 const busy = ref(false);
 const { countdown, start: startCountdown } = useSmsCountdown();
 
 const title = computed(() =>
   props.pendingJoin
-    ? '填张名片，报名'
+    ? "填张名片，报名"
     : props.pendingLaunch
-      ? '填张名片，建局'
+      ? "填张名片，建局"
       : props.pendingIntent
-        ? '填张名片，留意向'
-        : '填张名片',
+        ? "填张名片，留意向"
+        : "填张名片",
 );
 const actionLabel = computed(() =>
   props.pendingJoin
-    ? '确定报名'
+    ? "确定报名"
     : props.pendingLaunch
-      ? '确定建局'
+      ? "确定建局"
       : props.pendingIntent
-        ? '确定留下意向'
-        : '确定',
+        ? "确定留下意向"
+        : "确定",
 );
 /** 独立打开 = 没有任何挂起动作（约球页/注册入口直开）：底部才亮老球友找回出口 */
 const standalone = computed(
-  () => !props.pendingJoin && !props.pendingLaunch && !props.pendingCheckin && !props.pendingIntent,
+  () =>
+    !props.pendingJoin &&
+    !props.pendingLaunch &&
+    !props.pendingCheckin &&
+    !props.pendingIntent,
 );
 
 /* ---- 草稿：本机持久化（断网重进内容还在）。
@@ -170,13 +222,11 @@ const draft = readCardDraft<{
   nickname: string;
   phone: string;
   picked: number | null;
-  selfRating: number;
 }>();
 if (draft) {
-  nickname.value = draft.nickname ?? '';
-  phone.value = draft.phone ?? '';
+  nickname.value = draft.nickname ?? "";
+  phone.value = draft.phone ?? "";
   picked.value = draft.picked ?? null;
-  selfRating.value = draft.selfRating ?? 3.0;
 }
 let draftTimer: ReturnType<typeof setTimeout> | null = null;
 let draftDirty = false;
@@ -191,10 +241,9 @@ function flushDraft(): void {
     nickname: nickname.value,
     phone: phone.value,
     picked: picked.value,
-    selfRating: selfRating.value,
   });
 }
-watch([nickname, phone, picked, selfRating], () => {
+watch([nickname, phone, picked], () => {
   draftDirty = true;
   if (draftTimer) clearTimeout(draftTimer);
   draftTimer = setTimeout(flushDraft, 300);
@@ -208,14 +257,14 @@ function pick(i: number): void {
 /* 老球友出口（仅独立打开时显示）：关弹层去「我是老球友」找回页 */
 function goLogin(): void {
   ui.closeSheet();
-  uni.navigateTo({ url: '/pages/mine/login' });
+  uni.navigateTo({ url: "/pages/mine/login" });
 }
 
 /* ---- 提交名片 ---- */
 async function onSubmitCard(): Promise<void> {
   const p = phone.value.trim();
   if (!isValidPhone(p)) {
-    ui.toast('请输入 11 位手机号');
+    ui.toast("请输入 11 位手机号");
     return;
   }
   busy.value = true;
@@ -226,18 +275,17 @@ async function onSubmitCard(): Promise<void> {
       nickname_set: !!nickname.value.trim(),
       chibi: picked.value != null ? PRESETS[picked.value].c : undefined,
       chibi_set: picked.value != null,
-      self_rating: selfRating.value,
     });
     afterSuccess(
       props.pendingJoin
-        ? '报名完成，已在名单中'
+        ? "报名完成，已在名单中"
         : props.pendingIntent
-          ? '账号建好了 · 意向已留下'
-          : '账号建好了',
+          ? "账号建好了 · 意向已留下"
+          : "账号建好了",
     );
   } catch (e) {
-    if (e instanceof ApiError && e.code === 'phone_taken') {
-      mode.value = 'occupied';
+    if (e instanceof ApiError && e.code === "phone_taken") {
+      mode.value = "occupied";
     } else {
       ui.toast(errText(e));
     }
@@ -250,9 +298,9 @@ async function onSubmitCard(): Promise<void> {
 async function onTakeover(): Promise<void> {
   busy.value = true;
   try {
-    await session.requestCode(phone.value.trim(), 'takeover');
+    await session.requestCode(phone.value.trim(), "takeover");
     startCountdown();
-    mode.value = 'sms';
+    mode.value = "sms";
   } catch (e) {
     ui.toast(errText(e));
   } finally {
@@ -263,9 +311,9 @@ async function onTakeover(): Promise<void> {
 async function onResend(): Promise<void> {
   busy.value = true;
   try {
-    await session.requestCode(phone.value.trim(), 'takeover');
+    await session.requestCode(phone.value.trim(), "takeover");
     startCountdown();
-    ui.toast('验证码已重发');
+    ui.toast("验证码已重发");
   } catch (e) {
     ui.toast(errText(e));
   } finally {
@@ -275,19 +323,24 @@ async function onResend(): Promise<void> {
 
 async function onVerify(): Promise<void> {
   if (code.value.trim().length !== 6) {
-    ui.toast('请输入 6 位验证码');
+    ui.toast("请输入 6 位验证码");
     return;
   }
   busy.value = true;
   try {
-    await session.redeemCode(phone.value.trim(), code.value.trim(), 'takeover', {
-      phone: phone.value.trim(),
-      nickname: nickname.value,
-      nickname_set: !!nickname.value.trim(),
-      chibi: picked.value != null ? PRESETS[picked.value].c : undefined,
-      chibi_set: picked.value != null,
-    });
-    afterSuccess('已进入你的账号');
+    await session.redeemCode(
+      phone.value.trim(),
+      code.value.trim(),
+      "takeover",
+      {
+        phone: phone.value.trim(),
+        nickname: nickname.value,
+        nickname_set: !!nickname.value.trim(),
+        chibi: picked.value != null ? PRESETS[picked.value].c : undefined,
+        chibi_set: picked.value != null,
+      },
+    );
+    afterSuccess("已进入你的账号");
   } catch (e) {
     ui.toast(errText(e)); // sms_bad_code / sms_code_invalid 等文案由后端给全
   } finally {

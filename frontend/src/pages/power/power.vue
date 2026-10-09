@@ -60,7 +60,10 @@
 
       <!-- 参考区（1.4 §6 榜单门槛）：打过但未满 5 场的未定级者，列此不参与排名 -->
       <template v-if="refs.length">
-        <SectionTitle title="参考 · 未定级" :more="`满 ${RATED_PLAY} 场自动入榜`" />
+        <SectionTitle
+          title="参考 · 未定级"
+          :more="`满 ${RATED_PLAY} 场自动入榜`"
+        />
         <view class="rank-frame">
           <view class="rank-list">
             <RankRow
@@ -83,19 +86,16 @@
         </view>
         <view class="rfbody">
           <view
-            >·
-            <text class="b">双轨记分</text
-            >：同一场球落两本账——DUPR 积分管配平、榜单与段位；积分（Elo）管结束对局的涨跌爽感。</view
+            >· <text class="b">双轨记分</text>：同一场球落两本账——DUPR
+            积分管配平、榜单与段位；积分（Elo）管结束对局的涨跌爽感。</view
           >
           <view
-            >·
-            <text class="b">DUPR 积分</text
-            >：2.0-8.0 三位小数；建号自评五档起步，满 5 场定级，只算近 30 场。</view
+            >· <text class="b">DUPR 积分</text>：2.0-8.0 三位小数；建号 2.5
+            起步，满 5 场定级，只算近 30 场。</view
           >
           <view
-            >·
-            <text class="b">积分（Elo）</text
-            >：初始 1200 · 地板 800 · K=24，赢强者涨得多；结束对局弹窗里 ± 的就是它。</view
+            >· <text class="b">积分（Elo）</text>：初始 1200 · 地板 800 ·
+            K=24，赢强者涨得多；结束对局弹窗里 ± 的就是它。</view
           >
           <view
             >·

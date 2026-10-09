@@ -510,7 +510,7 @@ export interface LivePlayerApi {
   account_id: number | null; // 访客 null
   name: string; // 开账定格名（注销者占位名；访客=担保人前两字+编号）
   guest: boolean; // 随行访客：代入 1200 算分但不落积分账（1.4 §4）
-  dupr: number; // DUPR 配平代位分（1.4 §6：访客 3.0、未定级吃派生分/自评档）
+  dupr: number; // DUPR 配平代位分（1.4 §6 修订：访客/无派分行统一 2.5、有派分行吃派生分）
   guarantor_account_id: number | null; // 访客挂谁名下（考勤底账「谁带的」）
   dropin: boolean; // 空降进场（没报名扫码直入名册）
   check: CheckStatus; // ok/late/join/left/absent 五态

@@ -3,6 +3,7 @@
 响应约定：成功体 {"token"?, "account"?, "ok"}；失败体 {"error": {"code", "message"}}，
 前端按 error.code 分支（phone_taken / no_account / sms_* / ...）。
 """
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -12,22 +13,25 @@ from pydantic import BaseModel
 
 from ...db.models import Account
 from ...services.accounts import AccountBook
-from ..deps import bearer_token, client_ip, current_account, get_account_book, require_account
+from ..deps import (
+    bearer_token,
+    client_ip,
+    current_account,
+    get_account_book,
+    require_account,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class CardIn(BaseModel):
-    """名片三行（4.2）。*_set 是"用户确实填了这一项"的显式标志（D5：不做值推断）。
-
-    self_rating 是建号自评五档（1.4 §5）：None=未填，语义无歧义，故不设 *_set 旗。"""
+    """名片三行（4.2）。*_set 是"用户确实填了这一项"的显式标志（D5：不做值推断）。"""
 
     phone: str
     nickname: str | None = None
     nickname_set: bool = False
     chibi: dict[str, Any] | None = None
     chibi_set: bool = False
-    self_rating: float | None = None
 
 
 class SignupIn(BaseModel):
@@ -71,7 +75,6 @@ def signup(
         nickname_set=body.card.nickname_set,
         chibi=body.card.chibi,
         chibi_set=body.card.chibi_set,
-        self_rating=body.card.self_rating,
     )
     return {"token": token, "account": view}
 
@@ -93,9 +96,11 @@ def update_profile(
     account: Account = Depends(require_account),
     book: AccountBook = Depends(get_account_book),
 ):
-    return {"account": book.update_profile(
-        account.id, nickname=body.nickname, chibi=body.chibi, card_bg=body.card_bg
-    )}
+    return {
+        "account": book.update_profile(
+            account.id, nickname=body.nickname, chibi=body.chibi, card_bg=body.card_bg
+        )
+    }
 
 
 @router.post("/logout")

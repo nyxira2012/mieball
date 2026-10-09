@@ -244,12 +244,12 @@ describe("splitSides（2.4 §4.5 分边真值）", () => {
     });
   });
 
-  it("缺 dupr 的按 3.0 兜底参与排序（1.4 §6 配对吃 DUPR；3.0=访客/缺数，对齐后端 GUEST_DUPR）", () => {
+  it("缺 dupr 的按 2.5 兜底参与排序（1.4 §6 配对吃 DUPR；2.5=访客/缺数，对齐后端 GUEST_DUPR）", () => {
     expect(rankOf(mkP(3.7))).toBe(3.7);
-    expect(rankOf(mkP(3.0, { dupr: undefined }))).toBe(3.0);
-    expect(rankOf(undefined)).toBe(3.0);
-    const ps = [mkP(4.0), mkP(3.0, { dupr: undefined }), mkP(3.6), mkP(3.2)];
-    const live = mkLive("rotate", ps); // 缺数者按 3.0 排：低于 3.2/3.6，垫底与最强一队
+    expect(rankOf(mkP(2.5, { dupr: undefined }))).toBe(2.5);
+    expect(rankOf(undefined)).toBe(2.5);
+    const ps = [mkP(4.0), mkP(2.5, { dupr: undefined }), mkP(3.6), mkP(3.2)];
+    const live = mkLive("rotate", ps); // 缺数者按 2.5 排：低于 3.2/3.6，垫底与最强一队
     expect(
       splitSides(
         live,
@@ -258,7 +258,7 @@ describe("splitSides（2.4 §4.5 分边真值）", () => {
       ),
     ).toEqual({
       A: [ps[0].id, ps[1].id],
-      B: [ps[2].id, ps[3].id], // 4.0+缺数(3.0) vs 3.6+3.2
+      B: [ps[2].id, ps[3].id], // 4.0+缺数(2.5) vs 3.6+3.2
     });
   });
 

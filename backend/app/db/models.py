@@ -63,9 +63,6 @@ class Account(Base):
     # Q 版小人六部件配置，JSON 字符串 {"skin":0,"hair":0,"hc":0,"shirt":5,"face":0,"acc":0}
     chibi: Mapped[str] = mapped_column(Text, nullable=False)
     card_bg: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    # 建号自评五档（1.4 §5：2.0/2.5/3.0/3.5/4.0，null=未填按 3.0）——DUPR 起步分与
-    # 配对代位共用；五档校验在账号域（1.1），此处只存值
-    self_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     # active=在册；deactivated=已注销（档案匿名化、历史封存）
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
     # 建号时用的设备标记：支撑"提交卡住重试"的续接窗口判断
@@ -411,9 +408,9 @@ class EloRating(Base):
 class DuprRating(Base):
     """DUPR 派生分缓存（1.4 技术设计 §2）：一人一行，重算后整行覆写。
 
-    分数 = 起步分（自评档）+ 窗口内明细逐场重放的派生值（口径常量在
-    services/dupr.py 单一源）；games 缓存明细总行数（定级门槛 ≥5），两者都由
-    StatsLedger 每次结算后对涉事者同步重写。
+    分数 = 起步分（GUEST_DUPR 2.5，1.4 §10 修订）+ 窗口内明细逐场重放的派生值
+    （口径常量在 services/dupr.py 单一源）；games 缓存明细总行数（定级门槛 ≥5），
+    两者都由 StatsLedger 每次结算后对涉事者同步重写。
     """
 
     __tablename__ = "dupr_ratings"
@@ -422,14 +419,14 @@ class DuprRating(Base):
     account_id: Mapped[int] = mapped_column(
         ForeignKey("accounts.id"), unique=True, nullable=False
     )
-    rating: Mapped[float] = mapped_column(Float, default=3.0, nullable=False)
+    rating: Mapped[float] = mapped_column(Float, default=2.5, nullable=False)
     games: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
 class DuprDetail(Base):
     """DUPR 明细（1.4 技术设计 §2）：一场确认制结束对局，每名注册球员一行
-    （访客不落，按 3.0 代入对面的快照）。
+    （访客不落，按 GUEST_DUPR 2.5 代入对面的快照）。
 
     每行带自己视角的完整输入快照（结算时四人当前派生分 + 比分 + 胜负），
     落账即冻结无 UPDATE（沿 live_matches 先例）——重放不依赖回溯历史评分状态，

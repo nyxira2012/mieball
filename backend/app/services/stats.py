@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..core import clock
-from ..db.models import Account, DuprDetail, DuprRating
+from ..db.models import DuprDetail, DuprRating
 from . import dupr
 
 
@@ -75,8 +75,8 @@ class StatsLedger:
             self._recompute(acct)
 
     def pairing_rating(self, account_id: int | None) -> float:
-        """配平代位分（1.4 §6 + 技术设计 §0）：访客 3.0；注册球员吃当前派生分
-        ——0 场时与自评档字面一致（起步分即自评档，第 5 场定级无切换跳变）。"""
+        """配平代位分（1.4 §6 + 技术设计 §0，修订后口径）：访客/无派分行统一
+        GUEST_DUPR 起步——0 场即 2.5，第 5 场定级无切换跳变。"""
         if account_id is None:
             return dupr.GUEST_DUPR
         row = self.db.execute(
@@ -84,12 +84,11 @@ class StatsLedger:
         ).scalar_one_or_none()
         if row is not None:
             return row.rating
-        account = self.db.get(Account, account_id)
-        return dupr.start_of(account.self_rating if account else None)
+        return dupr.GUEST_DUPR
 
     def pairing_ratings(self, account_ids: list[int | None]) -> dict[int | None, float]:
         """pairing_rating 的批量版（view / 确认回流逐人代位分一次查齐，免 N+1）：
-        语义逐条同单发版——访客 3.0、有派分行吃派生分、查无行者回自评档起步分。"""
+        语义逐条同单发版——访客与查无派行者（含注销清户）统一回 GUEST_DUPR 起步。"""
         out: dict[int | None, float] = {}
         if any(a is None for a in account_ids):
             out[None] = dupr.GUEST_DUPR
@@ -100,13 +99,8 @@ class StatsLedger:
             select(DuprRating).where(DuprRating.account_id.in_(ids))
         ).scalars():
             out[row.account_id] = row.rating
-        missing = [a for a in ids if a not in out]
-        for account in self.db.execute(
-            select(Account).where(Account.id.in_(missing))
-        ).scalars():
-            out[account.id] = dupr.start_of(account.self_rating)
-        for a in ids:  # 账号行也已不在（注销清户）：与单发版同口径回默认起步分
-            out.setdefault(a, dupr.start_of(None))
+        for a in ids:  # 无派分行（新号）/账号行已不在（注销清户）：统一起步分
+            out.setdefault(a, dupr.GUEST_DUPR)
         return out
 
     def card(self, account_id: int) -> dict:
@@ -126,7 +120,6 @@ class StatsLedger:
         """涉事者重算：起步分 + 窗口内明细重放 → 派生分缓存覆写（幂等）。
         games 记明细总行数（定级门槛看总量，不看窗口）——窗口只搬尾部 WINDOW 行，
         总量单查 count，老账号几百场后不再整表搬运。"""
-        account = self.db.get(Account, account_id)
         window = list(
             self.db.execute(
                 select(DuprDetail)
@@ -143,7 +136,7 @@ class StatsLedger:
             )
         ).scalar_one()
         rating = dupr.replay(
-            dupr.start_of(account.self_rating if account else None),
+            dupr.GUEST_DUPR,
             [
                 {
                     "partner_rating": r.partner_rating,

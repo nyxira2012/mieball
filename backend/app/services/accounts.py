@@ -24,7 +24,6 @@ from sqlalchemy.orm import Session
 
 from ..core import clock, errors
 from ..db.models import Account
-from . import dupr
 from .keys import KeyVault
 from .sms import SmsGate
 from .stats import StatsLedger
@@ -76,15 +75,10 @@ class AccountBook:
         nickname_set: bool = False,
         chibi: dict[str, Any] | None = None,
         chibi_set: bool = False,
-        self_rating: float | None = None,
     ) -> tuple[dict, str]:
-        """返回 (本人视图, 钥匙原文)。手机号已被占用且不可续接时抛 phone_taken。
+        """返回 (本人视图, 钥匙原文)。手机号已被占用且不可续接时抛 phone_taken。"""
 
-        self_rating 建号自评五档（1.4 §5）：None=未填（落列 None，起步按 3.0 语义
-        由 dupr 缺行侧给），与 nickname/chibi 不同——None 即未填，无需 *_set 旗。"""
         _check_phone(phone)
-        if self_rating is not None and self_rating not in dupr.SELF_RATINGS:
-            raise errors.self_rating_invalid()
         nickname = _resolve_nickname(nickname if nickname_set else None)
         chibi_json = json.dumps(_validate_chibi(chibi) if chibi_set else DEFAULT_CHIBI)
 
@@ -99,7 +93,6 @@ class AccountBook:
             chibi=chibi_json,
             status="active",
             device_marker=device_marker,
-            self_rating=self_rating,
             created_at=clock.now(),
         )
         self.db.add(account)
