@@ -593,15 +593,23 @@ export const useLiveStore = defineStore("live", () => {
 
   /* ─────── 记分链（记分本地化：点比分不联网，本地账 + 上传结算） ─────── */
 
-  /** 本地账（per court {sa, sb, last}）：各手机各记各的比分——纯内存态，不进协议
-      不进存储（刷新即失，v1 非目标）；last=本机最后得分方（undo 撤分基准） */
+  /** 本地账（per court {sa, sb, history, last}）：各手机各记各的比分——纯内存态，不进协议
+      不进存储（刷新即失，v1 非目标）；history=得分流水栈（undo 撤回到底基准，后进先出）；last 兼容保留 */
   const localScores = reactive<
-    Record<number, { sa: number; sb: number; last: "a" | "b" | null }>
+    Record<
+      number,
+      {
+        sa: number;
+        sb: number;
+        history: ("a" | "b")[];
+        last: "a" | "b" | null;
+      }
+    >
   >({});
 
   /** 本地账清零（上传落账/冲突对齐后归零，下一场从 0:0 起记） */
   function resetLocal(courtId: number): void {
-    localScores[courtId] = { sa: 0, sb: 0, last: null };
+    localScores[courtId] = { sa: 0, sb: 0, history: [], last: null };
   }
 
   /** 本地结算窗（一次一扇，全站唯一窗态）：mode upload=上传结算（谁都能传）/
@@ -660,36 +668,36 @@ export const useLiveStore = defineStore("live", () => {
     const L = live.value;
     const c = courtOf(courtId);
     if (!L || !c || (!c.A.length && !c.B.length)) return;
-    const acc = (localScores[courtId] ??= { sa: 0, sb: 0, last: null });
-    if (side === "a") {
-      acc.sa += 1;
-      acc.last = "a";
-    } else {
-      acc.sb += 1;
-      acc.last = "b";
-    }
+    const acc = (localScores[courtId] ??= {
+      sa: 0,
+      sb: 0,
+      history: [],
+      last: null,
+    });
+    acc[side === "a" ? "sa" : "sb"]++;
+    acc.history.push(side);
+    acc.last = side;
     if (reachedLocal(acc.sa, acc.sb, c.scoring ?? L.g.scoring))
       openSettleWindow(courtId, "upload");
   }
 
-  /** 误记撤回一分：按本机账的 last 撤最后得分方那 1 分；无账/无分静默（last 只记
-      一手，撤后清位——再撤无效果，更细的改分在结算窗 ± 里） */
+  /** 误记撤回：流水倒退一分（支持撤回到底） */
   function undoPoint(courtId: number): void {
     const acc = localScores[courtId];
-    if (!acc?.last) return;
-    if (acc.last === "a") acc.sa -= 1;
-    else acc.sb -= 1;
-    acc.last = null;
+    const side = acc?.history?.pop();
+    if (side === "a") acc!.sa--;
+    else if (side === "b") acc!.sb--;
+    if (acc) acc.last = acc.history?.[acc.history.length - 1] ?? null;
   }
 
-  /** 记分清零（本地）：这笔账归 0:0 重开一盘、人不下场——场卡工具行人人可点的
-      本地操作（上传结算才由后端把关到场者，清零不必） */
+  /** 记分清零（本地）：这笔账归 0:0 重开一盘（长按撤回触发） */
   function clearScore(courtId: number): void {
     const acc = localScores[courtId];
-    if (!acc) return;
-    acc.sa = 0;
-    acc.sb = 0;
-    acc.last = null;
+    if (acc) {
+      acc.sa = acc.sb = 0;
+      acc.history = [];
+      acc.last = null;
+    }
   }
 
   /** 上传结算（先传先落）：把这片打完的本地账传后端落账（一本账原子=战报+积分+回流

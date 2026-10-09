@@ -70,13 +70,12 @@
         </view>
         <view class="sp-mid">
           <view class="sp-colon">:</view>
-          <text class="sp-tip">点数字记分</text>
-          <!-- 撤回/清零对所有人可见（§4.8：记分±1 是球友手柄，撤回/清零同族）——
-               清零=清自己手机的本地账，谁都能点（live.vue 二次确认） -->
-          <view class="sp-ops">
-            <text class="sp-undo" @click="emit('undo', court.id)">撤回</text>
-            <text class="sp-undo" @click="emit('clear', court.id)">清零</text>
-          </view>
+          <text
+            class="sp-undo"
+            @click="emit('undo', court.id)"
+            @longpress="emit('clear', court.id)"
+            >撤回</text
+          >
         </view>
         <view class="sp-num b-side" @click="emit('point', court.id, 'b')">
           <view
@@ -473,35 +472,30 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 1px;
-  padding: 0 6px;
+  justify-content: space-between;
+  padding: 12px 10px 8px;
   border-inline: 1px dashed rgba(245, 241, 232, 0.1);
 }
 .sp-colon {
   font-family: var(--disp);
-  font-size: 22px;
+  font-size: 26px;
+  line-height: 1;
   color: var(--coral);
 }
-.sp-tip {
-  font-family: var(--mono);
-  font-size: 8px;
-  color: var(--dim);
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-}
-/* 撤回/清零入口（§4.8）：记分行内小字链接，对所有人可见 */
-.sp-ops {
-  display: flex;
-  gap: 10px;
-}
+/* 撤回入口（§4.8）：支持撤回到底，长按清零 */
 .sp-undo {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--dim);
-  margin-top: 3px;
   cursor: pointer;
   text-decoration: underline dotted rgba(245, 241, 232, 0.3);
+  user-select: none;
+  padding: 3px 6px;
+  margin-bottom: 2px;
+  transition:
+    opacity 0.15s,
+    color 0.15s;
 }
 .sp-undo:active {
   color: var(--lemon);

@@ -214,11 +214,10 @@ function onCancelMatch(courtId: number): void {
     liveStore.cancelMatch(courtId, liveStore.sweepState),
   );
 }
-/** 清零重开（§4.2）：卡上入口带 courtId（本地操作，人人可点） */
+/** 长按清零重开（本地记分）：长按撤回即归零重开，零弹窗打扰，轻量 toast 反馈 */
 function onClearScore(courtId: number): void {
-  askConfirm("比分将清零重开一盘，已得的分不算了", () =>
-    liveStore.clearScore(courtId),
-  );
+  liveStore.clearScore(courtId);
+  ui.toast("比分已清零");
 }
 /** 结束对局（记分本地化）：卡上入口=手动开本地上传窗——与自动到分同一扇窗
     （一次一扇的闸在 store），先传先落 */
