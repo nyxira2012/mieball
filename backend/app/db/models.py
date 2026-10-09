@@ -24,7 +24,8 @@
   局簿照旧走自己的派生态，现场表定格当底账。
 - 散场时刻只落 games.ended_at 一处（局簿终态锚，derive 吃它出 done）；live_state 不再
   冗余存一份——避免"两列都叫散场时刻"的双真值。
-- live_matches 落账即冻结：没有任何 UPDATE 入口（战报不可篡改是积分可信的地基，2.3 §6）。
+- live_matches 落账即冻结；唯一例外=settle_overwrite 在下一场落账前的窗口内 UPDATE 本行
+  （战报不可篡改是积分可信的地基，2.3 §6；窄口由 2026-10-09 裁决③开出）。
 
 战力域（1.4）dupr_ratings / dupr_details：
 - 分数是派生值不落明细：dupr_details 只存事实快照（结算时四人分数/比分/时刻，
@@ -329,12 +330,12 @@ class LivePlayer(Base):
 
 
 class LiveCourt(Base):
-    """片行（2.3 技术设计 §2）：game+court_no 唯一，一片一行可复用——
-    空闲(idle)→在打(playing)→待确认(pending) 状态机在行上循环。
+    """片行（2.3 技术设计 §2；2026-10-09 记分本地化修订）：game+court_no 唯一，
+    一片一行可复用——空闲(idle)↔在打(playing) 状态机在行上循环。进行中比分不落
+    服务端（活在各手机本地），上传结算直接进战报行。
 
-    seq = 该片今天第几场（开新场 +1）；court_seq = 片号（该片记分类写 +1），
-    与 LiveState.total_seq 构成两级号。pending_origin 区分待确认窗来源
-    （到分自动 'auto' / 提前结算 'manual'，2.3 §4.3/4.4）。
+    seq = 该片今天第几场（开新场 +1）；court_seq = 片号（该片写动作 +1），
+    与 LiveState.total_seq 构成两级号。
     """
 
     __tablename__ = "live_courts"
@@ -345,27 +346,22 @@ class LiveCourt(Base):
         ForeignKey("games.id"), nullable=False, index=True
     )
     court_no: Mapped[int] = mapped_column(Integer, nullable=False)
-    # idle|playing|pending
+    # idle|playing
     status: Mapped[str] = mapped_column(String(8), default="idle", nullable=False)
     seq: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    sa: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    sb: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    # 撤一分只撤最后一次得分方（2.3 §4.1）：片行自记最后得分方
-    last_winner_side: Mapped[str | None] = mapped_column(String(1), nullable=True)
     court_seq: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    # null|auto|manual —— 仅 pending 态有值
-    pending_origin: Mapped[str | None] = mapped_column(String(6), nullable=True)
-    # 片分制快照（2.6 机制A）：开赛定格当时 game.scoring，_reached 单一消费源——
-    # 改分制在打片照旧打完旧制、新开片用新制；default 11 只是行不裸奔（创建点显式起笔）
+    # 片分制快照（2.6 机制A）：开赛定格当时 game.scoring——改分制只影响此后
+    # 新开的片，在打片卡头按它亮分制（本地判到分在前端）；default 11 只是行不裸奔
     scoring: Mapped[int] = mapped_column(Integer, default=11, nullable=False)
 
 
 class LiveMatch(Base):
-    """战报行（2.3 §4.6）：确认落账即冻结，没有任何修改入口（§6 非目标）。
+    """战报行（2.3 §4.6）：确认落账即冻结；唯一例外=改分重落（settle_overwrite，
+    2026-10-09 裁决③）——仅限该片仍是最新一场、下一场未落账的窗口内 UPDATE 本行。
 
     winners/losers 为名册行快照 JSON（[{id,name,guest}...]，id 是 LivePlayer.id）；
     elo_rows 结算快照（[{account_id,name,guest,rating_before,rating_after,delta}...]，
-    访客行有 delta 展示值但无落账，2.3 裁决访客不进账）。
+    访客行有 delta 展示值但无落账，2.3 裁决访客不进账；改分重落按它反算）。
     """
 
     __tablename__ = "live_matches"

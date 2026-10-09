@@ -1,9 +1,11 @@
-"""现场记分链（2.3 批2）—— docs/2.3 §4.1-4.8：deal 开打、到分自动待确认（净胜 2）、
-片冻结与出口、窗内撤分两路（auto 重判/manual 不关窗）、清零、确认一本账
-（战报行 + EloRating 结算 + 访客不落账 + 回流四件套 + no_redeal 定格）、取消回流队首、
-两级号 409 携最新视图、确认幂等、权限分级（记分到场即可，结束对局类收权）、撤不成负。
+"""现场上传结算链（2.3 批2 · 2026-10-09 记分本地化修订）—— 记分在各手机本地，
+服务端只收「上传结算」：deal 开打、playing 片直接传分落账（谁先传先落）、后到
+不同分 409 settle_recorded、同分同位幂等 200、一本账（战报行 + EloRating 结算 +
+访客不落账 + 回流四件套 + no_redeal 定格）、改分重落（全权、窗口=下一场落账前，
+战报/Elo/DUPR 重写、物理轮转不动）、取消回流队首、两级号 409 携最新视图、
+权限分级（上传=到场即可，改分/取消=全权）。
 
-考勤与入队的写端点批3 才有（check），到场/候场队真值直落数据库（沿批1 seed 先例）；
+考勤与入队的写端点在 test_live_end 册（check），到场/候场队真值直落数据库；
 时刻基准 FakeClock 10-04 12:00（conftest）。
 """
 
@@ -12,7 +14,16 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.db.models import EloRating, Game, LivePlayer, LiveState
+from app.db.models import (
+    DuprDetail,
+    DuprRating,
+    EloRating,
+    Game,
+    LiveMatch,
+    LivePlayer,
+    LiveState,
+)
+from app.services import dupr
 
 from .conftest import signup
 from .test_games_actions import join_ok
@@ -74,7 +85,7 @@ def open_live(
     rules: dict | None = None,
 ) -> dict:
     """org + players-1 位球友（首位带 bring 个访客）→ 发局报名 → 开账 →
-    全员到场、按行序进候场队（报到端点批3，真值直落）。返回现场环境。"""
+    全员到场、按行序进候场队（报到端点在 test_live_end 册，真值直落）。返回现场环境。"""
     org = signup(client, _ph(seed, 1), "o")
     mates = [signup(client, _ph(seed, i + 2), f"p{i}") for i in range(players - 1)]
     g = publish(
@@ -149,47 +160,6 @@ def deal_one(client: TestClient, env: dict) -> dict:
     )
 
 
-def pt(
-    client: TestClient,
-    token: str,
-    game_id: int,
-    view: dict,
-    court_no: int,
-    side: str,
-    n: int = 1,
-) -> dict:
-    """连记 n 分——每笔都带最新两级号（响应即最新视图，直接续用）。"""
-    for _ in range(n):
-        c = court(view, court_no)
-        r = live_call(
-            client,
-            token,
-            game_id,
-            "point",
-            {
-                "court_no": court_no,
-                "side": side,
-                "base_total_seq": view["total_seq"],
-                "base_court_seq": c["court_seq"],
-            },
-        )
-        assert r.status_code == 200, r.text
-        view = r.json()
-    return view
-
-
-def to_11_9(client: TestClient, token: str, game_id: int, view: dict) -> dict:
-    """11 分制安全路径到 11:9（途中 11:10 类分线状态不出现）。"""
-    view = pt(client, token, game_id, view, 1, "a", 10)
-    view = pt(client, token, game_id, view, 1, "b", 9)
-    return pt(client, token, game_id, view, 1, "a", 1)
-
-
-def settled_11_9(client: TestClient, env: dict) -> dict:
-    """开片并记到 11:9（a 胜方在左），返回待确认视图。"""
-    return to_11_9(client, env["org"]["token"], env["game_id"], deal_one(client, env))
-
-
 def write_body(view: dict, court_no: int, **over) -> dict:
     return {
         "court_no": court_no,
@@ -198,18 +168,42 @@ def write_body(view: dict, court_no: int, **over) -> dict:
     } | over
 
 
-def confirm(client: TestClient, token: str, game_id: int, view: dict, **over) -> object:
+def confirm(client: TestClient, token: str, game_id: int, view: dict, **over):
+    """上传结算一笔（playing 片直接传本地分）：默认 a 方 11:9，over 覆写载荷。"""
     body = (
         write_body(
             view,
-            1,
-            winner_side="a",
-            score_a=court(view, 1)["score_a"],
-            score_b=court(view, 1)["score_b"],
+            over.pop("court_no", 1),
+            winner_side=over.pop("winner_side", "a"),
+            score_a=over.pop("score_a", 11),
+            score_b=over.pop("score_b", 9),
+            no_redeal=over.pop("no_redeal", False),
         )
         | over
     )
     return live_call(client, token, game_id, "settle-confirm", body)
+
+
+def overwrite(client: TestClient, token: str, game_id: int, view: dict, **over):
+    """改分重落一笔：默认改成 a 方 11:9，over 覆写载荷。"""
+    body = (
+        write_body(
+            view,
+            over.pop("court_no", 1),
+            winner_side=over.pop("winner_side", "a"),
+            score_a=over.pop("score_a", 11),
+            score_b=over.pop("score_b", 9),
+        )
+        | over
+    )
+    return live_call(client, token, game_id, "settle-overwrite", body)
+
+
+def settled_11_9(client: TestClient, env: dict) -> dict:
+    """开片并把本地账按 a 方 11:9 上传落账（确认即续场），返回落账后视图。"""
+    r = confirm(client, env["org"]["token"], env["game_id"], deal_one(client, env))
+    assert r.status_code == 200, r.text
+    return r.json()
 
 
 def ratings(client: TestClient, *account_ids: int) -> dict[int, EloRating]:
@@ -226,232 +220,64 @@ def ratings(client: TestClient, *account_ids: int) -> dict[int, EloRating]:
         db.close()
 
 
-# ---- deal 开打与到分自动待确认（§4.1/§4.3） ----
+def dupr_ratings(client: TestClient, *account_ids: int) -> dict[int, DuprRating]:
+    db = client.app.state.session_factory()
+    try:
+        rows = (
+            db.execute(select(DuprRating).where(DuprRating.account_id.in_(account_ids)))
+            .scalars()
+            .all()
+        )
+        return {r.account_id: r for r in rows}
+    finally:
+        db.close()
 
 
-def test_deal_opens_match_then_auto_pending_at_11_9(client: TestClient):
+# ---- deal 开打（§4.1）与视图契约收窄（2026-10-09：服务端不记进行中比分） ----
+
+
+def test_deal_opens_match_and_view_contract(client: TestClient):
     env = open_live(client, seed=1)
     v = deal_one(client, env)
     c = court(v, 1)
     assert c["status"] == "playing" and c["seq"] == 1
-    assert (c["score_a"], c["score_b"]) == (0, 0)
+    # 记分本地化契约：比分/最后得分方/待确认来源/预选全裁，只留片号与分制快照
+    assert set(c) == {
+        "court_no",
+        "status",
+        "seq",
+        "court_seq",
+        "scoring",
+        "elo_preview",
+    }
     ids = [r["id"] for r in env["view"]["players"]]
     assert side_ids(v, 1, "a") == set(ids[:2])
     assert side_ids(v, 1, "b") == set(ids[2:4])
     assert v["queue"] == ids[4:]  # 其余人候场、序不变
     assert all(r["queue_pos"] is None for r in v["players"][:4])
 
-    v = to_11_9(client, env["org"]["token"], env["game_id"], v)
-    c = court(v, 1)
-    assert c["status"] == "pending" and c["pending_origin"] == "auto"
-    assert (c["score_a"], c["score_b"]) == (11, 9)
-    assert c["preselect"] == "a"  # 胜方预选=领先方（A4 定值给出）
-    assert c["last_winner_side"] == "a"
-
-
-# ---- 待确认片 ±积分预演双分支（§4.11 预演收归后端单源，2026-10-08） ----
-
-
-def test_pending_elo_preview_two_branches_equal_settlement(client: TestClient):
-    """预演=落账：待确认片 elo_preview 给 A/B 两套（胜队在前、访客同路），
-    settle-confirm 所选分支的 elo_rows 与预演逐行一致；在打片无预演。"""
-    env = open_live(client, seed=1)
-    v = settled_11_9(client, env)
-    pre = court(v, 1)["elo_preview"]
-    ids_a = side_ids(v, 1, "a")
-    ids_b = side_ids(v, 1, "b")
-    # 行序胜队在前（与 settle_confirm 同走名册序）：两分支都是先涨后扣，
-    # 区别在前两行是谁——A 分支 A 队在前、B 分支 B 队在前
-    assert [r["delta"] > 0 for r in pre["a"]] == [True, True, False, False]
-    assert [r["delta"] > 0 for r in pre["b"]] == [True, True, False, False]
-    assert {r["account_id"] for r in pre["a"][:2]} == {
-        p["account_id"] for p in v["players"] if p["id"] in ids_a
-    }
-    assert {r["account_id"] for r in pre["b"][:2]} == {
-        p["account_id"] for p in v["players"] if p["id"] in ids_b
-    }
-    # 确认 A 胜：落账 elo_rows 与预演 A 分支逐行相等（同一条公式路，前端零公式）
-    r = confirm(client, env["org"]["token"], env["game_id"], v)
-    assert r.status_code == 200, r.text
-    assert r.json()["matches"][-1]["elo_rows"] == pre["a"]
-
-    env2 = open_live(client, seed=2)  # 在打片不随附预演（只有待确认片给）
-    assert court(deal_one(client, env2), 1)["elo_preview"] is None
-
-
-def test_pending_court_frozen_point_and_player_undo(client: TestClient):
-    env = open_live(client, seed=2)
-    v = settled_11_9(client, env)
-    r = live_call(
-        client,
-        env["org"]["token"],
-        env["game_id"],
-        "point",
-        write_body(v, 1, side="a"),
-    )
-    assert r.status_code == 409 and r.json()["error"]["code"] == "court_frozen"
-    # 窗内撤一分是全权动作：球友碰不了（§4.5）
-    r = live_call(
-        client, env["mate"]["token"], env["game_id"], "undo", write_body(v, 1)
-    )
-    assert r.status_code == 403 and r.json()["error"]["code"] == "live_forbidden"
-
-
-def test_deuce_not_triggered_until_lead_two(client: TestClient):
-    env = open_live(client, seed=3)
-    v = deal_one(client, env)
-    v = pt(client, env["org"]["token"], env["game_id"], v, 1, "a", 10)
-    v = pt(client, env["org"]["token"], env["game_id"], v, 1, "b", 10)
-    v = pt(client, env["org"]["token"], env["game_id"], v, 1, "a", 1)
-    assert court(v, 1)["status"] == "playing"  # 11:10 净胜不够：不弹窗
-    v = pt(client, env["org"]["token"], env["game_id"], v, 1, "a", 1)
-    assert court(v, 1)["status"] == "pending"  # 12:10 弹窗
-
-
-# ---- 改分制切真（2.6 机制A）：在打片照旧旧制结算、新开片用新制 ----
-
-
-def test_scoring_switch_inplay_court_settles_old_scoring(client: TestClient):
-    """在打片照旧边界：11 分制在打片 8:5 时改 21——该片段续记到 11:9 照样弹
-    auto 窗（按片快照旧制结算，新制 21 下本不够线）；窗内 undo 撤回 10:9，
-    旧制分线下窗自动关。"""
-    env = open_live(client, seed=40)
-    gid = env["game_id"]
-    token = env["org"]["token"]
-    v = pt(client, token, gid, deal_one(client, env), 1, "a", 8)
-    v = pt(client, token, gid, v, 1, "b", 5)
-    r = live_call(
-        client, token, gid, "rules", {"scoring": 21, "base_total_seq": v["total_seq"]}
-    )
-    assert r.status_code == 200, r.text
-    v = r.json()
-    assert v["rules"]["scoring"] == 21 and court(v, 1)["scoring"] == 11
-    v = pt(client, token, gid, v, 1, "b", 4)
-    v = pt(client, token, gid, v, 1, "a", 3)  # 11:9 —— 快照旧制照样弹窗
-    c = court(v, 1)
-    assert c["status"] == "pending" and c["pending_origin"] == "auto"
-    assert (c["score_a"], c["score_b"]) == (11, 9)
-    v = live_call(client, token, gid, "undo", write_body(v, 1)).json()
-    c = court(v, 1)
-    assert c["status"] == "playing" and c["pending_origin"] is None
-    assert (c["score_a"], c["score_b"]) == (10, 9)
-
 
 def test_scoring_switch_new_court_uses_new_scoring(client: TestClient):
-    """改后新开片吃到新分制：改 21 后再开的片自带 21 快照，11:9 不弹——
-    一路打到 21:19 才按新制弹 auto。"""
+    """改分制切真（2.6 机制A）：改 21 后再开的片自带 21 快照（本地判到分在前端，
+    快照随视图给卡头亮数用）。"""
     env = open_live(client, seed=41)
-    gid = env["game_id"]
-    token = env["org"]["token"]
+    gid, token = env["game_id"], env["org"]["token"]
     v = live_get(client, gid, token)
     r = live_call(
         client, token, gid, "rules", {"scoring": 21, "base_total_seq": v["total_seq"]}
     )
     assert r.status_code == 200, r.text
-    v = deal_one(client, env)
-    assert court(v, 1)["scoring"] == 21
-    v = to_11_9(client, token, gid, v)
-    c = court(v, 1)
-    assert c["status"] == "playing" and (c["score_a"], c["score_b"]) == (11, 9)
-    v = pt(client, token, gid, v, 1, "b", 10)
-    v = pt(client, token, gid, v, 1, "a", 10)  # 21:19 —— 新制够线才弹
-    c = court(v, 1)
-    assert c["status"] == "pending" and c["pending_origin"] == "auto"
-    assert (c["score_a"], c["score_b"]) == (21, 19)
+    assert court(deal_one(client, env), 1)["scoring"] == 21
 
 
-def test_scoring_switch_confirm_redeal_uses_new_scoring(client: TestClient):
-    """确认即续场也是新开一场：11 制打到 11:9 后改 21、确认续场——同片下一场
-    吃到 21 快照，11:9 不弹，一路打到 21:19 才按新制弹 auto。"""
-    env = open_live(client, seed=42)
-    gid = env["game_id"]
-    token = env["org"]["token"]
-    v = settled_11_9(client, env)  # 11:9 待确认（片快照旧制 11）
-    r = live_call(
-        client, token, gid, "rules", {"scoring": 21, "base_total_seq": v["total_seq"]}
-    )
-    assert r.status_code == 200, r.text
-    r = confirm(client, token, gid, r.json())  # 确认即续场：同片直接开下一场
-    assert r.status_code == 200, r.text
-    v = r.json()
-    c = court(v, 1)
-    assert c["status"] == "playing" and c["seq"] == 2 and c["scoring"] == 21
-    v = to_11_9(client, token, gid, v)
-    c = court(v, 1)
-    assert c["status"] == "playing" and (c["score_a"], c["score_b"]) == (11, 9)
-    v = pt(client, token, gid, v, 1, "b", 10)
-    v = pt(client, token, gid, v, 1, "a", 10)  # 21:19 —— 新制够线才弹
-    c = court(v, 1)
-    assert c["status"] == "pending" and c["pending_origin"] == "auto"
-    assert (c["score_a"], c["score_b"]) == (21, 19)
+# ---- 上传结算：playing 片直接传分（谁先传先落） ----
 
 
-def test_clear_from_pending_back_to_playing_people_stay(client: TestClient):
-    env = open_live(client, seed=4)
-    v = settled_11_9(client, env)
-    before = (side_ids(v, 1, "a"), side_ids(v, 1, "b"))
-    r = live_call(
-        client, env["org"]["token"], env["game_id"], "clear", write_body(v, 1)
-    )
-    assert r.status_code == 200, r.text
-    v = r.json()
-    c = court(v, 1)
-    assert c["status"] == "playing" and c["pending_origin"] is None
-    assert (c["score_a"], c["score_b"]) == (0, 0)
-    assert (side_ids(v, 1, "a"), side_ids(v, 1, "b")) == before  # 人不下场
-
-
-# ---- 窗内撤分两路（§4.5）与预选（§4.4） ----
-
-
-def test_manual_window_undo_keeps_window(client: TestClient):
-    env = open_live(client, seed=5)
-    v = deal_one(client, env)
-    v = pt(client, env["org"]["token"], env["game_id"], v, 1, "a", 5)
-    v = pt(client, env["org"]["token"], env["game_id"], v, 1, "b", 3)
-    r = live_call(
-        client, env["org"]["token"], env["game_id"], "settle-open", write_body(v, 1)
-    )
-    assert r.status_code == 200, r.text
-    v = r.json()
-    assert court(v, 1)["status"] == "pending"
-    assert court(v, 1)["pending_origin"] == "manual"
-    assert court(v, 1)["preselect"] == "a"  # 领先方预选
-    r = live_call(client, env["org"]["token"], env["game_id"], "undo", write_body(v, 1))
-    assert r.status_code == 200, r.text
-    v = r.json()
-    c = court(v, 1)
-    # 人工开的窗不被误触撤掉：只撤最后一次得分方（b）那 1 分，比分 5:3→5:2 不关窗
-    assert c["status"] == "pending" and c["pending_origin"] == "manual"
-    assert (c["score_a"], c["score_b"]) == (5, 2)
-    # 平分开窗不预选（先清零再记平）
-    v = live_call(
-        client, env["org"]["token"], env["game_id"], "clear", write_body(v, 1)
-    ).json()
-    v = pt(client, env["org"]["token"], env["game_id"], v, 1, "a", 2)
-    v = pt(client, env["org"]["token"], env["game_id"], v, 1, "b", 2)
-    v = live_call(
-        client, env["org"]["token"], env["game_id"], "settle-open", write_body(v, 1)
-    ).json()
-    assert court(v, 1)["preselect"] is None
-
-
-def test_auto_window_undo_below_line_closes(client: TestClient):
-    env = open_live(client, seed=6)
-    v = settled_11_9(client, env)
-    r = live_call(client, env["org"]["token"], env["game_id"], "undo", write_body(v, 1))
-    assert r.status_code == 200, r.text
-    c = court(r.json(), 1)
-    assert c["status"] == "playing" and c["pending_origin"] is None
-    assert (c["score_a"], c["score_b"]) == (10, 9)  # 接着打
-
-
-# ---- 确认结束：一本账（§4.6） ----
-
-
-def test_settle_confirm_match_row_elo_and_requeue(client: TestClient):
+def test_upload_settles_directly_match_elo_and_requeue(client: TestClient):
+    """到场普通球友把本地账直接传上来：一本账——战报行（胜方/比分全吃入参）+
+    Elo 结算（访客不落账）+ 回流补位，同一 commit。"""
     env = open_live(client, seed=7, players=6, bring=1)
-    v = settled_11_9(client, env)
+    v = deal_one(client, env)
     # 名册序 org,b(带访客),guest,c,d,e,f —— deal 后 a=[org,b] b=[guest,c]，d/e/f 候场
     rows = env["view"]["players"]
     org_row, b_row, guest_row, c_row = rows[0], rows[1], rows[2], rows[3]
@@ -467,11 +293,11 @@ def test_settle_confirm_match_row_elo_and_requeue(client: TestClient):
         db.close()
 
     # 胜方必须分高方：11:8 记 b 胜 → 拒
-    r = confirm(client, env["org"]["token"], env["game_id"], v, winner_side="b")
+    r = confirm(client, env["mate"]["token"], env["game_id"], v, winner_side="b")
     assert r.status_code == 422 and r.json()["error"]["code"] == "live_invalid"
 
-    # 窗内调过比分：按改过的 11:8 落账
-    r = confirm(client, env["org"]["token"], env["game_id"], v, score_a=11, score_b=8)
+    # 到场球友按本地账传 11:8、a 胜 → 直接落账（全权不要求）
+    r = confirm(client, env["mate"]["token"], env["game_id"], v, score_a=11, score_b=8)
     assert r.status_code == 200, r.text
     v = r.json()
 
@@ -507,48 +333,68 @@ def test_settle_confirm_match_row_elo_and_requeue(client: TestClient):
     # 回流（默认 all + queue）：四人回队尾、候场首 4 人补全新一队（第 1、2 位一队）
     c1 = court(v, 1)
     assert c1["status"] == "playing" and c1["seq"] == 2
-    assert (c1["score_a"], c1["score_b"]) == (0, 0)
     assert side_ids(v, 1, "a") == {d_row["id"], e_row["id"]}
     assert side_ids(v, 1, "b") == {f_row["id"], org_row["id"]}
     assert v["queue"] == [b_row["id"], guest_row["id"], c_row["id"]]  # 没补上的接队尾
     assert v["players"][b_row["id"] - 1]["queue_pos"] == 0
 
 
-def test_confirm_loser_down_winners_stay(client: TestClient):
-    env = open_live(client, seed=8, rules={"down": "loser"})
-    v = settled_11_9(client, env)
-    rows = env["view"]["players"]
-    r = confirm(client, env["org"]["token"], env["game_id"], v)
+def test_upload_permission_arrived_only(client: TestClient):
+    """上传权=到场（§4.1 口径）：未到场（absent）拒，到场即放行——组织者不在场
+    也拦不住球友记自家的账。"""
+    env = open_live(client, seed=3)
+    v = deal_one(client, env)
+    db = client.app.state.session_factory()
+    try:
+        row = db.execute(
+            select(LivePlayer).where(
+                LivePlayer.game_id == env["game_id"],
+                LivePlayer.account_id == env["mate"]["account"]["id"],
+            )
+        ).scalar_one()
+        row.check = "absent"
+        db.commit()
+    finally:
+        db.close()
+    r = confirm(client, env["mate"]["token"], env["game_id"], v)
+    assert r.status_code == 403 and r.json()["error"]["code"] == "live_forbidden"
+    db = client.app.state.session_factory()
+    try:
+        row = db.get(LivePlayer, row.id)
+        row.check = "ok"
+        db.commit()
+    finally:
+        db.close()
+    r = confirm(client, env["mate"]["token"], env["game_id"], v)
     assert r.status_code == 200, r.text
-    v = r.json()
-    # 败方（b 边）回队尾、胜者留场；候场首两人补成新挑战队（不重配）
-    assert side_ids(v, 1, "a") == {rows[0]["id"], rows[1]["id"]}
-    assert side_ids(v, 1, "b") == {rows[4]["id"], rows[5]["id"]}
-    assert v["queue"] == [rows[2]["id"], rows[3]["id"]]
-    assert court(v, 1)["status"] == "playing"
 
 
-def test_confirm_no_redeal_freezes_no_fill(client: TestClient):
-    env = open_live(client, seed=9)
-    v = settled_11_9(client, env)
-    rows = env["view"]["players"]
-    r = confirm(client, env["org"]["token"], env["game_id"], v, no_redeal=True)
+def test_upload_conflict_distinct_score_409_settle_recorded(client: TestClient):
+    """双传冲突（裁决②）：A 传 11:9 先落，B 拿着旧画面传 9:11 → 409
+    settle_recorded，message 说清已记比分、最新视图随 409 送来。"""
+    env = open_live(client, seed=4)
+    v0 = deal_one(client, env)  # B 出发时的画面
+    r = confirm(client, env["org"]["token"], env["game_id"], v0, score_a=11, score_b=9)
     assert r.status_code == 200, r.text
-    v = r.json()
-    c = court(v, 1)
-    assert c["status"] == "idle" and c["seq"] == 1  # 不排下一场：片腾空、场次不进
-    oncourt = [r["id"] for r in rows[:4]]
-    assert v["queue"] == [rows[4]["id"], rows[5]["id"], *oncourt]  # 人只回流定格
-    assert all(
-        r["court_no"] is None and r["court_side"] is None for r in v["players"][:4]
+    v1 = r.json()
+    r = confirm(
+        client,
+        env["mate"]["token"],
+        env["game_id"],
+        v0,
+        winner_side="b",
+        score_a=9,
+        score_b=11,
     )
-    assert len(v["matches"]) == 1  # 战报照常落账
-    assert ratings(client, rows[0]["account_id"])[rows[0]["account_id"]].play == 1
+    assert r.status_code == 409 and r.json()["error"]["code"] == "settle_recorded"
+    assert "已按 11:9 记账" in r.json()["error"]["message"]
+    assert r.json()["view"]["total_seq"] == v1["total_seq"]  # 最新画面随 409 送来
+    assert len(live_get(client, env["game_id"], env["org"]["token"])["matches"]) == 1
 
 
-def test_settle_confirm_idempotent_replay(client: TestClient):
+def test_upload_same_score_replay_200_idempotent(client: TestClient):
     env = open_live(client, seed=10)
-    v = settled_11_9(client, env)
+    v = deal_one(client, env)
     body = write_body(v, 1, winner_side="a", score_a=11, score_b=9)
     first = live_call(
         client, env["org"]["token"], env["game_id"], "settle-confirm", body
@@ -567,10 +413,253 @@ def test_settle_confirm_idempotent_replay(client: TestClient):
     assert ratings(client, rows[0]["account_id"])[rows[0]["account_id"]].play == 1
 
 
-# ---- 取消对局（§4.7） ----
+def test_upload_rejected_when_court_not_playing(client: TestClient):
+    """片校验只收 playing：没开的片、清扫后腾空的片都不收上传。"""
+    env = open_live(client, seed=5)
+    v = env["view"]
+    r = live_call(  # 没开过的片（片行都不存在）：片号无从对起，直落 body
+        client,
+        env["org"]["token"],
+        env["game_id"],
+        "settle-confirm",
+        {
+            "court_no": 1,
+            "winner_side": "a",
+            "score_a": 11,
+            "score_b": 9,
+            "base_total_seq": v["total_seq"],
+            "base_court_seq": 1,
+        },
+    )
+    assert r.status_code == 422 and r.json()["error"]["code"] == "court_idle"
+    v = settled_11_9(client, env)  # 落账一场后用 no_redeal 腾空（换比分避开重放）
+    v = confirm(
+        client, env["org"]["token"], env["game_id"], v, no_redeal=True, score_b=8
+    ).json()
+    assert court(v, 1)["status"] == "idle"
+    r = confirm(
+        client,
+        env["org"]["token"],
+        env["game_id"],
+        v,
+        score_a=9,
+        score_b=11,
+        winner_side="b",
+    )
+    assert r.status_code == 422 and r.json()["error"]["code"] == "court_idle"
 
 
-def test_cancel_returns_players_to_queue_head(client: TestClient):
+# ---- 在打片 ±积分预演双分支（§4.11，2026-10-09 改挂 playing 片） ----
+
+
+def test_playing_elo_preview_two_branches_equal_settlement(client: TestClient):
+    """预演=落账：在打片 elo_preview 给 A/B 两套（胜队在前、访客同路），
+    上传所选分支的 elo_rows 与预演逐行一致；非在打片不给。"""
+    env = open_live(client, seed=2)
+    v = deal_one(client, env)
+    pre = court(v, 1)["elo_preview"]
+    ids_a = side_ids(v, 1, "a")
+    ids_b = side_ids(v, 1, "b")
+    # 行序胜队在前（与 settle_confirm 同走名册序）：两分支都是先涨后扣，
+    # 区别在前两行是谁——A 分支 A 队在前、B 分支 B 队在前
+    assert [r["delta"] > 0 for r in pre["a"]] == [True, True, False, False]
+    assert [r["delta"] > 0 for r in pre["b"]] == [True, True, False, False]
+    assert {r["account_id"] for r in pre["a"][:2]} == {
+        p["account_id"] for p in v["players"] if p["id"] in ids_a
+    }
+    assert {r["account_id"] for r in pre["b"][:2]} == {
+        p["account_id"] for p in v["players"] if p["id"] in ids_b
+    }
+    # 上传 A 胜：落账 elo_rows 与预演 A 分支逐行相等（同一条公式路，前端零公式）
+    r = confirm(client, env["org"]["token"], env["game_id"], v)
+    assert r.status_code == 200, r.text
+    assert r.json()["matches"][-1]["elo_rows"] == pre["a"]
+
+    env2 = open_live(client, seed=20)  # 非在打片不随附预演
+    v2 = settled_11_9(client, env2)
+    v2 = confirm(
+        client, env2["org"]["token"], env2["game_id"], v2, no_redeal=True, score_b=8
+    ).json()
+    assert court(v2, 1)["elo_preview"] is None
+
+
+# ---- 改分重落（2026-10-09 裁决③：战报/Elo/DUPR 重写，物理轮转不动） ----
+
+
+def test_overwrite_rewrites_match_elo_dupr_not_rotation(client, fake):
+    env = open_live(client, seed=8, players=6, bring=1)
+    v = deal_one(client, env)
+    rows = env["view"]["players"]
+    org_row, b_row, guest_row, c_row = rows[0], rows[1], rows[2], rows[3]
+    d_row, e_row, f_row = rows[4], rows[5], rows[6]
+    db = client.app.state.session_factory()
+    try:
+        db.execute(
+            select(EloRating).where(EloRating.account_id == c_row["account_id"])
+        ).scalar_one().rating = 1600
+        db.commit()
+    finally:
+        db.close()
+
+    r = confirm(client, env["org"]["token"], env["game_id"], v, score_a=11, score_b=9)
+    assert r.status_code == 200, r.text
+    after_upload = r.json()
+    fake.advance(minutes=30)  # 落账与改分不同时刻：ended_at 不回头才验得出来
+
+    # 组织者把 11:9(a) 改判成 9:11(b)：四人原班换边
+    r = overwrite(
+        client,
+        env["org"]["token"],
+        env["game_id"],
+        after_upload,
+        winner_side="b",
+        score_a=9,
+        score_b=11,
+    )
+    assert r.status_code == 200, r.text
+    v = r.json()
+
+    # 战报行原行改写：不新落一场，胜方名单=原败方四人换边、ended_at 保持原时刻
+    assert len(v["matches"]) == 1
+    m = v["matches"][-1]
+    assert (m["court_no"], m["seq"]) == (1, 1)
+    assert (m["score_a"], m["score_b"], m["winner_side"]) == (9, 11, "b")
+    assert [w["id"] for w in m["winners"]] == [guest_row["id"], c_row["id"]]
+    assert [w["id"] for w in m["losers"]] == [org_row["id"], b_row["id"]]
+    assert m["ended_at"] == NOW_ISO
+
+    # Elo 反算重加：旧 delta 全退（rating/play/win 回赛前）、按新划分重算
+    # 新胜队均值 1400 vs 败队 1200 → 强队赢期望高：delta=6、败方六成=4；快照=新账面
+    assert [
+        (r_["delta"], r_["rating_before"], r_["rating_after"]) for r_ in m["elo_rows"]
+    ] == [(6, 1200, 1206), (6, 1600, 1606), (-4, 1200, 1196), (-4, 1200, 1196)]
+    rt = ratings(
+        client,
+        org_row["account_id"],
+        b_row["account_id"],
+        c_row["account_id"],
+    )
+    assert [
+        (rt[a].rating, rt[a].play, rt[a].win)
+        for a in (org_row["account_id"], b_row["account_id"], c_row["account_id"])
+    ] == [(1196, 1, 0), (1196, 1, 0), (1606, 1, 1)]
+
+    # DUPR 明细删行重插：仍每人一行、胜负比分翻面；派生分=窗口重放该明细的结果
+    # （战报 id 不进视图，直查行）
+    db = client.app.state.session_factory()
+    try:
+        m_row = db.execute(
+            select(LiveMatch).where(LiveMatch.game_id == env["game_id"])
+        ).scalar_one()
+        details = (
+            db.execute(select(DuprDetail).where(DuprDetail.match_id == m_row.id))
+            .scalars()
+            .all()
+        )
+    finally:
+        db.close()
+    assert {d.account_id for d in details} == {
+        org_row["account_id"],
+        b_row["account_id"],
+        c_row["account_id"],
+    }
+    for d in details:
+        assert d.won is (d.account_id == c_row["account_id"])
+        assert (d.score_w, d.score_l) == (11, 9)
+        expected = dupr.replay(
+            dupr.GUEST_DUPR,
+            [
+                {
+                    "partner_rating": d.partner_rating,
+                    "opp_a": d.opp_a,
+                    "opp_b": d.opp_b,
+                    "score_w": d.score_w,
+                    "score_l": d.score_l,
+                    "won": d.won,
+                }
+            ],
+        )
+        assert dupr_ratings(client, d.account_id)[d.account_id].rating == expected
+
+    # 物理轮转不动：回流格局、候场队、场次号照上传那一刻（只进片号/总号）
+    assert court(v, 1)["status"] == "playing" and court(v, 1)["seq"] == 2
+    assert side_ids(v, 1, "a") == {d_row["id"], e_row["id"]}
+    assert side_ids(v, 1, "b") == {f_row["id"], org_row["id"]}
+    assert v["queue"] == after_upload["queue"]
+    assert court(v, 1)["court_seq"] == court(after_upload, 1)["court_seq"] + 1
+
+
+def test_overwrite_rejected_once_next_match_settled(client: TestClient):
+    """窗口=下一场落账前（裁决③④）：下一场已落账，旧画面里的改分拒收、
+    最新一场不被误改。"""
+    env = open_live(client, seed=9)
+    v1 = settled_11_9(client, env)  # 第一场 11:9(a) 落账、第二场开打
+    r = confirm(client, env["org"]["token"], env["game_id"], v1, score_b=8)
+    assert r.status_code == 200, r.text
+    v2 = r.json()
+    # 拿第一场落账后的片号（下一场落账前的画面）改分：片号闸退回
+    r = overwrite(
+        client,
+        env["org"]["token"],
+        env["game_id"],
+        v2,
+        winner_side="b",
+        score_a=9,
+        score_b=11,
+        base_court_seq=court(v1, 1)["court_seq"],
+    )
+    assert r.status_code == 409 and r.json()["error"]["code"] == "live_stale_court"
+    cur = live_get(client, env["game_id"], env["org"]["token"])
+    assert len(cur["matches"]) == 2
+    assert (cur["matches"][-1]["score_a"], cur["matches"][-1]["score_b"]) == (11, 8)
+    # 拿最新画面改的永远是自己看见的最新一场（窗口内）：放行
+    r = overwrite(
+        client,
+        env["org"]["token"],
+        env["game_id"],
+        v2,
+        winner_side="b",
+        score_a=9,
+        score_b=11,
+    )
+    assert r.status_code == 200, r.text
+    cur = live_get(client, env["game_id"], env["org"]["token"])
+    assert (cur["matches"][-1]["score_a"], cur["matches"][-1]["winner_side"]) == (
+        9,
+        "b",
+    )
+
+
+def test_overwrite_full_power_only_and_idempotent(client: TestClient):
+    env = open_live(client, seed=30)
+    v = settled_11_9(client, env)
+    # 球友不能改分（全权闸）
+    r = overwrite(
+        client, env["mate"]["token"], env["game_id"], v, score_a=11, score_b=8
+    )
+    assert r.status_code == 403 and r.json()["error"]["code"] == "live_forbidden"
+    # 组织者改分；同载荷重复覆盖幂等 200（不重复反算）
+    r = overwrite(client, env["org"]["token"], env["game_id"], v, score_a=11, score_b=8)
+    assert r.status_code == 200, r.text
+    after = r.json()
+    rt0 = ratings(client, after["players"][0]["account_id"])[
+        after["players"][0]["account_id"]
+    ]
+    again = overwrite(
+        client, env["org"]["token"], env["game_id"], v, score_a=11, score_b=8
+    )
+    assert again.status_code == 200, again.text
+    assert again.json() == after
+    rt1 = ratings(client, after["players"][0]["account_id"])[
+        after["players"][0]["account_id"]
+    ]
+    assert (rt1.rating, rt1.play, rt1.win) == (rt0.rating, rt0.play, rt0.win)
+
+
+# ---- 取消对局（§4.7）：作用面收为 playing，其余照旧 ----
+
+
+def test_cancel_on_playing_returns_players_to_queue_head(client: TestClient):
     env = open_live(client, seed=11)
     rows = env["view"]["players"]
     oncourt = [r["id"] for r in rows[:4]]
@@ -583,54 +672,53 @@ def test_cancel_returns_players_to_queue_head(client: TestClient):
     v = r.json()
     assert v["queue"] == [*oncourt, rows[4]["id"], rows[5]["id"]]  # 原样回流队首
     c = court(v, 1)
-    assert c["status"] == "idle" and (c["score_a"], c["score_b"]) == (0, 0)
-
-    v = to_11_9(client, env["org"]["token"], env["game_id"], deal_one(client, env))
-    r = live_call(
-        client, env["org"]["token"], env["game_id"], "cancel", write_body(v, 1)
-    )
-    assert r.status_code == 200, r.text
-    v = r.json()
-    assert court(v, 1)["status"] == "idle" and court(v, 1)["pending_origin"] is None
-    assert v["queue"] == [*oncourt, rows[4]["id"], rows[5]["id"]]
+    assert c["status"] == "idle" and c["elo_preview"] is None
     assert v["matches"] == []  # 作废不留战报
     # 全员积分零动：无战报即无结算
     assert ratings(client, rows[0]["account_id"])[rows[0]["account_id"]].play == 0
 
 
-# ---- 两级号防线（§4.8/附录 B1） ----
+# ---- 两级号防线（§4.8/附录 B1）：409 携最新视图 ----
 
 
 def test_stale_total_and_court_409_carries_latest_view(client: TestClient):
     env = open_live(client, seed=12)
     v0 = deal_one(client, env)  # total 1→2
-    r = live_call(
+    r = confirm(
         client,
         env["org"]["token"],
         env["game_id"],
-        "point",
-        write_body(v0, 1, side="a", base_total_seq=1),  # 旧总号：断网重发/连击
+        v0,
+        base_total_seq=1,  # 旧总号：断网重发/连击
     )
     assert r.status_code == 409 and r.json()["error"]["code"] == "live_stale_total"
     assert r.json()["view"]["total_seq"] == v0["total_seq"]  # 最新画面随 409 送来
     assert r.json()["view"]["game_id"] == env["game_id"]
 
-    v1 = pt(client, env["org"]["token"], env["game_id"], v0, 1, "a")  # 片号 +1
+    # 片号旧而总号新：走 cancel 前进片号后、重新开打（回 playing）再拿新总号+
+    # 旧片号传分（未被落账 → 纯防线）
     r = live_call(
         client,
         env["org"]["token"],
         env["game_id"],
-        "point",
-        # 总号新（对得上）、片号旧（同片并发：只拦这片）
-        write_body(v1, 1, side="a", base_court_seq=court(v0, 1)["court_seq"]),
+        "cancel",
+        write_body(v0, 1),
+    )
+    assert r.status_code == 200, r.text
+    v1 = deal_one(client, env)
+    r = confirm(
+        client,
+        env["org"]["token"],
+        env["game_id"],
+        v1,
+        base_court_seq=court(v0, 1)["court_seq"],
     )
     assert r.status_code == 409 and r.json()["error"]["code"] == "live_stale_court"
     assert r.json()["view"]["total_seq"] == v1["total_seq"]
     assert court(r.json()["view"], 1)["court_seq"] == court(v1, 1)["court_seq"]
-    # 别片不受牵连：旧片号只拦该片（多片互不等待见 test_multi_court_parallel_independent）
 
 
-def test_multi_court_parallel_independent(client: TestClient):
+def test_multi_court_independent_court_seq(client: TestClient):
     env = open_live(client, seed=13, players=9)
     ids = [r["id"] for r in env["view"]["players"]]
     v = deal_court(
@@ -643,34 +731,28 @@ def test_multi_court_parallel_independent(client: TestClient):
             {"court_no": 2, "a": ids[4:6], "b": ids[6:8]},
         ],
     )
-    v = to_11_9(client, env["org"]["token"], env["game_id"], v)  # 1 号片进待确认
-    assert court(v, 1)["status"] == "pending"
-    v = pt(client, env["org"]["token"], env["game_id"], v, 2, "b", 2)  # 2 号片照打
-    assert (court(v, 2)["score_a"], court(v, 2)["score_b"]) == (0, 2)
-    r = live_call(
-        client,
-        env["org"]["token"],
-        env["game_id"],
-        "point",
-        write_body(v, 1, side="a"),
-    )
-    assert r.status_code == 409 and r.json()["error"]["code"] == "court_frozen"
+    seq2 = court(v, 2)["court_seq"]
+    v = confirm(
+        client, env["org"]["token"], env["game_id"], v
+    ).json()  # 1 号片落账（总号进）
+    assert len(v["matches"]) == 1
+    # 2 号片照打：总号变了、该片片号没动——带最新总号+原片号上传照常落账
+    r = confirm(client, env["org"]["token"], env["game_id"], v, court_no=2)
+    assert r.status_code == 200, r.text
+    assert len(r.json()["matches"]) == 2
+    assert court(r.json(), 2)["court_seq"] == seq2 + 1
 
 
 # ---- 权限分级（附录 B1）与散场拒收 ----
 
 
-def test_score_open_to_arrived_full_power_actions_gated(client: TestClient):
+def test_full_power_actions_gated_upload_open_to_arrived(client: TestClient):
     env = open_live(client, seed=14)
     v = deal_one(client, env)
     token, gid = env["mate"]["token"], env["game_id"]
-    v = pt(client, token, gid, v, 1, "a", 1)  # 球友可记分
-    r = live_call(client, token, gid, "undo", write_body(v, 1))  # 在打可撤分
-    assert r.status_code == 200, r.text
-    v = r.json()
-    for action in ("clear", "settle-open", "settle-confirm", "cancel"):
+    for action in ("cancel", "settle-overwrite"):
         body = write_body(v, 1)
-        if action == "settle-confirm":
+        if action == "settle-overwrite":
             body |= {"winner_side": "a", "score_a": 1, "score_b": 0}
         r = live_call(client, token, gid, action, body)
         assert r.status_code == 403 and r.json()["error"]["code"] == "live_forbidden", (
@@ -678,7 +760,7 @@ def test_score_open_to_arrived_full_power_actions_gated(client: TestClient):
             r.text,
         )
     stranger = signup(client, "13800039999", "s")
-    r = live_call(client, stranger["token"], gid, "point", write_body(v, 1, side="a"))
+    r = confirm(client, stranger["token"], env["game_id"], v)
     assert r.status_code == 403 and r.json()["error"]["code"] == "live_forbidden"
 
 
@@ -688,43 +770,12 @@ def test_write_after_game_ended_rejected(client: TestClient):
     db = client.app.state.session_factory()
     try:
         game = db.get(Game, env["game_id"])
-        game.ended_at = game.end_at  # 散场时刻锚（批3 的 end 端点未到，直落）
+        game.ended_at = game.end_at  # 散场时刻锚（end 端点链路在 test_live_end 册）
         db.commit()
     finally:
         db.close()
-    r = live_call(
-        client,
-        env["org"]["token"],
-        env["game_id"],
-        "point",
-        write_body(v, 1, side="a"),
-    )
+    r = confirm(client, env["org"]["token"], env["game_id"], v)
     assert r.status_code == 409 and r.json()["error"]["code"] == "live_ended"
-
-
-# ---- 撤一分守卫（§4.1：撤不成负） ----
-
-
-def test_undo_never_negative_noop_at_zero(client: TestClient):
-    env = open_live(client, seed=16)
-    v = deal_one(client, env)
-    r = live_call(client, env["org"]["token"], env["game_id"], "undo", write_body(v, 1))
-    assert r.status_code == 200, r.text  # 0:0 无可撤：原样回，不动账不进号
-    v0 = r.json()
-    assert (court(v0, 1)["score_a"], court(v0, 1)["score_b"]) == (0, 0)
-    assert v0["total_seq"] == v["total_seq"]
-    v1 = pt(client, env["org"]["token"], env["game_id"], v0, 1, "a", 1)
-    r = live_call(
-        client, env["org"]["token"], env["game_id"], "undo", write_body(v1, 1)
-    )
-    v2 = r.json()
-    assert (court(v2, 1)["score_a"], court(v2, 1)["score_b"]) == (0, 0)
-    r = live_call(
-        client, env["org"]["token"], env["game_id"], "undo", write_body(v2, 1)
-    )
-    v3 = r.json()
-    assert court(v3, 1)["score_a"] == 0  # 连撤两下停在 0:0，不出现 -1
-    assert v3["total_seq"] == v2["total_seq"]  # 第二下是无可撤：不进号
 
 
 # ---- 读链与开账路由冒烟（守门分支在批1/2.5 测过 LiveBook，这里锁路由面） ----

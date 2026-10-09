@@ -25,7 +25,6 @@ from .test_live_score import (
     live_call,
     live_get,
     open_live,
-    pt,
     ratings,
     settled_11_9,
     side_ids,
@@ -131,7 +130,7 @@ def test_settle_confirm_double_writes_dupr(client: TestClient):
     org_row, b_row, _guest_row, c_row = rows[0], rows[1], rows[2], rows[3]
     seed_dupr_row(client, b_row["account_id"], 4.0)
 
-    v = settled_11_9(client, env)
+    v = deal_one(client, env)
     body = write_body(v, 1, winner_side="a", score_a=11, score_b=9)
     r = confirm(client, env["org"]["token"], env["game_id"], v)
     assert r.status_code == 200, r.text
@@ -223,9 +222,7 @@ def test_view_players_carry_dupr(client: TestClient):
         2.5,
     ]
 
-    r = confirm(client, env["org"]["token"], env["game_id"], settled_11_9(client, env))
-    assert r.status_code == 200, r.text
-    v = r.json()
+    v = settled_11_9(client, env)
     by_id = {r_["id"]: r_ for r_ in v["players"]}
     # 结算后：参与者吃派生分（胜方涨/败方跌）；访客与没上场的人零动
     assert by_id[org_row["id"]]["dupr"] > 2.5
@@ -258,9 +255,12 @@ def test_rated_after_five_confirmed_games(client: TestClient):
     v = deal_one(client, env)
     seen = {0: True}
     c = card()
-    for _ in range(20):
-        v = pt(client, env["org"]["token"], env["game_id"], v, 1, "a", 5)
-        r = confirm(client, env["org"]["token"], env["game_id"], v)
+    for i in range(20):
+        # 记分本地化：本地账（scoring=5 打到 5:x）直接上传落账——比分逐场换，
+        # 同载荷会被幂等重放拦下不落新场
+        r = confirm(
+            client, env["org"]["token"], env["game_id"], v, score_a=5, score_b=i % 5
+        )
         assert r.status_code == 200, r.text
         v = r.json()
         c = card()
@@ -307,10 +307,8 @@ def test_window_keeps_last_30_details(client: TestClient):
     finally:
         db.close()
 
-    v = pt(
-        client, env["org"]["token"], env["game_id"], deal_one(client, env), 1, "a", 5
-    )
-    r = confirm(client, env["org"]["token"], env["game_id"], v)
+    v = deal_one(client, env)
+    r = confirm(client, env["org"]["token"], env["game_id"], v, score_a=5, score_b=0)
     assert r.status_code == 200, r.text
 
     dr = dupr_rows(client, org_id, m1_id)
@@ -329,11 +327,9 @@ def test_balance_pairing_snakes_by_dupr(client: TestClient):
     seed_dupr_row(client, m1["account_id"], 3.5)
     seed_dupr_row(client, org["account_id"], 3.0)
 
-    r = confirm(client, env["org"]["token"], env["game_id"], settled_11_9(client, env))
-    assert r.status_code == 200, r.text
-    v = r.json()
     # 蛇形吃 DUPR：最强 m5(4.0)+最弱 m4(2.5) vs m1(3.5)+org(3.0)
     # （旧 1500 默认会按队序排成 [m4,m5] vs [org,m1]）
+    v = settled_11_9(client, env)
     assert side_ids(v, 1, "a") == {m5["id"], m4["id"]}
     assert side_ids(v, 1, "b") == {m1["id"], org["id"]}
 
@@ -341,13 +337,12 @@ def test_balance_pairing_snakes_by_dupr(client: TestClient):
 def test_settle_only_recomputes_involved(client: TestClient):
     env = open_live(client, seed=107, players=8)
     org_id = env["view"]["players"][0]["account_id"]
-    r = confirm(client, env["org"]["token"], env["game_id"], settled_11_9(client, env))
-    assert r.status_code == 200, r.text
+    v = settled_11_9(client, env)
     first = dupr_rows(client, org_id)[org_id]
 
     # 第二场（候场首 4 人补位）不涉及 org：他的派生分与明细零动（重算幂等）
-    v = pt(client, env["org"]["token"], env["game_id"], r.json(), 1, "a", 11)
-    r = confirm(client, env["org"]["token"], env["game_id"], v)
+    # ——org 虽不在场上，到场者传他所见的本地分照常收
+    r = confirm(client, env["org"]["token"], env["game_id"], v, score_a=11, score_b=0)
     assert r.status_code == 200, r.text
     again = dupr_rows(client, org_id)[org_id]
     assert (again.rating, again.games) == (first.rating, 1)
@@ -356,19 +351,11 @@ def test_settle_only_recomputes_involved(client: TestClient):
 def test_confirm_level_score_settles_dupr_min_weight(client: TestClient):
     env = open_live(client, seed=108, players=6)
     rows = env["view"]["players"]
-    r = live_call(
+    r = confirm(  # 记分本地化：0:0 平分直接上传、胜方任选
         client,
         env["org"]["token"],
         env["game_id"],
-        "settle-open",
-        write_body(deal_one(client, env), 1),
-    )
-    assert r.status_code == 200, r.text
-    r = confirm(
-        client,
-        env["org"]["token"],
-        env["game_id"],
-        r.json(),
+        deal_one(client, env),
         winner_side="a",
         score_a=0,
         score_b=0,
@@ -398,8 +385,7 @@ def test_elo_entertainment_track_new_params_and_floor(client: TestClient):
     finally:
         db.close()
 
-    r = confirm(client, env["org"]["token"], env["game_id"], settled_11_9(client, env))
-    assert r.status_code == 200, r.text
+    settled_11_9(client, env)  # 一场落账：org/m1 胜、m2/m3 败
 
     rt = ratings(client, org_id, m1_id, m2_id, m3_id)
     # 胜队均值 1200 vs 败队 795 → delta=2、败方六成=1（K=24 公式）

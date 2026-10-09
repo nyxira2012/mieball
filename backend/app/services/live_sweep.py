@@ -3,8 +3,9 @@
 
 LiveBook 继承 LiveSweepMixin 获得 sweep_cancel_all / end 两动作；写锁、两级号、
 名册与片行等内部件仍由 LiveBook 提供（组合而非复制）。散场链三步：
-- 入口即清扫：end 见 pending/playing 片不放行（live_residue）；逐片处理走批2 的
-  settle-confirm / settle-open+confirm / cancel（带 no_redeal）或这里的一键全取消；
+- 入口即清扫：end 见在打片不放行（live_residue；2026-10-09 记分本地化后残局=
+  全部非 idle 片即 playing 片）；逐片处理走上传结算（带 no_redeal）或这里的一键
+  全取消；
 - 落封存锚：games.ended_at 一处落库（批1 裁定不存双真值），战报落账即冻结、
   封存天然满足；散场后一切写端点由 _open_write 拒 live_ended（回看只读）；
 - 考勤定格：在场者 left_at=散场时刻、已早退者保持原离场时刻、未到者 arrive_at 空。
@@ -29,9 +30,9 @@ class LiveSweepMixin:
     def sweep_cancel_all(
         self, *, game_id: int, actor_id: int, base_total_seq: int
     ) -> dict:
-        """「未完对局全部取消」一键（§4.9）：全部 playing/pending 片按 cancel 语义
-        逐片作废（原样回流队首、不计分不留战报），一个事务办完；无残局时原样回
-        视图不进号（重试幂等）。"""
+        """「未完对局全部取消」一键（§4.9）：全部在打片按 cancel 语义逐片作废
+        （原样回流队首、不计分不留战报），一个事务办完；无残局时原样回视图
+        不进号（重试幂等）。"""
         with self._write(game_id=game_id, actor_id=actor_id):
             state, game = self._open_write(game_id)
             self._require_full_power(state, game, actor_id)
@@ -40,7 +41,7 @@ class LiveSweepMixin:
             by_id = {r.id: r for r in rows}
             swept = False
             for court in self._courts(game_id):
-                if court.status not in ("playing", "pending"):
+                if court.status != "playing":
                     continue
                 self._void_court(rows, by_id, court)
                 swept = True

@@ -2,9 +2,9 @@
 散场残局拦（live_residue）→ 逐片 no_redeal 处理 / sweep-cancel-all 一键清 → end
 落 ended_at+考勤定格（在场者 left_at=散场时刻、已早退保持原时刻、未到者 arrive_at
 空）+ round 收口；散场后一切写拒 live_ended；回看 view 游客可读、考勤只给组织者
-与本人。管理员：封后同权（可确认可清扫）、不能再封（organizer_only）、org 早退后
+与本人。管理员：封后同权（可上传可清扫）、不能再封（organizer_only）、org 早退后
 可代收散场。check 四态（迟到归一/中途加入/早退清位/回来=join 排队尾）；swap
-（pending 冻结 court_frozen、outId 回队尾、留名 feed）；tempo（叠加/互斥/连战
+（playing 片任意到场者可换、outId 回队尾、留名 feed）；tempo（叠加/互斥/连战
 排队首）；rules（四件套落账、缩片校验、全权拦）。
 
 时刻基准 FakeClock 10-04 12:00（conftest）；开球时刻 10-06 19:00（test_games_read）。
@@ -26,8 +26,6 @@ from .test_live_score import (
     live_call,
     live_get,
     open_live,
-    settled_11_9,
-    to_11_9,
     write_body,
 )
 
@@ -124,7 +122,7 @@ def test_sweep_per_court_confirm_and_cancel_then_end(client: TestClient):
             {"court_no": 2, "a": ids[4:6], "b": ids[6:8]},
         ],
     )
-    v = to_11_9(client, env["org"]["token"], env["game_id"], v)  # 1 号片待确认
+    # 在打片即残局（记分本地化：服务端无比分概念，收不了尾就是残局）
     r = live_call(
         client,
         env["org"]["token"],
@@ -133,7 +131,7 @@ def test_sweep_per_court_confirm_and_cancel_then_end(client: TestClient):
         {"base_total_seq": v["total_seq"]},
     )
     assert r.status_code == 409 and r.json()["error"]["code"] == "live_residue"
-    # 1 号片：清扫态确认（不排下一场、不补位）
+    # 1 号片：清扫态上传（不排下一场、不补位）
     r = live_call(
         client,
         env["org"]["token"],
@@ -181,7 +179,7 @@ def test_end_seals_attendance_and_round(client, fake):
             6: {"check": "absent", "queue_pos": None},
         },
     )
-    v = settled_11_9(client, env)
+    v = deal_one(client, env)
     v = live_call(
         client,
         env["org"]["token"],
@@ -212,7 +210,7 @@ def test_after_end_all_writes_rejected_and_recap_visible(client: TestClient):
     env = open_live(client, seed=24)
     rows = env["view"]["players"]
     gid, tok = env["game_id"], env["org"]["token"]
-    v = settled_11_9(client, env)
+    v = deal_one(client, env)
     v = live_call(
         client,
         tok,
@@ -222,7 +220,8 @@ def test_after_end_all_writes_rejected_and_recap_visible(client: TestClient):
     ).json()
     v = live_call(client, tok, gid, "end", {"base_total_seq": v["total_seq"]}).json()
     bodies = {
-        "point": write_body(v, 1, side="a"),
+        "settle-confirm": write_body(v, 1, winner_side="a", score_a=11, score_b=9),
+        "settle-overwrite": write_body(v, 1, winner_side="a", score_a=11, score_b=9),
         "check": {
             "player_id": rows[4]["id"],
             "check": "ok",
@@ -269,7 +268,7 @@ def test_admin_full_power_then_revoked(client: TestClient):
     rows = env["view"]["players"]
     gid = env["game_id"]
     mate = env["mate"]["token"]
-    v = settled_11_9(client, env)
+    v = deal_one(client, env)  # 开片（上传权=到场，管理员同权在清扫/改分验）
     # 球友不能封管理员
     r = live_call(
         client,
@@ -290,7 +289,7 @@ def test_admin_full_power_then_revoked(client: TestClient):
     assert r.status_code == 200, r.text
     v = r.json()
     assert v["admins"] == [rows[1]["account_id"]]
-    # 同权：管理员可确认对局（此前球友被拒，批2 已锁）
+    # 同权：管理员到场即上传结算（球友同样可，全权差异在清扫/改分）
     r = live_call(
         client,
         mate,
@@ -324,7 +323,8 @@ def test_admin_full_power_then_revoked(client: TestClient):
     kinds = [e["kind"] for e in v["feed"]]
     assert kinds == ["set_admin", "unset_admin"]
     assert v["feed"][0]["target"] == rows[1]["name"]
-    r = live_call(client, mate, gid, "settle-open", write_body(v, 1))
+    # 撤完即失权：管理员级动作（cancel）球友再调拒
+    r = live_call(client, mate, gid, "cancel", write_body(v, 1))
     assert r.status_code == 403 and r.json()["error"]["code"] == "live_forbidden"
 
 
@@ -455,10 +455,10 @@ def test_check_rejected_while_on_court(client: TestClient):
     assert v2["queue"] == [rows[4]["id"], rows[5]["id"]]
 
 
-# ---- swap（2.2 §4.9 + 2.3 裁决 Q5）----
+# ---- swap（2.2 §4.9；记分本地化后片无冻结窗，playing 片随时可换）----
 
 
-def test_swap_position_tail_and_pending_frozen(client: TestClient):
+def test_swap_position_tail_and_feed_note(client: TestClient):
     env = open_live(client, seed=29)
     rows = env["view"]["players"]
     gid = env["game_id"]
@@ -510,21 +510,6 @@ def test_swap_position_tail_and_pending_frozen(client: TestClient):
         {"out_id": rows[0]["id"], "in_id": rows[5]["id"], **base},
     )
     assert r.status_code == 403 and r.json()["error"]["code"] == "live_forbidden"
-    # pending 片的片上人冻结拒收（2.3 Q5）
-    v = live_get(client, gid, env["org"]["token"])
-    v = to_11_9(client, env["org"]["token"], gid, v)
-    r = live_call(
-        client,
-        mate,
-        gid,
-        "swap",
-        {
-            "out_id": rows[0]["id"],
-            "in_id": rows[5]["id"],
-            "base_total_seq": v["total_seq"],
-        },
-    )
-    assert r.status_code == 409 and r.json()["error"]["code"] == "court_frozen"
 
 
 # ---- tempo（2.2 §4.10）与 rules（2.2 §4.7）----

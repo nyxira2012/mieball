@@ -202,13 +202,14 @@ def court_idle() -> ApiError:
 
 def live_invalid(msg: str) -> ApiError:
     # 现场写动作的事实把关不成立（发牌名单不在候场队首 / 胜方比分更低等）——
-    # 与权限（live_forbidden）、状态机（court_idle/court_frozen）各管一道
+    # 与权限（live_forbidden）、状态机（court_idle）各管一道
     return ApiError(422, "live_invalid", msg)
 
 
-def court_frozen() -> ApiError:
-    # 待确认片整片冻结（2.3 §4.3/4.8）：换人拒收，出口只有清零/取消/确认
-    return ApiError(409, "court_frozen", "这片待确认中，暂不能换人")
+def settle_recorded(sa: int, sb: int) -> ApiError:
+    # 传分冲突（2026-10-09 记分本地化裁决②）：这片有人先传先落了、且记的不是
+    # 你手里的分——不当并发错误吵，把已记比分说清、纠纷引给组织者
+    return ApiError(409, "settle_recorded", f"已按 {sa}:{sb} 记账 · 有异议找组织者")
 
 
 def live_residue() -> ApiError:
