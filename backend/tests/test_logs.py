@@ -236,3 +236,47 @@ def test_module_audit_uses_context(tmp_path, monkeypatch):
     row = audit_rows(logs_dir)[-1]
     assert row["action"] == "live_start"
     assert row["account_id"] == 5 and row["game_id"] == 3
+
+
+# ---- 意外错误带号（spec §4.1 / §5「意外错误带编号」）----
+
+
+def test_unexpected_error_carries_error_id(tmp_path):
+    """500 兜底：错误体带 ERR- 短号、日志按号记完整 traceback（明文手机号过脱敏）；
+    业务错误路径零改动不带号；失败行带操作人（带 token 的 ≥400 行 u=1）。"""
+    logs_dir = tmp_path / "logs"
+    client = make_client(tmp_path)
+
+    @client.app.get("/api/boom")  # 临时测试路由（沿 slowpoke 惯例），不为测试改生产路由
+    def boom():
+        raise RuntimeError("炸了 手机 13812341234")
+
+    # 兜底 handler 发完响应后框架仍会重抛异常，TestClient 要关掉重抛才看得到响应体
+    crash = TestClient(client.app, raise_server_exceptions=False)
+    r = crash.get("/api/boom")
+    assert r.status_code == 500
+    body = r.json()["error"]
+    assert body["code"] == "internal_error"
+    assert body["message"] == "出错了，请稍后再试"
+    error_id = body["error_id"]
+    assert error_id.startswith("ERR-") and len(error_id) == 10
+
+    text = app_log(logs_dir)
+    # 拿编号搜日志直达案发现场（spec 故事 2 / 批4 按号查错）
+    assert error_id in text and "RuntimeError" in text
+    assert "13812341234" not in text  # traceback 里的明文手机号也过脱敏（spec C3）
+
+    # 业务错误（ApiError）不带号（spec §4.1 禁止 / §5「业务错误不带编号」）
+    r2 = crash.get("/api/games/999999/live")
+    assert r2.status_code == 404
+    assert "error_id" not in r2.json()["error"]
+
+    # 失败行带操作人：带 token 再打一次 ≥400，失败行 u=1 而非游客 u=-（spec B1）
+    token = signup(client, "13800000003", "d3")["token"]
+    r3 = crash.get("/api/games/999999/live", headers=auth(token))
+    assert r3.status_code == 404
+    fail_lines = [
+        ln for ln in app_log(logs_dir).splitlines()
+        if "access GET /api/games/999999/live 404" in ln
+    ]
+    assert fail_lines and any("(u=1" in ln for ln in fail_lines)

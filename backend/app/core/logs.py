@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import re
+import traceback
+import uuid
 from contextvars import ContextVar
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -20,6 +22,7 @@ from typing import IO
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from .clock import CN_TZ
 
@@ -251,26 +254,65 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
             ctx_client.set(client)  # 向下可见：路由里的 audit()/日志行自带端标签
             ctx_journal.set(self.journal)
             response = await call_next(request)
-            ms = round((perf_counter() - start) * 1000)
-            self._record(request, response.status_code, ms, client)
-            return response
-        except Exception:  # 包死：日志侧故障不连累业务，异常原样交回框架（spec 4.7）
-            try:
-                ms = round((perf_counter() - start) * 1000)
-                self.journal.access(
-                    request.method, request.url.path, 500, ms, client=client
-                )
-            except Exception:  # noqa: S110, BLE001 —— 这里除了吞掉没有可做的事
-                pass
+        except Exception:
+            # call_next 单独 try：这里冒出来的都是路由侧异常——经 _record 补一行失败
+            # 流水（自带操作人/慢判断）后原样交回框架，不吞业务异常（spec 4.7）
+            self._record(request, 500, round((perf_counter() - start) * 1000), client)
             raise
+        self._record(
+            request,
+            response.status_code,
+            round((perf_counter() - start) * 1000),
+            client,
+        )
+        return response
 
     def _record(self, request: Request, status: int, ms: int, client: str) -> None:
-        method, path = request.method, request.url.path
-        # deps 镜像到共享 request.state 的操作人（contextvars 拷贝回不到中间件，见模块头）
-        who = getattr(request.state, "log_account", None)
-        if ms > self.slow_ms:
-            self.journal.slow(method, path, status, ms, account_id=who, client=client)
-        elif method == "GET" and _HEARTBEAT_RE.match(path) and status < 400:
-            return  # 心跳静默：现场页正常刷新一个字不写（spec 4.5）
-        else:
-            self.journal.access(method, path, status, ms, account_id=who, client=client)
+        """记一行流水，内部包死不外抛——日志侧任何故障不击穿中间件（spec 4.7）。"""
+        try:
+            method, path = request.method, request.url.path
+            # deps 镜像到共享 request.state 的操作人（contextvars 拷贝回不到中间件，见模块头）
+            who = getattr(request.state, "log_account", None)
+            if ms > self.slow_ms:
+                self.journal.slow(
+                    method, path, status, ms, account_id=who, client=client
+                )
+            elif method == "GET" and _HEARTBEAT_RE.match(path) and status < 400:
+                return  # 心跳静默：现场页正常刷新一个字不写（spec 4.5）
+            else:
+                self.journal.access(
+                    method, path, status, ms, account_id=who, client=client
+                )
+        except Exception:  # noqa: S110, BLE001 —— 这里除了吞掉没有可做的事情
+            pass
+
+
+def new_error_id() -> str:
+    """错误号（spec 术语表）：「ERR-」+ uuid4 前 6 位 hex ≈ 24bit，生日界约四千次不撞，自用量级安全。"""
+    return "ERR-" + uuid.uuid4().hex[:6]
+
+
+async def internal_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """意外错误兜底（spec 4.1）：按号记完整 traceback——批4 的按号查错直达这一行；
+    回 500 错误体带号。main.py 注册为 app 级 Exception handler，ApiError 走自己的
+    handler 不进这里（业务错误不带号）。ctx_journal 由中间件进门 set、ServerErrorMiddleware
+    的兜底调用与其同任务，读得到（见模块头 contextvars 机制）。"""
+    error_id = new_error_id()
+    j = ctx_journal.get()
+    if j is not None:  # 没账本就不记，兜底响应本身绝不依赖日志成败（spec 4.7）
+        j.line(
+            "error",
+            f"{error_id} {request.method} {request.url.path}\n"
+            + "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
+            account_id=getattr(request.state, "log_account", None),
+        )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "code": "internal_error",
+                "message": "出错了，请稍后再试",
+                "error_id": error_id,
+            }
+        },
+    )

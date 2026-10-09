@@ -14,7 +14,7 @@ from sqlalchemy import inspect, text
 from .api.routes import auth, bills, games, intents, live, stats, users
 from .core.config import Settings, get_settings
 from .core.errors import ApiError
-from .core.logs import AccessLogMiddleware, Journal
+from .core.logs import AccessLogMiddleware, Journal, internal_error_handler
 from .db.engine import Base, make_session_factory
 
 API_VERSION = "0.2.0"
@@ -100,6 +100,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if exc.view is not None:  # 两级号 409 携最新总账视图（2.3 附录 B1）
             content["view"] = exc.view
         return JSONResponse(status_code=exc.status_code, content=content)
+
+    # 意外错误兜底（6.1 spec 4.1）：500 错误体带 error_id，注册即对全部路由生效
+    app.add_exception_handler(Exception, internal_error_handler)
 
     app.include_router(auth.router, prefix="/api")
     app.include_router(users.router, prefix="/api")

@@ -2,39 +2,48 @@
    - 页面与 store 不直接碰 uni.request，一律经 request()；钥匙只在请求头出现。
    - 错误统一抛 ApiError（带后端 error.code），调用方按 code 分支，不解析中文文案。
    - 网络层细节（H5 走 /api 相对路径、开发期由 vite 代理到 16588）藏在这里。 */
-import type { LiveViewApi } from './types';
+import type { LiveViewApi } from "./types";
 
 export class ApiError extends Error {
   code: string;
   status: number;
+  /** 意外错误编号（6.1：仅 internal_error 带）——报号话术已进 message，此字段供诊断日志记轨迹 */
+  errorId?: string;
   /** 两级号防线 409（live_stale_total/court）随错误体带的最新总账视图（2.3 附录 B1）——
       拿它直接对表，不用再拉一次读；其余错误恒缺省 */
   view?: LiveViewApi;
 
-  constructor(code: string, message: string, status = 0, view?: LiveViewApi) {
+  constructor(
+    code: string,
+    message: string,
+    status = 0,
+    view?: LiveViewApi,
+    errorId?: string,
+  ) {
     super(message);
     this.code = code;
     this.status = status;
     this.view = view;
+    this.errorId = errorId;
   }
 }
 
 /** 调用方兜底文案单一源：ApiError 用后端/网络层给的 message，其余（编程错误等）用通用文案。
     各页 catch 里统一 errText(e)，不再各自手写 instanceof 三元（兜底文案曾分叉两版）。 */
 export function errText(e: unknown): string {
-  return e instanceof ApiError ? e.message : '网络不给力，请稍后再试';
+  return e instanceof ApiError ? e.message : "网络不给力，请稍后再试";
 }
 
-const BASE = '/api';
-const TOKEN_KEY = 'mieball.token';
-const DEVICE_KEY = 'mieball.device';
+const BASE = "/api";
+const TOKEN_KEY = "mieball.token";
+const DEVICE_KEY = "mieball.device";
 
 /* ---- 本机存取（uni 环境外安全降级，测试可 mock） ---- */
 
 function storageGet(key: string): string | null {
   try {
     const v = uni.getStorageSync(key);
-    return typeof v === 'string' && v ? v : null;
+    return typeof v === "string" && v ? v : null;
   } catch {
     return null;
   }
@@ -67,16 +76,17 @@ export function setToken(token: string | null): void {
 export function deviceMarker(): string {
   let m = storageGet(DEVICE_KEY);
   if (!m) {
-    m = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `dev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    m =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `dev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     storageSet(DEVICE_KEY, m);
   }
   return m;
 }
 
 /** 名片草稿（断网/中断后已填内容不丢，§5 出错条目）：只存本机 */
-export const CARD_DRAFT_KEY = 'mieball.cardDraft';
+export const CARD_DRAFT_KEY = "mieball.cardDraft";
 
 export function readCardDraft<T>(): T | null {
   try {
@@ -105,14 +115,18 @@ export function clearCardDraft(): void {
 
 /* ---- 请求 ---- */
 
-export type Method = 'GET' | 'POST';
+export type Method = "GET" | "POST";
 
 interface RawResp {
   statusCode: number;
   data: unknown;
 }
 
-function rawRequest(method: Method, path: string, data?: unknown): Promise<RawResp> {
+function rawRequest(
+  method: Method,
+  path: string,
+  data?: unknown,
+): Promise<RawResp> {
   return new Promise((resolve, reject) => {
     uni.request({
       url: BASE + path,
@@ -120,7 +134,7 @@ function rawRequest(method: Method, path: string, data?: unknown): Promise<RawRe
       data: data as never,
       header: getRequestHeader(),
       success: (res) => resolve(res as unknown as RawResp),
-      fail: () => reject(new ApiError('network', '网络不给力，请稍后再试')),
+      fail: () => reject(new ApiError("network", "网络不给力，请稍后再试")),
     });
   });
 }
@@ -130,16 +144,36 @@ function getRequestHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-export async function request<T>(method: Method, path: string, data?: unknown): Promise<T> {
+export async function request<T>(
+  method: Method,
+  path: string,
+  data?: unknown,
+): Promise<T> {
   const res = await rawRequest(method, path, data);
   const body = res.data as
-    | { error?: { code?: string; message?: string }; view?: LiveViewApi }
+    | {
+        error?: { code?: string; message?: string; error_id?: string };
+        view?: LiveViewApi;
+      }
     | T;
   if (res.statusCode >= 400) {
-    const err = (body as { error?: { code?: string; message?: string } })?.error;
+    const err = (
+      body as { error?: { code?: string; message?: string; error_id?: string } }
+    )?.error;
+    // 意外错误带号（契约总则 §3 / 6.1 裁决，仅 internal_error 有 error_id）：
+    // 换成报号话术让用户照着报，errText 原样透出；业务错误与断网分支不带号
+    if (err?.error_id) {
+      throw new ApiError(
+        "internal_error",
+        `出错了，请把编号 ${err.error_id} 发到反馈群或告诉群主`,
+        res.statusCode,
+        undefined,
+        err.error_id,
+      );
+    }
     throw new ApiError(
-      err?.code ?? 'http_error',
-      err?.message ?? '出错了，请稍后再试',
+      err?.code ?? "http_error",
+      err?.message ?? "出错了，请稍后再试",
       res.statusCode,
       (body as { view?: LiveViewApi })?.view,
     );
