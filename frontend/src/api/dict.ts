@@ -1,4 +1,4 @@
-/* 静态字典（无后端真值的展示常量）：时段词表 / 场馆建议名单 / 圈子元数据。
+/* 静态字典（无后端真值的展示常量）：时段词表 / 场馆建议名单。
    原住 mock/data.ts（随假人表一并退役迁出）——它们不是数据，是词表。 */
 import type { Slot } from "@/api/types";
 
@@ -16,8 +16,3 @@ export const venueSuggestions = [
   "望京 · 花家地球馆",
   "五棵松 · 万事达球馆",
 ];
-
-/** 圈子元数据（meet 页日期行在用） */
-export const communityMeta = {
-  name: "北京匹克球圈",
-};

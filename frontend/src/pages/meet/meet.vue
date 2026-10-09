@@ -175,7 +175,6 @@ import FilterChips from "@/components/ui/FilterChips.vue";
 import SectionTitle from "@/components/ui/SectionTitle.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import type { Game, GameCardModel, Intent } from "@/api/types";
-import { communityMeta } from "@/api/dict";
 import { useGameStore } from "@/stores/game";
 import { useLiveStore } from "@/stores/live";
 import { useSessionStore } from "@/stores/session";
@@ -211,10 +210,10 @@ function onRemoteSweep(g: Game): void {
   goLive(g.id);
 }
 
-/* ---- 头部（alpha:1072 日期行逐字） ---- */
+/* ---- 头部（alpha:1072 日期行） ---- */
 const dateLine = computed(() => {
   const d = new Date();
-  return `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 星期${"日一二三四五六"[d.getDay()]} · ${communityMeta.name}`;
+  return `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 星期${"日一二三四五六"[d.getDay()]}`;
 });
 
 /* ---- 状态（alpha:956） ---- */

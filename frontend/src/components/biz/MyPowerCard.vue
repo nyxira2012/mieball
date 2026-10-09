@@ -22,7 +22,7 @@
       <!-- alpha:1848 -->
       <view class="info">
         <view class="nrow">
-          <text class="ttl">{{ played ? "我的战力卡" : "我的起步分" }}</text>
+          <text class="ttl">{{ cardTitle }}</text>
           <!-- 1.4 §2 段位档名；未定级小 chip（1.4 §5 可信度两态） -->
           <TierBadge v-if="played" :tier="duprTier(me.dupr ?? GUEST_DUPR)" />
           <text v-else class="tierb-fb">?</text>
@@ -54,6 +54,7 @@ import { computed } from "vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import TierBadge from "@/components/ui/TierBadge.vue";
 import { useUserStore } from "@/stores/user";
+import { useSessionStore } from "@/stores/session";
 import { GUEST_DUPR, duprTier, fmtDupr } from "@/utils/elo";
 import { goTab } from "@/utils/nav";
 
@@ -65,10 +66,16 @@ defineProps({
 const emit = defineEmits<{ (e: "profile"): void }>();
 
 const userStore = useUserStore();
+const session = useSessionStore();
 const me = userStore.me;
 
 /** alpha:1828 played = me.play>0 */
 const played = computed(() => me.play > 0);
+/** 游客态卡片名称为「访客」，登录态按是否开局区分「我的战力卡」/「我的起步分」 */
+const cardTitle = computed(() => {
+  if (session.isGuest) return "访客";
+  return played.value ? "我的战力卡" : "我的起步分";
+});
 /** 数据行：胜负来自 dupr 账（win/play 真值），月净胜 me.month（stats card 口径） */
 const telemetry = computed(() =>
   played.value

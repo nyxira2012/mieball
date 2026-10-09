@@ -22,7 +22,7 @@ import type { DressPart } from "@/utils/chibi";
     各页按「未开局」口径渲染（还没开张 / 起步分 / —） */
 export const GUEST_USER: User = {
   id: 0,
-  name: "我",
+  name: "访客",
   elo: 0,
   play: 0,
   win: 0,

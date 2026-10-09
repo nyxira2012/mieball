@@ -19,7 +19,7 @@
         <view class="nmrow">
           <text class="nm">{{ u.name }}</text>
           <text v-if="u.shadow" class="badge shadow">随行</text>
-          <text v-if="isMe" class="badge fire">我</text>
+          <text v-if="isMe && !session.isGuest" class="badge fire">我</text>
           <text v-if="userStore.isLiked(u.id)" class="hrt">♥</text>
         </view>
         <!-- alpha:1906-1910 徽章 + 大分数 + 单位 + 本月涨跌（1.4 批4v1：主数字/徽章切 DUPR，
@@ -78,6 +78,7 @@ import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import TierBadge from "@/components/ui/TierBadge.vue";
 import Last5Dots from "@/components/ui/Last5Dots.vue";
 import { useUserStore } from "@/stores/user";
+import { useSessionStore } from "@/stores/session";
 import { useGameStore } from "@/stores/game";
 import { useUiStore } from "@/stores/ui";
 import { GUEST_DUPR, duprTier, fmtDupr } from "@/utils/elo";
@@ -89,6 +90,7 @@ const props = defineProps({
 });
 
 const userStore = useUserStore();
+const session = useSessionStore();
 const game = useGameStore();
 const ui = useUiStore();
 

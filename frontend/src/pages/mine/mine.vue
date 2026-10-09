@@ -138,10 +138,13 @@ const myDone = computed(() =>
 
 /** 我（身份位单一源在 user store：游客占位 ↔ 登录账号原位换装，全站同步） */
 const me = computed(() => user.me);
-/** alpha:1937：默认名「我」显示为「我的球场小人」 */
-const meName = computed(() =>
-  me.value.name === "我" ? "我的球场小人" : me.value.name,
-);
+/** 游客态或占位名显示为「访客」，登录后显示真实名片昵称 */
+const meName = computed(() => {
+  if (session.isGuest) return "访客";
+  return me.value.name === "我" || me.value.name === "访客"
+    ? "访客"
+    : me.value.name;
+});
 /** alpha:1938 战绩行：N 场 · N 胜 · 胜率 N%（0 场人话守卫） */
 const record = computed(() =>
   me.value.play === 0
