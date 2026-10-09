@@ -82,3 +82,15 @@ def client_ip(request: Request) -> str:
     if fwd:
         return fwd.split(",")[0].strip()
     return request.client.host if request.client else ""
+
+
+def require_ops_key(
+    request: Request, x_ops_key: str | None = Header(default=None, alias="X-Ops-Key")
+) -> None:
+    """读取口守卫（6.1 批4）：没配 OPS_KEY=口子整个关着；配了但不对这个码→403。
+    错误构造器内联——errors.py 不为两个只在一处用的码添具名函数（技术设计 §1.4）。"""
+    settings = request.app.state.settings
+    if not settings.ops_key:
+        raise errors.ApiError(403, "ops_key_off", "读取口未开放")
+    if x_ops_key != settings.ops_key:
+        raise errors.ApiError(403, "ops_key_wrong", "钥匙不对")

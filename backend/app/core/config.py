@@ -23,11 +23,13 @@ class Settings:
     sms_provider: str
     # 全站每日短信总预算（防换号刷量把短信费刷光），超了明确报"暂时发不出"
     sms_daily_budget: int
-    # 6.1 日志地基：目录 / 慢回应警告阈值 ms / 文件保留天数（环境变量不带
-    # MIEBALL_ 前缀：LOG_DIR / SLOW_MS / KEEP_DAYS；行为机制见 core/logs.py）
+    # 6.1 日志地基：目录 / 慢回应警告阈值 ms / 文件保留天数 / 读取口钥匙
+    # （环境变量不带 MIEBALL_ 前缀：LOG_DIR / SLOW_MS / KEEP_DAYS / OPS_KEY；
+    # 行为机制见 core/logs.py；ops_key 空=读取口关闭，见 api/routes/logs.py）
     log_dir: str = "./logs"
     slow_ms: int = 1000
     keep_days: int = 14
+    ops_key: str = ""
 
 
 @lru_cache(maxsize=1)
@@ -44,4 +46,5 @@ def get_settings() -> Settings:
         log_dir=os.environ.get("LOG_DIR", "./logs"),
         slow_ms=int(os.environ.get("SLOW_MS", "1000")),
         keep_days=int(os.environ.get("KEEP_DAYS", "14")),
+        ops_key=os.environ.get("OPS_KEY", ""),
     )

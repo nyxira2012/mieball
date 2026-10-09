@@ -236,6 +236,15 @@ class Journal:
 
 
 _HEARTBEAT_RE = re.compile(r"^/api/games/\d+/live$")
+# 局号路径：/api/games/7（详情）与 /api/games/7/live/... 都认；
+# /api/games（列表）与 /api/intents（局号在体里）不认——路径是唯一可靠来源
+_GAME_PATH_RE = re.compile(r"^/api/games/(\d+)(?:/|$)")
+
+
+def game_from_path(path: str) -> int | None:
+    """从 HTTP 路径认局号：行头 g= 由此而来（路径没有就 None，不瞎认）。"""
+    m = _GAME_PATH_RE.match(path)
+    return int(m.group(1)) if m else None
 
 
 class AccessLogMiddleware(BaseHTTPMiddleware):
@@ -252,6 +261,11 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
         client = _client_label(request.headers.get("user-agent", ""))
         try:
             ctx_client.set(client)  # 向下可见：路由里的 audit()/日志行自带端标签
+            gid = game_from_path(request.url.path)
+            if gid is not None:
+                # 本请求的失败行/慢行与兜底 error 行的 g=（同任务向下可见，
+                # internal_error_handler 与 ctx_journal 同机制读得到）
+                ctx_game.set(gid)
             ctx_journal.set(self.journal)
             response = await call_next(request)
         except Exception:
@@ -295,11 +309,16 @@ def new_error_id() -> str:
 async def internal_error_handler(request: Request, exc: Exception) -> JSONResponse:
     """意外错误兜底（spec 4.1）：按号记完整 traceback——批4 的按号查错直达这一行；
     回 500 错误体带号。main.py 注册为 app 级 Exception handler，ApiError 走自己的
-    handler 不进这里（业务错误不带号）。ctx_journal 由中间件进门 set、ServerErrorMiddleware
-    的兜底调用与其同任务，读得到（见模块头 contextvars 机制）。"""
+    handler 不进这里（业务错误不带号）。ctx_journal/ctx_game 由中间件进门 set、
+    ServerErrorMiddleware 的兜底调用与其同任务，读得到（见模块头 contextvars 机制）。"""
     error_id = new_error_id()
     j = ctx_journal.get()
     if j is not None:  # 没账本就不记，兜底响应本身绝不依赖日志成败（spec 4.7）
+        gid = game_from_path(
+            request.url.path
+        )  # g= 从路径认（中间件已 set，此处兜同样值）
+        if gid is not None:
+            ctx_game.set(gid)
         j.line(
             "error",
             f"{error_id} {request.method} {request.url.path}\n"
