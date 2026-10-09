@@ -70,6 +70,14 @@ class Account(Base):
     device_marker: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # ---- 密码钥匙（1.6 第三把）----
+    # password_hash 只存加工暗记不存原文（C1）；fail/locked 是"用密码"这一条路的
+    # 连错计数与 15 分钟锁（login/redeem 共用）；grace 是短信验明正身后的设密宽限窗
+    # （接管/找回时置位，窗内设密码免再发一条码）
+    password_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    pwd_fail_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    pwd_locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    pwd_grace_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class DeviceKey(Base):

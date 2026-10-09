@@ -38,6 +38,13 @@ _NEW_COLUMNS = {
     "live_courts": {
         "scoring": "INTEGER NOT NULL DEFAULT 11",
     },
+    # 1.6 批1：密码钥匙四列（暗记/连错计数/锁/设密宽限窗，存量行不带密码）
+    "accounts": {
+        "password_hash": "VARCHAR(128)",
+        "pwd_fail_count": "INTEGER NOT NULL DEFAULT 0",
+        "pwd_locked_until": "DATETIME",
+        "pwd_grace_until": "DATETIME",
+    },
 }
 
 

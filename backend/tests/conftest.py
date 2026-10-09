@@ -2,6 +2,7 @@
 
 跑法：cd backend && python -m pytest
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -40,7 +41,9 @@ def sent(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str, str]]:
     """截获假发送器发出的 (phone, code, purpose)。"""
     out: list[tuple[str, str, str]] = []
     monkeypatch.setattr(
-        ConsoleSender, "send", lambda self, phone, code, purpose: out.append((phone, code, purpose))
+        ConsoleSender,
+        "send",
+        lambda self, phone, code, purpose: out.append((phone, code, purpose)),
     )
     return out
 
@@ -70,17 +73,32 @@ def send_code(client: TestClient, phone: str, purpose: str = "recovery") -> None
     assert r.status_code == 200, r.text
 
 
-def code_of(sent: list[tuple[str, str, str]], phone: str, purpose: str = "recovery") -> str:
+def code_of(
+    sent: list[tuple[str, str, str]], phone: str, purpose: str = "recovery"
+) -> str:
     for p, c, pu in reversed(sent):
         if p == phone and pu == purpose:
             return c
     raise AssertionError(f"no code captured for {phone}/{purpose}")
 
 
-def redeem(client: TestClient, phone: str, code: str, purpose: str, device: str, card: dict | None = None) -> dict:
+def redeem(
+    client: TestClient,
+    phone: str,
+    code: str,
+    purpose: str,
+    device: str,
+    card: dict | None = None,
+) -> dict:
     r = client.post(
         "/api/auth/redeem",
-        json={"phone": phone, "code": code, "purpose": purpose, "device_marker": device, "card": card},
+        json={
+            "phone": phone,
+            "code": code,
+            "purpose": purpose,
+            "device_marker": device,
+            "card": card,
+        },
     )
     assert r.status_code == 200, r.text
     return r.json()
@@ -91,3 +109,48 @@ def me(client: TestClient, token: str | None) -> dict | None:
     r = client.get("/api/auth/me", headers=headers)
     assert r.status_code == 200, r.text
     return r.json()["account"]
+
+
+def _pwd_post(
+    client: TestClient, path: str, body: dict, token: str | None = None
+) -> dict:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    r = client.post(f"/api/auth/password/{path}", json=body, headers=headers)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def password_set(
+    client: TestClient, token: str, code: str = "", password: str = "123456"
+) -> dict:
+    return _pwd_post(client, "set", {"code": code, "password": password}, token)
+
+
+def password_login(client: TestClient, phone: str, password: str, device: str) -> dict:
+    return _pwd_post(
+        client, "login", {"phone": phone, "password": password, "device_marker": device}
+    )
+
+
+def password_reset(
+    client: TestClient, phone: str, code: str, password: str, device: str
+) -> dict:
+    return _pwd_post(
+        client,
+        "reset",
+        {"phone": phone, "code": code, "password": password, "device_marker": device},
+    )
+
+
+def password_change(client: TestClient, token: str, old: str, new: str) -> dict:
+    return _pwd_post(client, "change", {"old": old, "new": new}, token)
+
+
+def password_redeem(
+    client: TestClient, phone: str, password: str, device: str, card: dict | None = None
+) -> dict:
+    return _pwd_post(
+        client,
+        "redeem",
+        {"phone": phone, "password": password, "device_marker": device, "card": card},
+    )

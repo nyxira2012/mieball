@@ -6,6 +6,8 @@
 - D4 规则：任何短信验证成功 → 作废该账号全部"未验证"钥匙；接管另加全量作废
   （号码回收场景下前主人的已验证钥匙也一并清场，保住评审裁决 A 的强度）；
 - D5 规则：接管时只覆盖 B 明确填过的名片字段（带 *_set 显式标志，不做值推断）；
+- 密码钥匙（1.6）：逻辑全在 PasswordMixin（services/passwords.py），本文件只留
+  接管/注销挂点——接管=密码随全钥匙作废+设密宽限窗，注销=密码随账号消亡；
 - 隐私出口：对外只有昵称+小人；同局加尾号 4 位；本人见全号；已注销统一占位。
   全产品展示他人一律经 view()，别处不得直读 Account。
 """
@@ -25,6 +27,7 @@ from sqlalchemy.orm import Session
 from ..core import clock, errors
 from ..db.models import Account
 from .keys import KeyVault
+from .passwords import PasswordMixin
 from .sms import SmsGate
 from .stats import StatsLedger
 
@@ -58,7 +61,7 @@ def person_view(account: Account | None) -> dict:
     }
 
 
-class AccountBook:
+class AccountBook(PasswordMixin):
     def __init__(self, db: Session, sms: SmsGate, keys: KeyVault):
         self.db = db
         self.sms = sms
@@ -78,7 +81,7 @@ class AccountBook:
     ) -> tuple[dict, str]:
         """返回 (本人视图, 钥匙原文)。手机号已被占用且不可续接时抛 phone_taken。"""
 
-        _check_phone(phone)
+        self._check_phone(phone)
         nickname = _resolve_nickname(nickname if nickname_set else None)
         chibi_json = json.dumps(_validate_chibi(chibi) if chibi_set else DEFAULT_CHIBI)
 
@@ -122,8 +125,9 @@ class AccountBook:
         device_marker: str,
         card: dict[str, Any] | None = None,
     ) -> tuple[dict, str]:
-        """验证通过后发"已验证钥匙"。D4：杀未验证钥匙；接管另杀全部。D5：接管合并名片。"""
-        _check_phone(phone)
+        """验证通过后发"已验证钥匙"。D4：杀未验证钥匙；接管另杀全部+密码作废。
+        D5：接管合并名片。两路都留设密宽限窗（4.8：刚验完短信，设密码不重复发码）。"""
+        self._check_phone(phone)
         account = self._active_by_phone(phone)
         if account is None:
             raise errors.no_account()
@@ -131,17 +135,14 @@ class AccountBook:
         self.sms.verify(phone, purpose, code)
 
         if purpose == "takeover":
-            # 前主人/冒填者一律清场（含已验证钥匙——号码回收场景），再并入真主人名片
+            # 前主人/冒填者一律清场（含已验证钥匙——号码回收场景），密码一并作废，
+            # 再并入真主人名片
             self.keys.revoke_all(account.id)
-            if card:
-                if card.get("nickname_set"):
-                    account.nickname = _resolve_nickname(
-                        str(card.get("nickname") or "")
-                    )
-                if card.get("chibi_set"):
-                    account.chibi = json.dumps(_validate_chibi(card.get("chibi")))
+            self._wipe_password(account)
+            self._merge_card(account, card)
         else:
             self.keys.revoke_unverified(account.id)
+        self._grant_grace(account)
         account.phone_verified = True
         self.db.commit()
 
@@ -152,13 +153,16 @@ class AccountBook:
 
     def deactivate(self, *, account_id: int, phone: str, code: str) -> None:
         account = self._require_active(account_id)
-        _check_phone(phone)
+        self._check_phone(phone)
         if account.phone != phone:
             raise errors.phone_mismatch()
 
         self.sms.verify(phone, "deactivate", code)
 
         self.keys.revoke_all(account.id)
+        self._wipe_password(
+            account
+        )  # 密码随账号消亡（4.6：重注册是全新账号、无旧密码）
         account.phone = None  # 释放：同一号将来可注册全新账号（历史不继承）
         account.phone_verified = False
         account.nickname = ANON_NAME
@@ -171,7 +175,7 @@ class AccountBook:
     # ---- 发码（三个用途都要求号码已有在册账号：查无账号不发码，§4.4） ----
 
     def send_code(self, phone: str, purpose: str, ip: str) -> None:
-        _check_phone(phone)
+        self._check_phone(phone)
         if self._active_by_phone(phone) is None:
             raise errors.no_account()
         self.sms.send(phone, purpose, ip)
@@ -232,6 +236,8 @@ class AccountBook:
             "chibi": json.loads(account.chibi),
             "card_bg": account.card_bg,
             "deactivated": False,
+            # 设置页/名片卡判"密码未设置/已设置"的唯一依据（1.6 A1）
+            "has_password": account.password_hash is not None,
             # 名片主数字 → DUPR（1.4 §6）：三件套平铺直出，缺行语义=起步分/未定级/0 场
             "dupr_rating": dupr_card["rating"],
             "dupr_provisional": dupr_card["provisional"],
@@ -263,17 +269,26 @@ class AccountBook:
             raise errors.no_identity()
         return account
 
+    def _check_phone(self, phone: str) -> None:
+        if not PHONE_RE.fullmatch(phone or ""):
+            raise errors.phone_invalid()
+
+    def _merge_card(self, account: Account, card: dict[str, Any] | None) -> None:
+        """D5：接管只覆盖本人明确填过的名片字段（*_set 显式标志，不做值推断）。
+        短信接管与密码接管（PasswordMixin.redeem_password）共用。"""
+        if not card:
+            return
+        if card.get("nickname_set"):
+            account.nickname = _resolve_nickname(str(card.get("nickname") or ""))
+        if card.get("chibi_set"):
+            account.chibi = json.dumps(_validate_chibi(card.get("chibi")))
+
     def _resume_or_taken(self, existing: Account, device_marker: str) -> str:
         """占用分支：同设备且在续接窗口内 → 直接再发一把未验证钥匙续上；否则报占用。"""
         in_window = clock.now() - existing.created_at <= SIGNUP_RESUME_WINDOW
         if in_window and existing.device_marker == device_marker:
             return self.keys.issue(existing.id, device_marker, verified=False)
         raise errors.phone_taken()
-
-
-def _check_phone(phone: str) -> None:
-    if not PHONE_RE.fullmatch(phone or ""):
-        raise errors.phone_invalid()
 
 
 def _resolve_nickname(raw: str | None) -> str:

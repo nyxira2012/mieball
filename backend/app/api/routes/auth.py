@@ -41,7 +41,9 @@ class SignupIn(BaseModel):
 
 class SmsIn(BaseModel):
     phone: str
-    purpose: Literal["recovery", "takeover", "deactivate"]
+    purpose: Literal[
+        "recovery", "takeover", "deactivate", "set_password", "reset_password"
+    ]
 
 
 class RedeemIn(BaseModel):
@@ -61,6 +63,36 @@ class ProfileIn(BaseModel):
     nickname: str | None = None
     chibi: dict[str, Any] | None = None
     card_bg: str | None = None
+
+
+class PasswordSetIn(BaseModel):
+    code: str
+    password: str
+
+
+class PasswordLoginIn(BaseModel):
+    phone: str
+    password: str
+    device_marker: str
+
+
+class PasswordResetIn(BaseModel):
+    phone: str
+    code: str
+    password: str
+    device_marker: str
+
+
+class PasswordChangeIn(BaseModel):
+    old: str
+    new: str
+
+
+class PasswordRedeemIn(BaseModel):
+    phone: str
+    password: str
+    device_marker: str
+    card: CardIn | None = None
 
 
 @router.post("/signup")
@@ -148,3 +180,65 @@ def deactivate(
 ):
     book.deactivate(account_id=account.id, phone=body.phone, code=body.code)
     return {"ok": True}
+
+
+# ---- 密码钥匙（docs/1.6 §4.8~§4.11）：纯搬运，规则全在 PasswordMixin ----
+
+
+@router.post("/password/set")
+def password_set(
+    body: PasswordSetIn,
+    account: Account = Depends(require_account),
+    book: AccountBook = Depends(get_account_book),
+):
+    book.set_password(account.id, code=body.code, password=body.password)
+    return {"ok": True}
+
+
+@router.post("/password/login")
+def password_login(
+    body: PasswordLoginIn,
+    book: AccountBook = Depends(get_account_book),
+):
+    view, token = book.login_password(
+        phone=body.phone, password=body.password, device_marker=body.device_marker
+    )
+    return {"token": token, "account": view}
+
+
+@router.post("/password/reset")
+def password_reset(
+    body: PasswordResetIn,
+    book: AccountBook = Depends(get_account_book),
+):
+    view, token = book.reset_password(
+        phone=body.phone,
+        code=body.code,
+        password=body.password,
+        device_marker=body.device_marker,
+    )
+    return {"token": token, "account": view}
+
+
+@router.post("/password/change")
+def password_change(
+    body: PasswordChangeIn,
+    account: Account = Depends(require_account),
+    book: AccountBook = Depends(get_account_book),
+):
+    book.change_password(account.id, old=body.old, new=body.new)
+    return {"ok": True}
+
+
+@router.post("/password/redeem")
+def password_redeem(
+    body: PasswordRedeemIn,
+    book: AccountBook = Depends(get_account_book),
+):
+    view, token = book.redeem_password(
+        phone=body.phone,
+        password=body.password,
+        device_marker=body.device_marker,
+        card=body.card.model_dump(exclude_none=False) if body.card else None,
+    )
+    return {"token": token, "account": view}

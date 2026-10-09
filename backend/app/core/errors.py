@@ -82,6 +82,40 @@ def sms_code_expired() -> ApiError:
     return ApiError(400, "sms_code_expired", "验证码已过期，请重新获取")
 
 
+# ---- 密码钥匙（docs/1.6 §4.8~§4.11）----
+
+
+def password_exists() -> ApiError:
+    return ApiError(409, "password_exists", "密码已经设过了，请走修改密码")
+
+
+def password_not_set() -> ApiError:
+    return ApiError(404, "password_not_set", "这个账号还没设过密码，请用短信验证码进入")
+
+
+def password_too_short() -> ApiError:
+    return ApiError(422, "password_too_short", "密码至少 6 位")
+
+
+def password_wrong(remaining: int | None = None) -> ApiError:
+    # 登录/接管语境带剩余次数（连错计数，4.9）；改密语境 None 只提示重输不计锁（4.11）
+    msg = (
+        f"密码不对，还可试 {remaining} 次"
+        if remaining is not None
+        else "密码不对，请重输"
+    )
+    return ApiError(400, "password_wrong", msg)
+
+
+def password_locked(retry_after: int) -> ApiError:
+    # 镜像 sms_cooldown 形状带剩余秒；锁的是"用密码"这条路，短信路照常（4.9 边缘）
+    return ApiError(
+        429,
+        "password_locked",
+        f"密码错得太多，已锁定 {retry_after} 秒，可先用短信验证码进入",
+    )
+
+
 # ---- 球局域（docs/1.2 技术设计 §2.3；账号域旧码一律不动） ----
 
 

@@ -9,6 +9,7 @@
 
 限频不另建计数表：phone_codes 一行就是一次发送，按 day 分组数行数即是当日量。
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -26,7 +27,7 @@ PHONE_DAILY_LIMIT = 10
 IP_DAILY_LIMIT = 20
 CODE_TTL_SECONDS = 5 * 60
 MAX_ATTEMPTS = 5
-PURPOSES = ("recovery", "takeover", "deactivate")
+PURPOSES = ("recovery", "takeover", "deactivate", "set_password", "reset_password")
 
 
 class SmsSender(Protocol):
@@ -66,10 +67,19 @@ class SmsGate:
         day = clock.today_key(now)
 
         last = self.db.execute(
-            select(PhoneCode).where(PhoneCode.phone == phone).order_by(PhoneCode.id.desc()).limit(1)
+            select(PhoneCode)
+            .where(PhoneCode.phone == phone)
+            .order_by(PhoneCode.id.desc())
+            .limit(1)
         ).scalar_one_or_none()
-        if last is not None and (now - last.created_at).total_seconds() < RESEND_COOLDOWN_SECONDS:
-            retry_after = int(RESEND_COOLDOWN_SECONDS - (now - last.created_at).total_seconds()) or 1
+        if (
+            last is not None
+            and (now - last.created_at).total_seconds() < RESEND_COOLDOWN_SECONDS
+        ):
+            retry_after = (
+                int(RESEND_COOLDOWN_SECONDS - (now - last.created_at).total_seconds())
+                or 1
+            )
             raise errors.sms_cooldown(retry_after)
 
         # 三条限频同表同 day，一条 COUNT 查齐（手机号/ IP/ 全站预算），省两次往返
@@ -90,7 +100,11 @@ class SmsGate:
         # 新码作废旧码（同号同用途同时只活一条）
         self.db.execute(
             update(PhoneCode)
-            .where(PhoneCode.phone == phone, PhoneCode.purpose == purpose, PhoneCode.used_at.is_(None))
+            .where(
+                PhoneCode.phone == phone,
+                PhoneCode.purpose == purpose,
+                PhoneCode.used_at.is_(None),
+            )
             .values(used_at=now)
         )
         code = security.new_code()
@@ -117,7 +131,11 @@ class SmsGate:
         """核验并一次性消费。不匹配/过期/超次/已用各报各的错，前端提示分流。"""
         row = self.db.execute(
             select(PhoneCode)
-            .where(PhoneCode.phone == phone, PhoneCode.purpose == purpose, PhoneCode.used_at.is_(None))
+            .where(
+                PhoneCode.phone == phone,
+                PhoneCode.purpose == purpose,
+                PhoneCode.used_at.is_(None),
+            )
             .order_by(PhoneCode.id.desc())
             .limit(1)
         ).scalar_one_or_none()
