@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Game, MockGame, Person } from "@/api/types";
+import type { Game, Person } from "@/api/types";
 import {
   courtDisplayName,
   deadRowKind,
   freqName,
   gameTapAction,
   isOrg,
-  mockGameCard,
   newGameCard,
   slotBig,
   slotName,
@@ -258,83 +257,6 @@ describe("newGameCard 三态（进入现场入口 / 倒计时 / 均无）", () =
   });
 });
 
-describe("mockGameCard（快照局 → 卡面模型：5.1 口径逐字）", () => {
-  it("heads 含 bring、含随行标记、done 战报透传", () => {
-    const g: MockGame = {
-      id: 102,
-      organizer: {
-        id: 0,
-        name: "我",
-        elo: 0,
-        play: 0,
-        win: 0,
-        month: 0,
-        chibi: {},
-      },
-      t: "周六 14:00",
-      d: "10.07",
-      tb: "weekend",
-      area: "望京",
-      dur: 2,
-      deadline: "周五 20:00",
-      loc: "望京 · 花家地球馆 · 2 片",
-      name: "周末午后局",
-      min: 4,
-      cap: 8,
-      fee: 480,
-      joined: [
-        {
-          u: {
-            id: 0,
-            name: "我",
-            elo: 0,
-            play: 0,
-            win: 0,
-            month: 0,
-            chibi: {},
-          },
-        },
-        {
-          u: {
-            id: 5,
-            name: "亮马河快攻",
-            elo: 0,
-            play: 0,
-            win: 0,
-            month: 0,
-            chibi: {},
-          },
-          bring: 1,
-        },
-        {
-          u: {
-            id: 8,
-            name: "北苑小钢炮",
-            elo: 0,
-            play: 0,
-            win: 0,
-            month: 0,
-            chibi: {},
-            shadow: true,
-          },
-        },
-      ],
-      wait: [],
-      status: "done",
-      score: 11,
-      mode: "balance",
-      lateRule: false,
-      result: { sa: 21, sb: 15, myWin: true },
-    };
-    const card = mockGameCard(g);
-    expect(card.slotsLeft).toBe(4); // cap 8 - heads 4（me1 + li带1共2 + bei1）
-    expect(card.stackPlus).toContain("含随行");
-    expect(card.myRole).toBe("org");
-    expect(card.result?.myWin).toBe(true);
-    expect(card.hmText).toBe("14:00");
-    expect(card.dayText).toBe("周六");
-  });
-});
 
 describe("gameTapAction（alpha:907 点局卡分支）：被邀请未加入 → join", () => {
   it("三态", () => {

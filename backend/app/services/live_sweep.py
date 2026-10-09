@@ -60,7 +60,7 @@ class LiveSweepMixin:
                 state, game, actor_id
             ):
                 raise errors.organizer_only(
-                    "只有组织者能散场，组织者早退时管理员可代收"
+                    "只有组织者能散场，组织者先走了的话管理员可代收"
                 )
             self._check_total(state, base_total_seq)
             if any(c.status != "idle" for c in self._courts(game_id)):

@@ -143,7 +143,7 @@ import WheelPicker from "@/components/ui/WheelPicker.vue";
 import { useGameStore } from "@/stores/game";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
-import { mockVenues } from "@/api";
+import { venueSuggestions } from "@/api/dict";
 import type { CourtMode, PublishGameInput, Visibility } from "@/api/types";
 import { MODE_NAMES, SCORE_RULE_NAMES, autoGameName } from "@/utils/format";
 import { beijingAt, isoDay, isoDayOff, isoParts, toIso } from "@/utils/time";
@@ -192,8 +192,8 @@ const visHint = computed(() => {
   if (lf.visibility === "public") return "任何人翻约球页都能看到这局";
   return "列表里不出现 · 只把链接或邀请发给人";
 });
-/** 地点 chips：场馆名单一源在 mock/data + 手输项 */
-const VENS = [...mockVenues, "手输新场地"];
+/** 地点 chips：场馆建议名单一源（api/dict）+ 手输项 */
+const VENS = [...venueSuggestions, "手输新场地"];
 
 /** 分钟 ↔ 网格下标（夹取） */
 const m2g = (m: number): number =>

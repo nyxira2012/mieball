@@ -7,13 +7,14 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..core import clock
-from ..db.models import DuprDetail, DuprRating
+from ..db.models import Account, DuprDetail, DuprRating
 from . import dupr
 
 
@@ -101,6 +102,41 @@ class StatsLedger:
             out[row.account_id] = row.rating
         for a in ids:  # 无派分行（新号）/账号行已不在（注销清户）：统一起步分
             out.setdefault(a, dupr.GUEST_DUPR)
+        return out
+
+    def leaderboard(self) -> list[dict]:
+        """战力榜全量（1.4 §8 留的榜单端点欠账）：全部在册账号一行一份名片
+        （card 同一口径——名字/小人来自账号行，战绩四件套来自 card），
+        DUPR 降序、同分 id 升序（契约总则 §5 稳定排序）。注销账号不列
+        （历史不留痕，1.1 注销口径）。演示库规模逐人 card() 直查，
+        批量化等真有量级需求再做。"""
+        accounts = (
+            self.db.execute(
+                select(Account)
+                .where(Account.status == "active")
+                .order_by(Account.id.asc())
+            )
+            .scalars()
+            .all()
+        )
+        out = []
+        for a in accounts:
+            c = self.card(a.id)
+            out.append(
+                {
+                    "id": a.id,
+                    "name": a.nickname,
+                    "chibi": json.loads(a.chibi),
+                    "card_bg": a.card_bg,
+                    "dupr_rating": c["rating"],
+                    "dupr_provisional": c["provisional"],
+                    "dupr_games": c["games"],
+                    "dupr_wins": c["wins"],
+                    "dupr_last5": c["last5"],
+                    "dupr_month_net": c["month_net"],
+                }
+            )
+        out.sort(key=lambda r: (-r["dupr_rating"], r["id"]))
         return out
 
     def card(self, account_id: int) -> dict:

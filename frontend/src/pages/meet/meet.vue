@@ -13,7 +13,6 @@
       <view class="gg-main" @click="onSignup">
         ＋ 填张名片建号 —— 报名 · 发局 · 留意向都要用
       </view>
-      <view class="gg-sub" @click="goLogin">老球友？手机号找回登录 ▸</view>
     </view>
 
     <!-- alpha:1074 跑马灯：被邀请条目 + NEXT 最近参局倒计时（×2 无缝循环由 Ticker 内部负责） -->
@@ -176,7 +175,7 @@ import FilterChips from "@/components/ui/FilterChips.vue";
 import SectionTitle from "@/components/ui/SectionTitle.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import type { Game, GameCardModel, Intent } from "@/api/types";
-import { communityMeta } from "@/api";
+import { communityMeta } from "@/api/dict";
 import { useGameStore } from "@/stores/game";
 import { useLiveStore } from "@/stores/live";
 import { useSessionStore } from "@/stores/session";
@@ -197,12 +196,9 @@ const liveStore = useLiveStore();
 const session = useSessionStore();
 const ui = useUiStore();
 
-/* ---- 游客入口（见模板注释）：建号直开名片卡（无挂起动作）；老球友去找回页 ---- */
+/* ---- 游客入口（见模板注释）：建号直开名片卡（无挂起动作，名片卡内含老球友找回） ---- */
 function onSignup(): void {
   ui.openSheet({ type: "signup-card" });
-}
-function goLogin(): void {
-  uni.navigateTo({ url: "/pages/mine/login" });
 }
 
 /* ---- 远程散场（2.3 §4.9）：我组织的进行中的局；落预约位后 goLive——
@@ -482,17 +478,6 @@ watch(
 }
 .gg-main:active {
   background: rgba(255, 212, 0, 0.1);
-}
-.gg-sub {
-  margin-top: 8px;
-  text-align: center;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--dim);
-  cursor: pointer;
-}
-.gg-sub:active {
-  color: var(--lemon);
 }
 
 /* alpha:370-372 分区头：球局 · 悬浮置顶（CSS sticky） */

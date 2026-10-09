@@ -2,8 +2,8 @@
   <!-- 我的战力卡（alpha.html:1844-1861 结构 · 1.4 批4v1 主数字切 DUPR）：
        rank 位 #N / 未开局 — · ChibiAvatar 76（点卡开我的档案、点头像去「我的」页 stopPropagation alpha:1847）·
        段位 TierBadge（duprTier 档名）+ 未定级标记 · 大分数 fmtDupr + DUPR 单位 ·
-       本月涨跌 ▲▼（Elo 轨口径，1.4 §6 消费矩阵）·
-       底部运动数据行 recentStats（alpha:1858-1860，未开局两态文案逐字）。 -->
+       本月涨跌 ▲▼（DUPR 明细月净胜，stats card 口径）·
+       底部数据行（真实口径：胜负+月净胜；小时/大卡随 mock 退役）。 -->
   <view
     class="mycardp"
     :class="`bg-${me.cardBg || 'neon'}`"
@@ -40,8 +40,8 @@
         </view>
       </view>
     </view>
-    <!-- alpha:1858-1860 运动数据行：已开局「N 胜 N 负 · 运动 N 小时 · 消耗 N 大卡 · 积分 ±N」，
-         未开局「待第一局校准 · 起步 2.5」（1.4 §10 修订：自评废除，统一 2.5 起步） -->
+    <!-- 数据行：已开局「N 胜 N 负 · 本月 ±N」（dupr_wins/games + 月净胜，mock
+         的小时/大卡无后端真值随演示数字退役）；未开局「待第一局校准 · 起步 2.5」 -->
     <view class="telemetry">{{ telemetry }}</view>
   </view>
 </template>
@@ -69,14 +69,10 @@ const me = userStore.me;
 
 /** alpha:1828 played = me.play>0 */
 const played = computed(() => me.play > 0);
-/** alpha:1829 rs = me.recentStats || {win:0,loss:0,hours:0,kcal:0} */
-const rs = computed(
-  () => me.recentStats || { win: 0, loss: 0, hours: 0, kcal: 0 },
-);
-/** alpha:1859-1860 底部数据行文案 */
+/** 数据行：胜负来自 dupr 账（win/play 真值），月净胜 me.month（stats card 口径） */
 const telemetry = computed(() =>
   played.value
-    ? `${rs.value.win} 胜 ${rs.value.loss} 负 · 运动 ${rs.value.hours} 小时 · 消耗 ${rs.value.kcal} 大卡 · 积分 ${me.month >= 0 ? "+" : ""}${me.month}`
+    ? `${me.win} 胜 ${me.play - me.win} 负 · 本月 ${me.month >= 0 ? "+" : ""}${me.month}`
     : "待第一局校准 · 起步 2.5",
 );
 </script>

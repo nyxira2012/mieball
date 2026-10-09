@@ -264,6 +264,7 @@ export function toLiveView(v: LiveViewApi): LiveView {
       id: p.id,
       accountId: p.account_id,
       name: p.name,
+      chibi: p.chibi ?? undefined,
       guest: p.guest,
       dupr: p.dupr, // DUPR 配平代位分（1.4 §6 修订：访客/无派分行统一 2.5、有派分行吃派生分）
       guarantorAccountId: p.guarantor_account_id,

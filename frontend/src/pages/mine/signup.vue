@@ -1,6 +1,7 @@
 <template>
-  <!-- 参加登记页（5.1 子页 · 1.2 隔离线）：已报名/组局的局一屏看全（含已结束局看签到行），点卡进原约球详情。
-       数据直读 mock 种子（快照冻结——真局报名归 game store 的 myGames，接通前本页仍吃 5.1 演示快照）。 -->
+  <!-- 参加登记页（5.1 子页）：已报名/组局的局一屏看全（含已结束局），点卡进原约球详情。
+       数据切真：game store 的 myGames（后端 /games/mine 按角色裁好——组织者在办局全量、
+       参加者含当日灰字行；mock 种子已随演示世界退役）。 -->
   <PageShell>
     <!-- 子页统一返回行（BackRow） -->
     <BackRow />
@@ -10,19 +11,18 @@
       <view class="brand">登<text class="bem">记</text></view>
     </view>
 
-    <!-- 头统计：共 N 局 = 下方全量条数（不随筛选变）；签到次数 = myCheckins（done 且留了 checkIn） -->
-    <view class="stat">共 {{ mySignups.length }} 局 · 签到 {{ myCheckins.length }} 次</view>
+    <!-- 头统计：共 N 局 = 在办+已结束全量（不含死局行）；打完 M 局 = done 计数
+         （mock 时代的「签到时刻」无后端读取面，随演示快照退役） -->
+    <view class="stat"
+      >共 {{ mySignups.length }} 局 · 打完 {{ myDone.length }} 局</view
+    >
 
     <!-- 状态筛选（5.1 辅助功能：登记按状态） -->
     <FilterChips v-model="mode" :options="MODE_OPTS" />
 
     <template v-if="list.length">
       <view v-for="g in list" :key="g.id" class="cell">
-        <GameCard :card="mockGameCard(g)" @tap="openGame(g)" />
-        <!-- 签到底账行（验收故事 3「签到 19:02 · 早退 21:30」）：仅 done 且有 myLog 才渲染 -->
-        <view v-if="g.myLog?.checkIn" class="logline">
-          签到 {{ g.myLog.checkIn }}{{ g.myLog.checkOut ? ' · 早退 ' + g.myLog.checkOut : '' }}
-        </view>
+        <GameCard :card="newGameCard(g)" @tap="openGame(g)" />
       </view>
     </template>
     <EmptyBox v-else :text="emptyTxt" />
@@ -30,60 +30,74 @@
 </template>
 
 <script setup lang="ts">
-/* 登记口径（原 game store 的 mySignups/myCheckins 单一源随真局接线退役，
-   隔离线消费面自带同口径：我组织/已报名 且未终止，含 done） */
-import { computed, ref } from 'vue';
-import PageShell from '@/components/biz/PageShell.vue';
-import BackRow from '@/components/biz/BackRow.vue';
-import GameCard from '@/components/biz/GameCard.vue';
-import FilterChips from '@/components/ui/FilterChips.vue';
-import EmptyBox from '@/components/ui/EmptyBox.vue';
-import { games as seedGames } from '@/api';
-import { dayOrd, gameTime } from '@/utils/time';
-import { isMe, mockGameCard } from '@/utils/format';
-import { goGame } from '@/utils/nav';
-import type { MockGame } from '@/api/types';
+/* 登记口径：myGames 里非死局的行（open/locked/live/done——死局行归约球页死局区处置，
+   4.8/4.9/4.10 口径不在这里重复）；未开场按开打时刻升序，已结束按开打倒序 */
+import { computed, ref } from "vue";
+import { onShow } from "@dcloudio/uni-app";
+import PageShell from "@/components/biz/PageShell.vue";
+import BackRow from "@/components/biz/BackRow.vue";
+import GameCard from "@/components/biz/GameCard.vue";
+import FilterChips from "@/components/ui/FilterChips.vue";
+import EmptyBox from "@/components/ui/EmptyBox.vue";
+import { useGameStore } from "@/stores/game";
+import { useUiStore } from "@/stores/ui";
+import { deadRowKind, newGameCard } from "@/utils/format";
+import { ApiError, errText } from "@/api/http";
+import { goGame } from "@/utils/nav";
+import type { Game } from "@/api/types";
 
-/** 我的登记全集：我组织/已报名 且未终止（含 done —— 已结束局要在登记页看到签到行） */
+const game = useGameStore();
+const ui = useUiStore();
+
+/** 我的登记全集：myGames 去掉死局行（pending/恢复窗/灰字——约球页已接管处置出口） */
 const mySignups = computed(() =>
-  seedGames.filter((g) => !g.dead && (isMe(g.organizer.id) || g.joined.some((e) => isMe(e.u.id)))),
+  game.myGames.filter((g) => deadRowKind(g) === null),
 );
-/** 签到口径：其中打完（done）且我的到场底账留了 checkIn 的局 */
-const myCheckins = computed(() => mySignups.value.filter((g) => g.status === 'done' && !!g.myLog?.checkIn));
+/** 打完口径：done 局（散场封存/到点结束都算） */
+const myDone = computed(() =>
+  mySignups.value.filter((g) => g.status === "done"),
+);
 
 /* 状态单选（BillPeriod 同族窄类型；FilterChips v-model 已收窄为 string|number） */
-const mode = ref<string | number>('all');
+const mode = ref<string | number>("all");
 const MODE_OPTS = [
-  { value: 'all', label: '全部' },
-  { value: 'open', label: '未开场' },
-  { value: 'done', label: '已结束' },
+  { value: "all", label: "全部" },
+  { value: "open", label: "未开场" },
+  { value: "done", label: "已结束" },
 ];
 
-/* 未开场按开打时刻升序；done 按 d 倒序 —— d 是 'M.DD' 且月份不补零，跨月时字符串比较
-   会把 9.x 排到 10.x 之后，必须走 dayOrd（月*100+日）才与账单页同源单调 */
+/* 未开场按开打时刻升序；done 按开打倒序（startAt ISO 绝对时间可直接比较） */
 const openGames = computed(() =>
-  mySignups.value.filter((g) => g.status !== 'done').sort((a, b) => gameTime(a.t).getTime() - gameTime(b.t).getTime()),
-);
-const doneGames = computed(() =>
-  mySignups.value.filter((g) => g.status === 'done').sort((a, b) => dayOrd(b.d) - dayOrd(a.d)),
+  mySignups.value
+    .filter((g) => g.status !== "done")
+    .sort((a, b) => a.startAt.localeCompare(b.startAt)),
 );
 /** 全部档 = 未开场在前 + done 在后（5.1：登记页主看 upcoming） */
-const list = computed<MockGame[]>(() => {
-  if (mode.value === 'open') return openGames.value;
-  if (mode.value === 'done') return doneGames.value;
-  return [...openGames.value, ...doneGames.value];
+const list = computed<Game[]>(() => {
+  if (mode.value === "open") return openGames.value;
+  if (mode.value === "done") return myDone.value;
+  return [...openGames.value, ...myDone.value];
 });
 
 const emptyTxt = computed(() => {
-  if (mode.value === 'open') return '没有待开场的局 · 去约球页找一局';
-  if (mode.value === 'done') return '还没有打完的局';
-  return '还没有报过名 · 去约球页找一局';
+  if (mode.value === "open") return "没有待开场的局 · 去约球页找一局";
+  if (mode.value === "done") return "还没有打完的局";
+  return "还没有报过名 · 去约球页找一局";
 });
 
 /** 局卡点击进原约球详情页（5.1；路径契约在 utils/nav 单一源） */
-function openGame(g: MockGame): void {
+function openGame(g: Game): void {
   goGame(g.id);
 }
+
+/* 每次进页重拉：真局状态随时刻翻（懒判定发生在任何人打开的那一刻）；
+   游客 401 no_identity 静默（没有「我的局」，空态文案自解释） */
+onShow(() => {
+  game.loadMine().catch((e) => {
+    if (!(e instanceof ApiError && e.code === "no_identity"))
+      ui.toast(errText(e));
+  });
+});
 </script>
 
 <style lang="scss" scoped>
@@ -98,13 +112,5 @@ function openGame(g: MockGame): void {
   font-size: 10px;
   color: var(--dim);
   margin: 4px 2px 8px;
-}
-
-/* 签到行：贴在局卡下沿（GameCard 自带 margin-bottom 12px，负 margin 收拢） */
-.logline {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--dim);
-  margin: -8px 4px 8px;
 }
 </style>

@@ -115,7 +115,7 @@ function guarantorTxt(p: LivePlayer): string {
     return g ? `${g.name} 带的访客` : "随行访客";
   }
   if (p.check === "absent") return "未到场";
-  if (p.check === "left") return "早退";
+  if (p.check === "left") return "先走了";
   return "";
 }
 

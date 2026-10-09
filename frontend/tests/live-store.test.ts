@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
-import { U } from "@/api";
 import type { GameViewApi } from "@/api/games";
 import type {
   Game,
@@ -77,17 +76,60 @@ async function apply(v: LiveViewApi) {
   const h = await load();
   const { toLiveView } = await import("@/api/live");
   const gs = (await import("@/stores/game")).useGameStore();
+  const us = (await import("@/stores/user")).useUserStore();
   const org = gs.findGame(v.game_id)?.organizer.id ?? -1;
-  const isOrganizer = org >= 0 && org === U.me.id;
+  const isOrganizer = org >= 0 && org === us.me.id;
   h.live.applyLiveView(
     toLiveView({
       ...v,
       is_organizer: isOrganizer,
-      is_full_power: isOrganizer || v.admins.includes(U.me.id),
+      is_full_power: isOrganizer || v.admins.includes(us.me.id),
       organizer_account_id: org,
     }),
   );
   return h;
+}
+
+/* mock 世界退役后，roster「people 缓存借位 + 整拷不回写」语义沿用——
+   档案缓存种子（原 mock U 表三人的对应值） */
+const LI_CARD = {
+  id: 5,
+  name: "亮马河快攻",
+  elo: 1574,
+  dupr: 3.3,
+  play: 52,
+  win: 29,
+  month: 14,
+  chibi: { skin: 1, hair: 0, hc: 0, shirt: 4, face: 0, acc: 2 },
+};
+const ME_CARD = {
+  id: 0,
+  name: "我",
+  elo: 1518,
+  dupr: 3.2,
+  play: 34,
+  win: 19,
+  month: 18,
+  chibi: { skin: 1, hair: 5, hc: 0, shirt: 0, face: 1, acc: 2 },
+};
+const ZHAO_CARD = {
+  id: 10,
+  name: "赵姐的朋友",
+  elo: 0,
+  dupr: 3.0,
+  play: 0,
+  win: 0,
+  month: 0,
+  shadow: true,
+  chibi: { skin: 1, hair: 4, hc: 5, shirt: 0, face: 1, acc: 0 },
+};
+
+/** 预灌档案缓存（借位语义用例的靶人） */
+async function seedCards() {
+  const us = (await import("@/stores/user")).useUserStore();
+  us.people[5] = { ...LI_CARD, chibi: { ...LI_CARD.chibi } };
+  us.people[0] = { ...ME_CARD, chibi: { ...ME_CARD.chibi } };
+  us.people[10] = { ...ZHAO_CARD, chibi: { ...ZHAO_CARD.chibi } };
 }
 
 /** 局簿造一格（needOrg/isOrg/ensureLive 404 路读局簿 organizer/status） */
@@ -383,7 +425,8 @@ function g900(status: Game["status"] = "locked", orgId = 0): Game {
 }
 
 describe("applyLiveView（批4 阶段2：总账视图 → 本地 LiveState 幂等重建）", () => {
-  it("roster 借 mock U 同 accountId 者的展示位（整拷不回写）、访客 shadow+默认位、覆写对称（借来的 shadow 不残留）、片/队列/战报/feed/规则/底账全回填", async () => {
+  it("roster 借 people 缓存同 accountId 者的展示位（整拷不回写）、访客 shadow+默认位、覆写对称（借来的 shadow 不残留）、片/队列/战报/feed/规则/底账全回填", async () => {
+    await seedCards();
     const { live } = await apply(vMid());
     const L = live.live!;
     expect(L.g.id).toBe(900); // 局簿没有 → 冷扫兜底局仍可重建
@@ -391,19 +434,19 @@ describe("applyLiveView（批4 阶段2：总账视图 → 本地 LiveState 幂�
     expect(L.g.courts).toEqual(["1号", "2号"]); // 片数吃 courts_count 真值
     const [li, guest, me, zhao] = L.roster;
     expect(li.id).toBe(101); // User.id = 名册行 id（写动作靶位，与 queue/片位同键）
-    expect(li.elo).toBe(1574); // accountId 5 → 借 U.li 展示位
-    expect(li.dupr).toBe(3.42); // dupr 吃视图行真值（> mock U.li 借位 3.3）
-    expect(li.chibi).toEqual(U.li.chibi);
+    expect(li.elo).toBe(1574); // accountId 5 → 借 people[5] 展示位
+    expect(li.dupr).toBe(3.42); // dupr 吃视图行真值（> people[5] 借位 3.3）
+    expect(li.chibi).toEqual(LI_CARD.chibi);
     expect(li.check).toBe("ok");
     expect(li.arriveAt).toBe("2026-10-07T19:02:00+08:00");
     expect(guest.shadow).toBe(true); // 访客 shadow 标记
     expect(guest.elo).toBe(1200); // 查无者默认展示位＝后端初始等第（ELO_INIT）
     expect(guest.dupr).toBe(3.0); // 访客 dupr 后端回 GUEST_DUPR
     expect(guest.chibi).toEqual({});
-    expect(me.elo).toBe(1518); // accountId 0 → 借 U.me
-    expect(me.dupr).toBe(3.28); // 视图真值覆写 mock U.me 的 3.2（整拷上改）
+    expect(me.elo).toBe(1518); // accountId 0 → 借 people[0]
+    expect(me.dupr).toBe(3.28); // 视图真值覆写 people[0] 的 3.2（整拷上改）
     expect(me.dropin).toBe(true);
-    expect(zhao.shadow).toBeUndefined(); // 覆写对称：mock U.zhao 自带 shadow、行非访客 → 清掉（批5a Nit）
+    expect(zhao.shadow).toBeUndefined(); // 覆写对称：people[10] 自带 shadow、行非访客 → 清掉（批5a Nit）
     expect(L.queue).toEqual([103]); // 候场队序
     expect(L.courts).toHaveLength(2); // 视图只带 1 片 → 按片数补空片（差人卡）
     expect(L.courts[0]).toMatchObject({
@@ -437,8 +480,9 @@ describe("applyLiveView（批4 阶段2：总账视图 → 本地 LiveState 幂�
     expect(live.settleWindow).toBeNull(); // 视图落地不开窗（窗只由记分/入口驱动）
     expect(live.liveView?.totalSeq).toBe(7); // 最近视图持有
     expect(live.recap).toBeNull(); // 未散场不持有回看
-    expect(U.li.elo).toBe(1574); // 整拷：mock U 不被重建污染
-    expect(U.me.dupr).toBe(3.2); // dupr 回填同样只改拷贝
+    const us = (await import("@/stores/user")).useUserStore();
+    expect(us.people[5]!.elo).toBe(1574); // 整拷：people 缓存不被重建污染
+    expect(us.people[0]!.dupr).toBe(3.2); // dupr 回填同样只改拷贝
     // 幂等：同视图重放不漂移（空片不重复补、队列不重排）
     const { toLiveView } = await import("@/api/live");
     live.applyLiveView(toLiveView(vMid()));
@@ -1067,7 +1111,7 @@ describe("setCheck（§4.2/4.3 报到四态：归一与队位归总账，发牌�
       8,
     );
   });
-  it("早退（§4.5）：toast 早退句；视图落定清队列位/片位", async () => {
+  it("早退（§4.5）：toast 先走句；视图落定清队列位/片位", async () => {
     const { live, ui } = await inPlay();
     liveApi.apiLiveCheck.mockResolvedValue(
       vPlay(8, {
@@ -1083,7 +1127,7 @@ describe("setCheck（§4.2/4.3 报到四态：归一与队位归总账，发牌�
     );
     await live.setCheck(103, "left");
     expect(liveApi.apiLiveCheck).toHaveBeenCalledWith(900, 103, "left", 7);
-    expect(ui.toastMsg).toBe("北苑小钢炮 早退 · 已记离场时刻");
+    expect(ui.toastMsg).toBe("北苑小钢炮 先走了 · 回见");
     expect(live.live!.courts[0].B).toEqual([104]); // 片上同清
     expect(live.live!.queue).toEqual([]); // 不进候场
   });
@@ -1949,7 +1993,8 @@ describe("批6 走查销号（P1/P2/P3）", () => {
     live.stopPolling();
   });
 
-  it("P3 确认落账后卡面 elo 更新：roster 吃最近 matches[].eloRows 回填（正式按账号/访客按名，后一场覆盖前一场）；mock U 本体不动", async () => {
+  it("P3 确认落账后卡面 elo 更新：roster 吃最近 matches[].eloRows 回填（正式按账号/访客按名，后一场覆盖前一场）；people 缓存本体不动", async () => {
+    await seedCards();
     const first = vMid().matches[0]!;
     const v = vMid(9);
     v.matches = [
@@ -2003,7 +2048,8 @@ describe("批6 走查销号（P1/P2/P3）", () => {
     expect(li.elo).toBe(1586); // 后一场覆盖前一场（1574 恰是 mock U.li 旧借位——必须吃到新值）
     expect(guest.elo).toBe(1190); // 访客按开账定格名回填 rating_after（展示位本就近真值）
     expect(me.elo).toBe(1506); // 负 delta 同样回填
-    expect(U.li.elo).toBe(1574); // mock U 本体不被重建污染（借拷贝已改 elo 位）
-    expect(U.me.elo).toBe(1518);
+    const us = (await import("@/stores/user")).useUserStore();
+    expect(us.people[5]!.elo).toBe(1574); // people 缓存本体不被重建污染（借拷贝已改 elo 位）
+    expect(us.people[0]!.elo).toBe(1518);
   });
 });

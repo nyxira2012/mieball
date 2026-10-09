@@ -14,9 +14,9 @@
     <view class="mid">
       <view class="nm">
         <text class="nm-t">{{ user.name }}</text>
-        <!-- alpha:1770 u.id===CURRENT_USER_ID → 「我」徽章 · liked → ♥ -->
-        <text v-if="user.id === userStore.me.id" class="badge fire">我</text>
-        <text v-if="user.liked" class="hrt">♥</text>
+        <!-- alpha:1770 u.id===CURRENT_USER_ID → 「我」徽章 · liked → ♥（本地态） -->
+        <text v-if="userStore.isMe(user.id)" class="badge fire">我</text>
+        <text v-if="userStore.isLiked(user.id)" class="hrt">♥</text>
         <TierBadge :tier="duprTier(user.dupr ?? GUEST_DUPR)" />
         <text v-if="user.provisional" class="prov">未定级</text>
       </view>

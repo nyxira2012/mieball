@@ -61,7 +61,11 @@
             }}</view
           >
         </view>
-        <view class="ps-link" @click="emit('profile', p.id)"
+        <!-- 战力档案走账号 id 空间（ProfileSheet/榜单同源）：随行访客无账号不开放 -->
+        <view
+          v-if="p.accountId != null"
+          class="ps-link"
+          @click="emit('profile', p.accountId)"
           >查看 <text class="ice">战力档案</text> ›</view
         >
       </template>

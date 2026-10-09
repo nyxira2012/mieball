@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import inspect, text
 
-from .api.routes import auth, bills, games, intents, live, users
+from .api.routes import auth, bills, games, intents, live, stats, users
 from .core.config import Settings, get_settings
 from .core.errors import ApiError
 from .db.engine import Base, make_session_factory
@@ -92,6 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(intents.router, prefix="/api")
     app.include_router(live.router, prefix="/api")
     app.include_router(bills.router, prefix="/api")
+    app.include_router(stats.router, prefix="/api")
 
     @app.get("/")
     def root():

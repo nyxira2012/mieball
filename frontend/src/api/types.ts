@@ -1,7 +1,7 @@
 /* 夜球场 · 类型定义（P2 数据层）
    1.2 接线重塑：局/意向按后端 game_view / intent_view 镜像成可读 camelCase（store/页面消费本文件）；
    线上 snake_case 形状镜像在 api/games.ts（GameViewApi/IntentViewApi），映射收在 stores/game.ts 单点。
-   mock 隔离线（账单/登记/记录/现场演示）继续吃文末 MockGame 快照形状。 */
+   mock 隔离线快照形状已随演示世界退役（2026-10-10）：账单/登记/记录/现场全量吃真数据。 */
 
 /** Q 版头像配置（alpha:719 chibi(c) 的参数对象；SVG 生成函数在 utils/chibi.ts，归 P1） */
 export interface ChibiConfig {
@@ -19,11 +19,11 @@ export type CardBg = "neon" | "gold" | "cyber" | "aurora";
 /** 现场签到五态（alpha:1579） */
 export type CheckStatus = "ok" | "late" | "left" | "absent" | "join";
 
-/** 球员。U 里 13 人是同一份对象贯穿全局：名单/现场名册/榜单直接引用同一对象
-    （alpha:1474「现场名单直接引用球员对象：Elo 变动实时落回战力榜」）。
-    check/skip/fire 由 startLive 挂上（alpha:1482）。 */
+/** 球员（档案视图模型）：身份位（user store me）、真人档案缓存（people）、
+    现场名册行（live store 落 check/skip/fire 等现场态）共用本形状。 */
 export interface User {
   id: number;
+  accountId?: number; // 账号 id（现场名册行：id=行靶位、accountId=账号空间；非名册行两者同值不重复存）
   name: string;
   elo: number;
   dupr?: number; // 1.4 双轨：DUPR 核心轨展示位；elo 继续 Elo 娱乐轨（弹窗±/撒花）
@@ -33,11 +33,9 @@ export interface User {
   win: number;
   month: number;
   last5?: ("W" | "L")[];
-  liked?: boolean; // 喜欢：静默单向（alpha:1922 toggleLike）
   shadow?: boolean; // 随行访客 · 不计积分不进榜（对局按新人初始等级代入算分，2.3 修订②）
   chibi: ChibiConfig;
   cardBg?: CardBg;
-  recentStats?: RecentStats;
   check?: CheckStatus;
   skip?: number; // 剩余歇轮数：歇两轮=2（2.1 文档+原型「候场区点人可设歇两轮」）。
   // 轮到发牌给他时递减 1（rotate.ts takeFromQueue），归 0 自动归队；0=不在歇
@@ -60,23 +58,6 @@ export interface LedgerRow {
   arriveAt?: string; // ISO · 几点到（首次到场）
   leftAt?: string; // ISO · 几点走（早退）
 }
-
-/** alpha:762 recentStats（我的页运动数据条） */
-export interface RecentStats {
-  win: number;
-  loss: number;
-  hours: number;
-  kcal: number;
-}
-
-/** 报名条目（MockGame 遗留形状）：带的人也占坑（alpha:776 · heads 计入 bring） */
-export interface GameEntry {
-  u: User;
-  bring?: number;
-}
-
-/** 时间桶（MockGame 遗留；真局列表筛选由页面从 startAt 现算） */
-export type TimeBucket = "tonight" | "tomorrow" | "weekend" | "week";
 
 /** 发牌模式（alpha:1404 winner 赢家留场 / rotate 纯粹轮转 / balance 均衡配对） */
 export type CourtMode = "winner" | "rotate" | "balance";
@@ -164,7 +145,7 @@ export interface Game {
   my?: MyBlock;
 }
 
-/** 留意向（intent_view 镜像）：时段词表沿用 mock/data slots（后端只存 key 串不校验）；
+/** 留意向（intent_view 镜像）：时段词表在 api/dict.ts slots（后端只存 key 串不校验）；
     invited=被我邀过、known=与 viewer 同局打过（都是后端定值） */
 export interface Intent {
   account: Person;
@@ -451,41 +432,6 @@ export interface WinChange {
   d: number;
 }
 
-/** ─────────── mock 隔离线快照形状（1.2 起冻结：字段不再生长） ───────────
-    账单/登记/记录/现场演示继续吃 mock/data.ts 种子（5.1 快照域）；
-    1.2 真局一律走上面的 Game。谁引用 t/d/tb/result 等旧字段，类型上必须经过 MockGame——
-    type-check 借此画出隔离边界。 */
-export interface MockGame {
-  id: number;
-  organizer: User;
-  t: string; // '今晚 19:00'（utils/time.ts gameTime 解析）
-  d: string; // 展示用日期（'今天' / '10.07'）
-  tb: TimeBucket;
-  area: string; // 地区（找局打筛选用）
-  dur: number; // 打多久（小时）
-  deadline: string; // 组局截止：到点锁名单，定死不改
-  loc: string;
-  name: string;
-  min: number; // 最少人数（截止时判成不成）
-  cap: number; // 最多人数（满员线，进度只讲剩几坑）
-  fee: number | null; // 预计费用总价；null=费用未定
-  note?: string;
-  joined: GameEntry[];
-  wait: GameEntry[]; // 候补栏：满员加入进这里，有人退出即刻递补
-  status: GameStatus;
-  score: number; // 分制 target
-  scoreRule?: "rally" | "serve";
-  mode: CourtMode;
-  lateRule: boolean;
-  invitedMe?: boolean;
-  locked?: boolean;
-  sure?: boolean; // 必打手动锁
-  booked?: string[]; // 订场登记的场地号
-  dead?: boolean; // 未成局（自动终止）
-  result?: { sa: number; sb: number; myWin: boolean }; // 已结束局的最终比分
-  myLog?: { checkIn: string; checkOut?: string }; // 我的到场底账
-}
-
 /* ─────────── 2.3 现场总账读链（批4 阶段1·类型层） ───────────
    与上面的 mock 期现场族（LiveState/LiveCourt/MatchHistory）双树为稳态，删旧归 1.3。
    snake 线上形状（…Api 族）逐字镜像 backend/app/services/live.py 的 view 输出（契约唯一真源）；
@@ -510,6 +456,7 @@ export interface LivePlayerApi {
   id: number; // 名册行 id——check/swap/tempo/封撤管理员写动作按它定靶
   account_id: number | null; // 访客 null
   name: string; // 开账定格名（注销者占位名；访客=担保人前两字+编号）
+  chibi: ChibiConfig | null; // 开账时定格的账号小人（访客无账号行 → null）
   guest: boolean; // 随行访客：代入 1200 算分但不落积分账（1.4 §4）
   dupr: number; // DUPR 配平代位分（1.4 §6 修订：访客/无派分行统一 2.5、有派分行吃派生分）
   guarantor_account_id: number | null; // 访客挂谁名下（考勤底账「谁带的」）
@@ -623,6 +570,7 @@ export interface LivePlayer {
   id: number;
   accountId: number | null;
   name: string;
+  chibi: ChibiConfig | undefined; // 开账定格小人（访客 undefined → 缺省形象）
   guest: boolean;
   dupr: number;
   guarantorAccountId: number | null;

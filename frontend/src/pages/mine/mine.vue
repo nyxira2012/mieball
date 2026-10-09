@@ -45,13 +45,13 @@
       @click="go('/pages/mine/bills')"
     />
 
-    <!-- 记录双卡（5.1 页面设计）：登记局数/签到次数直读 mock 种子（1.2 隔离线，
-         口径同登记页：我组织/已报名 且未终止；真局数据归 game store 的 myGames） -->
+    <!-- 记录双卡（5.1 页面设计）：登记局数/打完局数读真局 myGames（后端按角色裁好；
+         mock 时代的「签到时刻」无后端读取面，随演示快照退役改「打完」口径） -->
     <view class="duo">
       <view class="d-card" @click="go('/pages/mine/signup')">
         <view class="d-t">参加登记</view>
         <view class="d-s"
-          >共 {{ mySignups.length }} 局 · 签到 {{ myCheckins.length }} 次</view
+          >共 {{ mySignups.length }} 局 · 打完 {{ myDone.length }} 局</view
         >
       </view>
       <view class="d-card" @click="go('/pages/mine/logs')">
@@ -101,38 +101,42 @@ import AppButton from "@/components/ui/AppButton.vue";
 import TierBadge from "@/components/ui/TierBadge.vue";
 import SectionTitle from "@/components/ui/SectionTitle.vue";
 import BillSummaryCard from "@/components/biz/BillSummaryCard.vue";
-import { games as seedGames } from "@/api";
+import { useGameStore } from "@/stores/game";
 import { useUserStore } from "@/stores/user";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import { useBillStore } from "@/stores/bill";
-import { isMe } from "@/utils/format";
+import { deadRowKind } from "@/utils/format";
+import { ApiError, errText } from "@/api/http";
 import { GUEST_DUPR, duprTier, fmtDupr } from "@/utils/elo";
 
 const user = useUserStore();
+const game = useGameStore();
 const session = useSessionStore();
 const ui = useUiStore();
 const bill = useBillStore();
 
-/* 账单卡三数（1.3 批4）：全量口径后端定值，进页拉一次（游客=演示视图；断网静默沿用上次） */
+/* 账单卡三数（1.3 批4）：全量口径后端定值，进页拉一次（游客空账；断网静默沿用上次）。
+   登记双卡同页重拉 myGames（游客 401 静默——没有「我的局」） */
 onShow(() => {
   bill.loadTotal().catch(() => undefined);
+  game.loadMine().catch((e) => {
+    if (!(e instanceof ApiError && e.code === "no_identity"))
+      ui.toast(errText(e));
+  });
 });
 
-/* 登记口径（隔离线，与登记页 signup.vue 同式）：我组织/已报名 且未终止 */
+/* 登记口径（与登记页 signup.vue 同式）：myGames 去死局行；打完 = done 计数 */
 const mySignups = computed(() =>
-  seedGames.filter(
-    (g) =>
-      !g.dead && (isMe(g.organizer.id) || g.joined.some((e) => isMe(e.u.id))),
-  ),
+  game.myGames.filter((g) => deadRowKind(g) === null),
 );
-const myCheckins = computed(() =>
-  mySignups.value.filter((g) => g.status === "done" && !!g.myLog?.checkIn),
+const myDone = computed(() =>
+  mySignups.value.filter((g) => g.status === "done"),
 );
 
 /** 账号区行的手机号打码口径在 session store（maskedPhone 单一源，AccountSheet 同消费） */
 
-/** 我（alpha:1935 U.me；user store 与 games/live 同源引用，装扮保存全产品同步） */
+/** 我（身份位单一源在 user store：游客占位 ↔ 登录账号原位换装，全站同步） */
 const me = computed(() => user.me);
 /** alpha:1937：默认名「我」显示为「我的球场小人」 */
 const meName = computed(() =>

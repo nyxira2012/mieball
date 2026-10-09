@@ -15,15 +15,15 @@
     <view class="hero">
       <ChibiAvatar :chibi="u.chibi" :size="84" />
       <view class="hr">
-        <!-- alpha:1904-1905 名 + 随行/我/♥ -->
+        <!-- alpha:1904-1905 名 + 随行/我/♥（liked 本地态） -->
         <view class="nmrow">
           <text class="nm">{{ u.name }}</text>
           <text v-if="u.shadow" class="badge shadow">随行</text>
           <text v-if="isMe" class="badge fire">我</text>
-          <text v-if="u.liked" class="hrt">♥</text>
+          <text v-if="userStore.isLiked(u.id)" class="hrt">♥</text>
         </view>
         <!-- alpha:1906-1910 徽章 + 大分数 + 单位 + 本月涨跌（1.4 批4v1：主数字/徽章切 DUPR，
-             涨跌仍是 Elo 轨口径 1.4 §6；未定级小 chip 1.4 §5） -->
+             涨跌=stats card 月净胜；未定级小 chip 1.4 §5） -->
         <view class="scorerow">
           <TierBadge v-if="played" :tier="duprTier(u.dupr ?? GUEST_DUPR)" />
           <text class="big">{{
@@ -54,11 +54,11 @@
     <!-- alpha:1917-1920 非我双按钮：喜欢（burn/ghost 随 liked 切换）+ 邀请入局 -->
     <view v-if="!isMe" class="btns">
       <AppButton
-        :variant="u.liked ? 'burn' : 'ghost'"
+        :variant="userStore.isLiked(u.id) ? 'burn' : 'ghost'"
         class="flex1"
         @click="onLike"
       >
-        {{ u.liked ? "♥ 已喜欢 · 再点取消" : "♡ 喜欢" }}
+        {{ userStore.isLiked(u.id) ? "♥ 已喜欢 · 再点取消" : "♡ 喜欢" }}
       </AppButton>
       <AppButton variant="ghost" class="flex1" @click="onInvite"
         >邀请入局</AppButton
@@ -70,8 +70,9 @@
 <script setup lang="ts">
 /* 球员档案 ProfileSheet（alpha.html:1891-1929 · P9 · 1.4 批4v1 主数字切 DUPR）。
    SheetHost 传 userId（SheetPayload {type:'profile',userId} 约定不变）；
-   findUser（现场名册优先）取人；未开局沿「—/起步」分支改 DUPR 语义。 */
-import { computed } from "vue";
+   findUser（people 缓存 → 我，账号 id 空间）取人，miss 时 ensurePerson 单发
+   /users/{id} 补拉（真局成员/意向球友不在榜单缓存的兜底）；未开局沿「—/起步」分支。 */
+import { computed, watch } from "vue";
 import type { PropType } from "vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import TierBadge from "@/components/ui/TierBadge.vue";
@@ -91,9 +92,17 @@ const userStore = useUserStore();
 const game = useGameStore();
 const ui = useUiStore();
 
-/** alpha:1892 findUser（现场名册优先，再查 U 全表） */
+/** findUser（people 缓存 → 我，账号 id 空间）；查无先空态、拉到即显 */
 const u = computed(() => userStore.findUser(props.userId));
-/** alpha:1894 isMe = u.id===me.id（响应式：真账号接管「我」位后 id 联动） */
+/* miss 兜底：非现场的人（意向球友/局成员）单发拉档案进缓存；immediate 覆盖首开 */
+watch(
+  () => props.userId,
+  (id) => {
+    if (!userStore.findUser(id)) void userStore.ensurePerson(id);
+  },
+  { immediate: true },
+);
+/** alpha:1894 isMe = u.id===me.id（响应式：真账号换装「我」位后 id 联动） */
 const isMe = computed(() => u.value?.id === userStore.me.id);
 /** alpha:1895 played（上过场谓词单一源在 user store 的 hasPlayed） */
 const played = computed(() => !!u.value && userStore.hasPlayed(u.value));

@@ -33,12 +33,11 @@
    支线仅防御残留（现态名册全来自总账）。空降（apiLiveDropIn）与带访客
    （apiLiveGuests）1.3 批2 已切真。
    硬约束：不触碰任何 uni.*；名册行 id 是写动作靶位（与 queue/片位同键），
-   账号口径（isAdmin/myRound）按 view.players.accountId 匹配 U.me；身份两旗
+   账号口径（isAdmin/myRound）按 view.players.accountId 匹配身份位 me.id（user store）；身份两旗
    （isOrganizer/isFullPower）视图身份块直读（2026-10-08 起后端下发，
    批4a 的 viewerCtx 本地拼装已退役）。 */
 import { computed, reactive, ref } from "vue";
 import { defineStore } from "pinia";
-import { U } from "@/api";
 import { ApiError, errText } from "@/api/http";
 import {
   apiLiveCancel,
@@ -199,12 +198,12 @@ export const useLiveStore = defineStore("live", () => {
     liveView.value?.ended ? liveView.value : null,
   );
 
-  /** 我的名册行 id（键位修正：view.players 按 accountId 匹配 U.me；查无/无视图回落
+  /** 我的名册行 id（键位修正：view.players 按 accountId 匹配身份位 me；查无/无视图回落
       账号 id 兼本地路——mock 时代行 id 即账号 id） */
   function myRowId(): number {
+    const meId = useUserStore().me.id;
     return (
-      liveView.value?.players.find((p) => p.accountId === U.me.id)?.id ??
-      U.me.id
+      liveView.value?.players.find((p) => p.accountId === meId)?.id ?? meId
     );
   }
 
@@ -476,16 +475,17 @@ export const useLiveStore = defineStore("live", () => {
       const row = liveView.value?.players.find((r) => r.id === id);
       if (!ok || !row) return;
       if (row.check === "left") {
-        ui.toast(`${row.name} 早退 · 已记离场时刻`);
+        ui.toast(`${row.name} 先走了 · 回见`);
       } else if (isArrived(row.check)) {
         // 自动管理员提示（2.5 §4.2）：授予在后端落账时办，这里只认账——
         // apply 前后 admins 新增含我且我非组织者（视图身份旗），唯一 toast 用
         // 合同原句（获授者不显统一签到句：签到已成功，spec 句信息量更高）；
         // 不获授走统一句
+        const meId = useUserStore().me.id;
         const granted =
           !liveView.value?.isOrganizer &&
-          !adminsBefore.includes(U.me.id) &&
-          (liveView.value?.admins ?? []).includes(U.me.id);
+          !adminsBefore.includes(meId) &&
+          (liveView.value?.admins ?? []).includes(meId);
         // 签到统一句（§4.7 不分迟到与否，队位真值在响应视图）
         ui.toast(
           granted
@@ -1044,11 +1044,12 @@ export const useLiveStore = defineStore("live", () => {
       { length: v.courtsCount },
       (_, i) => base.courts?.[i] ?? `${i + 1}号`,
     );
-    const users = Object.values(useUserStore().users);
-    /** 最近结算行按人回填 elo 展示位（批6 走查 P3：确认落账后卡面新对阵即显新等级，
-        不再显示 mock U 借来的旧位）：matches 按结束序、后面的覆盖前面的——每人吃
-        最后一场的 rating_after；正式球友按 accountId 对表、访客（账号 null）按开账
-        定格名对表。名册行是 {...known} 拷贝，回填不污染 mock U 本体 */
+    const userStore = useUserStore();
+    const people = userStore.people;
+    /** 最近结算行按人回填 elo 展示位（批6 走查 P3：确认落账后卡面新对阵即显新等级）：
+        matches 按结束序、后面的覆盖前面的——每人吃最后一场的 rating_after；正式球友按
+        accountId 对表、访客（账号 null）按开账定格名对表。名册行是 {...known} 拷贝，
+        回填不污染 people 缓存本体 */
     const latestElo = new Map<string, number>();
     for (const m of v.matches)
       for (const r of m.eloRows)
@@ -1057,10 +1058,7 @@ export const useLiveStore = defineStore("live", () => {
           r.ratingAfter,
         );
     const roster: User[] = v.players.map((p) => {
-      const known =
-        p.accountId != null
-          ? users.find((u) => u.id === p.accountId)
-          : undefined;
+      const known = p.accountId != null ? people[p.accountId] : undefined;
       const u: User = known
         ? { ...known }
         : {
@@ -1075,7 +1073,13 @@ export const useLiveStore = defineStore("live", () => {
       const elo = latestElo.get(
         p.accountId != null ? `a${p.accountId}` : `n${p.name}`,
       );
-      if (elo != null) u.elo = elo; // 结算行真值 > mock 借位（拷贝上改，访客同样回填）
+      if (elo != null) u.elo = elo; // 结算行真值优先（拷贝上改，访客同样回填）
+      u.accountId = p.accountId ?? undefined; // 账号空间 id 随行带（档案卡从现场开时不撞行 id）
+      u.chibi = p.chibi ?? u.chibi; // 视图行开账定格小人直出，people 缓存兜底、访客缺省
+      // 缓存未命中的正式球友顺手补拉档案（战绩/形象展示位下一版视图即真；
+      // ensurePerson 在途去重，轮询不会打成请求风暴）
+      if (p.accountId != null && p.accountId !== useUserStore().me.id)
+        void userStore.ensurePerson(p.accountId);
       u.dupr = p.dupr; // 视图行 dupr 真值直落展示位（配对 rankOf 消费；访客后端已回 3.0）
       u.id = p.id; // 名册行 id（写动作靶位），与 queue/片位同键
       u.name = p.name; // 开账定格名（注销者占位名/访客编号名照显）

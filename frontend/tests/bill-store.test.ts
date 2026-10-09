@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import type { BillPayerApi, BillsViewApi, BillRowApi } from "@/api/types";
-import { demoBillsView } from "@/api/mock";
 import { ApiError } from "@/api/http";
 
 /* 1.3 批4 切真重写：bill store 动作全是真接口调用——api 层整体 mock，用例喂 crafted
-   BillsViewApi（形状与后端 bills.py view 输出逐字对齐），测的是游客回落演示（4.9）、
-   snake→camel 映射、三数/rows/debtors 定值直读（A4）、期间切换重拉与两向记账整树换。 */
+   BillsViewApi（形状与后端 bills.py view 输出逐字对齐），测的是游客空账（4.9 修订：
+   演示数据随 mock 退役，未登录=空视图不冒充）、snake→camel 映射、三数/rows/debtors
+   定值直读（A4）、期间切换重拉与两向记账整树换。 */
 const api = vi.hoisted(() => ({
   apiBills: vi.fn(),
   apiBillSettle: vi.fn(),
@@ -71,28 +71,28 @@ function mkView(p: Partial<BillsViewApi> = {}): BillsViewApi {
   };
 }
 
-describe("游客回落演示（4.9：未登录 · 演示数据，不冒充真账）", () => {
-  it("load 不发请求：view=演示视图、isDemo 亮、total 同源", async () => {
+describe("游客空账（4.9 修订：未登录无演示数据，空视图不冒充）", () => {
+  it("load 不发请求：view 空、三数全零、isDemo 亮（页挂登录横幅）", async () => {
     const { store } = await loadStore();
     await store.load();
     expect(api.apiBills).not.toHaveBeenCalled();
     expect(store.isDemo).toBe(true);
-    expect(store.view?.rows).toHaveLength(demoBillsView.rows.length);
-    expect(store.rows[0]?.gameName).toBe("周五夜光局");
-    expect(store.summary).toEqual(demoBillsView.summary);
-    expect(store.debtors).toEqual(demoBillsView.debtors);
-    expect(store.unfixed).toEqual(demoBillsView.unfixed);
-    expect(store.totalSummary).toEqual(demoBillsView.summary);
+    expect(store.view).toBeNull();
+    expect(store.rows).toHaveLength(0);
+    expect(store.summary).toEqual({ due: 0, paid: 0, receivable: 0 });
+    expect(store.debtors).toHaveLength(0);
+    expect(store.unfixed).toHaveLength(0);
+    expect(store.totalSummary).toEqual({ due: 0, paid: 0, receivable: 0 });
   });
 
-  it("演示态点结算/已收：只提示引导登录，不调 API", async () => {
+  it("未登录点结算/已收：只提示引导登录，不调 API", async () => {
     const { store, ui } = await loadStore();
     await store.load();
     await store.settleBill(98);
     await store.receivePayer(97, 5);
     expect(api.apiBillSettle).not.toHaveBeenCalled();
     expect(api.apiBillReceive).not.toHaveBeenCalled();
-    expect(ui.toastMsg).toBe("演示数据 · 登录后才能记真账");
+    expect(ui.toastMsg).toBe("登录后才能记真账");
   });
 });
 
@@ -208,8 +208,13 @@ describe("N2 化石清理：calcPeriodFrom 零外部消费，收归模块私有"
     const mod = await import("@/stores/bill");
     expect(Object.keys(mod)).not.toContain("calcPeriodFrom");
     expect(Object.keys(mod)).toEqual(
-      expect.arrayContaining(["PERIOD_FROM", "PERIOD_OPTS"]),
+      expect.arrayContaining(["periodFrom", "PERIOD_OPTS"]),
     );
+    // 真钟化：近 7 天下界 = 今天 -7（含当天），不再依赖 mock 基准日
+    const from = mod.periodFrom("7d", new Date("2026-10-10T12:00:00"));
+    expect(from.getFullYear()).toBe(2026);
+    expect(from.getMonth()).toBe(9);
+    expect(from.getDate()).toBe(3);
   });
 });
 

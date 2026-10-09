@@ -5,9 +5,13 @@
        校验「至少选一个时段」（toast 逐字由 store 发），保存 → game.saveIntent + closeSheet。 -->
   <view>
     <!-- alpha:1269 标题两态 -->
-    <view class="sheet-t">{{ game.myIntent ? '改我的意向' : '留我的意向' }}</view>
+    <view class="sheet-t">{{
+      game.myIntent ? "改我的意向" : "留我的意向"
+    }}</view>
     <!-- alpha:1270 hint 逐字 -->
-    <view class="sheet-hint">大概什么时段想打、多久打一次 —— 组局的人凑人时会看见你</view>
+    <view class="sheet-hint"
+      >大概什么时段想打、多久打一次 —— 组局的人凑人时会看见你</view
+    >
 
     <!-- alpha:1271-1274 slotgrid：4 时段卡（on = 电青描边 + 淡青底）；同波段 match 数随 mock 退役（裁决②） -->
     <view class="slotgrid">
@@ -30,12 +34,16 @@
 
     <!-- 4.13 备注：一句话可空，随保存透传（被邀人改意向即清已邀标记由后端管） -->
     <AppField label="备注 · 一句话，可不填" class="note-field">
-      <AppInput v-model="ifNote" :maxlength="30" placeholder="如：只想约晚场 · 免费场优先" />
+      <AppInput
+        v-model="ifNote"
+        :maxlength="30"
+        placeholder="如：只想约晚场 · 免费场优先"
+      />
     </AppField>
 
     <!-- alpha:1278 保存/留下 -->
     <AppButton variant="pri" block class="save" @click="save">
-      {{ game.myIntent ? '保存修改' : '留下意向' }}
+      {{ game.myIntent ? "保存修改" : "留下意向" }}
     </AppButton>
   </view>
 </template>
@@ -45,16 +53,16 @@
    SheetHost 按 sheet.type==='intent-form' 挂载本组件（v-if，挂载即「开表」）：
    已有意向全量带入（含备注），无意向默认选「周末晚上」(we-n) · 频率 2。保存走 game.saveIntent
    （文案由 store 逐字发），失败不关弹层，成功 closeSheet。 */
-import { ref } from 'vue';
-import AppButton from '@/components/ui/AppButton.vue';
-import AppField from '@/components/ui/AppField.vue';
-import AppInput from '@/components/ui/AppInput.vue';
-import AppSeg from '@/components/ui/AppSeg.vue';
-import { slots as slotDefs } from '@/api';
-import { useGameStore } from '@/stores/game';
-import { useSessionStore } from '@/stores/session';
-import { useUiStore } from '@/stores/ui';
-import { errText } from '@/api/http';
+import { ref } from "vue";
+import AppButton from "@/components/ui/AppButton.vue";
+import AppField from "@/components/ui/AppField.vue";
+import AppInput from "@/components/ui/AppInput.vue";
+import AppSeg from "@/components/ui/AppSeg.vue";
+import { slots as slotDefs } from "@/api/dict";
+import { useGameStore } from "@/stores/game";
+import { useSessionStore } from "@/stores/session";
+import { useUiStore } from "@/stores/ui";
+import { errText } from "@/api/http";
 
 const game = useGameStore();
 const session = useSessionStore();
@@ -62,22 +70,27 @@ const ui = useUiStore();
 const busy = ref(false);
 
 /* alpha:1267 ifSlots = myIntent ? [...myIntent.slots] : ['we-n'] */
-const ifSlots = ref<string[]>(game.myIntent ? [...game.myIntent.slots] : ['we-n']);
+const ifSlots = ref<string[]>(
+  game.myIntent ? [...game.myIntent.slots] : ["we-n"],
+);
 /* alpha:1268 ifFreq = myIntent ? myIntent.frequency : 2（string|number 对齐 AppSeg v-model 联合类型） */
-const ifFreq = ref<string | number>(game.myIntent ? game.myIntent.frequency : 2);
+const ifFreq = ref<string | number>(
+  game.myIntent ? game.myIntent.frequency : 2,
+);
 /* 4.13 备注：一句话可空，编辑后随保存透传 */
-const ifNote = ref(game.myIntent?.note ?? '');
+const ifNote = ref(game.myIntent?.note ?? "");
 
 /* alpha:1276-1277 三段：按钮内容 `${v===0?'~':v}<small>${l}</small>` → AppSeg label+sub */
 const FREQ_OPTS = [
-  { value: 1, label: '1', sub: '每周 1 打' },
-  { value: 2, label: '2', sub: '每周 2 打' },
-  { value: 0, label: '~', sub: '随缘' },
+  { value: 1, label: "1", sub: "每周 1 打" },
+  { value: 2, label: "2", sub: "每周 2 打" },
+  { value: 0, label: "~", sub: "随缘" },
 ];
 
 /* alpha:1280-1282 ifTog：在/不在 ifSlots → 删/增 */
 function ifTog(k: string): void {
-  if (ifSlots.value.includes(k)) ifSlots.value = ifSlots.value.filter((x) => x !== k);
+  if (ifSlots.value.includes(k))
+    ifSlots.value = ifSlots.value.filter((x) => x !== k);
   else ifSlots.value = [...ifSlots.value, k];
 }
 
@@ -85,7 +98,7 @@ function ifTog(k: string): void {
    游客先看后报（D3）：选完时段点保存 → 名片建号卡，建号成功自动落意向（pendingIntent 全量带走） */
 async function save(): Promise<void> {
   if (!ifSlots.value.length) {
-    ui.toast('至少选一个时段');
+    ui.toast("至少选一个时段");
     return;
   }
   if (session.isGuest) {
@@ -101,7 +114,11 @@ async function save(): Promise<void> {
   if (busy.value) return;
   busy.value = true;
   try {
-    await game.saveIntent([...ifSlots.value], Number(ifFreq.value), ifNote.value.trim());
+    await game.saveIntent(
+      [...ifSlots.value],
+      Number(ifFreq.value),
+      ifNote.value.trim(),
+    );
     ui.closeSheet(); // alpha:1290
   } catch (e) {
     ui.toast(errText(e)); // intent_slots_empty 等后端文案直出

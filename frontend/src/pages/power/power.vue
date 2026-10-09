@@ -38,8 +38,8 @@
             :lazy="i >= lazyFrom"
             @profile="openProfile"
           />
-          <!-- alpha:1873 空榜（rankRows 为空才出现） -->
-          <EmptyBox v-if="!rows.length" text="第一场球打出第一版排名" />
+          <!-- 空榜/加载/失败三态：0 圈员=空榜句；在途=加载句；失败=点击重试 -->
+          <EmptyBox v-if="!rows.length" :text="boardTxt" @click="retryBoard" />
         </view>
         <!-- alpha:1874/1774-1784 尾部：点击亦可加载；全部加载完显示完毕文案（逐字） -->
         <view class="rank-tail" @click="loadMoreRank">
@@ -113,6 +113,7 @@
 
 <script setup lang="ts">
 /* 战力页（alpha.html:1824-1889 renderPower · P9 · 1.4 批4v1 榜单切 DUPR）。
+   榜单数据后端化：/stats/leaderboard 单一源（user store 缓存与灌 people）；
    榜单懒加载 = alpha:1774-1822 的滚动通道（§2.4：IntersectionObserver → onPageScroll 距底 160px）；
    榜单/打架图/我的卡点击 → ui.openSheet({type:'profile',userId})。 */
 import { computed, nextTick, onMounted, ref, watch } from "vue";
@@ -125,28 +126,28 @@ import SectionTitle from "@/components/ui/SectionTitle.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useUiStore } from "@/stores/ui";
 import { useUserStore } from "@/stores/user";
-import { rankOf } from "@/utils/rotate";
+import { errText } from "@/api/http";
 
 const ui = useUiStore();
 const userStore = useUserStore();
 
-/** 定级门槛（1.4 §5/§6：满 5 场入榜=定级；mock 以 play 场数近似 duprGames） */
+/** 定级门槛（1.4 §5/§6：满 5 场入榜=定级；play 即 dupr_games） */
 const RATED_PLAY = 5;
 
-/** rankRows（1.4 批4v1：消费矩阵吃 DUPR）：hasPlayed（!shadow && play>0，谓词单一源
-    在 user store）且满 5 场，按 DUPR 降序（rankOf 兜底 3.0）；不足者进参考区不参与排名 */
+/** 榜单（后端 DUPR 降序单一源）：满 5 场入榜；打过但不足 5 场进参考区；
+    0 场新号两区都不进（第一场球打出第一版排名） */
 const rows = computed(() =>
-  Object.values(userStore.users)
-    .filter((u) => userStore.hasPlayed(u) && u.play >= RATED_PLAY)
-    .sort((a, b) => rankOf(b) - rankOf(a)),
+  userStore.leaderboard.filter(
+    (u) => userStore.hasPlayed(u) && u.play >= RATED_PLAY,
+  ),
 );
-/** 参考区（1.4 §6）：打过但未满 5 场的未定级者，同序排列但无位次 */
+/** 参考区（1.4 §6）：未定级者同序排列但无位次 */
 const refs = computed(() =>
-  Object.values(userStore.users)
-    .filter((u) => userStore.hasPlayed(u) && u.play < RATED_PLAY)
-    .sort((a, b) => rankOf(b) - rankOf(a)),
+  userStore.leaderboard.filter(
+    (u) => userStore.hasPlayed(u) && u.play < RATED_PLAY,
+  ),
 );
-/** alpha:1826 myRank = rows.findIndex(u=>u.id===me.id)+1（响应式 me.id） */
+/** alpha:1826 myRank = rows.findIndex(u=>u.id===me.id)+1（游客 id 0 恒不在榜 → 0） */
 const myRank = computed(
   () => rows.value.findIndex((u) => u.id === userStore.me.id) + 1,
 );
@@ -166,6 +167,26 @@ const done = computed(() => rankLimit.value >= rows.value.length);
 
 /** 规则折叠展开态（alpha:1877 classList.toggle('open')） */
 const rOpen = ref(false);
+
+/** 拉榜失败旗（空榜三态分派用）；重试=再拉一次 */
+const boardFailed = ref(false);
+const boardTxt = computed(() =>
+  userStore.lbLoading
+    ? "正在翻榜 · 马上好…"
+    : boardFailed.value
+      ? "榜单没拉到 · 点一下重试"
+      : "第一场球打出第一版排名",
+);
+function loadBoard(): void {
+  boardFailed.value = false;
+  userStore.loadLeaderboard().catch((e) => {
+    boardFailed.value = true;
+    ui.toast(errText(e));
+  });
+}
+function retryBoard(): void {
+  if (boardFailed.value) loadBoard();
+}
 
 /** alpha:1768/1755 openProfileById → openSheet profile */
 function openProfile(id: number): void {
@@ -212,12 +233,13 @@ onMounted(() => {
   nextTick(() => measure());
 });
 
-/** alpha:874 go('power')：每次进页 rankLimit 归 5 并回顶 */
+/** alpha:874 go('power')：每次进页 rankLimit 归 5 并回顶；榜单未在册就拉一次 */
 onShow(() => {
   rankLimit.value = RANK_PAGE;
   lazyFrom.value = RANK_PAGE;
   uni.pageScrollTo({ scrollTop: 0, duration: 0 });
   nextTick(() => measure());
+  if (!userStore.leaderboard.length) loadBoard();
 });
 
 /** 折叠展开改变页高 → 重测，保持 160px 触发线准确 */

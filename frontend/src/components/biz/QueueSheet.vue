@@ -33,7 +33,9 @@
             {{ fmtDupr1(r.u.dupr ?? GUEST_DUPR) }}</view
           >
         </view>
-        <text v-if="r.id === U.me.id && myRound != null" class="tag tag-me"
+        <text
+          v-if="r.id === userStore.me.id && myRound != null"
+          class="tag tag-me"
           >还有 {{ myRound }} 轮</text
         >
         <text v-else-if="i < nextN" class="tag">下一场</text>
@@ -51,9 +53,9 @@ import AppSheet from "@/components/ui/AppSheet.vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
+import { useUserStore } from "@/stores/user";
 import { courtSize } from "@/utils/rotate";
 import { GUEST_DUPR, fmtDupr1 } from "@/utils/elo";
-import { U } from "@/api";
 
 defineProps({
   visible: { type: Boolean, default: false },
@@ -64,6 +66,7 @@ const emit = defineEmits<{
 }>();
 
 const liveStore = useLiveStore();
+const userStore = useUserStore();
 /** 行数据 computed 一次解析好（模板逐字段 byId 是每行多次名册线性扫描） */
 const rows = computed(() =>
   (liveStore.live?.queue ?? []).map((id) => ({ id, u: liveStore.byId(id) })),

@@ -18,6 +18,7 @@ settle-overwrite/cancel），批3 2.2 域动作（check/swap/tempo/rules/封撤
 
 from __future__ import annotations
 
+import json
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -820,14 +821,24 @@ class LiveBook(LiveSweepMixin):
         is_organizer = viewer_id is not None and game.organizer_id == viewer_id
         stats = StatsLedger(self.db)
         roster = self._roster(game_id)
-        # 代位分一次查齐（3s 轮询 + 每个写动作响应都走这里，逐人查会放大成 N+1）
+        # 代位分与小人一次查齐（3s 轮询 + 每个写动作响应都走这里，逐人查会放大成 N+1；
+        # chibi 随行下发——前端名册头像不再向演示世界借位，2026-10-10 mock 退役）
         rates = stats.pairing_ratings([p.account_id for p in roster])
+        chibis = {
+            a.id: a.chibi
+            for a in self.db.execute(
+                select(Account).where(
+                    Account.id.in_([p.account_id for p in roster if p.account_id])
+                )
+            ).scalars()
+        }
         rows = [
             self._player_row(
                 p,
                 is_organizer=is_organizer,
                 viewer_id=viewer_id,
                 dupr_value=rates[p.account_id],
+                chibi=chibis.get(p.account_id),
             )
             for p in roster
         ]
@@ -1282,6 +1293,7 @@ class LiveBook(LiveSweepMixin):
         is_organizer: bool,
         viewer_id: int | None,
         dupr_value: float,
+        chibi: str | None = None,
     ) -> dict:
         # 考勤分权（2.3 裁决 Q2）：早退迟到不展示给随便扫到的人
         visible = is_organizer or (viewer_id is not None and p.account_id == viewer_id)
@@ -1289,6 +1301,8 @@ class LiveBook(LiveSweepMixin):
             "id": p.id,
             "account_id": p.account_id,
             "name": p.display_name,
+            # 开账时定格的账号小人（访客无账号行 → None，前端按缺省形象渲染）
+            "chibi": json.loads(chibi) if chibi else None,
             "guest": p.guest,
             # DUPR 配平代位分（1.4 §6 修订：访客/无派分行统一 2.5、有派分行吃派生分）——
             # 值由 view 用 pairing_ratings 批量预算后递入

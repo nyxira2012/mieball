@@ -1,17 +1,16 @@
 /* 球局基础工具（alpha:881-892 · 意向卡 slotBig alpha:1023-1024）
    1.2 接线清账：人头/剩坑/人均/forced/名单谓词全改读后端定值（A4 画面不自算），
-   本文件只剩文案表、卡面映射（newGameCard/mockGameCard）与少量无数据可依的纯展示口径。 */
+   本文件只剩文案表、卡面映射（newGameCard）与少量无数据可依的纯展示口径；
+   mock 快照族的 isMe/mockGameCard 已随演示世界退役（isMe 归 user store）。 */
 import type {
-  ChibiConfig,
   CourtMode,
   DownMode,
   Game,
   GameCardModel,
-  MockGame,
   PairingMode,
 } from "@/api/types";
-import { U, slots } from "@/mock/data";
-import { isoDay, isoHm, splitGameTime, untilTxt } from "@/utils/time";
+import { slots } from "@/api/dict";
+import { isoDay, isoHm, untilTxt } from "@/utils/time";
 
 /** 发牌模式名单一源（原 live.vue/detail.vue 内联 MODE_NAMES 挪出）。2.4 批3 清账：现场域
     （live 顶条/规则抽屉/store 过渡桥）已停消费，剩 detail 规则牌与 LaunchSheet 规则三件——
@@ -49,9 +48,6 @@ export const PAIRING_NAMES: Record<PairingMode, string> = {
     原 courtLabel(courts, idx)（另含序号兜底语义）自诞生起零消费，随 2.4 批2 删除，「+场」语义收编至此。 */
 export const courtDisplayName = (name: string): string =>
   name.endsWith("场") ? name : `${name}场`;
-
-/** 是否当前登录用户（运行时读 U.me.id：真账号接管「我」位后 id 非 0，快照常量会认错人） */
-export const isMe = (id?: number): boolean => id === U.me.id;
 
 /** 是否组织者（真局看 viewer 块定值；游客无 my 恒 false） */
 export const isOrg = (g: Game): boolean => !!g.my?.isOrganizer;
@@ -136,38 +132,6 @@ export function newGameCard(g: Game): GameCardModel {
     stackAvatars: formal.slice(0, 5).map((e) => e.account.chibi),
     stackPlus: `+${g.heads - 5 > 0 ? g.heads - 5 : ""}`,
     ...cardLiveEntry(g),
-  };
-}
-
-/** mock 快照局 → 卡面模型（登记/记录页隔离线用；口径逐字保持 5.1 的 GameCard 行为） */
-export function mockGameCard(g: MockGame): GameCardModel {
-  const hs = g.joined.reduce((s, e) => s + 1 + (e.bring || 0), 0);
-  const joinedMe = g.joined.some((e) => isMe(e.u.id));
-  return {
-    id: g.id,
-    name: g.name,
-    dayText: splitGameTime(g.t).day,
-    hmText: splitGameTime(g.t).hm,
-    venueText: g.loc,
-    status: g.status,
-    minPlayers: g.min,
-    maxPlayers: g.cap,
-    slotsLeft: Math.max(0, g.cap - hs),
-    forcedLabel: g.booked?.length
-      ? "已订场 · 必开"
-      : g.sure
-        ? "必开"
-        : undefined,
-    myRole: isMe(g.organizer.id)
-      ? "org"
-      : joinedMe
-        ? "joined"
-        : g.invitedMe
-          ? "inv"
-          : null,
-    stackAvatars: g.joined.slice(0, 5).map((e) => e.u.chibi),
-    stackPlus: `+${hs - 5 > 0 ? hs - 5 : ""}${g.joined.some((e) => e.u.shadow) ? " ·含随行" : ""}`,
-    result: g.result,
   };
 }
 

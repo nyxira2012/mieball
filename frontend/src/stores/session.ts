@@ -1,13 +1,11 @@
 /* 会话 store（1.1 账号域的前端深模块）：身份生命周期全在这——
    启动认人 / 名片建号 / 短信找回与接管 / 退出 / 注销 / 改名片。
 
-   过渡期接线（评审 D3）：真账号只接到 mock U 的「我」那个位置上——
-   applyIdentity 把账号视图写进 user store 的 reactive U.me（id/名/小人/卡背），
-   战绩等演示数字留给 mock，球局后端接上后由数据侧接管。
-   组件层不直接碰 http/api，只消费本 store 的动作与状态。 */
+   身份位单一源在 user store（me 对象原位换装：applyAccount/resetGuest），
+   本 store 只管钥匙生命周期与账号档案镜像。组件层不直接碰 http/api，
+   只消费本 store 的动作与状态。 */
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { U } from "@/api/mock";
 import {
   apiDeactivate,
   apiLogout,
@@ -25,31 +23,6 @@ import type { CardBg, ChibiConfig } from "@/api/types";
 import { useUiStore } from "./ui";
 import { useUserStore } from "./user";
 
-/** 演示期 U.me 快照：退出/注销后恢复原样（guest 继续看演示数据） */
-const DEMO_ME: {
-  id: number;
-  name: string;
-  chibi: ChibiConfig;
-  cardBg?: CardBg;
-  dupr?: number;
-  provisional?: boolean;
-  play: number;
-  win: number;
-  last5?: string[];
-  month?: number;
-} = {
-  id: U.me.id,
-  name: U.me.name,
-  chibi: { ...U.me.chibi },
-  cardBg: U.me.cardBg,
-  dupr: U.me.dupr,
-  provisional: U.me.provisional,
-  play: U.me.play,
-  win: U.me.win,
-  last5: [...(U.me.last5 || [])],
-  month: U.me.month,
-};
-
 export const useSessionStore = defineStore("session", () => {
   const ui = useUiStore();
 
@@ -66,45 +39,6 @@ export const useSessionStore = defineStore("session", () => {
     return p ? `${p.slice(0, 3)}****${p.slice(-4)}` : null;
   });
 
-  /* ---- 内部：真账号接到 U.me 过渡位（经 reactive 代理写入，全站同步换新） ---- */
-
-  function applyIdentity(view: AccountView): void {
-    account.value = view;
-    status.value = "ready";
-    const users = useUserStore().users;
-    Object.assign(users.me, {
-      id: view.id,
-      name: view.name,
-      chibi: { ...view.chibi },
-      cardBg: view.card_bg ?? undefined,
-      dupr: view.dupr_rating,
-      provisional: view.dupr_provisional,
-      play: view.dupr_games,
-      win: view.dupr_wins,
-      last5: [...(view.dupr_last5 || [])],
-      month: view.dupr_month_net ?? 0,
-    });
-  }
-
-  function resetToGuest(): void {
-    setToken(null);
-    account.value = null;
-    status.value = "guest";
-    const users = useUserStore().users;
-    Object.assign(users.me, {
-      id: DEMO_ME.id,
-      name: DEMO_ME.name,
-      chibi: { ...DEMO_ME.chibi },
-      cardBg: DEMO_ME.cardBg,
-      dupr: DEMO_ME.dupr,
-      provisional: DEMO_ME.provisional,
-      play: DEMO_ME.play,
-      win: DEMO_ME.win,
-      last5: [...(DEMO_ME.last5 || [])],
-      month: DEMO_ME.month,
-    });
-  }
-
   /* ---- 动作 ---- */
 
   /** 启动认人：有钥匙→换本人档案；没钥匙/钥匙失效/网络失败→游客，不报错（§B 认人） */
@@ -115,8 +49,13 @@ export const useSessionStore = defineStore("session", () => {
     }
     try {
       const { account: view } = await apiMe();
-      if (view) applyIdentity(view);
-      else resetToGuest(); // 钥匙已作废（被接管/注销/退出）→ 静默降级游客
+      if (view) {
+        account.value = view;
+        status.value = "ready";
+        useUserStore().applyAccount(view);
+      } else {
+        resetToGuest(); // 钥匙已作废（被接管/注销/退出）→ 静默降级游客
+      }
     } catch {
       status.value = "guest"; // 网络问题不拦启动，按游客先进场
     }
@@ -126,7 +65,9 @@ export const useSessionStore = defineStore("session", () => {
   async function signupWithCard(card: CardPayload): Promise<AccountView> {
     const res = await apiSignup(card, deviceMarker());
     setToken(res.token);
-    applyIdentity(res.account);
+    account.value = res.account;
+    status.value = "ready";
+    useUserStore().applyAccount(res.account);
     clearCardDraft();
     return res.account;
   }
@@ -148,7 +89,9 @@ export const useSessionStore = defineStore("session", () => {
   ): Promise<AccountView> {
     const res = await apiRedeem(phone, code, purpose, deviceMarker(), card);
     setToken(res.token);
-    applyIdentity(res.account);
+    account.value = res.account;
+    status.value = "ready";
+    useUserStore().applyAccount(res.account);
     clearCardDraft();
     return res.account;
   }
@@ -171,6 +114,14 @@ export const useSessionStore = defineStore("session", () => {
     ui.toast("已注销 · 档案匿名化 · 手机号已释放");
   }
 
+  /** 退出/注销共用回落：身份位复位游客占位（user store 单点） */
+  function resetToGuest(): void {
+    setToken(null);
+    account.value = null;
+    status.value = "guest";
+    useUserStore().resetGuest();
+  }
+
   /** 改名片（A3）：昵称/小人/卡背随时可改。游客态走本地演示保存（不接后端） */
   async function saveProfile(patch: {
     nickname?: string;
@@ -184,7 +135,7 @@ export const useSessionStore = defineStore("session", () => {
       return m;
     }
     if (status.value !== "ready" || !account.value) {
-      useUserStore().users.me.name = n; // 游客：演示态本地改名
+      useUserStore().me.name = n; // 游客：演示态本地改名
       const msg = "已保存（演示态 · 登录后云端同步）";
       ui.toast(msg);
       return msg;
@@ -194,7 +145,8 @@ export const useSessionStore = defineStore("session", () => {
       chibi: patch.chibi,
       card_bg: patch.card_bg,
     });
-    applyIdentity(view);
+    account.value = view;
+    useUserStore().applyAccount(view);
     const msg = "已保存 · 全局同步换新";
     ui.toast(msg);
     return msg;

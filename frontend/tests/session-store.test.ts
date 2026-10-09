@@ -1,16 +1,15 @@
 /* session store（1.1 账号域前端深模块）单测：
    - 启动认人：有钥匙换档案 / 钥匙失效静默降级游客
-   - D3 过渡接线：真账号视图落到 reactive U.me 的「我」位
-   - 退出/注销恢复演示态；建号成功清草稿
+   - 身份位（user store me）：真账号视图 applyAccount 原位换装（mock 退役后游客=零战绩占位）
+   - 退出/注销回落游客占位；建号成功清草稿
    API 层整体 mock（@/api/auth），不触网。 */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
 import * as authApi from '@/api/auth';
 import type { AccountView } from '@/api/auth';
 import * as http from '@/api/http';
-import { U } from '@/api/mock';
+import { GUEST_USER, useUserStore } from '@/stores/user';
 import { useSessionStore } from '@/stores/session';
-import { useUserStore } from '@/stores/user';
 
 vi.mock('@/api/auth', () => ({
   apiSignup: vi.fn(),
@@ -32,8 +31,8 @@ const view: AccountView = {
   phone_tail: '1111',
 };
 
-/** 演示态 U.me 快照（恢复断言用） */
-const demo = { id: U.me.id, name: U.me.name, chibi: { ...U.me.chibi }, cardBg: U.me.cardBg };
+/** 游客占位（恢复断言用——零战绩，非演示数字） */
+const demo = { id: GUEST_USER.id, name: GUEST_USER.name, chibi: { ...GUEST_USER.chibi } };
 
 beforeEach(() => {
   setActivePinia(createPinia());
@@ -44,7 +43,7 @@ beforeEach(() => {
 });
 
 describe('启动认人（4.3）', () => {
-  it('本机有钥匙 → 换成后端档案，U.me 过渡位同步换新（D3）', async () => {
+  it('本机有钥匙 → 换成后端档案，身份位 me 同步换新', async () => {
     vi.spyOn(http, 'getToken').mockReturnValue('a-token');
     vi.mocked(authApi.apiMe).mockResolvedValue({ account: view });
 
@@ -108,11 +107,11 @@ describe('名片建号与退出（4.2 / A3）', () => {
     expect(session.status).not.toBe('ready');
   });
 
-  it('退出：服务端作废失败也不拦，本机恢复演示态', async () => {
+  it('退出：服务端作废失败也不拦，本机回落游客占位', async () => {
     vi.mocked(authApi.apiLogout).mockRejectedValue(new Error('net'));
     const session = useSessionStore();
     session.$patch({ status: 'ready', account: view });
-    useUserStore().users.me.id = 42;
+    useUserStore().applyAccount(view);
 
     await session.logout();
 
@@ -127,7 +126,7 @@ describe('名片建号与退出（4.2 / A3）', () => {
 });
 
 describe('注销（4.6）', () => {
-  it('验证通过后：清钥匙、恢复演示态', async () => {
+  it('验证通过后：清钥匙、回落游客占位', async () => {
     vi.mocked(authApi.apiDeactivate).mockResolvedValue();
     const session = useSessionStore();
     session.$patch({ status: 'ready', account: view });
@@ -177,7 +176,7 @@ describe('改名片（A3）', () => {
     await session.saveProfile({ nickname: '路人甲' });
     expect(authApi.apiUpdateProfile).not.toHaveBeenCalled();
     expect(useUserStore().me.name).toBe('路人甲');
-    // 还原演示名，避免影响其他用例
-    useUserStore().users.me.name = demo.name;
+    // 还原游客名，避免影响其他用例
+    useUserStore().me.name = demo.name;
   });
 });

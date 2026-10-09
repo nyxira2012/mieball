@@ -3,22 +3,21 @@
      在册未到 → 到场（apiLiveCheck，口径归一在后端）；已在场 → 幂等；已结束的局 →
      ensureLive 拦在门外；视图无我的行时重扫 → 再走空降通道（原「移出后重扫」，
      2.6 移出退役后用视图重建造该态）
-   - 真账号接管 U.me（id 非 0）后：isMe 认得出、togglePerson 找得到人（快照常量回归）
+   - 真账号换装身份位（id 非 0）后：isMe 认得出、togglePerson 找得到人（快照常量回归）
    局 fixture 与后端 game_view 镜像；现场链走批5a 同款 vi.mock('@/api/live')：
    读默认 404 live_not_found → ensureLive 落局簿开账路（开账视图 row id=账号 id 镜像），
    空降喂 crafted 响应视图（snake 形状与 services/live.py view 输出对齐）。 */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
-import { U } from "@/api/mock";
 import { ApiError } from "@/api/http";
 import type { GameViewApi } from "@/api/games";
 import type { LivePlayerApi, LiveViewApi } from "@/api/types";
-import { isMe } from "@/utils/format";
+import { useUserStore } from "@/stores/user";
 import { useGameStore } from "@/stores/game";
 import { useLiveStore } from "@/stores/live";
 
-/** 演示态快照（用例后恢复，避免串扰） */
-const demo = { id: U.me.id, name: U.me.name };
+/** 游客占位（用例后恢复，避免串扰——mock 退役后身份位在 user store me） */
+const demo = { id: 0, name: "我" };
 
 const api = vi.hoisted(() => ({
   apiPublishGame: vi.fn(),
@@ -123,7 +122,7 @@ function myDropinRow(check: LivePlayerApi["check"] = "ok"): LivePlayerApi {
   return {
     id: 42,
     account_id: 0,
-    name: U.me.name,
+    name: "我",
     guest: false,
     guarantor_account_id: null,
     dropin: true,
@@ -180,9 +179,9 @@ function absentMeView(): LiveViewApi {
   };
 }
 
-/** 模拟真账号接管「我」位（session store applyIdentity 的等价操作） */
+/** 模拟真账号换装身份位（session store applyAccount 的等价操作） */
 function takeoverAs(id: number, name: string): void {
-  Object.assign(U.me, { id, name });
+  Object.assign(useUserStore().me, { id, name });
 }
 
 const person = (id: number, nickname: string) => ({ id, nickname, chibi: {} });
@@ -358,12 +357,13 @@ describe("arriveMe（扫码签到）", () => {
 });
 
 describe("真账号接管「我」位后的识别回归", () => {
-  it("isMe 运行时读 U.me.id：接管后旧 id 不再算我、新 id 认得出", () => {
-    expect(isMe(0)).toBe(true);
+  it("isMe 运行时读 me.id：换装后旧 id 不再算我、新 id 认得出", () => {
+    const user = useUserStore();
+    expect(user.isMe(0)).toBe(true);
     takeoverAs(42, "海淀反手王");
-    expect(isMe(0)).toBe(false);
-    expect(isMe(42)).toBe(true);
-    Object.assign(U.me, demo);
+    expect(user.isMe(0)).toBe(false);
+    expect(user.isMe(42)).toBe(true);
+    Object.assign(user.me, demo);
   });
 
   it("togglePerson 在真 id 下找得到「我」行（快照常量回归；视图行路）", async () => {
@@ -374,13 +374,13 @@ describe("真账号接管「我」位后的识别回归", () => {
     await live.startLive(
       (await import("@/stores/game")).useGameStore().games[0]!,
     );
-    // 自服务守卫：myRowId() 兜底命中行 42（视图无 accountId=42 的行时回落 U.me.id）
+    // 自服务守卫：myRowId() 兜底命中行 42（视图无 accountId=42 的行时回落身份位 me.id）
     liveApi.apiLiveCheck.mockResolvedValue(dropinView());
     await live.setCheck(42, "ok");
     expect(liveApi.apiLiveCheck).toHaveBeenCalledWith(107, 42, "ok", 1);
     liveApi.apiLiveTempo.mockResolvedValue(dropinView());
     await live.togglePerson(42, "fire");
     expect(liveApi.apiLiveTempo).toHaveBeenCalledWith(107, 42, "fire", 2);
-    Object.assign(U.me, demo);
+    Object.assign(useUserStore().me, demo);
   });
 });

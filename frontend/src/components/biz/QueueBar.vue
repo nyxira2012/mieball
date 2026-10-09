@@ -4,7 +4,9 @@
        我到了走自签到链（页面编排）、＋到场开代办签到抽屉（页面编排）。 -->
   <view v-if="L" class="queuebar">
     <view class="q-mid" @click="emit('queue')">
-      <view class="q-label">{{ L.queue.length ? '下一场' : '全员都在场上' }}</view>
+      <view class="q-label">{{
+        L.queue.length ? "下一场" : "全员都在场上"
+      }}</view>
       <view class="q-avs">
         <view
           v-for="id in nextN"
@@ -16,7 +18,9 @@
         </view>
       </view>
     </view>
-    <view class="q-me" :class="{ hot: myRound === 1 }" @click="emit('queue')">{{ meTxt }}</view>
+    <view class="q-me" :class="{ hot: myRound === 1 }" @click="emit('queue')">{{
+      meTxt
+    }}</view>
     <view class="q-arrive" @click.stop="emit('arrive')">我到了</view>
     <view class="q-check" @click.stop="emit('checkin')">＋ 到场</view>
   </view>
@@ -26,19 +30,20 @@
 /* 置底候场条（2.1 §3 · 2.4 批2 size-aware）：无 props，读 live store；emit queue/arrive/checkin
    由页面开对应抽屉/走自签到。下一场头像数=每片人数（courtSize：双打 4 / 单打 2，单一源在引擎）。
    我的轮次三态：队列里「还有 N 轮到我」（=1 加粗强调）/ 场上「场上打拼中」/ 未签到「还没签到」。 */
-import { computed } from 'vue';
-import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
-import { useLiveStore, isArrived } from '@/stores/live';
-import { courtSize } from '@/utils/rotate';
-import { U } from '@/api';
+import { computed } from "vue";
+import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import { useLiveStore, isArrived } from "@/stores/live";
+import { useUserStore } from "@/stores/user";
+import { courtSize } from "@/utils/rotate";
 
 const emit = defineEmits<{
-  (e: 'queue'): void;
-  (e: 'arrive'): void;
-  (e: 'checkin'): void;
+  (e: "queue"): void;
+  (e: "arrive"): void;
+  (e: "checkin"): void;
 }>();
 
 const liveStore = useLiveStore();
+const userStore = useUserStore();
 const L = computed(() => liveStore.live);
 const byId = (id: number) => liveStore.byId(id);
 
@@ -51,8 +56,8 @@ const nextN = computed(() =>
 const myRound = computed(() => liveStore.myRound);
 const meTxt = computed(() => {
   if (myRound.value != null) return `还有 ${myRound.value} 轮到我`;
-  const me = L.value ? liveStore.byId(U.me.id) : undefined;
-  return me && isArrived(me.check) ? '场上打拼中' : '还没签到';
+  const me = L.value ? liveStore.byId(userStore.me.id) : undefined;
+  return me && isArrived(me.check) ? "场上打拼中" : "还没签到";
 });
 </script>
 

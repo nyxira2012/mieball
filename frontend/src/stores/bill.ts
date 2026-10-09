@@ -1,5 +1,6 @@
 /* 账单 store（1.3 批4 读链切真）：真后端 BillsView 的前端业务态。
-   - 游客/未登录回落演示视图（4.9）：isDemo 旗给账单页挂「未登录 · 以下是演示数据」横幅；
+   - 游客/未登录：无账可看——空视图（三数 0 / 空列表），账单页挂「未登录」横幅带登录
+     入口（mock 演示账单已随演示世界退役，2026-10-10）；
    - 登录用户 load 失败不吞——抛给页面（A2 出错态：toast + 重试）；
    - 三数/rows/debtors/unfixed 全部直读后端定值（A4：界面不自算），期间切换=重新 load；
    - settle/receive 调后端、响应直出最新视图整树换（「应收与按人明细同一个数」单点保证；
@@ -8,7 +9,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { apiBillReceive, apiBillSettle, apiBills } from "@/api/bills";
-import { demoBillsView, MOCK_BASE_DATE_STR } from "@/api/mock";
 import type { Bill, BillStatus, BillsView, BillsViewApi } from "@/api/types";
 import { useSessionStore } from "./session";
 import { useUiStore } from "./ui";
@@ -23,21 +23,21 @@ export const BILL_STATUS_NAMES: Record<BillStatus, string> = {
 
 export type BillPeriod = "7d" | "30d" | "all";
 
-/** 期间下界计算（含当天）：根据基准日期（mock 为 2026-10-04）动态推算 M.DD。
-    模块私有（N2：导出零外部消费方——logs 只吃 PERIOD_FROM/PERIOD_OPTS），
-    PERIOD_FROM 专用；记录页的期间语义是 mock 快照域，与账单真数据无关 */
-function calcPeriodFrom(days: number, baseStr = MOCK_BASE_DATE_STR): string {
-  const [y, m, d] = baseStr.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() - days);
-  return `${dt.getMonth() + 1}.${String(dt.getDate()).padStart(2, "0")}`;
-}
-
-/** 期间下界（M.DD，含当天）：导出供 logs 页共用 */
-export const PERIOD_FROM: Record<Exclude<BillPeriod, "all">, string> = {
-  "7d": calcPeriodFrom(7),
-  "30d": calcPeriodFrom(30),
+/** 期间下界（Date，含当天）：按当下墙钟推算——记录页（logs）与账单页共用档位；
+    原以 mock 基准日（2026-10-04）推算，随演示快照退役改真钟 */
+const PERIOD_DAYS: Record<Exclude<BillPeriod, "all">, number> = {
+  "7d": 7,
+  "30d": 30,
 };
+
+export function periodFrom(
+  p: Exclude<BillPeriod, "all">,
+  now: Date = new Date(),
+): Date {
+  const d = new Date(now);
+  d.setDate(d.getDate() - PERIOD_DAYS[p]);
+  return d;
+}
 
 /** 期间筛选项（bills/logs 两页 FilterChips 共用；后端同名枚举，账单页切换=重新 load） */
 export const PERIOD_OPTS: { value: BillPeriod; label: string }[] = [
@@ -102,7 +102,7 @@ export const useBillStore = defineStore("bill", () => {
   const total = ref<BillsView | null>(null);
   const loading = ref(false);
 
-  /** 演示态（游客/钥匙失效）：回落演示视图；动作只提示不调后端（4.9 假数字标明） */
+  /** 未登录（游客/钥匙失效）：无账可看，空视图 + 账单页登录横幅；动作只提示不调后端 */
   const isDemo = computed(() => session.isGuest);
 
   /** 三数（随 period，后端定值）；未加载/加载失败回落 0（页面负责出错重试） */
@@ -112,16 +112,11 @@ export const useBillStore = defineStore("bill", () => {
   const debtors = computed(() => view.value?.debtors ?? []);
   const unfixed = computed(() => view.value?.unfixed ?? []);
 
-  function demoTree(): void {
-    view.value = demoBillsView;
-    total.value = demoBillsView;
-  }
-
-  /** 账单页主加载（期间切换即换档重拉；演示态不发起请求） */
+  /** 账单页主加载（期间切换即换档重拉；未登录不发请求——空视图自持） */
   async function load(p: BillPeriod = period.value): Promise<void> {
     period.value = p;
     if (isDemo.value) {
-      demoTree();
+      view.value = null;
       return;
     }
     loading.value = true;
@@ -135,7 +130,7 @@ export const useBillStore = defineStore("bill", () => {
   /** 全量三数（我的页/注销守卫）；失败上抛由调用方静默兜底 */
   async function loadTotal(): Promise<void> {
     if (isDemo.value) {
-      total.value = demoBillsView;
+      total.value = null;
       return;
     }
     total.value = toBillView(await apiBills("all"));
@@ -144,7 +139,7 @@ export const useBillStore = defineStore("bill", () => {
   /** 点「结算」（4.3）：自己那行 paid_at 置位，终态不可逆（确认步在 bills.vue），重放幂等 */
   async function settleBill(gameId: number): Promise<void> {
     if (isDemo.value) {
-      ui.toast("演示数据 · 登录后才能记真账");
+      ui.toast("登录后才能记真账");
       return;
     }
     view.value = toBillView(await apiBillSettle(gameId, period.value));
@@ -158,7 +153,7 @@ export const useBillStore = defineStore("bill", () => {
     accountId: number,
   ): Promise<void> {
     if (isDemo.value) {
-      ui.toast("演示数据 · 登录后才能记真账");
+      ui.toast("登录后才能记真账");
       return;
     }
     const name = rows.value

@@ -13,7 +13,7 @@
 
     <!-- 游客态（4.9）：钱的地方假数字必须标明 + 登录入口 -->
     <view v-if="bill.isDemo" class="demo-banner">
-      <text class="demo-txt">未登录 · 以下是演示数据</text>
+      <text class="demo-txt">未登录 · 登录后看你的真账</text>
       <text class="demo-link" @click="goLogin">登录 ▸</text>
     </view>
 
@@ -203,7 +203,7 @@ onShow(() => {
   void refresh();
 });
 
-/** 游客态登录入口（4.9：演示数据照显，登录后换真账） */
+/** 游客态登录入口（4.9 修订：无演示数据，空账自持 + 登录换真账） */
 function goLogin(): void {
   uni.navigateTo({ url: "/pages/mine/login" });
 }
@@ -292,7 +292,7 @@ async function confirmGo(): Promise<void> {
   margin-bottom: 6px;
 }
 
-/* ---------- 游客横幅（4.9：未登录 · 演示数据 + 登录入口） ---------- */
+/* ---------- 游客横幅（4.9 修订：未登录 · 登录入口） ---------- */
 .demo-banner {
   display: flex;
   align-items: center;

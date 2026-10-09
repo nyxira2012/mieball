@@ -73,7 +73,7 @@
               variant="ghost"
               size="sm"
               @click="liveStore.setCheck(row.id, 'left')"
-              >代办早退</AppButton
+              >标他先走了</AppButton
             >
           </view>
         </view>
