@@ -46,6 +46,10 @@ _NEW_COLUMNS = {
         "pwd_locked_until": "DATETIME",
         "pwd_grace_until": "DATETIME",
     },
+    # 6.1 批5：规则版本记号（明细/账单落账时的口径版本，值见 dupr.RULES_VERSION
+    # 与 bills.SPLIT_VERSION；存量行 NULL=不回填——旧数据按当时的规矩算的不追认）
+    "dupr_details": {"rule_version": "VARCHAR(8)"},
+    "bills": {"rule_version": "VARCHAR(8)"},
 }
 
 

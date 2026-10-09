@@ -240,6 +240,9 @@ class Bill(Base):
     heads: Mapped[int] = mapped_column(Integer, nullable=False)
     per_head: Mapped[int] = mapped_column(Integer, nullable=False)
     billed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # 摊费口径版本记号（6.1 §4.4，值=bills.py SPLIT_VERSION）：存量行 NULL=不回填
+    # ——旧账按当时的规矩摊的，不追认新记号
+    rule_version: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
 
 class BillRow(Base):
@@ -452,3 +455,6 @@ class DuprDetail(Base):
     score_w: Mapped[int] = mapped_column(Integer, nullable=False)  # 胜方分
     score_l: Mapped[int] = mapped_column(Integer, nullable=False)
     won: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # 算分口径版本记号（6.1 §4.4，值=dupr.py RULES_VERSION）：存量行 NULL=不回填
+    # ——旧明细按当时的口径算的，不追认新记号
+    rule_version: Mapped[str | None] = mapped_column(String(8), nullable=True)

@@ -62,6 +62,8 @@ class StatsLedger:
                 score_w=score_w,
                 score_l=score_l,
                 won=won,
+                # 口径记号（6.1 §4.4）：改分重落删行重插走同一 snap，自动带上
+                rule_version=dupr.RULES_VERSION,
             )
 
         for acct, own in winner_side:

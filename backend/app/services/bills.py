@@ -32,6 +32,11 @@ from .game_views import fill_fee_error
 # 与散场链（live 的锁）的竞态由 ended_at 守卫互斥——未散场进不了补填、散场后进不了 end
 _write_lock = threading.Lock()
 
+# 摊费口径版本记号（6.1 §4.4）：任何影响摊费结果的改动（抹零规则/兜底口径/
+# 份额算式）必换新号（"v1"→"v2"…），随 Bill.rule_version 落库——事后分辨"这本账
+# 是哪套规矩摊的"的唯一依据；只进库不出口（球友界面不显示）
+SPLIT_VERSION = "v1"
+
 
 def _split(
     shares: list[tuple[int, str, int, int]], total: int, organizer_id: int
@@ -78,6 +83,7 @@ class BillBook:
             heads=heads,
             per_head=base,
             billed_at=clock.now(),
+            rule_version=SPLIT_VERSION,
         )
         self.db.add(bill)
         self.db.flush()  # autoflush=False：显式 flush 拿 bill.id 给行用

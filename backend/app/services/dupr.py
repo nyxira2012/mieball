@@ -4,6 +4,9 @@
 分差权重 / 滚动窗口 / 可信度门槛 / 一场出道，底层是 Elo 变体。后端单一源：
 前端纯展示，无 elo.ts 式双端镜像。快照重放模型：明细行存结算时的四人分数快照，
 在线落分 = 起步分 + 此前明细逐场重放，两边天然一致。
+
+硬规矩（6.1 §4.4）：改任何影响算分结果的常量/公式，必须同步换新的
+RULES_VERSION——版本记号随明细落库，是事后分辨"这行分是哪套规矩算的"的唯一依据。
 """
 
 from __future__ import annotations
@@ -24,6 +27,9 @@ RATED_GAMES = 5
 # 量表极值（1.4 §2：2.0–8.0 三位小数）
 FLOOR = 2.0
 CEILING = 8.0
+# 口径版本记号（6.1 §4.4）：本文件任何影响算分结果的常量/公式改动必换新号
+# （"v1"→"v2"…），随 DuprDetail.rule_version 落库；只进库不出口（球友界面不显示）
+RULES_VERSION = "v1"
 
 
 def expectation(team_own: float, team_opp: float) -> float:
