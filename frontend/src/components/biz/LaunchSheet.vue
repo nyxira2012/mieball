@@ -146,14 +146,7 @@ import { useUiStore } from "@/stores/ui";
 import { mockVenues } from "@/api";
 import type { CourtMode, PublishGameInput, Visibility } from "@/api/types";
 import { MODE_NAMES, SCORE_RULE_NAMES, autoGameName } from "@/utils/format";
-import {
-  dayOff,
-  dayToken,
-  isoDay,
-  isoDayOff,
-  isoParts,
-  toIso,
-} from "@/utils/time";
+import { beijingAt, isoDay, isoDayOff, isoParts, toIso } from "@/utils/time";
 import { errText } from "@/api/http";
 import { goMeet } from "@/utils/nav";
 
@@ -230,14 +223,17 @@ const dayI = ref(2);
 const startMin = ref(19 * 60);
 const endMin = ref(21 * 60);
 
-const days = computed(() =>
-  Array.from({ length: DAY_N }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() + i);
-    return d;
-  }),
-);
-const dayLabels = computed(() => days.value.map((d) => dayToken(d)));
+/* 拨盘全按北京历法（2026-10-10 修复批 F2）：日列锚「北京今天」（beijingAt 单源，
+   月末滚动交给 Date.UTC），回填与索引共用 isoDayOff 一个口径——此前日列吃设备
+   本地历、回填吃北京历，非东八区机器初始停在错误的日上。锚取北京**午夜**：
+   拨盘分钟数（startMin/dlMin）正是距午夜，playStart/dlDate 锚上加分钟即正确。 */
+const days = computed(() => {
+  const n = isoParts(new Date());
+  return Array.from({ length: DAY_N }, (_, i) =>
+    beijingAt(n.y, n.m, n.d + i, 0),
+  );
+});
+const dayLabels = computed(() => days.value.map((d) => isoDay(d)));
 
 /** 结束时刻列：开始后 30 分钟 ~ 6 小时（且不越过 23:55） */
 const endLabels = computed(() => {
@@ -258,9 +254,8 @@ const tIdx = computed(() => [dayI.value, m2g(startMin.value), endRow.value]);
 const tCols = computed(() => [dayLabels.value, GRID_LABELS, endLabels.value]);
 
 const playStart = computed(() => {
-  const d = new Date(days.value[clamp(dayI.value, 0, DAY_N - 1)]);
-  d.setHours(0, startMin.value, 0, 0);
-  return d;
+  const d = days.value[clamp(dayI.value, 0, DAY_N - 1)];
+  return new Date(d.getTime() + startMin.value * 60000); // 北京当日锚 + 分钟数
 });
 const playHint = computed(
   () =>
@@ -285,8 +280,8 @@ const dlAuto = ref(true);
 const dlDayI = ref(2);
 const dlMin = ref(17 * 60);
 const nowMin = (): number => {
-  const d = new Date();
-  return d.getHours() * 60 + d.getMinutes();
+  const p = isoParts(new Date()); // 北京墙钟的当前分钟（不随设备时区）
+  return p.h * 60 + p.min;
 };
 const ceilStep = (m: number): number => Math.ceil(m / STEP) * STEP;
 /** 截止当前所选日期行的合法时刻窗 [lo, hi]（分钟） */
@@ -327,9 +322,10 @@ const autoDlDate = computed(() => {
 });
 /** 把截止状态收进所选日期的合法窗（自动重算 / 开打变化后的手动态都走这里） */
 function applyDl(d: Date): void {
-  dlDayI.value = clamp(dayOff(d), 0, dayI.value);
+  dlDayI.value = clamp(isoDayOff(d), 0, dayI.value);
   const { lo, hi } = dlBounds(dlDayI.value);
-  dlMin.value = clamp(ceilStep(d.getHours() * 60 + d.getMinutes()), lo, hi);
+  const p = isoParts(d); // 北京墙钟取分（同拨盘历法）
+  dlMin.value = clamp(ceilStep(p.h * 60 + p.min), lo, hi);
 }
 function fitDlToRange(): void {
   if (dlDayI.value > dayI.value) dlDayI.value = dayI.value;
@@ -428,9 +424,8 @@ watch(() => props.gameId, init);
 
 /** 自动态截止的 Date（新建提交用） */
 const dlDate = computed(() => {
-  const d = new Date(days.value[clamp(dlDayI.value, 0, DAY_N - 1)]);
-  d.setHours(0, dlMin.value, 0, 0);
-  return d;
+  const d = days.value[clamp(dlDayI.value, 0, DAY_N - 1)];
+  return new Date(d.getTime() + dlMin.value * 60000);
 });
 
 /** 发布 / 保存修改：拨盘状态落成 ISO 绝对时刻（契约§2）→ store（toast 在 store 内置）→ 关弹层；

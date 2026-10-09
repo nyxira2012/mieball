@@ -39,6 +39,7 @@ from .game_views import (
     lock_window_error,
     masked,
 )
+from .live import LiveBook
 
 VISIBILITIES = ("played", "public", "invite_only")
 # 工具箱受理窗口 TOOLBOX_STATUSES 已随写窗谓词迁 game_views（闸旗同源，
@@ -215,42 +216,57 @@ class GameBook:
             game = self.db.get(Game, game_id)
             if game is None:
                 raise errors.game_not_found()
-            existing = self.db.execute(
-                select(Entry).where(
-                    Entry.game_id == game_id, Entry.account_id == account_id
+            entry = self._entry_row(game_id, account_id)
+            if entry is None:
+                if derive(game, clock.now()) not in JOINABLE_STATUSES:
+                    raise errors.join_closed()  # done/terminated/cancelled/pending 不可加
+                if not 0 <= bring <= 3:
+                    raise errors.bring_limit()
+                row = Entry(
+                    game_id=game_id,
+                    account_id=account_id,
+                    bring=bring,
+                    standing="formal",
+                    joined_at=clock.now(),
                 )
-            ).scalar_one_or_none()
-            if existing is not None:
-                # 幂等（B1）：已有本账号行——忽略新 bring、不重复占坑，组织者再 join 同此
-                return self._view(game, viewer_id=account_id, with_entries=True)
-            if derive(game, clock.now()) not in JOINABLE_STATUSES:
-                raise errors.join_closed()  # done/terminated/cancelled/pending 不可加
-            if not 0 <= bring <= 3:
-                raise errors.bring_limit()
-            row = Entry(
-                game_id=game_id,
-                account_id=account_id,
-                bring=bring,
-                standing="formal",
-                joined_at=clock.now(),
-            )
-            self.db.add(row)
-            try:
-                self.db.flush()  # autoflush=False：显式 flush 让 heads 计入本行
-            except IntegrityError:
-                # 写锁已串行化本进程写动作，撞 Unique(game_id,account_id) 只剩数据库
-                # 兜底的极端竞态（技术设计 §3）——回滚重查，按幂等当没事
-                self.db.rollback()
-                game = self.db.get(Game, game_id)
-                return self._view(game, viewer_id=account_id, with_entries=True)
-            if self._heads(game_id) > game.max_players:
-                # 整行进出：formal 装不下这一整行 → 候补，wait_seq 追加递增（4.3）
-                row.standing = "waitlist"
-                row.wait_seq = self._next_wait_seq(game_id)
-            self.db.commit()
+                self.db.add(row)
+                try:
+                    self.db.flush()  # autoflush=False：显式 flush 让 heads 计入本行
+                except IntegrityError:
+                    # 写锁已串行化本进程写动作，撞 Unique(game_id,account_id) 只剩数据库
+                    # 兜底的极端竞态（技术设计 §3）——回滚重查，按幂等（B1）当没事
+                    self.db.rollback()
+                    game = self.db.get(Game, game_id)
+                    entry = self._entry_row(game_id, account_id)
+                else:
+                    if self._heads(game_id) > game.max_players:
+                        # 整行进出：formal 装不下这一整行 → 候补，wait_seq 追加递增（4.3）
+                        row.standing = "waitlist"
+                        row.wait_seq = self._next_wait_seq(game_id)
+                    self.db.commit()
+                    entry = row
+            # 开账后 formal 落定即补进名册：幂等重放/竞态重查/新写三个来路同走这
+            # 一口（新出口漏不了桥）；没开账/已有本人行 absorb_join 自判不动
+            if entry is not None and entry.standing == "formal":
+                self._absorb_live(game_id, account_id, entry.bring)
             return self._view(game, viewer_id=account_id, with_entries=True)
 
+    def _absorb_live(self, game_id: int, account_id: int, bring: int) -> None:
+        """join → 现场总账的桥（2026-10-10 修复批）：语义、锁序与自判不动条款见
+        LiveBook.absorb_join；formal 与否由调用方把关。"""
+        LiveBook(self.db).absorb_join(
+            game_id=game_id, account_id=account_id, bring=bring
+        )
+
     # ---- 退局（4.4：截止锁的是"防鸽退出"；改约解锁窗例外；带的人整行跟着退） ----
+
+    def _entry_row(self, game_id: int, account_id: int) -> Entry | None:
+        """本账号在本局的报名行（join 幂等/竞态重查与 quit 共用的取数口）"""
+        return self.db.execute(
+            select(Entry).where(
+                Entry.game_id == game_id, Entry.account_id == account_id
+            )
+        ).scalar_one_or_none()
 
     def quit(self, *, game_id: int, account_id: int) -> dict:
         self._evaluate()
@@ -258,11 +274,7 @@ class GameBook:
             game = self.db.get(Game, game_id)
             if game is None:
                 raise errors.game_not_found()
-            entry = self.db.execute(
-                select(Entry).where(
-                    Entry.game_id == game_id, Entry.account_id == account_id
-                )
-            ).scalar_one_or_none()
+            entry = self._entry_row(game_id, account_id)
             if entry is None:
                 return {"ok": True}  # 幂等（B1）：没报名/已退出，当没事
             if game.organizer_id == account_id:

@@ -225,7 +225,7 @@ describe("joinGame（报名 · toast 按返回名单分支）", () => {
       }),
     );
     await store.joinGame(1, 0);
-    expect(ui.toastMsg).toBe("已进候补栏 · 有人退出即刻递补");
+    expect(ui.toastMsg).toBe("坑不够，已为你排候补"); // 4.3 规格原句（修复批 F1）
     expect(store.findGame(1)?.my?.myEntry?.standing).toBe("waitlist");
   });
 });

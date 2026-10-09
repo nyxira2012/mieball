@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Game, MockGame, Person } from "@/api/types";
 import {
   courtDisplayName,
@@ -11,7 +11,7 @@ import {
   slotBig,
   slotName,
 } from "@/utils/format";
-import { dayToken, toIso } from "@/utils/time";
+import { toIso } from "@/utils/time";
 
 /* 卡面时间换算（isoDay/isoHm）按设备本地墙钟走；本项目时区口径=北京时间（契约§2），
    测试环境钉死 TZ，避免开发机时区不同导致断言漂移。 */
@@ -57,34 +57,41 @@ function mkGame(p: Partial<Game> = {}): Game {
 
 describe("newGameCard（真局 → 卡面模型：定值直读，时间现场换算）", () => {
   it("时间/场馆/必打标/剩坑", () => {
-    const start = new Date(2026, 9, 10, 10, 0); // 本地墙钟 2026-10-10 10:00，经 toIso 往返免 TZ 抖动
-    const card = newGameCard(
-      mkGame({
-        startAt: toIso(start),
-        courts: ["3号"],
-        forced: true,
-        slotsLeft: 3,
-        heads: 5,
-        entries: [
-          { account: ken, bring: 0, standing: "formal", waitSeq: null },
-          { account: me, bring: 1, standing: "formal", waitSeq: null },
-          {
-            account: { id: 2, nickname: "乙", chibi: {} },
-            bring: 0,
-            standing: "waitlist",
-            waitSeq: 1,
-          },
-        ],
-      }),
-    );
-    expect(card.hmText).toBe("10:00"); // ISO 现场换算
-    expect(card.dayText).toBe(dayToken(start));
-    expect(card.venueText).toBe("亮马河 · 滨河球场");
-    expect(card.forcedLabel).toBe("已订场 · 必开"); // 场上有号优先于空锁文案
-    expect(card.slotsLeft).toBe(3);
-    // 候补不进头像叠层；带的人不计入头像数
-    expect(card.stackAvatars).toHaveLength(2);
-    expect(card.stackPlus).toBe("+");
+    // 「今天」锚死北京 2026-10-04：远日字面断言才确定（isoDay 对 0-2 天出 今天/明天/后天）
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-04T12:00:00+08:00"));
+    try {
+      const start = new Date(2026, 9, 10, 10, 0); // 本地墙钟 2026-10-10 10:00，经 toIso 往返免 TZ 抖动
+      const card = newGameCard(
+        mkGame({
+          startAt: toIso(start),
+          courts: ["3号"],
+          forced: true,
+          slotsLeft: 3,
+          heads: 5,
+          entries: [
+            { account: ken, bring: 0, standing: "formal", waitSeq: null },
+            { account: me, bring: 1, standing: "formal", waitSeq: null },
+            {
+              account: { id: 2, nickname: "乙", chibi: {} },
+              bring: 0,
+              standing: "waitlist",
+              waitSeq: 1,
+            },
+          ],
+        }),
+      );
+      expect(card.hmText).toBe("10:00"); // ISO 现场换算
+      expect(card.dayText).toBe("10.10 周六"); // 北京墙钟日段（dayToken 已退役，修复批 F2）
+      expect(card.venueText).toBe("亮马河 · 滨河球场");
+      expect(card.forcedLabel).toBe("已订场 · 必开"); // 场上有号优先于空锁文案
+      expect(card.slotsLeft).toBe(3);
+      // 候补不进头像叠层；带的人不计入头像数
+      expect(card.stackAvatars).toHaveLength(2);
+      expect(card.stackPlus).toBe("+");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("myRole 三态 + 空锁标", () => {

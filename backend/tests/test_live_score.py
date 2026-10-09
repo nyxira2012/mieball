@@ -53,6 +53,17 @@ def _ph(seed: int, i: int) -> str:
     return f"1380003{seed * 10 + i:04d}"
 
 
+def lock_game_direct(client: TestClient, game_id: int) -> None:
+    """2.5 开账闸前置定格：成局才可开的真值直落数据库（沿本文件先例，免拨钟：
+    过截止+懒判定的真实链路在 test_live_base 的守门组专测）。"""
+    db = client.app.state.session_factory()
+    try:
+        db.get(Game, game_id).state = "locked"
+        db.commit()
+    finally:
+        db.close()
+
+
 def open_live(
     client: TestClient,
     *,
@@ -76,14 +87,7 @@ def open_live(
     join_ok(client, mates[0]["token"], g["id"], bring=bring)
     for u in mates[1:]:
         join_ok(client, u["token"], g["id"])
-    # 2.5 开账闸：成局才可开——前置直接定格 locked（沿本文件"真值直落数据库"先例，
-    # 免拨钟：过截止+懒判定的真实链路在 test_live_base 的守门组专测）
-    db = client.app.state.session_factory()
-    try:
-        db.get(Game, g["id"]).state = "locked"
-        db.commit()
-    finally:
-        db.close()
+    lock_game_direct(client, g["id"])
     r = live_call(client, org["token"], g["id"], "start", {})
     assert r.status_code == 200, r.text
     db = client.app.state.session_factory()

@@ -68,7 +68,7 @@
             @cancel="onCancelMatch"
             @autodeal="liveStore.autoDeal"
             @pull="goPull"
-            @profile="openProfile"
+            @person="onPerson"
           />
         </view>
 
@@ -93,7 +93,7 @@
       <QueueSheet
         :visible="liveSheet?.k === 'queue'"
         @close="closeLocal"
-        @person="onQueuePerson"
+        @person="onPerson"
       />
       <LedgerSheet :visible="liveSheet?.k === 'ledger'" @close="closeLocal" />
       <RulesSheet :visible="liveSheet?.k === 'rules'" @close="closeLocal" />
@@ -249,8 +249,9 @@ function onSwapTarget(t: number): void {
     liveSheet.value = null;
   }
 }
-/** 队列抽屉点行 → 顶替为点人抽屉 */
-function onQueuePerson(id: number): void {
+/** 点人（候场队列点行 / 场上点头像）→ 顶替为点人抽屉：设/撤管理员对场上人
+     也可达（2026-10-10 修复批 F5），档案卡从抽屉内链接进 */
+function onPerson(id: number): void {
   liveSheet.value = { k: "person", id };
 }
 

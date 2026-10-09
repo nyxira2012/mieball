@@ -153,6 +153,28 @@ function dropinView(): LiveViewApi {
   };
 }
 
+/** 够人版空降视图：候场 4 人全到场（组织者+球友+两位后到+我）——自动发牌支线的靶 */
+function dropinDealView(): LiveViewApi {
+  const base = liveStartView();
+  const extra = (id: number, acc: number): LivePlayerApi => ({
+    ...plv(id, `球友${acc}`),
+    account_id: acc,
+    check: "ok",
+  });
+  return {
+    ...base,
+    total_seq: 2,
+    players: [
+      { ...plv(6, "石景山铁腰"), check: "ok" }, // 先到者已到场，进发牌池
+      { ...plv(4, "国贸截击手"), check: "ok" },
+      extra(7, 7),
+      extra(8, 8),
+      myDropinRow(),
+    ],
+    queue: [6, 4, 7, 42],
+  };
+}
+
 /** 在册未到视图：开账视图带我的 formal 行（row id 42 · 账号 0 · absent） */
 function absentMeView(): LiveViewApi {
   const base = liveStartView();
@@ -240,6 +262,23 @@ describe("arriveMe（扫码签到）", () => {
     expect(L.queue).toEqual([6, 42]); // 排到队尾（视图真值）
     expect(store.findGame(107)?.heads).toBe(2); // 线上名单原样不动
     expect(L.ledger.find((r) => r.id === 42)!.dropin).toBe(true); // 底账带空降标
+  });
+
+  it("空降报到够一片人数 → 自动发牌上片（修复批：空降支线此前漏 maybeDeal，要手点 ⚡）", async () => {
+    await seedStore(viewOf());
+    const live = useLiveStore();
+    await live.ensureLive(107);
+    liveApi.apiLiveDropIn.mockResolvedValue(dropinDealView());
+    liveApi.apiLiveDeal.mockResolvedValue(dropinDealView());
+
+    await live.arriveMe(107);
+
+    expect(liveApi.apiLiveDeal).toHaveBeenCalledTimes(1);
+    expect(liveApi.apiLiveDeal).toHaveBeenCalledWith(
+      107,
+      [{ courtNo: 1, a: [6, 4], b: [7, 42] }], // 队头一拨，queue 分边 1,2 vs 3,4
+      2, // 出发号 = 空落后的总号
+    );
   });
 
   it("在册未到（正式球友）→ 走报到通道 apiLiveCheck，不重复空降", async () => {

@@ -74,7 +74,9 @@
 
       <!-- ---------- 换人二段态：列对侧池 ---------- -->
       <template v-else>
-        <view class="ps-swap-t">把 {{ p.name }} 换成谁？</view>
+        <view class="ps-swap-t">{{
+          personOnCourt ? `把 ${p.name} 换成谁？` : `用 ${p.name} 换谁下场？`
+        }}</view>
         <view v-if="poolRows.length" class="ps-pool">
           <view
             v-for="r in poolRows"
@@ -126,7 +128,7 @@ import AppSheet from "@/components/ui/AppSheet.vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
-import { pById } from "@/utils/rotate";
+import { courtOfPerson, pById } from "@/utils/rotate";
 import { GUEST_DUPR, fmtDupr1 } from "@/utils/elo";
 
 const props = defineProps({
@@ -180,10 +182,11 @@ function onAdminToggle(): void {
   else liveStore.setAdmin(props.personId);
 }
 
-/** 人在的片是否待确认冻结中（§4.3：片上的人换不动——出口等确认窗处理完） */
+/** 人在的片是否待确认冻结中（§4.3：片上的人换不动——出口等确认窗处理完）；
+    片位查 courtOfPerson 单一源（与 store.swapPlayers 出/入定向同谓词） */
 function onFrozenCourt(id: number): boolean {
   const l = liveStore.live;
-  const c = l?.courts.find((x) => x.A.includes(id) || x.B.includes(id));
+  const c = l ? courtOfPerson(l, id) : undefined;
   return !!c && liveStore.isPending(c.id);
 }
 /** 点中的人在待确认片上：换人入口前置灰 */

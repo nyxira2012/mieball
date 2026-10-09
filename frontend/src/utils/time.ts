@@ -40,26 +40,6 @@ export function gameTime(t: string): Date {
   return d;
 }
 
-/** 日期 → 展示日段：距今天 0/1/2 天 → 今天/明天/后天；其余 → 「M.DD 周X」（如 10.06 周一）。
-    组局表单拨盘（3.3 改版）用它落 Game.t / deadline 的日段，与 gameTime 的精确日期分支配套。 */
-export function dayToken(d: Date): string {
-  const off = dayOff(d);
-  if (off >= 0 && off <= 2) return ["今天", "明天", "后天"][off];
-  return `${d.getMonth() + 1}.${String(d.getDate()).padStart(2, "0")} 周${"日一二三四五六"[d.getDay()]}`;
-}
-
-/** Date 距今天的天数偏移（按当日零点差）：dayToken / 拨盘回填 / game store 的 tb 推导共用
-    （纯日期算术，此前三处各抄一份）。 */
-export function dayOff(d: Date): number {
-  const now = new Date();
-  const day0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.round(
-    (new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() -
-      day0.getTime()) /
-      86400000,
-  );
-}
-
 /** 局时间串拆分（GameCard 时间位与 detail hero 共用）：末段=时刻、前段拼接=日段
     （3.3 改版后 t 可能是「10.06 周一 19:00」三段式；格式再变只改这里）。 */
 export function splitGameTime(t: string): { day: string; hm: string } {
@@ -92,11 +72,27 @@ export function untilTxt(d: Date): string | null {
 
 /* ---- 1.2 ISO 时刻 ↔ 展示（真局的 startAt/endAt/deadlineAt 消费面） ---- */
 
-/** Date → ISO 8601 北京时刻（本机墙钟按东八区口径直拼：自用规模设备时钟即北京时间；
-    后端收 aware 值按东八区取墙钟，见 1.2 技术设计§3 时区口径）。 */
+/** Date → ISO 8601 北京时刻：把时刻按东八区墙钟直拼——不随设备时区（走查#1
+    同族收口的写侧，2026-10-10 修复批 F2：此前拼设备本地墙钟再盖 +08:00 章，
+    非 +8 机器发布/改局整体漂移）。任意时区设备下「拨 19:00」都存成北京 19:00。 */
 export function toIso(d: Date): string {
   const p = (n: number): string => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}+08:00`;
+  const t = new Date(d.getTime() + 8 * 3600_000); // 时刻 + 8h = 北京墙钟（UTC 分量直读）
+  return `${t.getUTCFullYear()}-${p(t.getUTCMonth() + 1)}-${p(t.getUTCDate())}T${p(t.getUTCHours())}:${p(t.getUTCMinutes())}:${p(t.getUTCSeconds())}+08:00`;
+}
+
+/** 北京墙钟「y/m/d 日 + 距午夜分钟数」→ 时刻（toIso 的逆向伴：UTC = 北京 − 8h 的
+    定差算术，不随设备时区；日溢出滚动交给 Date.UTC，LaunchSheet 拨盘日列 n.d+i
+    直接喂）。拨盘「D 日 19:00」落成北京 19:00 的唯一源——锚是北京**午夜**，拨盘
+    分钟数正是距午夜，锚上加分钟才不漂（正午锚 + 午夜分钟 = +12h，2026-10-10
+    修复批 F2 的坑）。 */
+export function beijingAt(
+  y: number,
+  m: number,
+  d: number,
+  minutes: number,
+): Date {
+  return new Date(Date.UTC(y, m - 1, d) - 8 * 3600_000 + minutes * 60000);
 }
 
 /* 走查裁决（2026-10-06 #1）：ISO 展示一律北京墙钟，不随设备时区——
@@ -149,9 +145,9 @@ export function isoDayOff(t: string | Date): number {
 }
 
 /** ISO → 展示日段（今天/明天/后天/M.DD 周X，按北京墙钟）——真局卡面与详情 hero 小字共用 */
-export function isoDay(iso: string): string {
-  const p = isoParts(iso);
-  const off = isoDayOff(iso);
+export function isoDay(t: string | Date): string {
+  const p = isoParts(t);
+  const off = isoDayOff(t);
   if (off >= 0 && off <= 2) return ["今天", "明天", "后天"][off];
   return `${p.m}.${String(p.d).padStart(2, "0")} 周${"日一二三四五六"[p.wd]}`;
 }

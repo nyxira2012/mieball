@@ -36,7 +36,7 @@
                 v-for="pl in s.players"
                 :key="`${s.k}${pl.id}`"
                 class="player-unit"
-                @click="emit('profile', pl.id)"
+                @click="emit('person', pl.id)"
               >
                 <view class="avatar-wrap"
                   ><ChibiAvatar :chibi="pl.p.chibi" :size="44"
@@ -160,7 +160,9 @@ const emit = defineEmits<{
   (e: "cancel", courtId: number): void;
   (e: "autodeal"): void;
   (e: "pull"): void;
-  (e: "profile", id: number): void;
+  /** 点场上人 → 开点人抽屉（2026-10-10 修复批 F5：此前开档案卡，组织者对场上人
+      设/撤管理员无 UI 路径；点人抽屉头部即档案链接，档案卡只多一跳） */
+  (e: "person", id: number): void;
 }>();
 
 const liveStore = useLiveStore();

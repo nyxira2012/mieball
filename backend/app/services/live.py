@@ -113,31 +113,55 @@ class LiveBook(LiveSweepMixin):
                 .all()
             )
             for entry in formals:
-                # person_view 的对外名单一源：在册出昵称、注销者按占位名定格（1.1 隐私口径）
-                name = person_view(self.db.get(Account, entry.account_id))["nickname"]
-                self.db.add(
-                    LivePlayer(
-                        game_id=game_id,
-                        account_id=entry.account_id,
-                        display_name=name,
-                        check="absent",
-                    )
+                self._expand_formal(
+                    game_id=game_id, account_id=entry.account_id, bring=entry.bring
                 )
-                self._elo_row(entry.account_id)
-                for i in range(entry.bring):
-                    self.db.add(
-                        LivePlayer(
-                            game_id=game_id,
-                            account_id=None,
-                            # 访客命名沿前端 startLive：担保人昵称前两字 + 编号
-                            display_name=f"{name[:2]}的球友·{i + 1}",
-                            guest=True,
-                            guarantor_account_id=entry.account_id,
-                            check="absent",
-                        )
-                    )
             self.db.commit()
         return self.view(game_id=game_id, viewer_id=organizer_id)
+
+    def _expand_formal(self, *, game_id: int, account_id: int, bring: int) -> None:
+        """一条 formal 报名行 → 名册行（start 开账展开与 absorb_join 补册同口径，
+        两处行为必须逐字一致——改这里即同时改两处）：本人一行（首见建 EloRating
+        行）、bring N 展开成 N 行随行访客（挂担保人）；全员先记 absent。"""
+        # person_view 的对外名单一源：在册出昵称、注销者按占位名定格（1.1 隐私口径）
+        name = person_view(self.db.get(Account, account_id))["nickname"]
+        self.db.add(
+            LivePlayer(
+                game_id=game_id,
+                account_id=account_id,
+                display_name=name,
+                check="absent",
+            )
+        )
+        self._elo_row(account_id)
+        for i in range(bring):
+            self.db.add(
+                LivePlayer(
+                    game_id=game_id,
+                    account_id=None,
+                    # 访客命名沿前端 startLive：担保人昵称前两字 + 编号
+                    display_name=f"{name[:2]}的球友·{i + 1}",
+                    guest=True,
+                    guarantor_account_id=account_id,
+                    check="absent",
+                )
+            )
+
+    def absorb_join(self, *, game_id: int, account_id: int, bring: int) -> None:
+        """开账后报名的补册（局簿 join/候补转正 → 现场接线，2026-10-10 修复批）：
+        start 只展开开账那一刻的 formal 行，之后才 join 的人线上有 Entry、名册没
+        行——签到没靶（代办到场无从谈起），自签到只能走空降道背「空降」标。这里
+        按 start 同口径（_expand_formal）把本人行（含 bring 访客行）补进名册。
+        已有本人行（先空降后补报名/重放）不动；没开账不归这里管（留给 start
+        展开）。调用方持有局簿锁再进来——单向嵌套（现场从不回手碰局簿），无死锁
+        面；formal 与否由调用方把关。"""
+        with _write_lock:
+            state = self._state_or_none(game_id)
+            if state is None or self._account_row(game_id, account_id) is not None:
+                return
+            self._expand_formal(game_id=game_id, account_id=account_id, bring=bring)
+            self._bump_total(state)
+            self.db.commit()
 
     # ---- 记分链（批2）：发牌上报 → 记分/撤分/清零 → 待确认 → 确认/取消 ----
 

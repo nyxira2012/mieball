@@ -999,6 +999,33 @@ describe("setCheck（§4.2/4.3 报到四态：归一与队位归总账，发牌�
   });
 });
 
+describe("swapPlayers（§4.9 换人：出/入方向按名册真值内定——修复批 F8，此前页面传反必被后端拒）", () => {
+  async function withQueue() {
+    return apply(
+      vPlay(7, {
+        players: [
+          ...vPlay().players,
+          pl(105, 6, { name: "老赵", queue_pos: 0 }),
+        ],
+        queue: [105],
+      }),
+    );
+  }
+  it("候场者抽屉点场上靶：out=场上者、in=候场者（点的是候场老赵、选的是片上快攻）", async () => {
+    const { live, ui } = await withQueue();
+    liveApi.apiLiveSwap.mockResolvedValue(vPlay(8));
+    await live.swapPlayers(105, 102);
+    expect(liveApi.apiLiveSwap).toHaveBeenCalledWith(900, 102, 105, 7);
+    expect(ui.toastMsg).toBe("已换人 · 对阵重排");
+  });
+  it("场上者抽屉点候场靶：方向同式（out 仍是场上者，与谁开抽屉无关）", async () => {
+    const { live } = await withQueue();
+    liveApi.apiLiveSwap.mockResolvedValue(vPlay(8));
+    await live.swapPlayers(101, 105); // 点开的是场上的「我」
+    expect(liveApi.apiLiveSwap).toHaveBeenCalledWith(900, 101, 105, 7);
+  });
+});
+
 describe("togglePerson（§4.10 歇连：叠帐归总账，toast 按落定态拼）", () => {
   async function withQueue() {
     return apply(

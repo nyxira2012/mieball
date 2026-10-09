@@ -70,6 +70,7 @@ import type {
 import {
   activePlayers,
   courtCount,
+  courtOfPerson,
   courtSize,
   fillAllCourts,
   pById,
@@ -589,6 +590,8 @@ export const useLiveStore = defineStore("live", () => {
       );
       if (!ok) return null;
       ui.toast("空降 · 排到队尾");
+      // 空降即报到（§4.1 够一片的人数就上片）：与 setCheck 同权，别漏自动发牌
+      await maybeDeal(gameId);
       return "已签到 · 进候场区";
     }
     if (isArrived(p.check)) {
@@ -710,11 +713,16 @@ export const useLiveStore = defineStore("live", () => {
   }
 
   /** 换人（§4.9 球友开放，无 guard）：场上 outId 原位顶坑给候场 inId——
-      视图行走后端（out 回队尾、feed 留名、pending 片冻结拒收全在总账）；
-      本地行沿旧路（原位顶坑/资历注销） */
-  async function swapPlayers(outId: number, inId: number): Promise<void> {
+      视图行走后端（out 回队尾、feed 留名、pending 片冻结拒收全在总账）。
+      出/入方向在单一源按名册真值定死（2026-10-10 修复批 F8：此前页面把
+      候场者当 out 传，后端必拒「被换下的人不在场上」，换人整体不可用）——
+      两参语义 = 「把 A 与 B 互换」，谁在场上谁出、候场者进。 */
+  async function swapPlayers(selfId: number, targetId: number): Promise<void> {
     const L = live.value;
     if (!L) return;
+    const selfOn = courtOfPerson(L, selfId) !== undefined; // 场上真值单一源
+    const outId = selfOn ? selfId : targetId;
+    const inId = selfOn ? targetId : selfId;
     if (isViewRow(outId)) {
       const gid = L.g.id;
       await writeAction(
@@ -738,7 +746,7 @@ export const useLiveStore = defineStore("live", () => {
   ): Promise<void> {
     const L = live.value;
     if (!L || count <= 0 || !needFull() || !liveView.value) return;
-    await writeAction(
+    const ok = await writeAction(
       L.g.id,
       () =>
         apiLiveGuests(
@@ -748,6 +756,7 @@ export const useLiveStore = defineStore("live", () => {
         ),
       () => ui.toast(`已带 ${count} 位访客 · 进候场区`),
     );
+    if (ok) await maybeDeal(L.g.id); // 访客到场即带也报到（§4.1 够人就上片）
   }
 
   /** 改分制（2.6 批2 切真：apiLiveRules 收 scoring 写局列——分制复用局列，裁决 Q1）：

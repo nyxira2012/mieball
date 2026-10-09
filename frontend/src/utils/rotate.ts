@@ -14,6 +14,16 @@ export function usedCourts(live: LiveState): number {
   return live.courts.filter((c) => c.A.length || c.B.length).length;
 }
 
+/** 某名册行此刻在打哪片（A/B 任一半边含之；不在场上 → undefined）——换人出/入
+    定向（store.swapPlayers）与待确认片冻结判定（PersonSheet）共用的场上谓词。
+    （store 内另有按片号找片的 courtOf(courtId)，异名防混。） */
+export function courtOfPerson(
+  live: LiveState,
+  id: number,
+): LiveCourt | undefined {
+  return live.courts.find((c) => c.A.includes(id) || c.B.includes(id));
+}
+
 /* ───────── 2.4 引擎（多片并行 · 纯函数）─────────
    合同 docs/2.4 §4.5/§4.8：只管发牌（分边/队首取人/空片补满），Elo/history/round
    落账归 store 编排；结束对局后的回流补位（§4.4-4.7 五式）真值在后端

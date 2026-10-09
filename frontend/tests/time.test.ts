@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  dayToken,
+  beijingAt,
   durTxt,
   gameTime,
   isoDay,
   isoDayOff,
   isoHm,
   isoHmOrDash,
+  toIso,
   untilTxt,
 } from "@/utils/time";
 
@@ -53,15 +54,32 @@ describe("gameTime 组局改版（3.3）：后天与精确日期", () => {
   });
 });
 
-describe("dayToken（组局拨盘产物）", () => {
-  it("偏移 0/1/2 天 → 今天/明天/后天", () => {
-    expect(dayToken(new Date(2026, 9, 4))).toBe("今天");
-    expect(dayToken(new Date(2026, 9, 5))).toBe("明天");
-    expect(dayToken(new Date(2026, 9, 6))).toBe("后天");
+describe("toIso（修复批 F2：写侧同走北京墙钟，不随设备时区）", () => {
+  it("UTC 时刻按 +08:00 墙钟直拼（19:00Z → 北京次日 03:00）", () => {
+    expect(toIso(new Date("2026-10-08T11:00:00Z"))).toBe(
+      "2026-10-08T19:00:00+08:00",
+    );
+    expect(toIso(new Date("2026-10-08T19:00:00Z"))).toBe(
+      "2026-10-09T03:00:00+08:00", // 跨日不漂
+    );
   });
-  it("更远或过去 → 「M.DD 周X」（月不补零、日补零）", () => {
-    expect(dayToken(new Date(2026, 9, 7))).toBe("10.07 周三");
-    expect(dayToken(new Date(2026, 8, 30))).toBe("9.30 周三");
+  it("与读侧同历法：toIso → isoHm 往返还原同一墙钟", () => {
+    const d = new Date("2026-10-08T03:25:00Z");
+    expect(isoHm(toIso(d))).toBe("11:25");
+  });
+});
+
+describe("beijingAt（拨盘「D 日 HH:mm」→ 时刻，F2 修复批正午锚 +12h 漂移的坑）", () => {
+  it("午夜锚 + 拨盘分钟 = 北京当日该点（toIso 往返逐字）", () => {
+    expect(toIso(beijingAt(2026, 10, 6, 19 * 60))).toBe(
+      "2026-10-06T19:00:00+08:00",
+    );
+    expect(toIso(beijingAt(2026, 10, 6, 0))).toBe("2026-10-06T00:00:00+08:00");
+  });
+  it("日溢出滚动交给 Date.UTC（拨盘日列 n.d+i 跨月直喂）", () => {
+    expect(toIso(beijingAt(2026, 9, 30 + 2, 19 * 60))).toBe(
+      "2026-10-02T19:00:00+08:00",
+    );
   });
 });
 

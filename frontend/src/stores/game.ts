@@ -227,10 +227,10 @@ export const useGameStore = defineStore("game", () => {
   async function joinGame(id: number, bring: number): Promise<Game> {
     const g = toGame(await track(() => apiJoinGame(id, bring)));
     upsert(g);
-    // 整行装不下时后端落候补也 200——文案按返回名单分支（4.3 候补提示）
+    // 整行装不下时后端落候补也 200——文案按返回名单分支（4.3 候补提示，规格原句）
     ui.toast(
       g.my?.myEntry?.standing === "waitlist"
-        ? "已进候补栏 · 有人退出即刻递补"
+        ? "坑不够，已为你排候补"
         : bring
           ? `已加入 · 带了 ${bring} 人（共占 ${1 + bring} 坑）`
           : "已加入 · 这局进了「我的局」",
