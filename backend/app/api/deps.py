@@ -6,6 +6,7 @@ from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
 
 from ..core import errors
+from ..core.logs import ctx_account
 from ..db.models import Account
 from ..services.accounts import AccountBook
 from ..services.bills import BillBook
@@ -52,13 +53,20 @@ def bearer_token(authorization: str | None = Header(default=None)) -> str | None
 
 
 def current_account(
+    request: Request,
     token: str | None = Depends(bearer_token),
     book: AccountBook = Depends(get_account_book),
 ) -> Account | None:
     """钥匙无效/已作废/未带 → None（游客处理，不报错，docs/1.1 §B"认人"）。"""
     if not token:
         return None
-    return book.by_token(token)
+    account = book.by_token(token)
+    if account is not None:
+        # 日志贴「谁」标签（6.1 §B1）：ctx 供同上下文读取；deps 在线程池里跑、
+        # contextvars 拷贝回不到中间件，镜像一份到共享的 request.state
+        ctx_account.set(account.id)
+        request.state.log_account = account.id
+    return account
 
 
 def require_account(account: Account | None = Depends(current_account)) -> Account:

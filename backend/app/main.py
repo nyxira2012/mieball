@@ -14,6 +14,7 @@ from sqlalchemy import inspect, text
 from .api.routes import auth, bills, games, intents, live, stats, users
 from .core.config import Settings, get_settings
 from .core.errors import ApiError
+from .core.logs import AccessLogMiddleware, Journal
 from .db.engine import Base, make_session_factory
 
 API_VERSION = "0.2.0"
@@ -78,6 +79,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.session_factory = factory
 
+    # 访问日志挂最内层（先 add=最里）：CORS 预检在外层短路，不产生流水（spec 4.5 不添堵）
+    journal = Journal(settings.log_dir, keep_days=settings.keep_days)
+    app.add_middleware(AccessLogMiddleware, journal=journal, slow_ms=settings.slow_ms)
+
     # 开发期全放开：前端 12543 与手机真机（微信内 H5 走局域网 IP）都要能直连；上线收紧
     app.add_middleware(
         CORSMiddleware,
@@ -85,6 +90,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # 启动补做一次切换+清理检查，顺带留一行启动记号（spec 4.8 停机补做 / 4.10 启动几行）
+    journal.startup(f"service start v{API_VERSION}")
 
     @app.exception_handler(ApiError)
     async def on_api_error(_: Request, exc: ApiError) -> JSONResponse:

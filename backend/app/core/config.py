@@ -4,6 +4,7 @@
 短信走控制台假发送器（验证码打印到后端日志，对应评审 R1 的发送器抽象）。
 上线前必须设置 MIEBALL_PEPPER 与 MIEBALL_SMS_PROVIDER（见 docs/1.1 §B）。
 """
+
 from __future__ import annotations
 
 import os
@@ -22,6 +23,11 @@ class Settings:
     sms_provider: str
     # 全站每日短信总预算（防换号刷量把短信费刷光），超了明确报"暂时发不出"
     sms_daily_budget: int
+    # 6.1 日志地基：目录 / 慢回应警告阈值 ms / 文件保留天数（环境变量不带
+    # MIEBALL_ 前缀：LOG_DIR / SLOW_MS / KEEP_DAYS；行为机制见 core/logs.py）
+    log_dir: str = "./logs"
+    slow_ms: int = 1000
+    keep_days: int = 14
 
 
 @lru_cache(maxsize=1)
@@ -35,4 +41,7 @@ def get_settings() -> Settings:
         pepper=pepper,
         sms_provider=os.environ.get("MIEBALL_SMS_PROVIDER", "console"),
         sms_daily_budget=int(os.environ.get("MIEBALL_SMS_DAILY_BUDGET", "200")),
+        log_dir=os.environ.get("LOG_DIR", "./logs"),
+        slow_ms=int(os.environ.get("SLOW_MS", "1000")),
+        keep_days=int(os.environ.get("KEEP_DAYS", "14")),
     )
