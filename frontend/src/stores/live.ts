@@ -10,6 +10,10 @@
    自动开 settleWindow（upload 模式），打完 uploadSettle 先传先落（后端
    settle_recorded=有人先传了不同分：对表+透传服务端句+本地账清零关窗），全权
    overwriteSettle 下一场落账前改分重落。
+   批3（走查缺陷：窗跨视图代次推进，洗新的 base 号把旧场账记成新一场战报）：
+   upload 窗开窗锚该片 court_seq（courtSeqAnchor）——上传前闸比对现视图（越过锚
+   不发请求走 settle_recorded 同款出口）+ applyLiveView 检测锚过期自动关窗；
+   overwrite 窗不锚（操作的是「上一场落账行」，过期由后端片号闸兜底）。
    结算窗单一源 settleWindow（一次一扇：upload=上传结算谁都能传 / overwrite=改分
    重落全权；noRedeal 由入口传——清扫清单开窗传 true）：自动到分与手动入口
    （场卡「结束对局」/残局清单「上传比分」）共用 openSettleWindow（已有窗占位
@@ -602,12 +606,30 @@ export const useLiveStore = defineStore("live", () => {
 
   /** 本地结算窗（一次一扇，全站唯一窗态）：mode upload=上传结算（谁都能传）/
       overwrite=改分重落（全权）；noRedeal 由入口传——清扫清单「上传比分」传 true。
+      courtSeqAnchor（批3）：upload 窗开窗时锚下该片代次（视图 court_seq 真值）——
+      窗开着跨视图代次推进（这场已被别人落账/该片重发）时，上传前闸与视图落地的
+      自动关窗都认它，旧场的账发不成新一场；overwrite 不锚 null（它操作的是「上一场
+      落账行」latestMatchOf，锚片代次反而会被改分重落误杀，过期由后端片号闸兜底）。
       旧 settling（视图 pending 驱动按片多值）窗族已随批2 会话B 退役删除，本窗独苗 */
   const settleWindow = ref<{
     courtId: number;
     noRedeal: boolean;
     mode: "upload" | "overwrite";
+    courtSeqAnchor: number | null;
   } | null>(null);
+
+  /** 窗锚过期判定（批3 单一源）：upload 窗锚的片代次已被这版视图推进＝开窗锚的
+      那场已收场——旧窗的账再传就是新一场的战报（后端两级号闸认不出洗新的号）；
+      anchor null（overwrite/视图已无该片行）不判过期，后端闸兜底 */
+  function anchorStale(
+    w: { courtId: number; courtSeqAnchor: number | null },
+    v: LiveView,
+  ): boolean {
+    return (
+      w.courtSeqAnchor != null &&
+      v.courtSeqs[courtNoOf(w.courtId)] !== w.courtSeqAnchor
+    );
+  }
 
   /** 开窗（一次一扇的闸收在这里：已有窗占位一律不重开——自动开窗与手动入口共用） */
   function openSettleWindow(
@@ -616,7 +638,15 @@ export const useLiveStore = defineStore("live", () => {
     noRedeal = false,
   ): void {
     if (settleWindow.value) return;
-    settleWindow.value = { courtId, noRedeal, mode };
+    settleWindow.value = {
+      courtId,
+      noRedeal,
+      mode,
+      courtSeqAnchor:
+        mode === "upload"
+          ? (liveView.value?.courtSeqs[courtNoOf(courtId)] ?? null)
+          : null,
+    };
   }
 
   function closeSettleWindow(): void {
@@ -665,8 +695,9 @@ export const useLiveStore = defineStore("live", () => {
   /** 上传结算（先传先落）：把这片打完的本地账传后端落账（一本账原子=战报+积分+回流
       补位），任意到场者可传。不走 writeAction：settle_recorded 须先于通用 409「现场
       已更新」分流特判（writeAction 吞错只回 boolean，错误体里的已记比分句与视图够
-      不着），其余错误仍走 handleWriteError 共件。幂等闸：窗没开不发（真值闸在后端，
-      同分同位重放回 200） */
+      不着），其余错误仍走 handleWriteError 共件。幂等闸：窗没开不发；上传前闸（批3）：
+      窗锚的片代次已被视图推进（轮询把 base 号洗新）不发请求——照发会把旧场的账记成
+      新一场的战报，后端两级号闸拦不住，走 settle_recorded 同款出口本地拦下 */
   async function uploadSettle(
     courtId: number,
     winA: boolean,
@@ -677,6 +708,21 @@ export const useLiveStore = defineStore("live", () => {
     if (settleWindow.value?.courtId !== courtId) return;
     const L = live.value;
     if (!L || !liveView.value) return;
+    const w = settleWindow.value;
+    // 上传前闸（批3）：现视图已新（锚过期的成因就是视图推进过）无需对表直用——
+    // 吃该片最新落账行拼服务端 settle_recorded 同款句；查无行（该片被取消重开等）
+    // 走通用句。不发请求、清零关窗
+    if (anchorStale(w, liveView.value)) {
+      const m = latestMatchOf(liveView.value, courtNoOf(courtId));
+      ui.toast(
+        m
+          ? `已按 ${m.sa}:${m.sb} 记账 · 有异议找组织者`
+          : "现场已更新 · 这场已有人记账",
+      );
+      resetLocal(courtId);
+      closeSettleWindow();
+      return;
+    }
     const no = courtNoOf(courtId);
     const s = seqs(no);
     try {
@@ -689,19 +735,21 @@ export const useLiveStore = defineStore("live", () => {
         baseTotalSeq: s.baseTotalSeq,
         baseCourtSeq: s.baseCourtSeq,
       });
-      applyLiveView(toLiveView(raw));
+      // 先清账关窗再落视图：响应视图的片代次必越过窗锚（自家落账也 +1），别让
+      // applyLiveView 的自动关窗抢在「积分落账」前弹「这场已有人记账」
       resetLocal(courtId);
       closeSettleWindow();
+      applyLiveView(toLiveView(raw));
       ui.toast(noRedeal ? "积分落账 · 残局已清" : "积分落账 · 下一场已排好");
     } catch (e) {
       if (e instanceof ApiError && e.code === "settle_recorded") {
         // 传分冲突=有人先传先落了别的分，不当现场旧处理：对表响应视图 +
         // 透传服务端句（「已按 X:Y 记账 · 有异议找组织者」句尾服务端已带全）+
-        // 本机账对齐清零关窗
-        if (e.view) applyLiveView(toLiveView(e.view));
-        ui.toast(errText(e));
+        // 本机账对齐清零关窗（先清关再落视图，同上不让自动关窗抢 toast）
         resetLocal(courtId);
         closeSettleWindow();
+        if (e.view) applyLiveView(toLiveView(e.view));
+        ui.toast(errText(e));
         return;
       }
       if (!handleWriteError(e) && liveView.value) applyLiveView(liveView.value); // 回滚本地预变
@@ -1094,6 +1142,15 @@ export const useLiveStore = defineStore("live", () => {
       L.courts.push(mkCourt(L, L.courts.length)); // 视图片行缺额补空片（差人卡口径）
     live.value = L;
     liveView.value = v; // recap 纯派生于 liveView，无需另行同步（结算窗 settleWindow 与视图无关）
+    // 视图推进自动关窗（批3）：upload 窗锚的片代次被这版视图推进＝窗锚的那场已收场
+    // （有人落账/该片重发）——旧比分窗挂着误导，关窗+本地账清零是「现场已变化」的
+    // 诚实呈现（uploadSettle 自家成功路先关窗才落视图，不会走到这里抢 toast）
+    const w = settleWindow.value;
+    if (w && anchorStale(w, v)) {
+      settleWindow.value = null;
+      resetLocal(w.courtId);
+      ui.toast("现场已更新 · 这场已有人记账");
+    }
     if (v.ended) stopPolling(); // 散场即回看（§4.10）：定格视图派生 recap，轮询一并停（远端散场同路）
   }
 
