@@ -26,7 +26,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from ..core import clock, errors
+from ..core import clock, errors, logs
 from ..db.models import (
     Account,
     DuprDetail,
@@ -977,6 +977,14 @@ class LiveBook(LiveSweepMixin):
         ):
             return
         state.admins = [*(state.admins or []), row.account_id]
+        # 服务层唯一审计埋点（6.1 §C1）：授予发生在 check/dropin 路由看不见的这里，
+        # 不补这笔则「设管理员」审计有洞；操作人=被自动授予的首签人
+        logs.audit(
+            "live_set_admin",
+            game_id=game.id,
+            account_id=row.account_id,
+            detail="auto_first_checkin",
+        )
         self._feed_push(
             state,
             {

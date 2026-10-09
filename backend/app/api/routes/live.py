@@ -14,6 +14,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from ...core.logs import audit
 from ...db.models import Account
 from ...services.live import LiveBook
 from ..deps import current_account, get_live_book, require_account
@@ -139,7 +140,14 @@ def live_start(
     account: Account = Depends(require_account),
     book: LiveBook = Depends(get_live_book),
 ):
-    return book.start(game_id=game_id, organizer_id=account.id)
+    out = book.start(game_id=game_id, organizer_id=account.id)
+    audit(
+        "live_start",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"开账 {len(out['players'])} 人在册",
+    )
+    return out
 
 
 @router.post("/deal")
@@ -149,12 +157,19 @@ def live_deal(
     account: Account = Depends(require_account),
     book: LiveBook = Depends(get_live_book),
 ):
-    return book.deal(
+    out = book.deal(
         game_id=game_id,
         actor_id=account.id,
         courts=[c.model_dump() for c in body.courts],
         base_total_seq=body.base_total_seq,
     )
+    audit(
+        "live_deal",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"{len(body.courts)} 片发牌",
+    )
+    return out
 
 
 @router.post("/settle-confirm")
@@ -164,7 +179,7 @@ def live_settle_confirm(
     account: Account = Depends(require_account),
     book: LiveBook = Depends(get_live_book),
 ):
-    return book.settle_confirm(
+    out = book.settle_confirm(
         game_id=game_id,
         actor_id=account.id,
         court_no=body.court_no,
@@ -175,6 +190,13 @@ def live_settle_confirm(
         base_total_seq=body.base_total_seq,
         base_court_seq=body.base_court_seq,
     )
+    audit(
+        "live_settle_confirm",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"片 {body.court_no} 定格 {body.score_a}:{body.score_b}",
+    )
+    return out
 
 
 @router.post("/settle-overwrite")
@@ -184,7 +206,7 @@ def live_settle_overwrite(
     account: Account = Depends(require_account),
     book: LiveBook = Depends(get_live_book),
 ):
-    return book.settle_overwrite(
+    out = book.settle_overwrite(
         game_id=game_id,
         actor_id=account.id,
         court_no=body.court_no,
@@ -194,6 +216,13 @@ def live_settle_overwrite(
         base_total_seq=body.base_total_seq,
         base_court_seq=body.base_court_seq,
     )
+    audit(
+        "live_settle_overwrite",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"片 {body.court_no} 改判 {body.score_a}:{body.score_b}",
+    )
+    return out
 
 
 @router.post("/cancel")
@@ -203,13 +232,20 @@ def live_cancel(
     account: Account = Depends(require_account),
     book: LiveBook = Depends(get_live_book),
 ):
-    return book.cancel(
+    out = book.cancel(
         game_id=game_id,
         actor_id=account.id,
         court_no=body.court_no,
         base_total_seq=body.base_total_seq,
         base_court_seq=body.base_court_seq,
     )
+    audit(
+        "live_cancel",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"取消 片 {body.court_no}",
+    )
+    return out
 
 
 @router.post("/check")
@@ -219,13 +255,20 @@ def live_check(
     account: Account = Depends(require_account),
     book: LiveBook = Depends(get_live_book),
 ):
-    return book.check(
+    out = book.check(
         game_id=game_id,
         actor_id=account.id,
         player_id=body.player_id,
         check=body.check,
         base_total_seq=body.base_total_seq,
     )
+    audit(
+        "live_check",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"{body.check} 名册行 {body.player_id}",
+    )
+    return out
 
 
 @router.post("/swap")
@@ -282,12 +325,19 @@ def live_set_admin(
     account: Account = Depends(require_account),
     book: LiveBook = Depends(get_live_book),
 ):
-    return book.set_admin(
+    out = book.set_admin(
         game_id=game_id,
         actor_id=account.id,
         player_id=body.player_id,
         base_total_seq=body.base_total_seq,
     )
+    audit(
+        "live_set_admin",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"封管理员 名册行 {body.player_id}",
+    )
+    return out
 
 
 @router.post("/unset-admin")
@@ -297,12 +347,19 @@ def live_unset_admin(
     account: Account = Depends(require_account),
     book: LiveBook = Depends(get_live_book),
 ):
-    return book.unset_admin(
+    out = book.unset_admin(
         game_id=game_id,
         actor_id=account.id,
         player_id=body.player_id,
         base_total_seq=body.base_total_seq,
     )
+    audit(
+        "live_unset_admin",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"撤管理员 名册行 {body.player_id}",
+    )
+    return out
 
 
 @router.post("/dropin")
@@ -312,11 +369,13 @@ def live_dropin(
     account: Account = Depends(require_account),
     book: LiveBook = Depends(get_live_book),
 ):
-    return book.dropin(
+    out = book.dropin(
         game_id=game_id,
         actor_id=account.id,
         base_total_seq=body.base_total_seq,
     )
+    audit("live_dropin", game_id=game_id, account_id=account.id, detail="空降报到")
+    return out
 
 
 @router.post("/guests")
@@ -326,7 +385,7 @@ def live_guests(
     account: Account = Depends(require_account),
     book: LiveBook = Depends(get_live_book),
 ):
-    return book.guests(
+    out = book.guests(
         game_id=game_id,
         actor_id=account.id,
         guarantor_id=body.guarantor_id,
@@ -334,6 +393,13 @@ def live_guests(
         name=body.name,
         base_total_seq=body.base_total_seq,
     )
+    audit(
+        "live_guests",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"带 {body.count} 访客 挂名册行 {body.guarantor_id}",
+    )
+    return out
 
 
 @router.post("/sweep-cancel-all")
@@ -343,11 +409,18 @@ def live_sweep_cancel_all(
     account: Account = Depends(require_account),
     book: LiveBook = Depends(get_live_book),
 ):
-    return book.sweep_cancel_all(
+    out = book.sweep_cancel_all(
         game_id=game_id,
         actor_id=account.id,
         base_total_seq=body.base_total_seq,
     )
+    audit(
+        "live_sweep_cancel_all",
+        game_id=game_id,
+        account_id=account.id,
+        detail="未完对局一键全取消",
+    )
+    return out
 
 
 @router.post("/end")
@@ -357,8 +430,15 @@ def live_end(
     account: Account = Depends(require_account),
     book: LiveBook = Depends(get_live_book),
 ):
-    return book.end(
+    out = book.end(
         game_id=game_id,
         actor_id=account.id,
         base_total_seq=body.base_total_seq,
     )
+    audit(
+        "live_end",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"散场 {out['ended_at']}",
+    )
+    return out
