@@ -246,7 +246,14 @@ def test_rated_after_five_confirmed_games(client: TestClient):
         finally:
             db.close()
 
-    assert card() == {"rating": 2.5, "provisional": True, "games": 0}
+    assert card() == {
+        "rating": 2.5,
+        "provisional": True,
+        "games": 0,
+        "wins": 0,
+        "last5": [],
+        "month_net": 0,
+    }
 
     v = deal_one(client, env)
     seen = {0: True}
@@ -263,6 +270,9 @@ def test_rated_after_five_confirmed_games(client: TestClient):
     # 满 5 场定级（两态，1.4 裁决 5）；第 4 场时仍属未定级
     assert c["games"] == 5 and c["provisional"] is False
     assert seen[4] is True
+    assert c["wins"] == 1
+    assert len(c["last5"]) == 5
+    assert c["month_net"] == c["wins"] - (c["games"] - c["wins"])
 
 
 def test_window_keeps_last_30_details(client: TestClient):

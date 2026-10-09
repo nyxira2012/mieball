@@ -104,16 +104,57 @@ class StatsLedger:
         return out
 
     def card(self, account_id: int) -> dict:
-        """名片三件套：{rating, provisional(=未定级，明细不足 5 场), games}。"""
+        """名片数据：{rating, provisional(=未定级，明细不足 5 场), games, wins, last5, month_net}。"""
         row = self.db.execute(
             select(DuprRating).where(DuprRating.account_id == account_id)
         ).scalar_one_or_none()
         games = row.games if row else 0
         rating = row.rating if row else self.pairing_rating(account_id)
+        if games == 0:
+            return {
+                "rating": rating,
+                "provisional": True,
+                "games": 0,
+                "wins": 0,
+                "last5": [],
+                "month_net": 0,
+            }
+
+        wins = self.db.execute(
+            select(func.count())
+            .select_from(DuprDetail)
+            .where(DuprDetail.account_id == account_id, DuprDetail.won.is_(True))
+        ).scalar_one()
+
+        last5_wons = list(
+            self.db.execute(
+                select(DuprDetail.won)
+                .where(DuprDetail.account_id == account_id)
+                .order_by(DuprDetail.id.desc())
+                .limit(5)
+            ).scalars()
+        )[::-1]
+        last5 = ["W" if w else "L" for w in last5_wons]
+
+        n = clock.now()
+        month_start = n.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        month_wons = list(
+            self.db.execute(
+                select(DuprDetail.won).where(
+                    DuprDetail.account_id == account_id,
+                    DuprDetail.ended_at >= month_start,
+                )
+            ).scalars()
+        )
+        month_net = sum(1 if w else -1 for w in month_wons)
+
         return {
             "rating": rating,
             "provisional": games < dupr.RATED_GAMES,
             "games": games,
+            "wins": wins,
+            "last5": last5,
+            "month_net": month_net,
         }
 
     def _recompute(self, account_id: int) -> None:

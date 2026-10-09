@@ -68,7 +68,10 @@
       </view>
       <view class="md-tools">
         <text class="edit">比分可点改</text>
-        <text v-if="full" class="md-undo" @click="undoInWindow">撤一分</text>
+        <view v-if="full" class="md-undo-btn" @click="undoInWindow">
+          <text class="undo-ic">⤺</text>
+          <text>撤一分</text>
+        </view>
       </view>
 
       <!-- ±积分预览（胜队在前；平分未点胜方时不显示）；访客带「不计积分」标识（§4.11） -->
@@ -421,27 +424,43 @@ function onConfirm(): void {
   opacity: 0.35;
   pointer-events: none;
 }
-/* 比分注 + 窗内撤一分（§4.5，仅全权）：撤走后端 undo、两路关留在响应视图 */
+/* 比分注 + 窗内撤一分（§4.5，仅全权）：撤一分实体按钮提显眼 */
 .md-tools {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 12px;
   margin-bottom: 12px;
 }
 .edit {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--dim);
 }
-.md-undo {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--dim);
-  cursor: pointer;
-  text-decoration: underline dotted rgba(245, 241, 232, 0.3);
-}
-.md-undo:active {
+.md-undo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 212, 0, 0.35);
+  background: rgba(255, 212, 0, 0.08);
   color: var(--lemon);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.md-undo-btn:active {
+  background: rgba(255, 212, 0, 0.22);
+  border-color: var(--lemon);
+  transform: scale(0.96);
+}
+.undo-ic {
+  font-size: 13px;
+  line-height: 1;
 }
 
 /* ---------- ±积分预览行 ---------- */

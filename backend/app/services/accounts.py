@@ -236,6 +236,9 @@ class AccountBook:
             "dupr_rating": dupr_card["rating"],
             "dupr_provisional": dupr_card["provisional"],
             "dupr_games": dupr_card["games"],
+            "dupr_wins": dupr_card["wins"],
+            "dupr_last5": dupr_card["last5"],
+            "dupr_month_net": dupr_card["month_net"],
         }
         if viewer in ("self", "same_game") and account.phone:
             out["phone_tail"] = account.phone[-4:]

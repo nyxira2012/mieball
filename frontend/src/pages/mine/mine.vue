@@ -138,10 +138,11 @@ const me = computed(() => user.me);
 const meName = computed(() =>
   me.value.name === "我" ? "我的球场小人" : me.value.name,
 );
-/** alpha:1938 战绩行：N 场 · N 胜 · 胜率 N% */
-const record = computed(
-  () =>
-    `${me.value.play} 场 · ${me.value.win} 胜 · 胜率 ${Math.round((me.value.win / me.value.play) * 100)}%`,
+/** alpha:1938 战绩行：N 场 · N 胜 · 胜率 N%（0 场人话守卫） */
+const record = computed(() =>
+  me.value.play === 0
+    ? "还没开张"
+    : `${me.value.play} 场 · ${me.value.win} 胜 · 胜率 ${Math.round((me.value.win / me.value.play) * 100)}%`,
 );
 /** DUPR chip 的档名（utils/elo.ts duprTier；未填按 3.0 起步档） */
 const meTier = computed(() => duprTier(me.value.dupr ?? GUEST_DUPR));
@@ -150,9 +151,9 @@ const meTier = computed(() => duprTier(me.value.dupr ?? GUEST_DUPR));
 function go(url: string): void {
   uni.navigateTo({ url });
 }
-/** 档案卡弹层 = 别人看到的完整档案卡（userId 0 = 我） */
+/** 档案卡弹层 = 别人看到的完整档案卡（传入当前用户真实 id） */
 function onProfileCard(): void {
-  ui.openSheet({ type: "profile", userId: 0 });
+  ui.openSheet({ type: "profile", userId: me.value.id });
 }
 /** 退出/注销走确认弹层（5.1 弹窗：两步/守卫逻辑在 AccountSheet） */
 function onLogout(): void {

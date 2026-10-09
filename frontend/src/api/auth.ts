@@ -14,6 +14,9 @@ export interface AccountView {
   dupr_rating: number; // 1.4 DUPR 核心轨派生分（未定级=起步分，访客档语义 3.0）
   dupr_provisional: boolean; // 未定级（已结算 <5 场）
   dupr_games: number; // 已结算场数
+  dupr_wins: number; // 已结算胜场数
+  dupr_last5?: string[]; // 近 5 场胜负（时间正序）
+  dupr_month_net?: number; // 本月净胜场
   deactivated: boolean;
   phone?: string;
   phone_tail?: string;
