@@ -5,18 +5,24 @@
    并把本地预变回滚成所持视图。
    发牌算法仍在前端 rotate.ts（总账把关）：到场/取消/开账后够人的空片本地算完
    apiLiveDeal 上报；「排下一场」由确认响应视图驱动（回流补位真值在后端）。
-   积分不在前端算（settleElo 已随 2026-10-08 收归后端退役）：确认窗 ±预演吃视图
-   elo_preview 双分支（预演=落账），确认响应的 elo_rows 随视图持有。
-   待确认窗按片多值：settling Record（courtId→来源）由视图 pending 驱动，
-   settlingCourtId=当前应渲染窗的片（一次一扇、片号最小者顶上）。窗禁遮罩关
-   （批5b 验收官销号，§4.3-2 出口全在窗内）：store 不设前端关窗动作，窗只随
-   视图 pending 起落——确认/清零/取消成功、auto 窗撤到分线下，响应视图关窗；
-   遮罩是否可关是纯模板行为（EndSettleModal 遮罩无点击事件），类型层测不了。
+   记分本地化（2026-10-09 拍板，批2）：点比分不联网——各手机各记各的本地账
+   （localScores，per court {sa,sb,last} 内存态，刷新即失）；到分 reachedLocal 命中
+   自动开 settleWindow（upload 模式），打完 uploadSettle 先传先落（后端
+   settle_recorded=有人先传了不同分：对表+透传服务端句+本地账清零关窗），全权
+   overwriteSettle 下一场落账前改分重落。
+   结算窗单一源 settleWindow（一次一扇：upload=上传结算谁都能传 / overwrite=改分
+   重落全权；noRedeal 由入口传——清扫清单开窗传 true）：自动到分与手动入口
+   （场卡「结束对局」/残局清单「上传比分」）共用 openSettleWindow（已有窗占位
+   不重开），「暂不结算」=closeSettleWindow 保本地分接着打；遮罩不可关的旧裁决
+   仍成立（关窗丢待上传的账），非上传出口只有暂不结算。旧 settling/confirmSettle
+   视图 pending 窗族已随批2 会话B 消费端切换退役删除。
+   积分不在前端算（settleElo 已随 2026-10-08 收归后端退役）：结算窗 ±预演吃视图
+   elo_preview 双分支（预演=落账），落账响应的 elo_rows 随视图持有。
    散场走清扫链（§4.9，批6 切真）：startSweep 进清扫态（拉最新视图判定残局，
-   SweepSheet 由 live.vue 编排）→ 逐片 confirmSettle(noRedeal)/cancelMatch(noRedeal)/
-   sweepCancelAll → 全清 endGame（apiLiveEnd；响应 ended 视图即回看——recap 落地、
-   轮询停、sealGate 收权写「球局已结束」）。清扫里的确认/取消照常落账但 no_redeal=true：
-   不排下一场不补位（红线）。
+   SweepSheet 由 live.vue 编排）→ 逐片 uploadSettle(noRedeal——清单开窗即带)/
+   cancelMatch(noRedeal)/sweepCancelAll → 全清 endGame（apiLiveEnd；响应 ended 视图
+   即回看——recap 落地、轮询停、sealGate 收权写「球局已结束」）。清扫里的上传/取消
+   照常落账但 no_redeal=true：不排下一场不补位（红线）。
    原遗留本地路三动作已收口（2026-10-08 2.6 裁决）：subFirst/removeFromRoster
    退役删除（作废重排已覆盖替补位、防幽灵统一走代办早退）、setRuleScore 切真走
    apiLiveRules（scoring 写局列）；setCheck/togglePerson/swapPlayers 对视图外行的
@@ -26,28 +32,25 @@
    账号口径（isAdmin/myRound）按 view.players.accountId 匹配 U.me；身份两旗
    （isOrganizer/isFullPower）视图身份块直读（2026-10-08 起后端下发，
    批4a 的 viewerCtx 本地拼装已退役）。 */
-import { computed, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import { defineStore } from "pinia";
 import { U } from "@/api";
 import { ApiError, errText } from "@/api/http";
 import {
   apiLiveCancel,
   apiLiveCheck,
-  apiLiveClear,
   apiLiveDeal,
   apiLiveDropIn,
   apiLiveEnd,
   apiLiveGuests,
-  apiLivePoint,
   apiLiveRules,
   apiLiveSetAdmin,
   apiLiveSettleConfirm,
-  apiLiveSettleOpen,
+  apiLiveSettleOverwrite,
   apiLiveStart,
   apiLiveSweepCancelAll,
   apiLiveSwap,
   apiLiveTempo,
-  apiLiveUndo,
   apiLiveUnsetAdmin,
   apiLiveView,
   toLiveView,
@@ -63,7 +66,7 @@ import type {
   LiveState,
   LiveView,
   LiveViewApi,
-  PendingOrigin,
+  MatchReport,
   RotationRules,
   User,
 } from "@/api/types";
@@ -74,6 +77,7 @@ import {
   courtSize,
   fillAllCourts,
   pById,
+  reachedLocal,
   usedCourts,
 } from "@/utils/rotate";
 import { ELO_INIT, GUEST_DUPR } from "@/utils/elo";
@@ -109,6 +113,18 @@ export function canPickWinner(
   side: "a" | "b",
 ): boolean {
   return side === "a" ? sa >= sb : sb >= sa;
+}
+
+/** 该片最新落账战报（视图 matches 按结束序，取同片最后一行）：改分入口的显示
+    （场卡「上一场 X:Y · 改分」）与改分窗预填（EndSettleModal）共用同一真值 */
+export function latestMatchOf(
+  v: LiveView | null,
+  courtNo: number,
+): MatchReport | undefined {
+  const ms = v?.matches ?? [];
+  for (let i = ms.length - 1; i >= 0; i--)
+    if (ms[i]!.courtNo === courtNo) return ms[i]!;
+  return undefined;
 }
 
 /** 总账结构化事件句 → 中文句（契约§2 后端不产文案；句式与 2.2 动作处留痕同款）：
@@ -178,37 +194,6 @@ export const useLiveStore = defineStore("live", () => {
   const recap = computed<LiveView | null>(() =>
     liveView.value?.ended ? liveView.value : null,
   );
-
-  /** 待确认窗按片多值（§4.3 多片同待确认是正常情况）：courtId（0 起）→ 窗来源；
-      纯派生于视图 courts[].status==='pending'——pending 即有窗（窗禁遮罩关，§4.3-2）：
-      片退出 pending 窗随之关、再 pending 窗再开，无「关了不重开」的态（原 hide 位
-      机械随遮罩禁关一并删，SC6 卫生） */
-  const settling = computed<Record<number, { origin: PendingOrigin }>>(() => {
-    const r: Record<number, { origin: PendingOrigin }> = {};
-    for (const c of liveView.value?.courts ?? [])
-      if (c.status === "pending")
-        r[c.courtNo - 1] = { origin: c.pendingOrigin ?? "manual" };
-    return r;
-  });
-
-  /** 当前应渲染确认窗的片（§4.3 多片各弹各的互不等待；窗一次一扇——片号最小者顶上，
-      确认/关窗后下一片接上；settlingOne 降级单值随批5b 按片化退役） */
-  const settlingCourtId = computed<number | null>(
-    () =>
-      Object.keys(settling.value)
-        .map(Number)
-        .filter((id) => settling.value[id])
-        .sort((a, b) => a - b)[0] ?? null,
-  );
-
-  /** 片待确认中（§4.3 单片冻结呈现的单一源）：读视图片状态——与 settling 窗位同源
-      同步（pending 即有窗、禁遮罩关），呈现不必跟窗位走 */
-  function isPending(courtId: number): boolean {
-    return (
-      liveView.value?.courts.find((c) => c.courtNo === courtNoOf(courtId))
-        ?.status === "pending"
-    );
-  }
 
   /** 我的名册行 id（键位修正：view.players 按 accountId 匹配 U.me；查无/无视图回落
       账号 id 兼本地路——mock 时代行 id 即账号 id） */
@@ -602,75 +587,135 @@ export const useLiveStore = defineStore("live", () => {
     return "已签到 · 进候场区";
   }
 
-  /* ─────── 记分链（片级写，base 号带双号） ─────── */
+  /* ─────── 记分链（记分本地化：点比分不联网，本地账 + 上传结算） ─────── */
 
-  /** 得分（§4.1）：后端落账时当即判到分——够线该片转待确认(origin='auto')，
-      响应视图驱动 settling；待确认片冻结（§4.3，后端 court_frozen 兜底） */
-  async function point(courtId: number, side: "a" | "b"): Promise<void> {
-    if (settling.value[courtId]) return;
+  /** 本地账（per court {sa, sb, last}）：各手机各记各的比分——纯内存态，不进协议
+      不进存储（刷新即失，v1 非目标）；last=本机最后得分方（undo 撤分基准） */
+  const localScores = reactive<
+    Record<number, { sa: number; sb: number; last: "a" | "b" | null }>
+  >({});
+
+  /** 本地账清零（上传落账/冲突对齐后归零，下一场从 0:0 起记） */
+  function resetLocal(courtId: number): void {
+    localScores[courtId] = { sa: 0, sb: 0, last: null };
+  }
+
+  /** 本地结算窗（一次一扇，全站唯一窗态）：mode upload=上传结算（谁都能传）/
+      overwrite=改分重落（全权）；noRedeal 由入口传——清扫清单「上传比分」传 true。
+      旧 settling（视图 pending 驱动按片多值）窗族已随批2 会话B 退役删除，本窗独苗 */
+  const settleWindow = ref<{
+    courtId: number;
+    noRedeal: boolean;
+    mode: "upload" | "overwrite";
+  } | null>(null);
+
+  /** 开窗（一次一扇的闸收在这里：已有窗占位一律不重开——自动开窗与手动入口共用） */
+  function openSettleWindow(
+    courtId: number,
+    mode: "upload" | "overwrite",
+    noRedeal = false,
+  ): void {
+    if (settleWindow.value) return;
+    settleWindow.value = { courtId, noRedeal, mode };
+  }
+
+  function closeSettleWindow(): void {
+    settleWindow.value = null;
+  }
+
+  /** 得分（点比分不联网）：只写本机这笔账（比分即反馈，无 toast 无 seq）；到分
+      （reachedLocal 与后端判分同式）→ 自动开上传窗。scoring 吃片分制快照，
+      缺快照（本地补的空片行）回落全局现行分制（mkCourt 同款兜底口径） */
+  function point(courtId: number, side: "a" | "b"): void {
     const L = live.value;
     const c = courtOf(courtId);
-    if (!L || !c || (!c.A.length && !c.B.length) || !liveView.value) return;
-    const no = courtNoOf(courtId);
-    const s = seqs(no);
-    await writeAction(L.g.id, () =>
-      apiLivePoint(L.g.id, no, side, s.baseTotalSeq, s.baseCourtSeq),
-    );
+    if (!L || !c || (!c.A.length && !c.B.length)) return;
+    const acc = (localScores[courtId] ??= { sa: 0, sb: 0, last: null });
+    if (side === "a") {
+      acc.sa += 1;
+      acc.last = "a";
+    } else {
+      acc.sb += 1;
+      acc.last = "b";
+    }
+    if (reachedLocal(acc.sa, acc.sb, c.scoring ?? L.g.scoring))
+      openSettleWindow(courtId, "upload");
   }
 
-  /** 误记撤回一分（§4.5）：只撤该片最后得分方那 1 分——auto 窗撤到分线下自动关窗
-      回在打、manual 窗只改比分不关窗（两路都由响应视图落定）；卡上入口对 pending 片
-      由 UI 冻结（§4.3），窗内撤分（批5b UI）与在打撤走同一动作 */
-  async function undoPoint(courtId: number): Promise<void> {
-    const L = live.value;
-    const c = courtOf(courtId);
-    if (!L || !c || !liveView.value) return;
-    const no = courtNoOf(courtId);
-    const s = seqs(no);
-    await writeAction(L.g.id, () =>
-      apiLiveUndo(L.g.id, no, s.baseTotalSeq, s.baseCourtSeq),
-    );
+  /** 误记撤回一分：按本机账的 last 撤最后得分方那 1 分；无账/无分静默（last 只记
+      一手，撤后清位——再撤无效果，更细的改分在结算窗 ± 里） */
+  function undoPoint(courtId: number): void {
+    const acc = localScores[courtId];
+    if (!acc?.last) return;
+    if (acc.last === "a") acc.sa -= 1;
+    else acc.sb -= 1;
+    acc.last = null;
   }
 
-  /** 记分已清零 · 重开一盘（§4.2 收权）：比分归 0:0、pending 作废回在打、人不下场 */
-  async function clearScore(courtId: number): Promise<void> {
-    const L = live.value;
-    if (!L || !courtOf(courtId) || !needFull() || !liveView.value) return;
-    const no = courtNoOf(courtId);
-    const s = seqs(no);
-    await writeAction(
-      L.g.id,
-      () => apiLiveClear(L.g.id, no, s.baseTotalSeq, s.baseCourtSeq),
-      () => ui.toast("记分已清零 · 重开一盘"),
-    );
+  /** 记分清零（本地）：这笔账归 0:0 重开一盘、人不下场——场卡工具行人人可点的
+      本地操作（上传结算才由后端把关到场者，清零不必） */
+  function clearScore(courtId: number): void {
+    const acc = localScores[courtId];
+    if (!acc) return;
+    acc.sa = 0;
+    acc.sb = 0;
+    acc.last = null;
   }
 
-  /** 提前结算开窗（§4.4 收权）：转 pending(origin='manual')——窗开在视图，无成功
-      toast（窗即反馈）；预选看视图 preselect */
-  async function openSettle(courtId: number): Promise<void> {
-    const L = live.value;
-    const c = courtOf(courtId);
-    if (!L || !c || (!c.A.length && !c.B.length) || !needFull()) return;
-    const no = courtNoOf(courtId);
-    const s = seqs(no);
-    await writeAction(L.g.id, () =>
-      apiLiveSettleOpen(L.g.id, no, s.baseTotalSeq, s.baseCourtSeq),
-    );
-  }
-
-  /** 确认终局（§4.6 出口 A，收权）：一本账原子在后端（战报+积分+回流补位），
-      响应视图落地即「排好」——确认响应的 elo_rows 随视图持有（预览修正消费面批5b）。
-      noRedeal=清扫态（§4.9）：回流定格、不排下一场不补位（EndSettleModal 随
-      sweepState 透传；toast 分叉——清扫途中没有下一场）。
-      幂等闸：窗没开不落账（前端版；真值在后端——重放幂等回 200） */
-  async function confirmSettle(
+  /** 上传结算（先传先落）：把这片打完的本地账传后端落账（一本账原子=战报+积分+回流
+      补位），任意到场者可传。不走 writeAction：settle_recorded 须先于通用 409「现场
+      已更新」分流特判（writeAction 吞错只回 boolean，错误体里的已记比分句与视图够
+      不着），其余错误仍走 handleWriteError 共件。幂等闸：窗没开不发（真值闸在后端，
+      同分同位重放回 200） */
+  async function uploadSettle(
     courtId: number,
     winA: boolean,
     sa: number,
     sb: number,
     noRedeal = false,
   ): Promise<void> {
-    if (!settling.value[courtId]) return;
+    if (settleWindow.value?.courtId !== courtId) return;
+    const L = live.value;
+    if (!L || !liveView.value) return;
+    const no = courtNoOf(courtId);
+    const s = seqs(no);
+    try {
+      const raw = await apiLiveSettleConfirm(L.g.id, {
+        courtNo: no,
+        winnerSide: winA ? "a" : "b",
+        scoreA: sa,
+        scoreB: sb,
+        noRedeal,
+        baseTotalSeq: s.baseTotalSeq,
+        baseCourtSeq: s.baseCourtSeq,
+      });
+      applyLiveView(toLiveView(raw));
+      resetLocal(courtId);
+      closeSettleWindow();
+      ui.toast(noRedeal ? "积分落账 · 残局已清" : "积分落账 · 下一场已排好");
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "settle_recorded") {
+        // 传分冲突=有人先传先落了别的分，不当现场旧处理：对表响应视图 +
+        // 透传服务端句（「已按 X:Y 记账 · 有异议找组织者」句尾服务端已带全）+
+        // 本机账对齐清零关窗
+        if (e.view) applyLiveView(toLiveView(e.view));
+        ui.toast(errText(e));
+        resetLocal(courtId);
+        closeSettleWindow();
+        return;
+      }
+      if (!handleWriteError(e) && liveView.value) applyLiveView(liveView.value); // 回滚本地预变
+    }
+  }
+
+  /** 改分重落（全权）：下一场落账前把该片最新一场按新分重落（战报/Elo/DUPR 重写，
+      轮转物理不动）；needFull 前端闸保留，后端全权+「仍是最新一场」窗口闸兜底 */
+  async function overwriteSettle(
+    courtId: number,
+    winA: boolean,
+    sa: number,
+    sb: number,
+  ): Promise<void> {
     if (!needFull()) return;
     const L = live.value;
     if (!L || !liveView.value) return;
@@ -679,17 +724,18 @@ export const useLiveStore = defineStore("live", () => {
     await writeAction(
       L.g.id,
       () =>
-        apiLiveSettleConfirm(L.g.id, {
+        apiLiveSettleOverwrite(L.g.id, {
           courtNo: no,
           winnerSide: winA ? "a" : "b",
           scoreA: sa,
           scoreB: sb,
-          noRedeal,
           baseTotalSeq: s.baseTotalSeq,
           baseCourtSeq: s.baseCourtSeq,
         }),
-      () =>
-        ui.toast(noRedeal ? "积分落账 · 残局已清" : "积分落账 · 下一场已排好"),
+      () => {
+        ui.toast("比分已改 · 积分已重算");
+        if (settleWindow.value?.courtId === courtId) closeSettleWindow();
+      },
     );
   }
 
@@ -841,10 +887,10 @@ export const useLiveStore = defineStore("live", () => {
       落地即清——跨页一次性的信号位，非持久态 */
   const sweepOnArrive = ref<number | null>(null);
 
-  /** 残局清单（§4.9 强制逐片处理的对象）：playing/pending 的片，按片号升序。
-      真值=最近视图（startSweep 先对一拍再判定——A4 画面不自算）。
-      组装处预带 courtId（片号 1 起 ↔ 片序 0 起，沿 toLiveView 同款单点口径）——
-      SweepSheet 只消费不自算 */
+  /** 残局清单（§4.9 强制逐片处理的对象）：非 idle 的片，按片号升序（pending 已随
+      记分本地化退役，残局=在打片）。真值=最近视图（startSweep 先对一拍再判定——
+      A4 画面不自算）。组装处预带 courtId（片号 1 起 ↔ 片序 0 起，沿 toLiveView
+      同款单点口径）——SweepSheet 只消费不自算 */
   const sweepResidues = computed(() =>
     (liveView.value?.courts.filter((c) => c.status !== "idle") ?? []).map(
       (c) => ({ ...c, courtId: c.courtNo - 1 }),
@@ -924,8 +970,7 @@ export const useLiveStore = defineStore("live", () => {
         印记）在局簿详情到位后让位真局（深链冷设备两段路——纯展示让位，
         身份旗不经过 g，批6 P2）；
       - history/feed 适配旧形状（view 升序 → 旧新到旧）；
-      - settling 按片多值：pending 片进 Record（窗禁遮罩关、纯随视图起落）；streak/资历
-        视图不带——旧引擎值位留 0/空。 */
+      - streak/资历视图不带——旧引擎值位留 0/空。 */
   function applyLiveView(v: LiveView): void {
     const old = live.value;
     const cached = useGameStore().findGame(v.gameId);
@@ -1003,9 +1048,8 @@ export const useLiveStore = defineStore("live", () => {
         singles: !v.rules.doubles,
         A: onSide(c.courtNo, "a"),
         B: onSide(c.courtNo, "b"),
-        sa: c.scoreA,
-        sb: c.scoreB,
-        last: c.lastWinnerSide ?? undefined,
+        sa: 0, // 真值挂 localScores 本地账（记分本地化），此位留 0 兼 mock 树必填——删旧归 1.3
+        sb: 0,
         scoring: c.scoring, // 片分制快照（卡头读它——在打片照旧、新开片用新制，2.6）
         streakA: 0,
         streakB: 0,
@@ -1049,7 +1093,7 @@ export const useLiveStore = defineStore("live", () => {
     while (L.courts.length < v.courtsCount)
       L.courts.push(mkCourt(L, L.courts.length)); // 视图片行缺额补空片（差人卡口径）
     live.value = L;
-    liveView.value = v; // settling/recap 均由 liveView 纯派生，无需另行同步
+    liveView.value = v; // recap 纯派生于 liveView，无需另行同步（结算窗 settleWindow 与视图无关）
     if (v.ended) stopPolling(); // 散场即回看（§4.10）：定格视图派生 recap，轮询一并停（远端散场同路）
   }
 
@@ -1104,9 +1148,6 @@ export const useLiveStore = defineStore("live", () => {
     live,
     hasLive,
     pendingLiveId,
-    settling,
-    settlingCourtId,
-    isPending,
     advice,
     myRound,
     myRowId,
@@ -1125,8 +1166,12 @@ export const useLiveStore = defineStore("live", () => {
     point,
     undoPoint,
     clearScore,
-    openSettle,
-    confirmSettle,
+    localScores,
+    settleWindow,
+    openSettleWindow,
+    closeSettleWindow,
+    uploadSettle,
+    overwriteSettle,
     cancelMatch,
     togglePerson,
     swapPlayers,

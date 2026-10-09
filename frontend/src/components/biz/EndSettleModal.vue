@@ -1,30 +1,36 @@
 <template>
-  <!-- 确认窗（2.3 §4.3-4.6 重造）：到分自动 / 提前结算人工开——同一扇窗。数据全读
-       live store 视图（A4 画面不自算）：片号/比分/胜方预选吃 courts[].preselect，
-       两队名单吃 players[].courtNo/courtSide。多片各弹各的互不等待——页面一次只渲染
-       片号最小的一片，确认/关窗后下一片顶上（窗位在 store.settling Record）。
-       §4.6 联动：点胜方可改预选（防左右记反、分低方选不中）；± 改分胜方自动跟分高方、
-       平分清空禁确认。§4.5 窗内撤一分走后端 undo，响应视图驱动两路（auto 不够线自动关
-       回在打 / manual 保窗只改比分），窗内比分显示吃视图。
-       §4.11 ±积分预演读视图 elo_preview 双分支（2026-10-08 收归后端单源：A 胜/B
-       胜两套数随画面给、与落账同一条公式路——预演即落账数字）：点胜方在两套现成
-       数间切换，仍当场变不等网络；访客行带「不计积分」标识（1.4 §4 不落账不进榜）。
-       §4.3-2 清零重开与取消对局的待确认入口收在窗里（仅全权可见，
-       emit 由页面危险确认槽接）；球友看窗只读：确认灰+旁注「请组织者或管理员确认」。
-       z-110 fixed 居中；遮罩不可关（批5b 验收官销号，§4.3-2 出口全在窗内——遮罩纯视觉
-       背板，无点击事件）：窗只按合同路径关——确认/清零/取消成功、auto 窗撤到分线下，
-       均由响应视图驱动；遮罩关窗会把待确认片困成「冻结但无处处理」。 -->
-  <view class="mwrap" :class="{ on: visible }">
+  <!-- 本地结算窗（2.3 记分本地化重造）：开关/片/模式单一源=store.settleWindow（直读，
+       一次一扇，页面不再透传 visible/courtId）。upload=上传结算（谁都能传，后端把关
+       到场者）：比分起点吃本机账 localScores[courtId]（不再吃视图比分——服务端不记
+       进行中比分）；overwrite=改分重落（全权闸在 store.overwriteSettle）：预填该片
+       最新落账 match 的比分胜方（视图 matches 按 courtNo 找最新行）。
+       两队名单吃视图 players（courtNo/courtSide）。±积分预演读视图 elo_preview 双分支
+       （批1 起挂 playing 片：A 胜/B 胜两套数随画面给、与落账同一条公式路——预演即
+       落账）：点胜方在两套现成数间切换，仍当场变不等网络；访客行带「不计积分」标识
+       （1.4 §4 不落账不进榜）。球友可操作（上传权=任意到场者）：全权只读态与
+       「请组织者或管理员确认」旁注已删。
+       「暂不结算」=closeSettleWindow 保本地分接着打（P2-2，唯一非上传出口）；± 纠偏
+       upload 模式当场写回本机账——暂不结算后场卡接着打的就是纠偏后的分。
+       窗内「撤一分」已删（P2-1）：场卡记分行撤分就在手边，撤分唯一入口=场卡本地。
+       z-110 fixed 居中；遮罩不可关（旧裁决仍成立——关窗会丢待上传的账；遮罩纯视觉
+       背板无点击事件），非上传出口只有「暂不结算」。 -->
+  <view class="mwrap" :class="{ on: win != null }">
     <view class="mmask" />
     <view class="modal">
-      <view class="md-kick">CONFIRM · {{ courtName }}</view>
-      <view class="md-title">确认<text class="bem">结束</text></view>
+      <view class="md-kick">{{ kick }}</view>
+      <view class="md-title">
+        {{ mode === "overwrite" ? "改分" : "上传"
+        }}<text class="bem">{{ mode === "overwrite" ? "重落" : "比分" }}</text>
+      </view>
+      <view v-if="mode === 'overwrite'" class="md-mode-tip"
+        >把这场已落的账按新分重写 · 积分重算</view
+      >
 
-      <!-- 胜方点选：A 柠檬 / B 冰蓝；分低方与球友视角 .off 置灰 -->
+      <!-- 胜方点选：A 柠檬 / B 冰蓝；分低方选不中（§4.6） -->
       <view class="win-pick">
         <view
           class="wp a"
-          :class="{ on: winA === true, off: !full || !canA }"
+          :class="{ on: winA === true, off: !canA }"
           @click="pick('a')"
         >
           <view class="t">TEAM A</view>
@@ -32,7 +38,7 @@
         </view>
         <view
           class="wp b"
-          :class="{ on: winA === false, off: !full || !canB }"
+          :class="{ on: winA === false, off: !canB }"
           @click="pick('b')"
         >
           <view class="t">TEAM B</view>
@@ -40,41 +46,29 @@
         </view>
       </view>
 
-      <!-- 大比分 + ± 改分（min 0，只改本地；确认时随 confirmSettle 写回） -->
+      <!-- 大比分 + ± 改分（min 0；upload 模式纠偏当场写回本机账） -->
       <view class="md-score">
         <view class="md-side">
           <view class="num a">{{ sa }}</view>
           <view class="adj">
-            <view class="adj-btn" :class="{ off: !full }" @click="adj('a', -1)"
-              >−</view
-            >
-            <view class="adj-btn" :class="{ off: !full }" @click="adj('a', 1)"
-              >＋</view
-            >
+            <view class="adj-btn" @click="adj('a', -1)">−</view>
+            <view class="adj-btn" @click="adj('a', 1)">＋</view>
           </view>
         </view>
         <view class="c">:</view>
         <view class="md-side">
           <view class="num b">{{ sb }}</view>
           <view class="adj">
-            <view class="adj-btn" :class="{ off: !full }" @click="adj('b', -1)"
-              >−</view
-            >
-            <view class="adj-btn" :class="{ off: !full }" @click="adj('b', 1)"
-              >＋</view
-            >
+            <view class="adj-btn" @click="adj('b', -1)">−</view>
+            <view class="adj-btn" @click="adj('b', 1)">＋</view>
           </view>
         </view>
       </view>
       <view class="md-tools">
         <text class="edit">比分可点改</text>
-        <view v-if="full" class="md-undo-btn" @click="undoInWindow">
-          <text class="undo-ic">⤺</text>
-          <text>撤一分</text>
-        </view>
       </view>
 
-      <!-- ±积分预览（胜队在前；平分未点胜方时不显示）；访客带「不计积分」标识（§4.11） -->
+      <!-- ±积分预览（胜队在前；平分未点胜方时不显示）；访客带「不计积分」标识 -->
       <view v-for="(r, i) in preview" :key="i" class="elo-row">
         <text class="nm"
           >{{ r.name
@@ -92,76 +86,77 @@
           block
           :disabled="!canConfirm"
           @click="onConfirm"
-          >确认结束 · 排下一场</AppButton
+          >{{
+            mode === "overwrite" ? "确认改分 · 重落这场" : "确认上传 · 落账"
+          }}</AppButton
         >
-        <view v-if="!full" class="md-full-tip">请组织者或管理员确认</view>
-        <view v-else-if="winA === null" class="md-full-tip"
+        <view v-if="winA === null" class="md-full-tip"
           >平分不分胜负 · 先点胜方</view
         >
-        <!-- 待确认的出口（§4.3-2 收在窗里，仅全权）：先弹后果再执行，确认槽在页面 -->
-        <view v-if="full" class="md-danger">
-          <text class="md-link" @click="emit('clear')">清零重开</text>
-          <text class="md-link danger" @click="emit('cancel')">取消对局</text>
-        </view>
+        <!-- 唯一非上传出口（P2-2）：关窗不丢本机账，回场卡接着打 -->
+        <AppButton variant="ghost" block @click="liveStore.closeSettleWindow()"
+          >暂不结算 · 接着打</AppButton
+        >
       </view>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-/* 确认窗呈现与联动（2.3 §4.3-4.6；编排归页面）：本地态只有 winA/sa/sb——起点吃视图
-   （preselect/比分），± 只动本地（改完胜方跟分高方、平分清空），窗内撤分走后端、
-   响应视图回来重新对齐；确认/撤分直调 store（落账·关窗·toast 都在 store），
-   清零/取消 emit 由页面确认槽接（A3 危险动作先确认）。
+/* 本地结算窗呈现与联动（2.3 记分本地化；编排归 store）：本地态只有 winA/sa/sb——
+   开窗时按模式重置（upload 吃本机账、胜方预选=分高方与 followWinner 同口径；
+   overwrite 吃该片最新落账 match），± 只动本地（upload 模式写回本机账），确认直调
+   store（uploadSettle/overwriteSettle：落账·关窗·toast 都在 store；清扫态 noRedeal
+   随 settleWindow 透传）。
    联动纯函数（followWinner/canPickWinner）单一源在 store 模块，测试落 live-store.test.ts。
-   球友看窗只读：点选/±/撤置灰、确认灰+旁注；预演行读视图 elo_preview 双分支
-   （后端 _elo_settle 同路，预演=落账）。清扫态（store.sweepState）确认走
-   noRedeal=true：不排下一场不补位。 */
+   上传权=任意到场者（后端 _require_arrived 把关）：窗内无全权只读态；改分重落全权
+   闸在 store.overwriteSettle（needFull）。 */
 import { computed, ref, watch } from "vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import {
   canPickWinner,
   courtNoOf,
   followWinner,
+  latestMatchOf,
   useLiveStore,
 } from "@/stores/live";
 import { courtDisplayName } from "@/utils/format";
 import type { LivePlayer } from "@/api/types";
 
-const props = defineProps({
-  visible: { type: Boolean, default: false },
-  /** 确认中的片（页面从 settlingCourtId 透传；0 起片序，写动作同键） */
-  courtId: { type: Number, required: true },
-});
-/** 清零重开 / 取消对局：待确认时的出口入口在窗里，后果确认在页面（A3） */
-const emit = defineEmits<{ (e: "clear"): void; (e: "cancel"): void }>();
-
 const liveStore = useLiveStore();
-/** 全权单一源在 store（组织者 ∨ 管理员）：窗内一切手柄的前置闸 */
-const full = computed(() => liveStore.isFullPower);
 
-/* 本地态：比分可 ± 纠偏、胜方可改预选——起点吃视图 */
+/** 窗位单一源在 store（一次一扇；visible/courtId/mode/noRedeal 全由它驱动） */
+const win = computed(() => liveStore.settleWindow);
+const mode = computed(() => win.value?.mode ?? "upload");
+const kick = computed(
+  () =>
+    `${mode.value === "overwrite" ? "REWRITE" : "SETTLE"} · ${courtName.value}`,
+);
+
+/* 本地态：比分可 ± 纠偏、胜方可点选——起点按模式吃本机账/最新落账 */
 const winA = ref<boolean | null>(null);
 const sa = ref(0);
 const sb = ref(0);
 
-/** 这片的总账片行（片序 0 起 → 片号 1 走 courtNoOf 单点）与两队名单（视图单一源） */
+/** 当前结算窗这片在视图里的片号（courtNoOf(win.courtId) 三处共用单一源） */
+const winCourtNo = computed(() => courtNoOf(win.value?.courtId ?? -1));
+
+/** 这片的视图行（elo_preview 双支）与两队名单（视图单一源） */
 const courtRow = computed(() =>
-  liveStore.liveView?.courts.find(
-    (c) => c.courtNo === courtNoOf(props.courtId),
-  ),
+  liveStore.liveView?.courts.find((c) => c.courtNo === winCourtNo.value),
 );
 function sideRows(side: "a" | "b"): LivePlayer[] {
+  const no = winCourtNo.value;
   return (
     liveStore.liveView?.players.filter(
-      (p) => p.courtNo === courtNoOf(props.courtId) && p.courtSide === side,
+      (p) => p.courtNo === no && p.courtSide === side,
     ) ?? []
   );
 }
 
 const courtName = computed(() =>
   courtDisplayName(
-    liveStore.live?.courts.find((c) => c.id === props.courtId)?.name ?? "",
+    liveStore.live?.courts.find((c) => c.id === win.value?.courtId)?.name ?? "",
   ),
 );
 const namesA = computed(() =>
@@ -175,21 +170,26 @@ const namesB = computed(() =>
     .join(" / "),
 );
 
-/* 开窗与窗内撤分共用一条对齐路：视图比分/预选变 → 本地态重置（± 只动本地不触发；
-   撤分响应视图回来这里对齐——auto 不够线窗自动关、manual 保窗只改比分）。
-   preselect 是视图算好的定值（领先方/平分 null，A4），与 followWinner 同一口径 */
+/** overwrite 预填源=该片最新落账 match（latestMatchOf 单一源，场卡「上一场 · 改分」
+    链接同一真值）；该片还没落过账（正常开不到这个模式）回落 0:0 不预选 */
+
+/* 开窗对齐：settleWindow 变即按模式重置本地态（一次一扇，窗开着不会换片）；
+   ± 只动本地不触发本 watch */
 watch(
-  () =>
-    [props.courtId, courtRow.value?.scoreA, courtRow.value?.scoreB] as const,
-  ([, a, b]) => {
-    sa.value = a ?? 0;
-    sb.value = b ?? 0;
-    winA.value =
-      courtRow.value?.preselect === "a"
-        ? true
-        : courtRow.value?.preselect === "b"
-          ? false
-          : null; // 平分不预选（§4.4）
+  win,
+  (w) => {
+    if (!w) return;
+    if (w.mode === "overwrite") {
+      const m = latestMatchOf(liveStore.liveView, winCourtNo.value);
+      sa.value = m?.sa ?? 0;
+      sb.value = m?.sb ?? 0;
+      winA.value = m ? m.winA : null;
+    } else {
+      const acc = liveStore.localScores[w.courtId];
+      sa.value = acc?.sa ?? 0;
+      sb.value = acc?.sb ?? 0;
+      winA.value = followWinner(sa.value, sb.value);
+    }
   },
   { immediate: true },
 );
@@ -197,33 +197,34 @@ watch(
 /** 分低方选不中（§4.6）；平分双方均可点 */
 const canA = computed(() => canPickWinner(sa.value, sb.value, "a"));
 const canB = computed(() => canPickWinner(sa.value, sb.value, "b"));
-/** 确认闸：全权 + 已点胜方（平分未点禁确认） */
-const canConfirm = computed(() => full.value && winA.value !== null);
+/** 确认闸：已点胜方（平分未点禁确认） */
+const canConfirm = computed(() => winA.value !== null);
 
-/** 点胜方（防左右记反，可改预选）；球友只看不点 */
+/** 点胜方（防左右记反） */
 function pick(side: "a" | "b"): void {
-  if (!full.value || !canPickWinner(sa.value, sb.value, side)) return;
+  if (!canPickWinner(sa.value, sb.value, side)) return;
   winA.value = side === "a";
 }
 
 /** ± 改分：改完胜方自动跟分高方、平分清空（分低的一方当不了胜方——前端联动，
-    后端 settle-confirm 仍把关） */
+    后端 settle-confirm/overwrite 仍把关）；upload 模式当场写回本机账——
+    「暂不结算」后场卡接着打的就是纠偏后的分（overwrite 纠的是已落账那场，
+    不碰下一盘的本机账） */
 function adj(side: "a" | "b", d: number): void {
-  if (!full.value) return;
   if (side === "a") sa.value = Math.max(0, sa.value + d);
   else sb.value = Math.max(0, sb.value + d);
   winA.value = followWinner(sa.value, sb.value);
+  if (mode.value === "upload") {
+    const acc = liveStore.localScores[win.value?.courtId ?? -1];
+    if (acc) {
+      acc.sa = sa.value;
+      acc.sb = sb.value;
+    }
+  }
 }
 
-/** 窗内撤一分（§4.5）：够不够分线、关不关窗，两路都由后端 undo 判——
-    响应视图落地后上面的 watch 对齐窗内比分 */
-function undoInWindow(): void {
-  if (!full.value) return;
-  void liveStore.undoPoint(props.courtId);
-}
-
-/** ±积分预演（§4.11）：读视图 elo_preview 双分支——后端 _elo_settle 同一条路算好
-    随画面给（A 胜/B 胜各一套，胜队在前），预演=落账；点胜方只是切换分支 */
+/** ±积分预演：读视图 elo_preview 双分支——后端 _elo_settle 同一条路算好随画面给
+    （批1 起挂 playing 片，A 胜/B 胜各一套，胜队在前），预演=落账；点胜方只是切换分支 */
 const preview = computed(() => {
   if (winA.value === null) return [];
   const rows = courtRow.value?.eloPreview?.[winA.value ? "a" : "b"] ?? [];
@@ -236,15 +237,18 @@ const preview = computed(() => {
 });
 
 function onConfirm(): void {
-  if (winA.value === null) return;
-  // 清扫态（§4.9）确认不排下一场不补位——noRedeal 随 store.sweepState 透传
-  void liveStore.confirmSettle(
-    props.courtId,
-    winA.value,
-    sa.value,
-    sb.value,
-    liveStore.sweepState,
-  );
+  const w = win.value;
+  if (!w || winA.value === null) return;
+  if (w.mode === "overwrite")
+    void liveStore.overwriteSettle(w.courtId, winA.value, sa.value, sb.value);
+  else
+    void liveStore.uploadSettle(
+      w.courtId,
+      winA.value,
+      sa.value,
+      sb.value,
+      w.noRedeal,
+    );
 }
 </script>
 
@@ -316,6 +320,13 @@ function onConfirm(): void {
 .md-title .bem {
   color: var(--lemon);
 }
+/* overwrite 模式的后果句（upload 无此行）：贴在标题下、胜方点选上 */
+.md-mode-tip {
+  text-align: center;
+  font-size: 11px;
+  color: var(--dim);
+  margin: -6px 0 12px;
+}
 
 /* ---------- 胜方二选一 ---------- */
 .win-pick {
@@ -362,7 +373,7 @@ function onConfirm(): void {
 .wp.b.on .t {
   color: var(--ice);
 }
-/* 分低方选不中 / 球友只看（§4.6/§4.3）：置灰不可点，预选高亮仍可见 */
+/* 分低方选不中（§4.6）：置灰不可点，预选高亮仍可见 */
 .wp.off {
   opacity: 0.45;
   pointer-events: none;
@@ -419,48 +430,16 @@ function onConfirm(): void {
   border-color: var(--lemon);
   color: var(--lemon);
 }
-/* 球友只看（§4.3）：± 置灰与确认钮（AppButton disabled）同一观感 */
-.adj-btn.off {
-  opacity: 0.35;
-  pointer-events: none;
-}
-/* 比分注 + 窗内撤一分（§4.5，仅全权）：撤一分实体按钮提显眼 */
+/* 比分注 */
 .md-tools {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
   margin-bottom: 12px;
 }
 .edit {
   font-size: 11px;
   color: var(--dim);
-}
-.md-undo-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 7px;
-  border: 1px solid rgba(255, 212, 0, 0.35);
-  background: rgba(255, 212, 0, 0.08);
-  color: var(--lemon);
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.md-undo-btn:active {
-  background: rgba(255, 212, 0, 0.22);
-  border-color: var(--lemon);
-  transform: scale(0.96);
-}
-.undo-ic {
-  font-size: 13px;
-  line-height: 1;
 }
 
 /* ---------- ±积分预览行 ---------- */
@@ -514,29 +493,5 @@ function onConfirm(): void {
   text-align: center;
   font-size: 11px;
   color: var(--dim);
-}
-/* 待确认的出口（§4.3-2 收在窗里，仅全权）：清零重开 / 取消对局 */
-.md-danger {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 28px;
-}
-.md-link {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--dim);
-  cursor: pointer;
-}
-.md-link:active {
-  color: var(--lemon);
-}
-.md-link.danger {
-  color: var(--coral);
-  opacity: 0.85;
-}
-.md-link.danger:active {
-  color: var(--coral);
-  opacity: 1;
 }
 </style>

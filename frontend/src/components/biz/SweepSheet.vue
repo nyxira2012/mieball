@@ -1,14 +1,15 @@
 <template>
-  <!-- 散场残局清单（2.3 §4.9）：散场先不放行——还有在打/待确认的片时逐片强制处理，
-       每片三选一：确认这场比赛的比分（pending 片开确认窗定胜负）/ 提前结束（playing 片
-       开同一扇窗）/ 取消（作废）；另有「未完对局全部取消」一键。全清后「确认散场」放行，
-       二次确认在页面危险确认槽（A3）。清单吃 store.sweepResidues（视图真值，A4 不自算）：
-       每处理完一片响应视图落地、行随状态消失。z 序沿 AppSheet（80/90）——确认窗
-       （EndSettleModal z-110）盖在它上面开同一扇窗。 -->
+  <!-- 散场残局清单（2.3 §4.9 · 记分本地化）：散场先不放行——还有在打的片时逐片强制
+       处理，每片两条路：上传比分（开本地结算窗，noRedeal=true 不排下一场）/ 取消
+       （作废，后果确认在页面）；另有「未完对局全部取消」一键。全清后「确认散场」放行，
+       二次确认在页面危险确认槽（A3）。清单吃 store.sweepResidues（视图真值，A4 不自算），
+       行内比分吃本机账 localScores（记分本地化后服务端不记进行中比分）。每处理完一片
+       响应视图落地、行随状态消失。z 序沿 AppSheet（80/90）——结算窗（EndSettleModal
+       z-110）盖在它上面开窗。 -->
   <AppSheet
     :visible="visible"
     title="散场收工"
-    hint="还有没处理完的对局 · 逐片确认或取消后才能收工"
+    hint="还有没处理完的对局 · 逐片上传或取消后才能收工"
     @close="emit('close')"
   >
     <template v-if="rows.length">
@@ -16,22 +17,12 @@
         <view class="sw-info">
           <view class="sw-nm">{{ r.name }}</view>
           <view class="sw-meta">
-            <text class="st" :class="r.status">{{
-              r.status === "pending" ? "待确认" : "在打"
-            }}</text>
+            <text class="st">在打</text>
             <text class="sc">{{ r.sa }} : {{ r.sb }}</text>
           </view>
         </view>
         <view class="sw-acts">
-          <view
-            v-if="r.status === 'pending'"
-            class="sw-act pri"
-            @click="emit('confirm', r.courtId)"
-            >确认比分</view
-          >
-          <view v-else class="sw-act pri" @click="emit('early', r.courtId)"
-            >提前结束</view
-          >
+          <view class="sw-act pri" @click="upload(r.courtId)">上传比分</view>
           <view class="sw-act danger" @click="emit('cancel', r.courtId)"
             >取消</view
           >
@@ -63,11 +54,13 @@
 </template>
 
 <script setup lang="ts">
-/* 残局清单呈现（2.3 §4.9）：无本地态——清单吃 store.sweepResidues（最近视图的
-   playing/pending 片），行内动作只 emit、编排与危险确认全在页面（A3）：
-   confirm/early → 开确认窗（EndSettleModal 同一扇，清扫态确认 noRedeal）；
-   cancel → 页面 askConfirm 后 cancelMatch(noRedeal)；cancelAll → askConfirm 后
-   sweepCancelAll；end → 页面 askConfirm「球局将收工封存」后 endGame。 */
+/* 残局清单呈现（2.3 §4.9）：清单吃 store.sweepResidues（最近视图的非 idle 片）、
+   行内比分吃本机账 localScores（无账亮 0:0）。行内动作两条：
+   - 上传比分：直调 store.openSettleWindow(courtId, "upload", noRedeal=true)——
+     无危险确认不走页面确认槽，开窗闸（一次一扇）在 store；
+   - cancel/cancelAll/end 只 emit，编排与危险确认全在页面（A3）：cancel →
+     askConfirm 后 cancelMatch(noRedeal)；cancelAll → askConfirm 后 sweepCancelAll；
+     end → askConfirm「球局将收工封存」后 endGame。 */
 import { computed } from "vue";
 import AppSheet from "@/components/ui/AppSheet.vue";
 import AppButton from "@/components/ui/AppButton.vue";
@@ -79,14 +72,17 @@ defineProps({
 });
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "confirm", courtId: number): void;
-  (e: "early", courtId: number): void;
   (e: "cancel", courtId: number): void;
   (e: "cancelAll"): void;
   (e: "end"): void;
 }>();
 
 const liveStore = useLiveStore();
+
+/** 清扫态上传（§4.9-1 不排下一场不补位）：noRedeal=true 开窗，确认透传落账 */
+function upload(courtId: number): void {
+  liveStore.openSettleWindow(courtId, "upload", true);
+}
 
 /** 费用亮数行（1.3 §4.5 修订②）：总价定值 + 摊钱人头（后端账单口径）+ 人均；
     无视图/无 fee 块不亮（旧数据容错） */
@@ -98,7 +94,7 @@ const feeLine = computed(() => {
     : `总价未定 · ${f.heads} 人`;
 });
 
-/** 清单行视图一次拼好：片名借本地片行（场地名本地挂），比分/状态吃视图 */
+/** 清单行视图一次拼好：片名借本地片行（场地名本地挂），比分吃本机账 */
 const rows = computed(() =>
   liveStore.sweepResidues.map((c) => ({
     courtNo: c.courtNo,
@@ -106,9 +102,8 @@ const rows = computed(() =>
     name:
       liveStore.live?.courts.find((x) => x.id === c.courtId)?.name ??
       `${c.courtNo}号`,
-    status: c.status,
-    sa: c.scoreA,
-    sb: c.scoreB,
+    sa: liveStore.localScores[c.courtId]?.sa ?? 0,
+    sb: liveStore.localScores[c.courtId]?.sb ?? 0,
   })),
 );
 </script>
@@ -146,9 +141,6 @@ const rows = computed(() =>
   font-size: 9px;
   letter-spacing: 0.1em;
   color: var(--dim);
-}
-.sw-meta .st.pending {
-  color: var(--lilac);
 }
 .sw-meta .sc {
   font-family: var(--mono);

@@ -64,7 +64,7 @@
             @point="liveStore.point"
             @undo="liveStore.undoPoint"
             @clear="onClearScore"
-            @settle="liveStore.openSettle"
+            @settle="onSettle"
             @cancel="onCancelMatch"
             @autodeal="liveStore.autoDeal"
             @pull="goPull"
@@ -97,24 +97,16 @@
       />
       <LedgerSheet :visible="liveSheet?.k === 'ledger'" @close="closeLocal" />
       <RulesSheet :visible="liveSheet?.k === 'rules'" @close="closeLocal" />
-      <!-- 确认窗（store.settling 驱动、按片渲染：一次一扇=片号最小，确认/关窗后下一片
-           顶上，多片互不等待 §4.3）；清扫态由 sweepTarget 定位——残局清单点哪片开哪片
-           （压过「片号最小」的兜底）。清零/取消入口在窗内 emit，走下方危险确认槽。
-           与签到二维码浮层：z-110，顶替退役 WinPopup 层级 -->
-      <EndSettleModal
-        :visible="(sweepTarget ?? liveStore.settlingCourtId) != null"
-        :court-id="sweepTarget ?? liveStore.settlingCourtId ?? -1"
-        @clear="onClearScore()"
-        @cancel="onCancelMatch()"
-      />
+      <!-- 本地结算窗（2.3 记分本地化）：开关/片/模式单一源在 store.settleWindow——
+           自动到分与手动入口（场卡「结束对局」/残局清单「上传比分」）开的是同一扇，
+           组件直读 store 自驱，页面零透传零监听 -->
+      <EndSettleModal />
       <!-- 散场残局清单（§4.9 清扫流，批6）：startSweep 开、全清后「确认散场」二次确认
-           放行；行内三选一只 emit、编排与危险确认在页面。z 序沿 AppSheet（90），
-           确认窗盖在它上面开同一扇窗 -->
+           放行；「上传比分」组件直开结算窗（noRedeal），cancel/cancelAll/end 的编排
+           与危险确认在页面。z 序沿 AppSheet（90），结算窗（z-110）盖在它上面 -->
       <SweepSheet
         :visible="liveStore.sweepState"
         @close="closeSweep"
-        @confirm="onSweepConfirm"
-        @early="onSweepEarly"
         @cancel="onCancelMatch"
         @cancel-all="onSweepCancelAll"
         @end="onSweepEnd"
@@ -148,7 +140,7 @@
 <script setup lang="ts">
 /* 打球页编排层（2.1 改版批2 重写）：数据与动作全在 live store / 组件内，页面只管
    卡片名映射、弹层次序（liveSheet 单槽）、跨页跳转（档案/拉人/深链）、撒花。 */
-import { computed, ref, watch, watchEffect } from "vue";
+import { computed, ref, watch } from "vue";
 import { onHide, onLoad, onShow, onUnload } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import AppButton from "@/components/ui/AppButton.vue";
@@ -214,23 +206,24 @@ const confirmOpen = computed(() => liveSheet.value?.k === "confirm");
 function askConfirm(msg: string, action: () => void): void {
   liveSheet.value = { k: "confirm", msg, action };
 }
-/** 取消对局（§4.7）：卡上带 courtId；确认窗/残局清单入口不带（窗从当前渲染片取）。
-    动作本体与权限把关都在 store（needFull 兜底），这里只管「先确认」；
+/** 取消对局（§4.7）：卡上/残局清单入口都带 courtId。动作本体与权限把关都在
+    store（needFull 兜底），这里只管「先确认」；
     清扫态（sweepState）透传 noRedeal——作废照常、不重发牌（§4.9） */
-function onCancelMatch(courtId?: number): void {
-  const id = courtId ?? liveStore.settlingCourtId;
-  if (id == null) return;
+function onCancelMatch(courtId: number): void {
   askConfirm("这场将不计分，场上的人回候场队最前面", () =>
-    liveStore.cancelMatch(id, liveStore.sweepState),
+    liveStore.cancelMatch(courtId, liveStore.sweepState),
   );
 }
-/** 清零重开（§4.2）：卡上带 courtId；确认窗入口不带（从当前渲染窗的片取） */
-function onClearScore(courtId?: number): void {
-  const id = courtId ?? liveStore.settlingCourtId;
-  if (id == null) return;
+/** 清零重开（§4.2）：卡上入口带 courtId（本地操作，人人可点） */
+function onClearScore(courtId: number): void {
   askConfirm("比分将清零重开一盘，已得的分不算了", () =>
-    liveStore.clearScore(id),
+    liveStore.clearScore(courtId),
   );
+}
+/** 结束对局（记分本地化）：卡上入口=手动开本地上传窗——与自动到分同一扇窗
+    （一次一扇的闸在 store），先传先落 */
+function onSettle(courtId: number): void {
+  liveStore.openSettleWindow(courtId, "upload");
 }
 function confirmGo(): void {
   if (liveSheet.value?.k !== "confirm") return;
@@ -301,22 +294,6 @@ function onEnd(): void {
 }
 
 /* ---------- 清扫流编排（§4.9） ---------- */
-/** 残局清单点开的确认窗定位：清单点哪片开哪片（压过 settlingCourtId「片号最小」的
-     兜底；片退出 pending 即清——窗位回到视图驱动） */
-const sweepTarget = ref<number | null>(null);
-watchEffect(() => {
-  if (sweepTarget.value != null && !liveStore.isPending(sweepTarget.value))
-    sweepTarget.value = null;
-});
-/** 清单「确认比分」（pending 片）：窗本来就开着（settling 随视图），定位到这片即可 */
-function onSweepConfirm(courtId: number): void {
-  sweepTarget.value = courtId;
-}
-/** 清单「提前结束」（playing 片）：先 settle-open 转待确认，响应视图落地后开同一扇窗 */
-async function onSweepEarly(courtId: number): Promise<void> {
-  await liveStore.openSettle(courtId);
-  if (liveStore.isPending(courtId)) sweepTarget.value = courtId;
-}
 /** 一键全取消（§4.9）：后果确认后 sweepCancelAll（逐片 cancel 语义一个事务在后端） */
 function onSweepCancelAll(): void {
   askConfirm("未完对局将全部作废不计分，场上的人回候场队最前面", () =>
@@ -327,10 +304,10 @@ function onSweepCancelAll(): void {
 function onSweepEnd(): void {
   askConfirm("球局将收工封存，此操作不可撤销", () => liveStore.endGame());
 }
-/** 关清扫清单：连定位窗一起收（sweepState 是 store 开关，页面编排翻转） */
+/** 关清扫清单（残局清单点「上传比分」开的结算窗由 store.settleWindow 自管，
+    不随清单关） */
 function closeSweep(): void {
   liveStore.sweepState = false;
-  sweepTarget.value = null;
 }
 
 /** 远程散场预约落地（meet 页「我的局」入口落 sweepOnArrive）：进对局现场后自动开

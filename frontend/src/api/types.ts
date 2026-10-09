@@ -347,19 +347,22 @@ export interface RotationRules {
   champCap: number; // 连庄上限（仅输家下显示/生效）；默认 3，0=不限
 }
 
-/** 一片场地（2.4 多片并行）：A/B 半边存玩家 id，sa/sb 是本片自己的记分板——
+/** 一片场地（2.4 多片并行）：A/B 半边存玩家 id——
     每片各打各的（补满即打，无「待开」态）；playing/idle 由 A/B 是否空区分。
-    id/name 归 store 建片，singles/sa/sb/streak 归并行引擎（记分族动作按 id 定位这片）。 */
+    id/name 归 store 建片，singles/streak 归并行引擎（记分族动作按 id 定位这片）；
+    记分本地化（2026-10-09）后 sa/sb/last 是旧引擎记分板位：恒 0/空占位
+    （fillCourt 归零兜旧格式），真值挂 store.localScores——留 0 兼 mock 树必填，
+    删旧归 1.3。 */
 export interface LiveCourt {
   A: number[];
   B: number[];
   id: number; // 片序 0..n-1（并行模型键，记分族动作按此定位）
   name: string; // 场地号（'3号'；未登记回退序号场）
   singles: boolean; // 本片当前对局格式（换单双打过渡期可 ≠ rules.singles，2.4 §4.7-3）
-  sa: number;
-  sb: number;
+  sa: number; // 旧位恒 0 占位——真值挂 localScores，留 0 兼 mock 树必填（删旧归 1.3）
+  sb: number; // 同 sa
   scoring?: number; // 片分制快照（视图缺行时本地补空片走 g.scoring 兜底，2.6）
-  last?: "a" | "b"; // 本片最后得分方（undoPoint 回退用——多片各记各的）
+  last?: "a" | "b"; // 旧位不再读——undoPoint 回退改吃 localScores.last（删旧归 1.3）
   streakA: number; // 连庄数——跟半边不跟人（手动换人不动连庄，2.4 §4.9）
   streakB: number;
 }
@@ -491,11 +494,9 @@ export interface MockGame {
 /** 半场标识：记分 side / 场上 court_side / 胜方 winner_side 共用同一枚 */
 export type LiveSide = "a" | "b";
 
-/** 片状态机（后端单一源）：idle 空闲 / playing 在打 / pending 待确认（整片冻结） */
-export type LiveCourtStatus = "idle" | "playing" | "pending";
-
-/** 待确认窗来源（§4.3/4.4）：auto=到分自动弹 / manual=提前结算人工开；null=不在窗 */
-export type PendingOrigin = "auto" | "manual";
+/** 片状态机（后端单一源）：idle 空闲 / playing 在打——pending 已随 2026-10-09
+    记分本地化整体退役（服务端不记进行中比分，无窗可待确认） */
+export type LiveCourtStatus = "idle" | "playing";
 
 /** 歇连动作（2.2 §4.10）：skip 叠一轮 / fire 连战（再按取消）/ unskip 清零 */
 export type TempoAction = "skip" | "fire" | "unskip";
@@ -523,19 +524,15 @@ export interface LivePlayerApi {
   queue_pos: number | null; // 候场序（升序即队列序）；null=场上/不在队
 }
 
-/** 片行（view.courts 元素镜像） */
+/** 片行（view.courts 元素镜像）：进行中比分不进协议（记分本地化，2026-10-09）——
+    各手机本地账自记，落账真值在 matches */
 export interface LiveCourtApi {
   court_no: number; // 片号，1 起
   status: LiveCourtStatus;
   seq: number; // 该片今天第几场（开新场 +1）
-  score_a: number;
-  score_b: number;
-  last_winner_side: LiveSide | null; // 本片最后得分方（undo 撤分基准）
   court_seq: number; // 片号版本：该片记分类写 +1（写动作带它作 base_court_seq）
-  pending_origin: PendingOrigin | null; // 待确认窗来源；非 pending 恒 null
-  preselect: LiveSide | null; // 窗内预选胜方定值：领先方 / 平分与非 pending 均 null（A4 不自算）
   scoring: number; // 片分制快照（开赛定格 game.scoring，改分制下一场起生效——在打片照旧，2.6）
-  elo_preview?: { a: EloRowApi[]; b: EloRowApi[] } | null; // 待确认片的 ±积分预演双分支（§4.11，后端 _elo_settle 同路=预演即落账；非 pending null）
+  elo_preview?: { a: EloRowApi[]; b: EloRowApi[] } | null; // 在打片 ±积分预演双分支（§4.11，后端 _elo_settle 同路=预演即落账；Elo 与比分无关故挂 playing 片，其余片 null）
 }
 
 /** 战报人员快照（winners/losers 元素镜像）：落账时定格，id 是名册行 id */
@@ -645,14 +642,9 @@ export interface LiveCourtView {
   courtNo: number;
   status: LiveCourtStatus;
   seq: number;
-  scoreA: number;
-  scoreB: number;
-  lastWinnerSide: LiveSide | null;
   courtSeq: number;
-  pendingOrigin: PendingOrigin | null;
-  preselect: LiveSide | null;
   scoring: number; // 片分制快照（在打片定格开赛分制，改分制只影响新开片——2.6）
-  eloPreview: { a: EloRow[]; b: EloRow[] } | null; // 待确认片 ±积分预演双分支（非 pending null）
+  eloPreview: { a: EloRow[]; b: EloRow[] } | null; // 在打片 ±积分预演双分支（结算窗点胜方切换消费；其余片 null）
 }
 
 /** 战报人员快照（camel）：键与线上同形，不另建映射 */
@@ -742,6 +734,17 @@ export interface SettleConfirmInput {
   scoreA: number;
   scoreB: number;
   noRedeal?: boolean; // 散场清扫态：回流定格、不排下一场不补位（§4.9-1）
+  baseTotalSeq: number;
+  baseCourtSeq: number;
+}
+
+/** 改分重落（SettleOverwriteIn 镜像，全权）：下一场落账前把该片最新一场按新分重落
+    （战报/Elo/DUPR 重写，轮转物理不动）——胜方/比分全吃入参，无 noRedeal（不重排） */
+export interface SettleOverwriteInput {
+  courtNo: number;
+  winnerSide: LiveSide; // 必须分高方（平分双方均可）
+  scoreA: number;
+  scoreB: number;
   baseTotalSeq: number;
   baseCourtSeq: number;
 }

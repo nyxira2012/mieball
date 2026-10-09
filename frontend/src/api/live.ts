@@ -10,10 +10,10 @@ import type {
   DealCourt,
   EloRowApi,
   LiveRulesInput,
-  LiveSide,
   LiveView,
   LiveViewApi,
   SettleConfirmInput,
+  SettleOverwriteInput,
   TempoAction,
 } from "./types";
 
@@ -43,65 +43,9 @@ export function apiLiveDeal(
   });
 }
 
-/** 记一分（§4.1）：到分判定后端落账时当即判——够线该片转待确认(origin='auto')，别片照打 */
-export function apiLivePoint(
-  gameId: number,
-  courtNo: number,
-  side: LiveSide,
-  baseTotalSeq: number,
-  baseCourtSeq: number,
-): Promise<LiveViewApi> {
-  return request("POST", `/games/${gameId}/live/point`, {
-    court_no: courtNo,
-    side,
-    base_total_seq: baseTotalSeq,
-    base_court_seq: baseCourtSeq,
-  });
-}
-
-/** 撤一分：只撤该片最后得分方那 1 分；auto 窗撤到分线下自动关窗回在打（§4.5） */
-export function apiLiveUndo(
-  gameId: number,
-  courtNo: number,
-  baseTotalSeq: number,
-  baseCourtSeq: number,
-): Promise<LiveViewApi> {
-  return request("POST", `/games/${gameId}/live/undo`, {
-    court_no: courtNo,
-    base_total_seq: baseTotalSeq,
-    base_court_seq: baseCourtSeq,
-  });
-}
-
-/** 清零重开（全权）：比分归 0:0、pending 作废回在打，人不下场同批重打（§4.2） */
-export function apiLiveClear(
-  gameId: number,
-  courtNo: number,
-  baseTotalSeq: number,
-  baseCourtSeq: number,
-): Promise<LiveViewApi> {
-  return request("POST", `/games/${gameId}/live/clear`, {
-    court_no: courtNo,
-    base_total_seq: baseTotalSeq,
-    base_court_seq: baseCourtSeq,
-  });
-}
-
-/** 提前结算开窗（全权，§4.4）：不到分线也能收，转 pending(origin='manual')；预选看视图 preselect */
-export function apiLiveSettleOpen(
-  gameId: number,
-  courtNo: number,
-  baseTotalSeq: number,
-  baseCourtSeq: number,
-): Promise<LiveViewApi> {
-  return request("POST", `/games/${gameId}/live/settle-open`, {
-    court_no: courtNo,
-    base_total_seq: baseTotalSeq,
-    base_court_seq: baseCourtSeq,
-  });
-}
-
-/** 确认结束（全权，§4.6）：一本账原子（战报+积分+回流补位一个事务）；重放幂等回 200 */
+/** 上传结算（2026-10-09 记分本地化：点比分在各手机本地，这片打完把本地账传上来；
+    任意到场者可传、先传先落）：一本账原子（战报+积分+回流补位）；同分同位重放幂等
+    回 200；后传不同分 409 settle_recorded（错误体带最新视图与「已按 X:Y 记账」句） */
 export function apiLiveSettleConfirm(
   gameId: number,
   input: SettleConfirmInput,
@@ -112,6 +56,22 @@ export function apiLiveSettleConfirm(
     score_a: input.scoreA,
     score_b: input.scoreB,
     no_redeal: input.noRedeal ?? false,
+    base_total_seq: input.baseTotalSeq,
+    base_court_seq: input.baseCourtSeq,
+  });
+}
+
+/** 改分重落（全权）：下一场落账前把该片最新一场按新分重落——战报/Elo/DUPR 重写，
+    轮转物理不动；后端把关「仍是最新一场」 */
+export function apiLiveSettleOverwrite(
+  gameId: number,
+  input: SettleOverwriteInput,
+): Promise<LiveViewApi> {
+  return request("POST", `/games/${gameId}/live/settle-overwrite`, {
+    court_no: input.courtNo,
+    winner_side: input.winnerSide,
+    score_a: input.scoreA,
+    score_b: input.scoreB,
     base_total_seq: input.baseTotalSeq,
     base_court_seq: input.baseCourtSeq,
   });
@@ -173,7 +133,7 @@ export function apiLiveGuests(
   });
 }
 
-/** 换人（任意到场者，§4.9）：in 原位顶坑、out 回队尾；pending 片冻结拒收（court_frozen） */
+/** 换人（任意到场者，§4.9）：in 原位顶坑、out 回队尾 */
 export function apiLiveSwap(
   gameId: number,
   outId: number,
@@ -266,7 +226,7 @@ export function apiLiveEnd(
 
 /* ---- 映射 ---- */
 
-/** 结算行（snake→camel）：战报 elo_rows 与待确认片 elo_preview 双分支共用 */
+/** 结算行（snake→camel）：战报 elo_rows 与结算窗 elo_preview 双分支共用 */
 const eloRow = (r: EloRowApi) => ({
   accountId: r.account_id,
   name: r.name,
@@ -322,12 +282,7 @@ export function toLiveView(v: LiveViewApi): LiveView {
       courtNo: c.court_no,
       status: c.status,
       seq: c.seq,
-      scoreA: c.score_a,
-      scoreB: c.score_b,
-      lastWinnerSide: c.last_winner_side,
       courtSeq: c.court_seq,
-      pendingOrigin: c.pending_origin,
-      preselect: c.preselect,
       scoring: c.scoring,
       eloPreview: c.elo_preview
         ? { a: c.elo_preview.a.map(eloRow), b: c.elo_preview.b.map(eloRow) }

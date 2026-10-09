@@ -17,19 +17,18 @@ import type {
    （用例随删）、setRuleScore 切真走 apiLiveRules（scoring 写局列，专例见后）；
    setCheck/togglePerson/swapPlayers 的视图外行支线已随批6 切真退役；空降/带访客走
    apiLiveDropIn/apiLiveGuests 专例。散场链（startSweep/sweepCancelAll/endGame/
-   noRedeal 透传/回看落地停轮询）各有专例。批5b 增补：settlingCourtId 按片渲染窗、
-   确认窗联动纯函数（followWinner/canPickWinner）、验收官补测销号 G1（G3 随 subFirst
-   退役删；G4 并入 openSettle）。每个用例重置模块图 → 全新 mock 数据。 */
+   noRedeal 透传/回看落地停轮询）各有专例。批2 记分本地化：记分链块改纯本地账断言、
+   上传/覆盖/冲突新用例（会话A）；settling/confirmSettle/openSettle 旧窗用例随消费端
+   切换退役删（会话B），窗断言改 settleWindow；apiLivePoint/Undo/Clear/SettleOpen
+   四函数与视图记分五字段随会话C 删旧退役（mock 表与片行速造同步收窄，片无比分）。
+   每个用例重置模块图 → 全新 mock 数据。 */
 
 const liveApi = vi.hoisted(() => ({
   apiLiveView: vi.fn(),
   apiLiveStart: vi.fn(),
   apiLiveDeal: vi.fn(),
-  apiLivePoint: vi.fn(),
-  apiLiveUndo: vi.fn(),
-  apiLiveClear: vi.fn(),
-  apiLiveSettleOpen: vi.fn(),
   apiLiveSettleConfirm: vi.fn(),
+  apiLiveSettleOverwrite: vi.fn(),
   apiLiveCancel: vi.fn(),
   apiLiveCheck: vi.fn(),
   apiLiveDropIn: vi.fn(),
@@ -151,28 +150,18 @@ const pl = (
   ...o,
 });
 
-/** 片行速造（court_seq=5 与总号 7 可分辨；scoring 片快照默认 11=与全局一致，
-    改分制用例靠 rules.scoring 覆写区分全局与快照，2.6） */
-const ct = (
-  no: number,
-  status: "idle" | "playing" | "pending",
-  sa = 0,
-  sb = 0,
-  origin: "auto" | "manual" | null = null,
-): LiveCourtApi => ({
+/** 片行速造（记分本地化后片无比分——进行中比分在各手机本地账；court_seq=5 与
+    总号 7 可分辨；scoring 片快照默认 11=与全局一致，改分制用例靠 rules.scoring
+    覆写区分全局与快照，2.6） */
+const ct = (no: number, status: "idle" | "playing"): LiveCourtApi => ({
   court_no: no,
   status,
   seq: 1,
-  score_a: sa,
-  score_b: sb,
-  last_winner_side: null,
   court_seq: 5,
-  pending_origin: status === "pending" ? (origin ?? "auto") : null,
-  preselect: null,
   scoring: 11,
 });
 
-/** 中场快照（900 局）：li(101) 与访客(102) 在 1 号片在打 3:2、我(103) 候场队首；
+/** 中场快照（900 局）：li(101) 与访客(102) 在 1 号片在打、我(103) 候场队首；
     已落一场战报 + 两条 feed（swap → set_admin 按发生序）；zhao(104) 未到（借属性
     覆写对称的靶行——mock U.zhao 自带 shadow） */
 function vMid(seq = 7): LiveViewApi {
@@ -252,12 +241,7 @@ function vMid(seq = 7): LiveViewApi {
         court_no: 1,
         status: "playing",
         seq: 2,
-        score_a: 3,
-        score_b: 2,
-        last_winner_side: "a",
         court_seq: 5,
-        pending_origin: null,
-        preselect: null,
         scoring: 11,
       },
     ],
@@ -295,7 +279,7 @@ function vMid(seq = 7): LiveViewApi {
   });
 }
 
-/** 在打基态（900 局 · 我全权 admins[0]）：1 号片 4 人对打 3:2、总号 7、片号 5 */
+/** 在打基态（900 局 · 我全权 admins[0]）：1 号片 4 人对打、总号 7、片号 5 */
 function vPlay(seq = 7, over: Partial<LiveViewApi> = {}): LiveViewApi {
   return mkLiveView({
     game_id: 900,
@@ -316,7 +300,7 @@ function vPlay(seq = 7, over: Partial<LiveViewApi> = {}): LiveViewApi {
         court_side: "b",
       }),
     ],
-    courts: [ct(1, "playing", 3, 2)],
+    courts: [ct(1, "playing")],
     ...over,
   });
 }
@@ -426,9 +410,8 @@ describe("applyLiveView（批4 阶段2：总账视图 → 本地 LiveState 幂�
       name: "1号",
       A: [101],
       B: [102],
-      sa: 3,
-      sb: 2,
-      last: "a",
+      sa: 0, // 片位无比分（记分本地化：进行中比分挂本机 localScores）
+      sb: 0,
     });
     expect(L.courts[1]).toMatchObject({ id: 1, name: "2号", A: [], B: [] });
     expect(L.history).toEqual([
@@ -450,7 +433,7 @@ describe("applyLiveView（批4 阶段2：总账视图 → 本地 LiveState 幂�
     expect(L.ledger.find((r) => r.id === 102)!.guarantor).toBe(
       "亮马河快攻", // guarantorAccountId → 册内行名解析（底账「谁带的」）
     );
-    expect(live.settling).toEqual({}); // 无 pending 片：空 Record（批5a 按片多值）
+    expect(live.settleWindow).toBeNull(); // 视图落地不开窗（窗只由记分/入口驱动）
     expect(live.liveView?.totalSeq).toBe(7); // 最近视图持有
     expect(live.recap).toBeNull(); // 未散场不持有回看
     expect(U.li.elo).toBe(1574); // 整拷：mock U 不被重建污染
@@ -460,46 +443,6 @@ describe("applyLiveView（批4 阶段2：总账视图 → 本地 LiveState 幂�
     live.applyLiveView(toLiveView(vMid()));
     expect(L.courts).toHaveLength(2);
     expect(L.queue).toEqual([103]);
-  });
-  it("settling 按片多值（§4.3 三片同待确认是正常情况）：各片进 Record、渲染窗取片号最小；窗位纯随视图 pending 起落（store 无关窗出口——遮罩禁关，批5b 验收官销号）", async () => {
-    const { toLiveView } = await import("@/api/live");
-    const { live } = await load();
-    const v3 = (st: LiveCourtApi[], seq = 20): LiveViewApi =>
-      mkLiveView({ game_id: 900, courts_count: 3, total_seq: seq, courts: st });
-    live.applyLiveView(
-      toLiveView(
-        v3([
-          ct(1, "pending", 9, 9),
-          ct(2, "pending", 11, 5, "manual"),
-          ct(3, "pending", 21, 15),
-        ]),
-      ),
-    );
-    expect(live.settling).toEqual({
-      0: { origin: "auto" },
-      1: { origin: "manual" },
-      2: { origin: "auto" },
-    });
-    expect(live.settlingCourtId).toBe(0); // 窗一次一扇：片号最小者顶上
-    expect(live.isPending(0)).toBe(true);
-    // 遮罩禁关（§4.3-2 出口全在窗内）：store 不导出任何前端关窗动作可调
-    expect(
-      (live as unknown as Record<string, unknown>).closeSettle,
-    ).toBeUndefined();
-    live.applyLiveView(
-      toLiveView(
-        v3([ct(1, "pending", 9, 9), ct(2, "pending", 11, 5, "manual")]),
-      ),
-    ); // 片 3 走合同出口（确认/清零/取消/auto 撤到分线同路）：视图 pending 消失
-    expect(live.settling).toEqual({
-      0: { origin: "auto" },
-      1: { origin: "manual" },
-    }); // 剩余片窗位不受牵连
-    live.applyLiveView(toLiveView(v3([ct(1, "playing", 9, 9)]))); // 片 1 退出 pending
-    expect(live.isPending(0)).toBe(false); // 冻结解除
-    expect(live.settlingCourtId).toBeNull(); // 窗随视图关
-    live.applyLiveView(toLiveView(v3([ct(1, "pending", 12, 10)]))); // 再到分
-    expect(live.settlingCourtId).toBe(0); // 窗重开（无 hide 位残留可挡）
   });
   it("散场视图：endedAt 落封存位、recap 持有回看视图（轮询一并停）；进进行中视图 recap 清——上一局的回看不泄漏", async () => {
     const { toLiveView } = await import("@/api/live");
@@ -615,128 +558,173 @@ describe("startPolling / stopPolling（3s 轮询器）", () => {
 
 /* ─────────── 批5a：写链（组载荷 → api → 响应视图落地；stale/断网两防线） ─────────── */
 
-describe("point / undoPoint / clearScore（§4.1/4.2 记分链片级写）", () => {
-  it("point：载荷带两级 base 号（出发时看到的号）、响应视图落地比分跳动，无成功 toast", async () => {
+describe("point / undoPoint / clearScore（记分本地化：纯本地账，零网络零 seq）", () => {
+  it("point：只写本机账零 api 调用——加分落 last、比分即反馈无 toast、总账不动（本地账从 0:0 起记，不种子服务端旧分）", async () => {
     const { live, ui } = await inPlay();
-    liveApi.apiLivePoint.mockResolvedValue(
-      vPlay(8, { courts: [ct(1, "playing", 4, 2)] }),
+    live.point(0, "a");
+    live.point(0, "a");
+    live.point(0, "b");
+    // 零网络：mock 表全数零调用（apiLivePoint/Undo/Clear 已退役，整表兜住真值）
+    expect(Object.values(liveApi).every((m) => m.mock.calls.length === 0)).toBe(
+      true,
     );
-    await live.point(0, "a");
-    expect(liveApi.apiLivePoint).toHaveBeenCalledWith(900, 1, "a", 7, 5);
-    expect(live.live!.courts[0].sa).toBe(4); // 写后回画面（免二次拉读）
-    expect(live.liveView!.totalSeq).toBe(8);
-    expect(ui.toastMsg).toBeFalsy(); // 比分即反馈（沿旧：point 无 toast）
+    expect(live.localScores[0]).toEqual({ sa: 2, sb: 1, last: "b" });
+    expect(ui.toastMsg).toBeFalsy(); // 比分即反馈
+    expect(live.liveView!.totalSeq).toBe(7); // 零 seq：总账没动
   });
-  it("point 409 stale_court 携视图：对表落地 + toast「现场已更新」（§4.8 同片并发以先到为准）", async () => {
-    const { ApiError } = await import("@/api/http");
-    const { live, ui } = await inPlay();
-    liveApi.apiLivePoint.mockRejectedValue(
-      new ApiError(
-        "live_stale_court",
-        "这片现场已更新，请看最新画面再操作",
-        409,
-        vPlay(9, { courts: [ct(1, "playing", 10, 2)] }),
-      ),
-    );
-    await live.point(0, "a");
-    expect(live.live!.courts[0].sa).toBe(10); // 错误体自带的最新视图已对表
-    expect(live.liveView!.totalSeq).toBe(9);
-    expect(ui.toastMsg).toBe("现场已更新");
+  it("point 空片/无现场静默：不记账", async () => {
+    const { live } = await load();
+    live.point(0, "a"); // 无现场
+    expect(live.localScores[0]).toBeUndefined();
+    const empty = await apply(mkLiveView({ game_id: 900, admins: [0] })); // 有现场、片空
+    empty.live.point(0, "b");
+    expect(empty.live.localScores[0]).toBeUndefined();
   });
-  it("point 断网：toast「网络不给力，请稍后再试」可重试、现场不动（重试幂等由两级号保证）", async () => {
-    const { live, ui } = await inPlay();
-    liveApi.apiLivePoint.mockRejectedValue(new TypeError("boom"));
-    await live.point(0, "a");
-    expect(ui.toastMsg).toBe("网络不给力，请稍后再试");
-    expect(live.live!.courts[0].sa).toBe(3); // 未落地
-    expect(live.liveView!.totalSeq).toBe(7);
-  });
-  it("point 待确认片冻结（§4.3）：不发请求（后端 court_frozen 兜底）", async () => {
-    const { live } = await inPlay(
-      vPlay(7, { courts: [ct(1, "pending", 11, 9)] }),
-    );
-    await live.point(0, "a");
-    expect(liveApi.apiLivePoint).not.toHaveBeenCalled();
-  });
-  it("undoPoint：撤该片最后得分方那 1 分——载荷 + 响应视图落地", async () => {
+  it("到分自动开上传窗（reachedLocal：够线且净胜≥2，吃片分制快照）；窗占位不重开（一次一扇）", async () => {
     const { live } = await inPlay();
-    liveApi.apiLiveUndo.mockResolvedValue(
-      vPlay(8, { courts: [ct(1, "playing", 2, 2)] }),
-    );
-    await live.undoPoint(0);
-    expect(liveApi.apiLiveUndo).toHaveBeenCalledWith(900, 1, 7, 5);
-    expect(live.live!.courts[0].sa).toBe(2);
+    live.point(0, "a"); // 1:0 不到分
+    expect(live.settleWindow).toBeNull();
+    for (let i = 0; i < 10; i++) live.point(0, "a"); // → 11:0 命中
+    expect(live.settleWindow).toEqual({
+      courtId: 0,
+      noRedeal: false,
+      mode: "upload",
+    });
+    live.point(0, "b"); // 窗已开再加分：占位不重开
+    expect(live.settleWindow).toEqual({
+      courtId: 0,
+      noRedeal: false,
+      mode: "upload",
+    });
   });
-  it("clearScore 收权（§4.2）：球友被拒「请找组织者或管理员」不发；全权过 → toast「记分已清零 · 重开一盘」", async () => {
-    const denied = await inPlay(vPlay(7, { admins: [] }));
-    await denied.live.clearScore(0);
-    expect(denied.ui.toastMsg).toBe("请找组织者或管理员");
-    expect(liveApi.apiLiveClear).not.toHaveBeenCalled();
-    const ok = await inPlay();
-    liveApi.apiLiveClear.mockResolvedValue(
-      vPlay(8, { courts: [ct(1, "playing", 0, 0)] }),
-    );
-    await ok.live.clearScore(0);
-    expect(liveApi.apiLiveClear).toHaveBeenCalledWith(900, 1, 7, 5);
-    expect(ok.live.live!.courts[0].sa).toBe(0);
-    expect(ok.ui.toastMsg).toBe("记分已清零 · 重开一盘");
+  it("到分但净胜不足不开窗：10:10、11:10 继续打，净胜 2 才弹（deuce 同式）", async () => {
+    const { live } = await inPlay();
+    for (let i = 0; i < 10; i++) live.point(0, "a"); // 10:0
+    for (let i = 0; i < 10; i++) live.point(0, "b"); // 10:10
+    expect(live.settleWindow).toBeNull();
+    live.point(0, "a"); // 11:10 净胜 1 仍不开
+    expect(live.settleWindow).toBeNull();
+    live.point(0, "a"); // 12:10 开窗
+    expect(live.settleWindow?.mode).toBe("upload");
+  });
+  it("undoPoint 按 last 撤最后得分方那 1 分（零 api）；无账静默；撤后 last 清位再撤无效", async () => {
+    const { live } = await inPlay();
+    live.undoPoint(0); // 无账静默
+    live.point(0, "a");
+    live.point(0, "b");
+    live.undoPoint(0);
+    expect(live.localScores[0]).toEqual({ sa: 1, sb: 0, last: null });
+    live.undoPoint(0); // last 已清：不再撤
+    expect(live.localScores[0]!.sa).toBe(1);
+    expect(Object.values(liveApi).every((m) => m.mock.calls.length === 0)).toBe(
+      true,
+    ); // 零网络
+  });
+  it("clearScore 本地清零（收权闸随本地化卸下，球友也可点）：零 api、账面归 0:0、无 toast（比分归零即反馈）", async () => {
+    const { live, ui } = await inPlay(vPlay(7, { admins: [] })); // 球友视角
+    live.point(0, "a");
+    await live.clearScore(0);
+    expect(Object.values(liveApi).every((m) => m.mock.calls.length === 0)).toBe(
+      true,
+    ); // 零网络
+    expect(live.localScores[0]).toEqual({ sa: 0, sb: 0, last: null });
+    expect(ui.toastMsg).toBeFalsy();
   });
 });
 
-describe("待确认窗（§4.3-4.6：到分 auto / 提前结算 manual / 窗内撤分两路 / 确认一本账）", () => {
-  it("openSettle 提前结算（§4.4）：上报后片转 pending(origin='manual')、窗即反馈无 toast；空片静默不开（G4）", async () => {
-    const { live, ui } = await inPlay();
-    liveApi.apiLiveSettleOpen.mockResolvedValue(
-      vPlay(8, { courts: [ct(1, "pending", 3, 2, "manual")] }),
+describe("上传结算与改分重落（记分本地化：先传先落 / settle_recorded 分流 / 全权覆盖）", () => {
+  /** 上传窗基态：在打片 + 已开 upload 窗（清扫态 noRedeal=true 由清单入口开窗传入） */
+  async function inUpload(noRedeal = false) {
+    const h = await inPlay();
+    h.live.openSettleWindow(0, "upload", noRedeal);
+    return h;
+  }
+  it("uploadSettle：载荷（胜方比分全吃入参 + noRedeal + 两级号）+ 成功对表 + 本地账清零 + 关窗 + toast 分叉（排下一场/残局已清）", async () => {
+    const { live, ui } = await inUpload();
+    live.point(0, "a"); // 本地账 4:2：成功后清零
+    liveApi.apiLiveSettleConfirm.mockResolvedValue(
+      vPlay(8, { round: 1, courts: [ct(1, "playing")] }),
     );
-    await live.openSettle(0);
-    expect(liveApi.apiLiveSettleOpen).toHaveBeenCalledWith(900, 1, 7, 5);
-    expect(live.settlingCourtId).toBe(0);
-    expect(live.settling[0]).toEqual({ origin: "manual" });
-    expect(ui.toastMsg).toBeFalsy(); // 窗开即反馈
-    const empty = await apply(mkLiveView({ game_id: 900, admins: [0] })); // 无片行=空片
-    await empty.live.openSettle(0);
-    expect(liveApi.apiLiveSettleOpen).toHaveBeenCalledTimes(1); // 空片不发、不 toast
-    expect(empty.ui.toastMsg).toBeFalsy();
+    await live.uploadSettle(0, true, 11, 9);
+    expect(liveApi.apiLiveSettleConfirm).toHaveBeenCalledWith(900, {
+      courtNo: 1,
+      winnerSide: "a",
+      scoreA: 11,
+      scoreB: 9,
+      noRedeal: false,
+      baseTotalSeq: 7,
+      baseCourtSeq: 5,
+    });
+    expect(live.liveView!.totalSeq).toBe(8); // 响应视图已对表
+    expect(live.localScores[0]).toEqual({ sa: 0, sb: 0, last: null });
+    expect(live.settleWindow).toBeNull();
+    expect(ui.toastMsg).toBe("积分落账 · 下一场已排好");
+    const sweep = await inUpload(true); // 清扫态：noRedeal 透传 + 残局句
+    liveApi.apiLiveSettleConfirm.mockResolvedValue(
+      vPlay(8, { round: 1, courts: [ct(1, "playing")] }),
+    );
+    await sweep.live.uploadSettle(0, true, 11, 9, true);
+    expect(sweep.ui.toastMsg).toBe("积分落账 · 残局已清");
   });
-  it("到分自动进待确认（§4.3）：判定在后端落账时当即办——前端吃响应视图 origin='auto' 开窗", async () => {
+  it("uploadSettle 409 settle_recorded（先传先落：有人已按别的分落账）——特判先于通用 409「现场已更新」分流：对表响应视图 + 透传服务端句 + 本地账清零 + 关窗", async () => {
+    const { ApiError } = await import("@/api/http");
+    const { live, ui } = await inUpload();
+    live.point(0, "a"); // 本机账与先落者不同
+    liveApi.apiLiveSettleConfirm.mockRejectedValue(
+      new ApiError(
+        "settle_recorded",
+        "已按 9:11 记账 · 有异议找组织者",
+        409,
+        vPlay(9, {
+          round: 1,
+          courts: [ct(1, "playing")],
+          matches: [
+            {
+              court_no: 1,
+              seq: 1,
+              winners: [
+                { id: 103, name: "北苑小钢炮", guest: false },
+                { id: 104, name: "亮的球友·1", guest: true },
+              ],
+              losers: [
+                { id: 101, name: "我", guest: false },
+                { id: 102, name: "亮马河快攻", guest: false },
+              ],
+              score_a: 9,
+              score_b: 11,
+              winner_side: "b",
+              ended_at: "2026-10-07T20:00:00+08:00",
+              elo_rows: [],
+            },
+          ],
+        }),
+      ),
+    );
+    await live.uploadSettle(0, true, 11, 9);
+    expect(ui.toastMsg).toBe("已按 9:11 记账 · 有异议找组织者"); // 服务端句透传（句尾服务端已带全，不二次拼接）
+    expect(live.liveView!.totalSeq).toBe(9); // 错误体视图已对表
+    expect(live.live!.history[0]).toEqual({
+      names: "北苑小钢炮 & 亮的球友·1",
+      sa: 9,
+      sb: 11,
+    });
+    expect(live.localScores[0]).toEqual({ sa: 0, sb: 0, last: null }); // 本机账对齐清零
+    expect(live.settleWindow).toBeNull();
+  });
+  it("uploadSettle 幂等闸：窗没开不发；窗开着别的片也不发（一次一扇按 courtId 对号）", async () => {
     const { live } = await inPlay();
-    liveApi.apiLivePoint.mockResolvedValue(
-      vPlay(8, { courts: [ct(1, "pending", 11, 9)] }),
-    );
-    await live.point(0, "a");
-    expect(live.settlingCourtId).toBe(0); // 视图 origin='auto' 驱动开窗
-    expect(live.settling[0]).toEqual({ origin: "auto" });
-  });
-  it("窗内撤分两路（§4.5）：auto 窗撤到分线下自动关回在打；manual 窗撤一分只改比分不关窗", async () => {
-    const { live } = await inPlay(
-      vPlay(7, { courts: [ct(1, "pending", 11, 9)] }),
-    );
-    liveApi.apiLiveUndo.mockResolvedValue(
-      vPlay(8, { courts: [ct(1, "playing", 10, 9)] }),
-    );
-    await live.undoPoint(0); // 窗内撤分（后端判分线关窗）
-    expect(live.settlingCourtId).toBeNull(); // 窗自动关、回在打
-    expect(live.live!.courts[0].sa).toBe(10);
-    liveApi.apiLiveUndo.mockResolvedValue(
-      vPlay(9, { courts: [ct(1, "pending", 4, 3, "manual")] }),
-    );
-    await live.undoPoint(0); // 人工开的窗：撤一分只改比分
-    expect(live.settlingCourtId).toBe(0); // 窗不关
-    expect(live.settling[0]).toEqual({ origin: "manual" });
-    expect(live.live!.courts[0].sa).toBe(4);
-  });
-  it("confirmSettle 确认一本账（§4.6）：幂等闸无窗不发；有窗 → 载荷 + 战报/elo_rows 回填（§4.11 落账以结算回来的数为准）+ toast", async () => {
-    const noWindow = await inPlay(); // 无窗（在打态）
-    await noWindow.live.confirmSettle(0, true, 11, 9); // 幂等闸
+    await live.uploadSettle(0, true, 11, 9); // 无窗
     expect(liveApi.apiLiveSettleConfirm).not.toHaveBeenCalled();
-    const started = await inPlay(
-      vPlay(7, { courts: [ct(1, "pending", 11, 9)] }),
-    );
+    live.openSettleWindow(0, "upload");
+    await live.uploadSettle(1, true, 11, 9); // 窗在 0 片、传的是 1 片
+    expect(liveApi.apiLiveSettleConfirm).not.toHaveBeenCalled();
+  });
+  it("uploadSettle 幂等重放 200（断网重发/同分同位后端不重落回当前视图）：照成功路清零关窗 toast", async () => {
+    const { live, ui } = await inUpload();
     liveApi.apiLiveSettleConfirm.mockResolvedValue(
       vPlay(8, {
         round: 1,
-        courts: [ct(1, "playing", 0, 0)],
+        courts: [ct(1, "playing")],
         matches: [
           {
             court_no: 1,
@@ -753,49 +741,57 @@ describe("待确认窗（§4.3-4.6：到分 auto / 提前结算 manual / 窗内�
             score_b: 9,
             winner_side: "a",
             ended_at: "2026-10-07T20:00:00+08:00",
-            elo_rows: [
-              {
-                account_id: 0,
-                name: "我",
-                guest: false,
-                rating_before: 1200,
-                rating_after: 1222,
-                delta: 22,
-              },
-              {
-                account_id: null,
-                name: "亮的球友·1",
-                guest: true,
-                rating_before: 1200,
-                rating_after: 1210,
-                delta: 10,
-              },
-            ],
+            elo_rows: [],
           },
         ],
       }),
     );
-    await started.live.confirmSettle(0, true, 11, 9);
-    expect(liveApi.apiLiveSettleConfirm).toHaveBeenCalledWith(900, {
+    await live.uploadSettle(0, true, 11, 9); // 同分同位重放：200 当前视图
+    expect(ui.toastMsg).toBe("积分落账 · 下一场已排好");
+    expect(live.settleWindow).toBeNull();
+    expect(live.localScores[0]).toEqual({ sa: 0, sb: 0, last: null });
+  });
+  it("overwriteSettle：needFull 前端闸（球友拒「请找组织者或管理员」不发）；全权 → 载荷（无 noRedeal）+ toast「比分已改 · 积分已重算」+ 同片窗关", async () => {
+    const denied = await inPlay(vPlay(7, { admins: [] }));
+    await denied.live.overwriteSettle(0, true, 11, 7);
+    expect(denied.ui.toastMsg).toBe("请找组织者或管理员");
+    expect(liveApi.apiLiveSettleOverwrite).not.toHaveBeenCalled();
+    const { live, ui } = await inPlay();
+    live.openSettleWindow(0, "overwrite"); // 「上一场 · 改分」入口开的窗（会话B/C 接）
+    liveApi.apiLiveSettleOverwrite.mockResolvedValue(
+      vPlay(8, {
+        matches: [
+          {
+            court_no: 1,
+            seq: 1,
+            winners: [
+              { id: 101, name: "我", guest: false },
+              { id: 102, name: "亮马河快攻", guest: false },
+            ],
+            losers: [
+              { id: 103, name: "北苑小钢炮", guest: false },
+              { id: 104, name: "亮的球友·1", guest: true },
+            ],
+            score_a: 11,
+            score_b: 7,
+            winner_side: "a",
+            ended_at: "2026-10-07T20:00:00+08:00",
+            elo_rows: [],
+          },
+        ],
+      }),
+    );
+    await live.overwriteSettle(0, true, 11, 7);
+    expect(liveApi.apiLiveSettleOverwrite).toHaveBeenCalledWith(900, {
       courtNo: 1,
       winnerSide: "a",
       scoreA: 11,
-      scoreB: 9,
-      noRedeal: false, // 默认平时路：排下一场
+      scoreB: 7,
       baseTotalSeq: 7,
       baseCourtSeq: 5,
     });
-    expect(started.live.settlingCourtId).toBeNull(); // 窗随落账关
-    expect(started.live.live!.history[0]).toEqual({
-      names: "我 & 亮马河快攻",
-      sa: 11,
-      sb: 9,
-    });
-    const rows = started.live.liveView!.matches[0]!.eloRows; // 确认响应 elo_rows 随视图持有（预览修正消费面）
-    expect(rows).toHaveLength(2);
-    expect(rows[1]).toMatchObject({ guest: true, delta: 10 }); // 访客行有展示值不落账
-    expect(started.live.live!.round).toBe(1); // 排下一场由确认响应视图驱动
-    expect(started.ui.toastMsg).toBe("积分落账 · 下一场已排好");
+    expect(ui.toastMsg).toBe("比分已改 · 积分已重算");
+    expect(live.settleWindow).toBeNull();
   });
 });
 
@@ -814,7 +810,7 @@ describe("cancelMatch（§4.7 取消对局：回流队首归总账、片腾出�
     });
     liveApi.apiLiveCancel.mockResolvedValue(back);
     liveApi.apiLiveDeal.mockResolvedValue(
-      vPlay(9, { courts: [ct(1, "playing", 0, 0)] }),
+      vPlay(9, { courts: [ct(1, "playing")] }),
     );
     await live.cancelMatch(0);
     expect(liveApi.apiLiveCancel).toHaveBeenCalledWith(900, 1, 7, 5);
@@ -908,7 +904,7 @@ describe("setCheck（§4.2/4.3 报到四态：归一与队位归总账，发牌�
           left_at: i === 2 ? "2026-10-07T20:10:00+08:00" : null,
           check: i === 2 ? ("left" as const) : p.check,
         })),
-        courts: [ct(1, "playing", 3, 2)],
+        courts: [ct(1, "playing")],
       }),
     );
     await live.setCheck(103, "left");
@@ -1156,7 +1152,7 @@ describe("setRules / setCourtsInput / autoDeal（§4.7 规则与场地 · 发牌
   it("setCourtsInput：『3、4 / 3,4 / 3号、4号』归一 → courtsCount 上报、片名本地挂", async () => {
     const { live, ui } = await inPlay();
     liveApi.apiLiveRules.mockResolvedValue(
-      vPlay(8, { courts_count: 2, courts: [ct(1, "playing", 3, 2)] }),
+      vPlay(8, { courts_count: 2, courts: [ct(1, "playing")] }),
     );
     for (const [i, txt] of ["3、4", "3,4", "3号、4号"].entries()) {
       expect(await live.setCourtsInput(txt)).toBe(true);
@@ -1185,7 +1181,7 @@ describe("setRules / setCourtsInput / autoDeal（§4.7 规则与场地 · 发牌
           pl(105, 6, { name: "老赵", court_no: 2, court_side: "a" }),
           pl(106, 7, { name: "老钱", court_no: 2, court_side: "b" }),
         ],
-        courts: [ct(1, "playing", 3, 2), ct(2, "playing", 1, 0)],
+        courts: [ct(1, "playing"), ct(2, "playing")],
       }),
     );
     expect(await two.live.setCourtsInput("3号")).toBe(false);
@@ -1218,7 +1214,7 @@ describe("setRules / setCourtsInput / autoDeal（§4.7 规则与场地 · 发牌
           pl(108, 11, { name: "老李", court_no: 2, court_side: "b" }),
         ],
         queue: [],
-        courts: [ct(1, "playing", 3, 2), ct(2, "playing", 0, 0)],
+        courts: [ct(1, "playing"), ct(2, "playing")],
       }),
     );
     await live.autoDeal();
@@ -1515,7 +1511,7 @@ describe("setRuleScore（2.6 切真：scoring 写局列，在打片快照照旧�
 /* ─────────── 批6：散场清扫链（§4.9 切真：startSweep → 逐片 noRedeal / 一键全取消 → endGame=回看） ─────────── */
 
 describe("散场清扫链（§4.9，批6）", () => {
-  it("startSweep：先拉最新视图对一拍再进清扫态、清单=playing/pending 片；无权拒「只有组织者能收局」不拉读", async () => {
+  it("startSweep：先拉最新视图对一拍再进清扫态、清单=非 idle 片（pending 已退役）；无权拒「只有组织者能收局」不拉读", async () => {
     const denied = await inPlay(vPlay(7, { admins: [] }));
     await denied.live.startSweep();
     expect(denied.ui.toastMsg).toBe("只有组织者能收局");
@@ -1526,14 +1522,14 @@ describe("散场清扫链（§4.9，批6）", () => {
     liveApi.apiLiveView.mockResolvedValue(
       vPlay(9, {
         courts_count: 2,
-        courts: [ct(1, "pending", 11, 9), ct(2, "playing", 3, 2)],
+        courts: [ct(1, "playing"), ct(2, "playing")],
       }),
     );
     await live.startSweep();
     expect(liveApi.apiLiveView).toHaveBeenCalledWith(900); // 残局判定吃权威数（A4 不自算）
     expect(live.sweepState).toBe(true);
     expect(live.sweepResidues.map((c) => c.status)).toEqual([
-      "pending",
+      "playing",
       "playing",
     ]);
   });
@@ -1558,35 +1554,6 @@ describe("散场清扫链（§4.9，批6）", () => {
     await live.startSweep();
     expect(live.sweepState).toBe(true);
     live.stopPolling();
-  });
-  it("清扫态确认（§4.9-1 不排下一场不补位）：confirmSettle noRedeal=true 透传、toast「残局已清」、不重发牌", async () => {
-    const started = await inPlay(
-      vPlay(7, { courts: [ct(1, "pending", 11, 9)] }),
-    );
-    const back = vPlay(8, {
-      round: 1,
-      courts: [],
-      players: vPlay().players.map((p) => ({
-        ...p,
-        court_no: null,
-        court_side: null,
-        queue_pos: p.id - 101,
-      })),
-      queue: [101, 102, 103, 104],
-    });
-    liveApi.apiLiveSettleConfirm.mockResolvedValue(back);
-    await started.live.confirmSettle(0, true, 11, 9, true);
-    expect(liveApi.apiLiveSettleConfirm).toHaveBeenCalledWith(900, {
-      courtNo: 1,
-      winnerSide: "a",
-      scoreA: 11,
-      scoreB: 9,
-      noRedeal: true,
-      baseTotalSeq: 7,
-      baseCourtSeq: 5,
-    });
-    expect(started.ui.toastMsg).toBe("积分落账 · 残局已清");
-    expect(liveApi.apiLiveDeal).not.toHaveBeenCalled(); // 清扫途中没有下一场
   });
   it("清扫态取消：cancelMatch(…, true) 载荷 no_redeal=true、片腾出来不重发", async () => {
     const { live } = await inPlay();
@@ -1666,7 +1633,8 @@ describe("散场清扫链（§4.9，批6）", () => {
   });
 });
 
-/* ─────────── 批5b：确认窗联动纯函数 + 验收官补测销号（G1-G3，G4 并入 openSettle 用例） ─────────── */
+/* ─────────── 批5b：确认窗联动纯函数（EndSettleModal 消费）+ 验收官补测销号（G1；
+   G3 随 2.6 subFirst 退役删；G4 空片静默随记分本地化并入 point 用例） ─────────── */
 
 describe("确认窗联动纯函数（§4.4/4.6：EndSettleModal 消费；组件测试基建缺位故下沉 store 测）", () => {
   it("followWinner：改分后胜方自动跟分高方（分低方当不了胜方）、平分清空禁确认", async () => {
@@ -1685,6 +1653,15 @@ describe("确认窗联动纯函数（§4.4/4.6：EndSettleModal 消费；组件�
     expect(canPickWinner(9, 11, "a")).toBe(false);
     expect(canPickWinner(5, 5, "a")).toBe(true);
     expect(canPickWinner(5, 5, "b")).toBe(true);
+  });
+  it("latestMatchOf：该片最新落账行（结束序倒查）——场卡「上一场 · 改分」显示与改分窗预填同一真值；无行/无视图 undefined", async () => {
+    const { latestMatchOf } = await import("@/stores/live");
+    const { live } = await apply(vMid());
+    const m = latestMatchOf(live.liveView, 1)!;
+    expect(m.courtNo).toBe(1);
+    expect(`${m.sa}:${m.sb}`).toBe("11:9"); // 链接标签「上一场 11:9 · 改分」同源
+    expect(latestMatchOf(live.liveView, 2)).toBeUndefined(); // 2 号片没落过账
+    expect(latestMatchOf(null, 1)).toBeUndefined();
   });
 });
 
@@ -1709,16 +1686,17 @@ describe("批5b 补测销号（验收官批5a findings G1；G3 随 2.6 subFirst 
   });
 });
 
-/* ─────────── 批6 浏览器走查销号（P1 确认槽 / P2 深链 g 回填 / P3 elo 回填） ───────────
-   P1 本体是页面模板层修复：确认槽内容壳 class="cf" 撞了全局 animations.scss 的撒花
-   粒子类（absolute 9px 见方 + pointer-events:none）→ 面板塌成 9px 宽、按钮不可点；
-   改名 cfm 后恢复。vitest 无组件渲染基建，视觉/可点性测不了（注明）——这里测确认槽
-   所踩的 store 状态位：settling 窗位在视图重放（P2 回填重放首拍的场面）间不丢不闪。 */
+/* ─────────── 批6 浏览器走查销号（P1 elo_preview / P2 深链 g 回填 / P3 elo 回填） ───────────
+   P1 本体是页面模板层修复（确认槽内容壳 class="cf" 撞全局 animations.scss 撒花粒子类
+   → 面板塌成 9px 宽，改名 cfm 后恢复）：其窗位状态位（settling 随视图起落）已随批2
+   记分本地化退役（结算窗改 settleWindow——store 态与视图重放无关，天然不闪关）；
+   vitest 无组件渲染基建，视觉/可点性测不了。可测遗产=确认窗吃的 elo_preview 双分支
+   映射（批2 起挂 playing 片，upload/overwrite 两模式共用）。 */
 describe("批6 走查销号（P1/P2/P3）", () => {
-  it("P1 确认槽状态位：待确认窗随视图 pending 起、同视图重放不丢窗（深链回填重放首拍不闪关）、片退出 pending 窗关；elo_preview 双分支映射通透（2026-10-08 收归后端）", async () => {
+  it("P1 遗产：elo_preview 双分支映射通透（playing 片随视图落地——结算窗点胜方切换消费）", async () => {
     const { toLiveView } = await import("@/api/live");
     const { live } = await load();
-    const vp = vPlay(7, { courts: [ct(1, "pending", 11, 9, "manual")] });
+    const vp = vPlay(7); // playing 片（批1 起 elo_preview 挂 playing）
     vp.courts[0]!.elo_preview = {
       a: [
         {
@@ -1742,20 +1720,11 @@ describe("批6 走查销号（P1/P2/P3）", () => {
       ],
     };
     live.applyLiveView(toLiveView(vp));
-    expect(live.settling).toEqual({ 0: { origin: "manual" } }); // pending 即有窗
-    expect(live.settlingCourtId).toBe(0); // 确认槽挂在这扇窗上（live.vue confirmOpen）
     expect(live.liveView!.courts[0]!.eloPreview?.a[0]).toMatchObject({
       accountId: 0,
       delta: 12,
-    }); // 双分支随映射落地（确认窗点胜方切换消费）
+    }); // 双分支随映射落地（窗内点胜方切换消费）
     expect(live.liveView!.courts[0]!.eloPreview?.b[0]!.delta).toBe(-7);
-    live.applyLiveView(toLiveView(vp)); // 同视图重放（回填重放首拍）：窗位原样不闪
-    expect(live.settling).toEqual({ 0: { origin: "manual" } });
-    live.applyLiveView(
-      toLiveView(vPlay(8, { courts: [ct(1, "playing", 11, 9)] })),
-    );
-    expect(live.settling).toEqual({}); // 片退出 pending：窗与确认槽状态位全清
-    expect(live.settlingCourtId).toBeNull();
   });
 
   it("P2 深链冷设备直达已开局（ensureLive 200 路）：身份旗首拍即真（视图身份块，组织者的按钮不等局簿）；局簿没缓存 → loadDetail 回填 g（局名/时刻/组织者，纯展示让位）；比分名册仍以视图为准", async () => {
@@ -1780,8 +1749,8 @@ describe("批6 走查销号（P1/P2/P3）", () => {
       "亮的球友·1",
       "我",
       "赵姐的朋友",
-    ]); // 名册/比分真值未被详情覆盖
-    expect(live.live!.courts[0]).toMatchObject({ sa: 3, sb: 2 });
+    ]); // 名册真值未被详情覆盖（比分已出视图——记分本地化后挂本机 localScores）
+    expect(live.localScores[0]).toBeUndefined(); // 本机账不由视图详情路触碰
     live.stopPolling();
   });
 

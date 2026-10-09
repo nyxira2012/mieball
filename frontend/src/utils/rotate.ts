@@ -15,7 +15,7 @@ export function usedCourts(live: LiveState): number {
 }
 
 /** 某名册行此刻在打哪片（A/B 任一半边含之；不在场上 → undefined）——换人出/入
-    定向（store.swapPlayers）与待确认片冻结判定（PersonSheet）共用的场上谓词。
+    定向（store.swapPlayers）的场上谓词。
     （store 内另有按片号找片的 courtOf(courtId)，异名防混。） */
 export function courtOfPerson(
   live: LiveState,
@@ -33,6 +33,13 @@ export function courtOfPerson(
     访客/缺数兜底 2.5（GUEST_DUPR，1.4 §4 修订：与新号起步同源） */
 export function rankOf(p: User | undefined): number {
   return p?.dupr ?? GUEST_DUPR;
+}
+
+/** 本地到分判定（2.3 记分本地化）：任一方够线且净胜 ≥2——与后端判分同式，
+    但吃本机 localScores 账面（服务端已不记进行中比分）；命中即自动开上传窗。
+    scoring 吃片分制快照（court.scoring），在打片照旧旧制 */
+export function reachedLocal(sa: number, sb: number, scoring: number): boolean {
+  return (sa >= scoring || sb >= scoring) && Math.abs(sa - sb) >= 2;
 }
 
 /** 每片人数单一源（双打 4 / 单打 2）——myRound/差人卡/发牌同口径，消灭 4 人硬编码 */

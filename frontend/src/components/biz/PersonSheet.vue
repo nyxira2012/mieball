@@ -1,8 +1,8 @@
 <template>
   <!-- 点人抽屉（temp/打球页原型 sh-person 逐字）：常规态 = 头像/战绩头 + 手柄钮（本人随时可、
        给他人需全权：换人/歇两轮/连战/退场）+ 设为/撤掉管理员（仅组织者可见）+ 战力档案链接；
-       换人二段态 = 标题换「把 X 换成谁？」列对侧池（场上↔候场），点行即换；
-       待确认片上的人换不动（2.3 §4.3 冻结含换人：入口与对侧池该行前置灰，后端 court_frozen 兜底）。 -->
+       换人二段态 = 标题换「把 X 换成谁？」列对侧池（场上↔候场），点行即换。
+       （待确认片换人锁已随 2.3 记分本地化删：pending 退役，playing 片换人本来就允许。） -->
   <AppSheet :visible="visible" @close="emit('close')">
     <template v-if="p">
       <!-- ---------- 常规态 ---------- -->
@@ -27,13 +27,7 @@
           </view>
         </view>
         <view class="ps-grid">
-          <view
-            v-if="canOperate"
-            class="ps-act"
-            :class="{ off: swapFrozen }"
-            @click="onSwap"
-            >换人</view
-          >
+          <view v-if="canOperate" class="ps-act" @click="onSwap">换人</view>
           <view
             v-if="canOperate"
             class="ps-act"
@@ -82,7 +76,6 @@
             v-for="r in poolRows"
             :key="r.id"
             class="ps-row"
-            :class="{ off: r.frozen }"
             @click="onPick(r)"
           >
             <view class="row-av"
@@ -91,8 +84,7 @@
             <view class="row-info">
               <view class="row-nm"
                 >{{ r.u.name
-                }}<text v-if="r.u.shadow" class="badge guest">访客</text
-                ><text v-if="r.frozen" class="row-frozen">待确认</text></view
+                }}<text v-if="r.u.shadow" class="badge guest">访客</text></view
               >
               <view class="row-meta"
                 >已打 {{ r.u.play }} 场 · DUPR
@@ -128,7 +120,7 @@ import AppSheet from "@/components/ui/AppSheet.vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
-import { courtOfPerson, pById } from "@/utils/rotate";
+import { pById } from "@/utils/rotate";
 import { GUEST_DUPR, fmtDupr1 } from "@/utils/elo";
 
 const props = defineProps({
@@ -166,14 +158,12 @@ function onLeave(): void {
   liveStore.setCheck(props.personId, "left");
   emit("close");
 }
-/** 换人入口（§4.3 待确认片冻结前置灰；后端 court_frozen 兜底） */
+/** 换人入口（playing 片换人本就允许——pending 冻结已随记分本地化退役） */
 function onSwap(): void {
-  if (swapFrozen.value) return;
   emit("swap-mode", true);
 }
-/** 换人落子：靶在待确认片上时前置灰拦（§4.3 Q5 整片冻结含换人） */
-function onPick(r: { id: number; frozen: boolean }): void {
-  if (r.frozen) return;
+/** 换人落子 */
+function onPick(r: { id: number }): void {
   emit("swap-target", r.id);
 }
 /** 封/撤管理员（toast 与 feed 留痕在 store）；抽屉不关，徽章当场可见 */
@@ -181,16 +171,6 @@ function onAdminToggle(): void {
   if (liveStore.isAdmin(props.personId)) liveStore.unsetAdmin(props.personId);
   else liveStore.setAdmin(props.personId);
 }
-
-/** 人在的片是否待确认冻结中（§4.3：片上的人换不动——出口等确认窗处理完）；
-    片位查 courtOfPerson 单一源（与 store.swapPlayers 出/入定向同谓词） */
-function onFrozenCourt(id: number): boolean {
-  const l = liveStore.live;
-  const c = l ? courtOfPerson(l, id) : undefined;
-  return !!c && liveStore.isPending(c.id);
-}
-/** 点中的人在待确认片上：换人入口前置灰 */
-const swapFrozen = computed(() => onFrozenCourt(props.personId));
 
 /** 场上全员 id（各片 A/B 并起来——2.4 批2 起无 cur，多片各打各的） */
 const onCourtIds = computed<number[]>(() => {
@@ -202,19 +182,14 @@ const personOnCourt = computed(() => onCourtIds.value.includes(props.personId));
 
 /** 对侧池：person 在场上 → 列候场队全员；person 在队 → 列各片场上全员。
     过滤名册查不到的 id（建号换 id 后场上残留旧 id 的 mock 路径），不出「—」行。
-    行数据 computed 一次解析好（模板逐字段 byId 是每行多次名册线性扫描）；
-    frozen=靶在待确认片上（§4.3 换人冻结，行前置灰拦点） */
+    行数据 computed 一次解析好（模板逐字段 byId 是每行多次名册线性扫描） */
 const poolRows = computed(() => {
   const l = liveStore.live;
   if (!l) return [];
   const ids = (personOnCourt.value ? l.queue : onCourtIds.value).filter(
     (id) => !!pById(l, id),
   );
-  return ids.map((id) => ({
-    id,
-    u: liveStore.byId(id),
-    frozen: onFrozenCourt(id),
-  }));
+  return ids.map((id) => ({ id, u: liveStore.byId(id) }));
 });
 </script>
 
@@ -290,11 +265,6 @@ const poolRows = computed(() => {
 .ps-act.warn {
   color: var(--coral);
 }
-/* 待确认片冻结前置灰（§4.3）：入口可见但点不动，出口在确认窗 */
-.ps-act.off {
-  opacity: 0.4;
-  pointer-events: none;
-}
 .ps-admin {
   margin-left: 6px;
   vertical-align: 1px;
@@ -364,17 +334,6 @@ const poolRows = computed(() => {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--lemon);
-}
-/* 待确认片上的人换不动（§4.3）：行置灰拦点 + 名旁小标 */
-.ps-row.off {
-  opacity: 0.4;
-  pointer-events: none;
-}
-.row-frozen {
-  margin-left: 6px;
-  font-family: var(--mono);
-  font-size: 9px;
-  color: var(--coral);
 }
 /* 访客徽章：形与色在 base.scss 全局类；此处只补名字右侧的位置 margin */
 .badge.guest {

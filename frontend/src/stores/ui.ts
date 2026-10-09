@@ -1,26 +1,33 @@
 /* ui 全局状态（alpha:832-847 toast/sheet）
    不触碰任何 uni.* —— 纯状态层；SheetHost/AppToast 组件负责渲染（P1/P3 接线）。
-   2.1 打球页改版：WinPopup/showWin/closeWin 退役——终局结算改走 live store 的 settling 弹窗（批2 组件）。 */
-import { ref } from 'vue';
-import { defineStore } from 'pinia';
-import type { SheetPayload } from '@/api/types';
+   2.1 打球页改版：WinPopup/showWin/closeWin 退役——终局结算改走 live store 的结算窗
+   （2026-10-09 记分本地化后为本地结算窗 settleWindow）。 */
+import { ref } from "vue";
+import { defineStore } from "pinia";
+import type { SheetPayload } from "@/api/types";
 
-export const useUiStore = defineStore('ui', () => {
+export const useUiStore = defineStore("ui", () => {
   /** 全局单例弹层（alpha:836 openSheet：全局唯一 #sheet，按 payload.type 分发渲染） */
   const sheet = ref<SheetPayload | null>(null);
   /** 自绘 toast（alpha:834-835）。key 自增：重复消息也能重触发组件动画。
       2200ms 自动隐藏的计时器由 AppToast 组件按 toastKey 变化自行管理。 */
-  const toastMsg = ref('');
+  const toastMsg = ref("");
   const toastKey = ref(0);
 
-  function openSheet(p: SheetPayload): void { sheet.value = p; }
-  function closeSheet(): void { sheet.value = null; }
+  function openSheet(p: SheetPayload): void {
+    sheet.value = p;
+  }
+  function closeSheet(): void {
+    sheet.value = null;
+  }
   /** 1.1 D3「先看后报」统一入口：游客点报名/建局/留意向/到场 → 关当前弹层开名片建号卡，
       建号成功后由 SignupSheet 接着完成挂起动作（pending 原样透传）。
       此前 JoinSheet/LaunchSheet/live 页三处各手写一遍「关-开」门。 */
-  function signupThen(pending: Omit<Extract<SheetPayload, { type: 'signup-card' }>, 'type'>): void {
+  function signupThen(
+    pending: Omit<Extract<SheetPayload, { type: "signup-card" }>, "type">,
+  ): void {
     closeSheet();
-    openSheet({ ...pending, type: 'signup-card' });
+    openSheet({ ...pending, type: "signup-card" });
   }
   function toast(msg: string): void {
     toastMsg.value = msg;
@@ -38,5 +45,16 @@ export const useUiStore = defineStore('ui', () => {
     confettiKey.value++;
   }
 
-  return { sheet, toastMsg, toastKey, confettiKey, confettiN, openSheet, closeSheet, signupThen, toast, burst };
+  return {
+    sheet,
+    toastMsg,
+    toastKey,
+    confettiKey,
+    confettiN,
+    openSheet,
+    closeSheet,
+    signupThen,
+    toast,
+    burst,
+  };
 });

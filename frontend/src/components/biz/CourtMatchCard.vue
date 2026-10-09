@@ -4,11 +4,13 @@
      idle = 空片差人卡（还差 N 人 · courtSize-aware + 自动排阵/去拉人双钮）。
      卡头 = 场地号 + 单双打标识（读 court.singles，选了什么显什么）+ 分制 +
      连庄 chip（仅 down=loser 且该边 streak>0 显示，2.4 新增显示）。
-     点数字记分与撤回对所有人开放（2.2 §4.8）；清零/提前结算/取消是全权手柄，
-     其中清零/取消先弹后果确认（A3，确认槽在页面层）。
-     待确认态（2.3 §4.3）：卡头「待确认」chip + 记分框压暗不可点 + 工具行收起——
-     整片冻结（记分/撤分/换人锁死），清零/取消/调分出口收进确认窗。 -->
-  <view class="court-matchcard" :class="{ idle: !playing, frozen }">
+     记分本地化（2026-10-09）：比分显示吃本机账 localScores（服务端不记进行中比分），
+     点数字/撤回/清零都是本地操作对球友开放——清零=清自己手机的本地账（各手机各记
+     各的互不影响），故与撤回并列在记分框中列、不设全权门槛；「结束对局」开本地上传窗、
+     「上一场 · 改分」开覆盖重落窗（均全站唯一 settleWindow，组件直开——
+     与 SweepSheet/EndSettleModal 同一扇）；取消对局是全权手柄，先弹后果确认（A3，
+     确认槽在页面层）。 -->
+  <view class="court-matchcard" :class="{ idle: !playing }">
     <!-- ---------- playing：对阵区 ---------- -->
     <template v-if="playing">
       <view class="match-header">
@@ -18,8 +20,6 @@
             >{{ court.singles ? "单打" : "双打" }} · {{ scoring }}分</text
           >
         </view>
-        <!-- §4.3 待确认标识：该片冻结中（记分/撤分/换人锁死，出口收在确认窗） -->
-        <text v-if="frozen" class="chip frozen-chip">待确认</text>
       </view>
 
       <view class="match-arena">
@@ -57,45 +57,51 @@
       </view>
 
       <!-- 卡底记分框（原型 .score-plate）：点左数字 = A +1，点右 = B +1；领先侧 .lead 高亮；
-           待确认片冻结（§4.3）：记分框压暗不可点、撤分入口收起——处理入口在确认窗 -->
-      <view class="score-plate" :class="{ off: frozen }">
+           数字吃本机账 localScores（记分本地化：各手机各记各的，点数字零网络） -->
+      <view class="score-plate">
         <view class="sp-num a-side" @click="emit('point', court.id, 'a')">
           <view
             :key="`a${bumpTick}`"
             class="sp-v"
-            :class="{ bump: bumpSide === 'a', lead: court.sa > court.sb }"
-            >{{ court.sa }}</view
+            :class="{ bump: bumpSide === 'a', lead: local.sa > local.sb }"
+            >{{ local.sa }}</view
           >
           <text class="sp-t">TEAM A · 记分</text>
         </view>
         <view class="sp-mid">
           <view class="sp-colon">:</view>
-          <text class="sp-tip">{{
-            frozen ? "待确认 · 窗内处理" : "点数字记分"
-          }}</text>
-          <!-- 撤回对所有人可见（§4.8：记分±1 是球友手柄，撤回同族；store 本就无 guard） -->
-          <text v-if="!frozen" class="sp-undo" @click="emit('undo', court.id)"
-            >撤回</text
-          >
+          <text class="sp-tip">点数字记分</text>
+          <!-- 撤回/清零对所有人可见（§4.8：记分±1 是球友手柄，撤回/清零同族）——
+               清零=清自己手机的本地账，谁都能点（live.vue 二次确认） -->
+          <view class="sp-ops">
+            <text class="sp-undo" @click="emit('undo', court.id)">撤回</text>
+            <text class="sp-undo" @click="emit('clear', court.id)">清零</text>
+          </view>
         </view>
         <view class="sp-num b-side" @click="emit('point', court.id, 'b')">
           <view
             :key="`b${bumpTick}`"
             class="sp-v"
-            :class="{ bump: bumpSide === 'b', lead: court.sb > court.sa }"
-            >{{ court.sb }}</view
+            :class="{ bump: bumpSide === 'b', lead: local.sb > local.sa }"
+            >{{ local.sb }}</view
           >
           <text class="sp-t">TEAM B · 记分</text>
         </view>
       </view>
 
       <!-- 全权工具行（非 full 不渲染；换人不设独立入口，走「点人」抽屉）：
-          清零/取消先确认由页面接（A3）；撤回已挪记分行对所有人开放（§4.8），
-          不再占工具行；待确认片整行收起（§4.3-2：清零/取消/提前结算入口收进确认窗） -->
-      <view v-if="full && !frozen" class="match-card-tools">
-        <text class="tool-link" @click="emit('clear', court.id)">清零</text>
+          结束对局=开本地上传窗（先传先落）；上一场·改分=覆盖重落窗（销 P2-1 后的
+          纠错入口，预填最新落账）；取消对局先确认由页面接（A3）。
+          清零不在本行——球友本地操作，在记分框中列与撤回并列 -->
+      <view v-if="full" class="match-card-tools">
+        <text
+          v-if="lastMatch"
+          class="tool-link"
+          @click="liveStore.openSettleWindow(court.id, 'overwrite')"
+          >上一场 {{ lastMatch.sa }}:{{ lastMatch.sb }} · 改分</text
+        >
         <text class="tool-link" @click="emit('settle', court.id)"
-          >提前结算</text
+          >结束对局</text
         >
         <text class="tool-link danger" @click="emit('cancel', court.id)"
           >取消对局</text
@@ -133,8 +139,9 @@
 </template>
 
 <script setup lang="ts">
-/* 对局卡（2.1 §2-4 · 2.4 批2 多片化）：数据读 live store（byId/queue/rules），
-   动作走 emit 由页面接 store（记分/终局/取消 emit 均带 court.id）。
+/* 对局卡（2.1 §2-4 · 2.4 批2 多片化 · 2.3 记分本地化）：数据读 live store（byId/queue/
+   localScores），动作走 emit 由页面接 store（记分族 emit 均带 court.id）；「上一场 · 改分」
+   组件直开结算窗（settleWindow 单一源在 store——与 SweepSheet/EndSettleModal 同扇）。
    bump 弹跳 = Scoreboard 的 watch+key 方案移植（连点同侧重触发）。 */
 import { computed, onUnmounted, ref, watch } from "vue";
 import type { PropType } from "vue";
@@ -144,7 +151,7 @@ import type { LiveCourt } from "@/api/types";
 import { courtSize } from "@/utils/rotate";
 import { GUEST_DUPR, fmtDupr1 } from "@/utils/elo";
 import { courtDisplayName } from "@/utils/format";
-import { useLiveStore } from "@/stores/live";
+import { courtNoOf, latestMatchOf, useLiveStore } from "@/stores/live";
 
 const props = defineProps({
   /** 本片（playing/idle 由 A/B 空否自判） */
@@ -172,10 +179,20 @@ const playing = computed(
   () => !!props.court.A.length || !!props.court.B.length,
 );
 
-/** 待确认冻结（§4.3 单片冻结呈现）：单一源在 store 的 isPending（读视图片状态——
-   pending 即有窗、窗禁遮罩关，不再有「窗召不回」的情形）；记分框压暗不可点、
-   工具行收起，处理入口在确认窗 */
-const frozen = computed(() => liveStore.isPending(props.court.id));
+/** 本机账（记分本地化的显示源：服务端不记进行中比分，视图 sa/sb 位恒 0）；
+    无账（这片还没点过分）显示 0:0 */
+const local = computed(
+  () => liveStore.localScores[props.court.id] ?? { sa: 0, sb: 0, last: null },
+);
+
+/** 该片最新落账战报（「上一场 · 改分」入口的真值源，latestMatchOf 单一源——
+    与改分窗预填同一行）；显示口径取宽松案：全权 + 存在落账行即显示——
+    单幅视图里最新行恒是「下一场未落账」那场（下一场一落账它就不再是最新行，
+    视图随 3s 轮询前移），seq/court_seq 差值判不出窗口边界；视图落后于服务端的
+    窗口已关误点由后端片号闸 409 拒、store 对表 toast「现场已更新」兜底 */
+const lastMatch = computed(() =>
+  latestMatchOf(liveStore.liveView, courtNoOf(props.court.id)),
+);
 
 /** 显示名（court.name 存场地号 '3号' → '3号场'，单一源 format.courtDisplayName）与
     分制（片快照优先：在打片定格开赛分制、改分制下一场起生效，2.6；视图缺行的
@@ -207,13 +224,13 @@ const sides = computed(() =>
 const size = computed(() => courtSize(liveStore.live?.rules.singles ?? false));
 const waiting = computed(() => liveStore.live?.queue.length ?? 0);
 
-/* 得分数字弹跳（Scoreboard 同法）：watch sa/sb，上涨侧挂 .bump（撤回回落不弹）；
+/* 得分数字弹跳（Scoreboard 同法）：watch 本机账，上涨侧挂 .bump（撤回回落不弹）；
    :key 自增重挂载，连点同侧也能重触发 */
 const bumpSide = ref<"a" | "b" | null>(null);
 const bumpTick = ref(0);
 let bumpTimer: ReturnType<typeof setTimeout> | null = null;
 watch(
-  () => [props.court.sa, props.court.sb] as const,
+  () => [local.value.sa, local.value.sb] as const,
   ([na, nb], [oa, ob]) => {
     if (na > oa) setBump("a");
     else if (nb > ob) setBump("b");
@@ -291,7 +308,7 @@ onUnmounted(() => {
   color: var(--dim);
 }
 
-/* 卡头胶囊（原型 .court-matchcard .chip；playing 态现用作连庄位——见 .streak-tag） */
+/* 卡头胶囊（原型 .court-matchcard .chip；现 idle 态「空闲待开」用） */
 .chip {
   font-family: var(--mono);
   font-size: 10px;
@@ -473,7 +490,11 @@ onUnmounted(() => {
   letter-spacing: 0.06em;
   white-space: nowrap;
 }
-/* 撤回入口（§4.8）：记分行内小字链接，对所有人可见 */
+/* 撤回/清零入口（§4.8）：记分行内小字链接，对所有人可见 */
+.sp-ops {
+  display: flex;
+  gap: 10px;
+}
 .sp-undo {
   font-family: var(--mono);
   font-size: 9px;
@@ -519,23 +540,6 @@ onUnmounted(() => {
 }
 .tool-link.danger:active {
   color: var(--coral);
-}
-
-/* ---------- 待确认冻结（§4.3）：轻呈现——卡头「待确认」chip + 记分框压暗不可点，
-   出口与改分都在确认窗，本卡不另养第二套手柄 ---------- */
-.chip.frozen-chip {
-  border-color: rgba(255, 212, 0, 0.4);
-  color: var(--lemon);
-}
-.court-matchcard.frozen .match-arena {
-  opacity: 0.75;
-}
-.score-plate.off {
-  pointer-events: none;
-}
-.score-plate.off .sp-v {
-  opacity: 0.5;
-  text-shadow: none;
 }
 
 /* ---------- 徽章（访客/歇）：形与色在 base.scss 全局类；此处只补头像下方的位置 margin ---------- */
