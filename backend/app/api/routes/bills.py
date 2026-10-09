@@ -17,6 +17,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from ...core.logs import audit
 from ...db.models import Account
 from ...services.bills import BillBook
 from ..deps import get_bill_book, require_account
@@ -51,7 +52,14 @@ def settle_bill(
     bills: BillBook = Depends(get_bill_book),
 ):
     """点「结算」（§4.3）：本人行 paid_at 置位，终态不可逆；重放幂等回视图。"""
-    return bills.settle(game_id=game_id, account_id=account.id, period=period)
+    out = bills.settle(game_id=game_id, account_id=account.id, period=period)
+    audit(
+        "settle_bill",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"period={period}",
+    )
+    return out
 
 
 @router.post("/{game_id}/receive")
@@ -63,9 +71,16 @@ def receive_payer(
     bills: BillBook = Depends(get_bill_book),
 ):
     """逐人点「已收」（§4.4）：组织者本人（管理员不碰钱，C2），幂等回视图。"""
-    return bills.receive(
+    out = bills.receive(
         game_id=game_id,
         payer_account_id=body.account_id,
         organizer_id=account.id,
         period=period,
     )
+    audit(
+        "receive_payer",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"付款人 {body.account_id}",
+    )
+    return out

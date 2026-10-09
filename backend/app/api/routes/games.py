@@ -12,6 +12,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from ...core.logs import audit
 from ...db.models import Account
 from ...services.bills import BillBook
 from ...services.games import GameBook
@@ -85,7 +86,7 @@ def publish_game(
     account: Account = Depends(require_account),
     book: GameBook = Depends(get_game_book),
 ):
-    return book.publish(
+    out = book.publish(
         organizer_id=account.id,
         name=body.name,
         start_at=body.start_at,
@@ -100,6 +101,13 @@ def publish_game(
         rotation=body.rotation,
         score_rule=body.score_rule,
     )
+    audit(
+        "publish_game",
+        game_id=out["id"],
+        account_id=account.id,
+        detail=f"{body.venue_name} {body.start_at:%m-%d %H:%M} 开打",
+    )
+    return out
 
 
 @router.get("")
@@ -138,7 +146,14 @@ def join_game(
     book: GameBook = Depends(get_game_book),
 ):
     """报名（4.3/4.14）：整行进出、满员落候补、截止后照常可加、重复提交幂等。"""
-    return book.join(game_id=game_id, account_id=account.id, bring=body.bring)
+    out = book.join(game_id=game_id, account_id=account.id, bring=body.bring)
+    audit(
+        "join_game",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"带 {body.bring} 人",
+    )
+    return out
 
 
 @router.post("/{game_id}/quit")
@@ -148,7 +163,9 @@ def quit_game(
     book: GameBook = Depends(get_game_book),
 ):
     """退局（4.4）：截止锁退出、改约解锁窗可退、幂等。"""
-    return book.quit(game_id=game_id, account_id=account.id)
+    out = book.quit(game_id=game_id, account_id=account.id)
+    audit("quit_game", game_id=game_id, account_id=account.id, detail="退出报名")
+    return out
 
 
 @router.post("/{game_id}/edit")
@@ -169,7 +186,9 @@ def lock_game(
     book: GameBook = Depends(get_game_book),
 ):
     """空锁必打（4.7）：人数不够也照开；一锁不撤、不可解锁（只能撤局）。"""
-    return book.lock(game_id=game_id, organizer_id=account.id)
+    out = book.lock(game_id=game_id, organizer_id=account.id)
+    audit("lock_game", game_id=game_id, account_id=account.id, detail="空锁必打")
+    return out
 
 
 @router.post("/{game_id}/booking")
@@ -180,12 +199,19 @@ def book_game(
     book: GameBook = Depends(get_game_book),
 ):
     """订场登记（4.7）：最后写赢、可反复改；截止后名单已锁也只锁人。"""
-    return book.book(
+    out = book.book(
         game_id=game_id,
         organizer_id=account.id,
         courts=body.courts,
         fee_total=body.fee_total,
     )
+    audit(
+        "book_game",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"{len(body.courts)} 片 场费 {body.fee_total}",
+    )
+    return out
 
 
 @router.post("/{game_id}/booking/clear")
@@ -195,7 +221,14 @@ def clear_game_booking(
     book: GameBook = Depends(get_game_book),
 ):
     """清空订场登记（4.7）：费用回未定、截止照常判人数；手动锁保留。"""
-    return book.clear_booking(game_id=game_id, organizer_id=account.id)
+    out = book.clear_booking(game_id=game_id, organizer_id=account.id)
+    audit(
+        "clear_game_booking",
+        game_id=game_id,
+        account_id=account.id,
+        detail="清空订场登记",
+    )
+    return out
 
 
 @router.get("/{game_id}/fee-preview")
@@ -221,6 +254,12 @@ def set_game_fee(
     """补填总价（1.3 §4.5）：>0 当场出账（账单日期仍记散场那天）、=0 只定值
     不出账；价格就此定死。响应直出局视图（带 bill 块）。"""
     bills.set_fee(game_id=game_id, organizer_id=account.id, fee_total=body.fee_total)
+    audit(
+        "set_game_fee",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"补填总价 {body.fee_total} 元",
+    )
     return book.detail(game_id=game_id, viewer_id=account.id)
 
 
@@ -231,7 +270,9 @@ def cancel_game(
     book: GameBook = Depends(get_game_book),
 ):
     """撤局（4.10）：开打前；底账留档，报名者当日灰字、次日收走。"""
-    return book.cancel(game_id=game_id, organizer_id=account.id)
+    out = book.cancel(game_id=game_id, organizer_id=account.id)
+    audit("cancel_game", game_id=game_id, account_id=account.id, detail="开打前撤局")
+    return out
 
 
 @router.post("/{game_id}/restore")
@@ -241,7 +282,9 @@ def restore_game(
     book: GameBook = Depends(get_game_book),
 ):
     """救回未成局（4.9）：terminated 且开打前 → pending 待处置。"""
-    return book.restore(game_id=game_id, organizer_id=account.id)
+    out = book.restore(game_id=game_id, organizer_id=account.id)
+    audit("restore_game", game_id=game_id, account_id=account.id, detail="救回未成局")
+    return out
 
 
 @router.post("/{game_id}/invite")
@@ -252,6 +295,13 @@ def invite_user(
     book: GameBook = Depends(get_game_book),
 ):
     """邀请（4.11/4.12）：局进对方"我的局"；重复邀当没事。"""
-    return book.invite(
+    out = book.invite(
         game_id=game_id, organizer_id=account.id, invitee_id=body.account_id
     )
+    audit(
+        "invite_user",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"邀账号 {body.account_id}",
+    )
+    return out

@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from ...core.logs import audit
 from ...db.models import Account
 from ...services.games import GameBook
 from ...services.intents import IntentBook
@@ -64,12 +65,19 @@ def save_intent(
     book: IntentBook = Depends(get_intent_book),
 ):
     """留/改意向（4.13）：一人一份；改了想法清已邀标记、重排回前面。"""
-    return book.save(
+    out = book.save(
         account_id=account.id,
         slots=body.slots,
         frequency=body.frequency,
         note=body.note,
     )
+    # 意向不挂局：审计行 game_id=None，语境靠 detail（技术设计 §1.3）
+    audit(
+        "save_intent",
+        account_id=account.id,
+        detail=f"{len(body.slots)} 个时段 频率 {body.frequency}",
+    )
+    return out
 
 
 @router.post("/delete")
@@ -78,4 +86,6 @@ def delete_intent(
     book: IntentBook = Depends(get_intent_book),
 ):
     """删意向（4.13）：删掉即真没了；幂等。"""
-    return book.delete(account_id=account.id)
+    out = book.delete(account_id=account.id)
+    audit("delete_intent", account_id=account.id, detail="删掉意向")
+    return out
