@@ -189,8 +189,11 @@
 
 <script setup lang="ts">
 /* 找回/登录页：双栏状态机，动作走 session store；错误按 ApiError.code 分流提示，
-   其余 errText 原样透出（password_wrong/locked 的剩余次数与秒数已由后端文案带上）。 */
-import { ref } from "vue";
+   其余 errText 原样透出（password_wrong/locked 的剩余次数与秒数已由后端文案带上）。
+   1.6 末批兼任挂起接续的消费点：登录往返中名片弹层已被 PageShell.onHide 关闭，
+   登录成功（三路任一）由本页凭 ui.pendingAfterLogin 快照代跑续办。 */
+import { ref, watch } from "vue";
+import { onUnload } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import BackRow from "@/components/biz/BackRow.vue";
 import AppField from "@/components/ui/AppField.vue";
@@ -198,12 +201,34 @@ import AppInput from "@/components/ui/AppInput.vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
-import { ApiError, errText } from "@/api/http";
+import { runPendingResume } from "@/composables/pendingResume";
+import { ApiError, clearCardDraft, errText } from "@/api/http";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
 import { isValidPhone, newPwdError } from "@/utils/validate";
 
 const session = useSessionStore();
 const ui = useUiStore();
+
+/* —— 1.6 挂起接续：isGuest 翻 ready 即消费——清信号位 + 清草稿 + 拿账号身份跑挂起动作
+   （不再建号；续办单一源 runPendingResume，与名片卡接管成功路同款）。 */
+watch(
+  () => session.isGuest,
+  (guest, prev) => {
+    if (prev && !guest && ui.pendingAfterLogin) {
+      const pending = ui.pendingAfterLogin;
+      ui.pendingAfterLogin = null;
+      clearCardDraft(); // 挂起动作已接办，草稿使命结束（登录/重置路本来不清，此处补收尾）
+      void runPendingResume(pending);
+    }
+  },
+);
+
+/* 信号位卫生（选 login 页 onUnload 兜清这一种）：手动返回仍游客=挂起接续作废，
+   不清会悬挂到下次任意登录误触发；成功路 isGuest 已翻 ready 不进此支（消费即清在 watch），
+   全项目仅 watch 与此处两个清位点、各管一支。 */
+onUnload(() => {
+  if (session.isGuest) ui.pendingAfterLogin = null;
+});
 
 /** 当前栏：code=收验证码（默认）｜pwd=用密码 */
 const tab = ref<"code" | "pwd">("code");

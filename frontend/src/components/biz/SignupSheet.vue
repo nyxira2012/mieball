@@ -1,11 +1,16 @@
 <template>
-  <!-- 名片建号卡（1.1 A1 · 三态）：填卡 → 手机号被占（接管/重填）→ 短信验证进入。
+  <!-- 名片建号卡（1.1 A1 三态 + 1.6 扩展）：填卡 → 手机号被占（三出口接管/重填）→ 短信/密码验证进入。
        游客点报名/建局/留意向时弹出（或从约球页游客入口直开），成功后自动接着完成挂起动作
-       （D3：用户看一步，系统拆两步）。草稿落本机：断网/中断后已填内容不丢（§5 出错条目）。 -->
+       （D3：用户看一步，系统拆两步）。草稿落本机：断网/中断后已填内容不丢（§5 出错条目）。
+       右上角【登录】全天候亮（1.6 §4.2，替代 1.1 底部"我是老球友"小字）：
+       点了落挂起快照进信号位、直达登录页，登完回来动作接着办。 -->
   <view class="ss">
     <!-- ===== 态一：填名片 ===== -->
     <template v-if="mode === 'card'">
-      <view class="sheet-t">{{ title }}</view>
+      <view class="trow">
+        <view class="sheet-t">{{ title }}</view>
+        <view class="login-link" @click="goLogin">登录 ▸</view>
+      </view>
       <view class="sheet-hint"
         >填张名片就同时建号 · 以后永远免密，不用记密码</view
       >
@@ -51,30 +56,52 @@
       <AppButton variant="pri" block :disabled="busy" @click="onSubmitCard">
         {{ busy ? "提交中…" : actionLabel }}
       </AppButton>
-      <!-- 独立打开（无挂起动作）时给老球友找回出口；带挂起的场景走占卡态的短信接管，不留此门 -->
-      <view v-if="standalone" class="oldfriend" @click="goLogin">
-        我是老球友 · 手机号找回登录 ▸
-      </view>
     </template>
 
-    <!-- ===== 态二：手机号已被占用（4.5） ===== -->
+    <!-- ===== 态二：手机号已被占用（1.6 §4.5 三证明出口） ===== -->
     <template v-else-if="mode === 'occupied'">
       <view class="sheet-t">这个手机号已经有人用了</view>
       <view class="sheet-hint"
-        >手机号永远归手机的主人——短信验证是最终裁决，验证后立即进入那个账号</view
+        >手机号永远归手机的主人——任选一种方式证明号是你的，验过立即进入那个账号</view
       >
-      <view class="btns">
-        <AppButton variant="ghost" class="flex1" @click="mode = 'card'"
-          >不是我的号？返回重填</AppButton
+      <view class="exits">
+        <AppButton variant="pri" block :disabled="busy" @click="onTakeover"
+          >用短信验证，进入那个账号</AppButton
         >
-        <AppButton
-          variant="pri"
-          class="flex1"
-          :disabled="busy"
-          @click="onTakeover"
-          >用短信验证，进入</AppButton
+        <AppButton variant="ghost" block @click="mode = 'pwd'"
+          >用密码进入</AppButton
         >
+        <!-- 微信位（1.6 §4.12）：给位不给死按钮，点了说明 -->
+        <view class="wx-row" @click="onWechat">
+          <text>微信验证进入</text>
+          <text class="wx-note">即将开通</text>
+        </view>
+        <view class="relink" @click="mode = 'card'">不是我的号？返回重填</view>
       </view>
+    </template>
+
+    <!-- ===== 态二·密码出口（§4.5 三出口之二）：密码接管，效果与短信接管一致 ===== -->
+    <template v-else-if="mode === 'pwd'">
+      <view class="sheet-t">用密码进入</view>
+      <view class="sheet-hint"
+        >输入 {{ phone }} 账号的密码——验过即接管，刚才的动作接着办</view
+      >
+      <AppField label="密码">
+        <AppInput
+          v-model="pwd"
+          placeholder="这个账号的登录密码"
+          :maxlength="40"
+          password
+        />
+      </AppField>
+      <AppButton variant="pri" block :disabled="busy" @click="onPwdRedeem">{{
+        busy ? "验证中…" : "进入那个账号"
+      }}</AppButton>
+      <!-- 锁一刻钟只锁密码路（§4.9 边缘）：改走短信出口照常能进 -->
+      <view v-if="pwdLocked" class="relink" @click="onTakeover"
+        >密码路锁了一刻钟 · 改用短信验证 ▸</view
+      >
+      <view class="relink" @click="mode = 'occupied'">返回重选</view>
     </template>
 
     <!-- ===== 态三：短信验证（接管） ===== -->
@@ -107,25 +134,26 @@
         busy ? "验证中…" : "验证并进入"
       }}</AppButton>
       <view class="kefu"
-        >收不到码且发码不是你本人操作的 · 联系平台客服微信 mieball-kefu</view
+        >收不到码且发码不是你本人操作的 · 联系群主或发到反馈群</view
       >
     </template>
   </view>
 </template>
 
 <script setup lang="ts">
-/* 名片建号卡：表单态 + 占用态 + 短信态。动作全走 session store（深模块），
-   本组件只管状态机与草稿；错误按 ApiError.code 分支提示。 */
+/* 名片建号卡：表单态 + 占用态（三出口）+ 密码态 + 短信态。动作全走 session store（深模块），
+   本组件只管状态机与草稿；错误按 ApiError.code 分支提示。
+   挂起动作续办单一源在 composables/pendingResume（登录页登回来那路也用它）。 */
 import { computed, onUnmounted, ref, watch } from "vue";
 import type { PropType } from "vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import AppField from "@/components/ui/AppField.vue";
 import AppInput from "@/components/ui/AppInput.vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
-import { useGameStore } from "@/stores/game";
-import { useLiveStore } from "@/stores/live";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
+import { runPendingResume } from "@/composables/pendingResume";
+import type { CardPayload } from "@/api/auth";
 import {
   ApiError,
   clearCardDraft,
@@ -135,7 +163,6 @@ import {
 } from "@/api/http";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
 import { isValidPhone } from "@/utils/validate";
-import { goMeet } from "@/utils/nav";
 import type { ChibiConfig, PublishGameInput } from "@/api/types";
 
 const props = defineProps({
@@ -164,8 +191,6 @@ const props = defineProps({
 });
 
 const session = useSessionStore();
-const game = useGameStore();
-const liveStore = useLiveStore();
 const ui = useUiStore();
 
 /** 预设头像组（D2）：提前搭配好的 Q 版小人，点一下即选；细调去装扮页 */
@@ -180,10 +205,14 @@ const PRESETS: { c: ChibiConfig }[] = [
   { c: { skin: 1, hair: 1, hc: 5, shirt: 3, face: 0, acc: 1 } },
 ];
 
-const mode = ref<"card" | "occupied" | "sms">("card");
+/** pwd=占卡三出口之二（1.6 §4.5）：内联密码接管 */
+const mode = ref<"card" | "occupied" | "pwd" | "sms">("card");
 const nickname = ref("");
 const phone = ref("");
 const code = ref("");
+const pwd = ref("");
+/** password_locked 后亮「改用短信验证」出口：锁只锁密码路一刻钟，短信路照常（§4.9 边缘） */
+const pwdLocked = ref(false);
 /** 选中的预设下标；null=没选（跳过 → 服务端默认小人） */
 const picked = ref<number | null>(null);
 const busy = ref(false);
@@ -206,14 +235,6 @@ const actionLabel = computed(() =>
       : props.pendingIntent
         ? "确定留下意向"
         : "确定",
-);
-/** 独立打开 = 没有任何挂起动作（约球页/注册入口直开）：底部才亮老球友找回出口 */
-const standalone = computed(
-  () =>
-    !props.pendingJoin &&
-    !props.pendingLaunch &&
-    !props.pendingCheckin &&
-    !props.pendingIntent,
 );
 
 /* ---- 草稿：本机持久化（断网重进内容还在）。
@@ -254,28 +275,45 @@ function pick(i: number): void {
   picked.value = picked.value === i ? null : i;
 }
 
-/* 老球友出口（仅独立打开时显示）：关弹层去「我是老球友」找回页 */
+/** 名片草稿_payload（D5 合并用）：建号 / 短信接管 / 密码接管三路同形，收一处防漂移 */
+function cardPayload(): CardPayload {
+  return {
+    phone: phone.value.trim(),
+    nickname: nickname.value,
+    nickname_set: !!nickname.value.trim(),
+    chibi: picked.value != null ? PRESETS[picked.value].c : undefined,
+    chibi_set: picked.value != null,
+  };
+}
+
+/** 挂起动作快照：goLogin 落信号位与成功续办两处同用 */
+function pendingSnapshot() {
+  return {
+    pendingJoin: props.pendingJoin,
+    pendingLaunch: props.pendingLaunch,
+    pendingCheckin: props.pendingCheckin,
+    pendingIntent: props.pendingIntent,
+  };
+}
+
+/* 右上角【登录】（1.6 §4.2 全天候明门）：先 flush 草稿（登完回来已填内容不丢），
+   挂起动作快照落信号位，直达登录页。弹层会随宿主页 onHide 被关、本组件卸载——
+   登录回来由登录页凭信号位快照代跑续办，不靠本组件存活。 */
 function goLogin(): void {
-  ui.closeSheet();
+  flushDraft();
+  ui.pendingAfterLogin = pendingSnapshot();
   uni.navigateTo({ url: "/pages/mine/login" });
 }
 
 /* ---- 提交名片 ---- */
 async function onSubmitCard(): Promise<void> {
-  const p = phone.value.trim();
-  if (!isValidPhone(p)) {
+  if (!isValidPhone(phone.value.trim())) {
     ui.toast("请输入 11 位手机号");
     return;
   }
   busy.value = true;
   try {
-    await session.signupWithCard({
-      phone: p,
-      nickname: nickname.value,
-      nickname_set: !!nickname.value.trim(),
-      chibi: picked.value != null ? PRESETS[picked.value].c : undefined,
-      chibi_set: picked.value != null,
-    });
+    await session.signupWithCard(cardPayload());
     afterSuccess(
       props.pendingJoin
         ? "报名完成，已在名单中"
@@ -292,6 +330,33 @@ async function onSubmitCard(): Promise<void> {
   } finally {
     busy.value = false;
   }
+}
+
+/* ---- 占卡三出口之二：密码接管（§4.5）——效果与短信接管一致：
+     名片覆盖冒填者档案、全设备钥匙连同旧密码作废、挂起动作接着办 ---- */
+async function onPwdRedeem(): Promise<void> {
+  if (!pwd.value) {
+    ui.toast("请输入密码");
+    return;
+  }
+  busy.value = true;
+  try {
+    await session.passwordRedeem(phone.value.trim(), pwd.value, cardPayload());
+    afterSuccess("已进入你的账号");
+  } catch (e) {
+    // password_locked 的 message 自带剩余秒；password_wrong 自带剩余次数，透传即可
+    if (e instanceof ApiError && e.code === "password_locked") {
+      pwdLocked.value = true; // 锁内亮「改用短信验证」出口（短信路不受锁影响）
+    }
+    ui.toast(errText(e));
+  } finally {
+    busy.value = false;
+  }
+}
+
+/** 微信位（1.6 §4.12）：资质未到，点了只说明，不放死按钮 */
+function onWechat(): void {
+  ui.toast("微信登录即将开通 · 资质到位后点亮");
 }
 
 /* ---- 占用 → 接管 ---- */
@@ -332,13 +397,7 @@ async function onVerify(): Promise<void> {
       phone.value.trim(),
       code.value.trim(),
       "takeover",
-      {
-        phone: phone.value.trim(),
-        nickname: nickname.value,
-        nickname_set: !!nickname.value.trim(),
-        chibi: picked.value != null ? PRESETS[picked.value].c : undefined,
-        chibi_set: picked.value != null,
-      },
+      cardPayload(),
     );
     afterSuccess("已进入你的账号");
   } catch (e) {
@@ -348,40 +407,70 @@ async function onVerify(): Promise<void> {
   }
 }
 
-/* ---- 成功收尾：清草稿 → 接着完成挂起动作（报名/建局/扫码签到）→ 关弹层。
-     挂起动作失败 toast 人话（动作入口仍在对应页面可重试），不阻断关弹层 ---- */
+/* ---- 成功收尾（建号/短信接管/密码接管共用）：清草稿 → 接着完成挂起动作 → 关弹层。
+     续办单一源在 composables/pendingResume（登录页登回来那路同款） ---- */
 function afterSuccess(msg: string): void {
   clearCardDraft();
-  void followUp();
+  void runPendingResume(pendingSnapshot());
   ui.toast(msg);
   ui.closeSheet();
-}
-
-async function followUp(): Promise<void> {
-  try {
-    if (props.pendingJoin) {
-      await game.joinGame(props.pendingJoin.gameId, props.pendingJoin.bring);
-    } else if (props.pendingLaunch) {
-      await game.publishGame(props.pendingLaunch);
-      goMeet(); // 建局成功回约球页（与 LaunchSheet.publish 同径）
-    } else if (props.pendingCheckin) {
-      await liveStore.arriveMe(props.pendingCheckin.gameId); // 2.1 选项A：建号即球友，自动「我到了」
-    } else if (props.pendingIntent) {
-      const { slots, frequency, note } = props.pendingIntent;
-      await game.saveIntent(slots, frequency, note); // 文案由 store 发（单一源）
-    }
-  } catch (e) {
-    ui.toast(errText(e));
-  }
 }
 </script>
 
 <style lang="scss" scoped>
 /* 壳层标题/hint 走全局 .sheet-t/.sheet-hint（base.scss 收源） */
-.btns {
+/* 标题行：右上角【登录】全天候亮（1.6 §4.2 替代 1.1 底部小字"我是老球友"） */
+.trow {
   display: flex;
-  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
 }
+.login-link {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--lemon);
+  cursor: pointer;
+}
+.login-link:active {
+  opacity: 0.7;
+}
+
+/* 占卡三出口（1.6 §4.5）：纵向排列，微信位与返回重填是轻量行 */
+.exits {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+.wx-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-md);
+  padding: 11px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.wx-row:active {
+  border-color: rgba(255, 212, 0, 0.4);
+}
+.wx-note {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+}
+.relink {
+  font-size: 12px;
+  color: var(--dim);
+  text-align: center;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.relink:active {
+  color: var(--lemon);
+}
+
 .flex1 {
   flex: 1;
 }
@@ -435,17 +524,5 @@ async function followUp(): Promise<void> {
   color: var(--dim);
   margin-top: 12px;
   text-align: center;
-}
-/* 老球友找回出口（仅独立打开时）：比客服行醒目一档，可点 */
-.oldfriend {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--lemon);
-  margin-top: 14px;
-  text-align: center;
-  cursor: pointer;
-}
-.oldfriend:active {
-  opacity: 0.7;
 }
 </style>

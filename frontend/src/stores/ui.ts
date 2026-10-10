@@ -6,6 +6,13 @@ import { ref } from "vue";
 import { defineStore } from "pinia";
 import type { SheetPayload } from "@/api/types";
 
+/** 名片卡挂起动作快照（1.6 末批）：signup-card payload 去类型的形状——
+    信号位与续办单一源（composables/pendingResume）共用 */
+export type SignupPending = Omit<
+  Extract<SheetPayload, { type: "signup-card" }>,
+  "type"
+>;
+
 export const useUiStore = defineStore("ui", () => {
   /** 全局单例弹层（alpha:836 openSheet：全局唯一 #sheet，按 payload.type 分发渲染） */
   const sheet = ref<SheetPayload | null>(null);
@@ -23,9 +30,7 @@ export const useUiStore = defineStore("ui", () => {
   /** 1.1 D3「先看后报」统一入口：游客点报名/建局/留意向/到场 → 关当前弹层开名片建号卡，
       建号成功后由 SignupSheet 接着完成挂起动作（pending 原样透传）。
       此前 JoinSheet/LaunchSheet/live 页三处各手写一遍「关-开」门。 */
-  function signupThen(
-    pending: Omit<Extract<SheetPayload, { type: "signup-card" }>, "type">,
-  ): void {
+  function signupThen(pending: SignupPending): void {
     closeSheet();
     openSheet({ ...pending, type: "signup-card" });
   }
@@ -33,6 +38,12 @@ export const useUiStore = defineStore("ui", () => {
     toastMsg.value = msg;
     toastKey.value++;
   }
+
+  /* —— 1.6 挂起动作跨页信号位（仿 live store pendingLiveId：跨页一次性、内存非持久、消费即清）
+     名片卡点【登录】跳登录页前落位。装的是挂起动作快照而非布尔：跳转瞬间 PageShell.onHide
+     会关弹层卸载 SignupSheet，props 不可恃，快照进信号位才能在登录页代跑续办。
+     卫生：登录页手动返回仍游客由 login 页 onUnload 兜清（why 注释在消费点旁）。 */
+  const pendingAfterLogin = ref<SignupPending | null>(null);
 
   /* —— P3 纯增量：全局撒花触发器（alpha:839-845 confetti(n) 的状态层入口）——
      Confetti.vue（P1）是纯展示件，只接受 trigger 计数 + count 粒数两个 props，
@@ -51,6 +62,7 @@ export const useUiStore = defineStore("ui", () => {
     toastKey,
     confettiKey,
     confettiN,
+    pendingAfterLogin,
     openSheet,
     closeSheet,
     signupThen,

@@ -30,7 +30,8 @@
             :key="i - 1"
             :kind="curVariant(part) === i - 1 ? 'ok' : 'default'"
             @click="user.setVariant(part, i - 1)"
-          >{{ i - 1 }}</AppChip>
+            >{{ i - 1 }}</AppChip
+          >
         </view>
       </view>
 
@@ -43,7 +44,8 @@
             :key="b.v"
             :kind="me.cardBg === b.v ? 'ok' : 'default'"
             @click="user.setCardBg(b.v)"
-          >{{ b.n }}</AppChip>
+            >{{ b.n }}</AppChip
+          >
         </view>
       </view>
     </view>
@@ -53,39 +55,47 @@
       <AppInput v-model="nameDraft" placeholder="怎么称呼你" />
     </AppField>
 
-    <!-- 手机号（1.1 A1 档案页）：完整号只有本人可见 + 唯一钥匙提示；手机号不可自行换（人工） -->
+    <!-- 手机号（1.1 A1 档案页）：完整号只有本人可见 + 「账号的根」换号提示；手机号不可自行换（人工） -->
     <AppField v-if="session.account?.phone" label="手机号">
       <view class="phonerow">
         <text class="phone">{{ session.account.phone }}</text>
-        <text class="phint">唯一钥匙 · 换号先联系平台客服</text>
+        <text class="phint">手机号是你账号的根 · 换号先联系群主</text>
       </view>
     </AppField>
 
     <AppButton variant="pri" block class="save" @click="onSave">保存</AppButton>
 
     <!-- 5.1「未来可能付费（如头像）」预告 -->
-    <NoteCard class="note" text="头像与背景未来可能上架付费装扮 · 当前全部免费" />
+    <NoteCard
+      class="note"
+      text="头像与背景未来可能上架付费装扮 · 当前全部免费"
+    />
   </PageShell>
 </template>
 
 <script setup lang="ts">
 /* 装扮页（5.1 子页）：我的脸面。数据/动作全在 user store（setVariant 即点即换、saveProfile toast 内聚），
    本页只做选择接线与预览展示。 */
-import { computed, ref } from 'vue';
-import PageShell from '@/components/biz/PageShell.vue';
-import BackRow from '@/components/biz/BackRow.vue';
-import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
-import AppSeg from '@/components/ui/AppSeg.vue';
-import AppChip from '@/components/ui/AppChip.vue';
-import AppField from '@/components/ui/AppField.vue';
-import AppInput from '@/components/ui/AppInput.vue';
-import AppButton from '@/components/ui/AppButton.vue';
-import NoteCard from '@/components/ui/NoteCard.vue';
-import ProfileSheet from '@/components/biz/ProfileSheet.vue';
-import { useUserStore } from '@/stores/user';
-import { DRESS_PARTS, DRESS_RANGES, PART_NAMES, type DressPart } from '@/utils/chibi';
-import { useSessionStore } from '@/stores/session';
-import type { CardBg } from '@/api/types';
+import { computed, ref } from "vue";
+import PageShell from "@/components/biz/PageShell.vue";
+import BackRow from "@/components/biz/BackRow.vue";
+import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AppSeg from "@/components/ui/AppSeg.vue";
+import AppChip from "@/components/ui/AppChip.vue";
+import AppField from "@/components/ui/AppField.vue";
+import AppInput from "@/components/ui/AppInput.vue";
+import AppButton from "@/components/ui/AppButton.vue";
+import NoteCard from "@/components/ui/NoteCard.vue";
+import ProfileSheet from "@/components/biz/ProfileSheet.vue";
+import { useUserStore } from "@/stores/user";
+import {
+  DRESS_PARTS,
+  DRESS_RANGES,
+  PART_NAMES,
+  type DressPart,
+} from "@/utils/chibi";
+import { useSessionStore } from "@/stores/session";
+import type { CardBg } from "@/api/types";
 
 const user = useUserStore();
 const session = useSessionStore();
@@ -94,16 +104,20 @@ const me = computed(() => user.me);
 
 /** 保存：登录态走后端（昵称+当前小人+卡背一次落云），游客回落本地演示保存（session 内分流） */
 function onSave(): void {
-  void session.saveProfile({ nickname: nameDraft.value, chibi: { ...me.value.chibi }, card_bg: me.value.cardBg });
+  void session.saveProfile({
+    nickname: nameDraft.value,
+    chibi: { ...me.value.chibi },
+    card_bg: me.value.cardBg,
+  });
 }
 
 /* 预览两态（string|number 对齐 AppSeg v-model 联合类型，IntentFormSheet ifFreq 同法） */
-const view = ref<string | number>('me');
+const view = ref<string | number>("me");
 const VIEW_OPTS = [
-  { value: 'me', label: '我的预览' },
-  { value: 'card', label: '档案卡效果' },
+  { value: "me", label: "我的预览" },
+  { value: "card", label: "档案卡效果" },
 ];
-const isCard = computed(() => view.value === 'card');
+const isCard = computed(() => view.value === "card");
 
 /** 部件当前变体号（chibi 字段可缺省，缺省按 0） */
 function curVariant(part: DressPart): number {
@@ -112,10 +126,10 @@ function curVariant(part: DressPart): number {
 
 /** 卡背背景全集（CardBg 四值，alpha:1844 bg-*；n 为 chips 展示名） */
 const CARD_BGS: { v: CardBg; n: string }[] = [
-  { v: 'neon', n: '霓虹' },
-  { v: 'gold', n: '鎏金' },
-  { v: 'cyber', n: '赛博' },
-  { v: 'aurora', n: '极光' },
+  { v: "neon", n: "霓虹" },
+  { v: "gold", n: "鎏金" },
+  { v: "cyber", n: "赛博" },
+  { v: "aurora", n: "极光" },
 ];
 
 /** 昵称草稿 */
