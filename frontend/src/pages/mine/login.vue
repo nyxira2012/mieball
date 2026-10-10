@@ -1,189 +1,201 @@
 <template>
   <!-- 登录页（1.6 A1 四钥匙明门）：双栏「收验证码」（默认，1.1 两步原样）｜「用密码」
        （手机号+密码直进，锁一刻钟只锁此路）；栏内带忘记密码三步（4.10 换锁）。
-       微信位只给说明不放死按钮（4.12）；页底客服出口写死（6.1 修订口径：群主/反馈群）。 -->
+       微信位只给说明不放死按钮（4.12）；页底客服出口写死（6.1 修订口径：群主/反馈群）。
+       点空白收键盘是本页唯一的「放弃辅助」——不加常驻取消按钮（进入即想登录，想走有返回行/右滑）；
+       原生监听直挂包裹层（uni 内建 view 的 @click 在 slot 根节点位不落地，机制见 blurOnBlank.ts）。 -->
   <PageShell>
-    <BackRow />
+    <view ref="tapRoot" class="tap-blur">
+      <BackRow />
 
-    <view class="stag">
-      <view class="kicker">Old Friend</view>
-      <view class="brand">我是<text class="bem">老球友</text></view>
-      <view class="sub"
-        >换了手机 / 微信重装过？收条短信或用密码，名片报名战绩全拿回来</view
-      >
-    </view>
+      <view class="stag">
+        <view class="kicker">Old Friend</view>
+        <view class="brand">我是<text class="bem">老球友</text></view>
+        <view class="sub"
+          >换了手机 / 微信重装过？收条短信或用密码，名片报名战绩全拿回来</view
+        >
+      </view>
 
-    <!-- 双栏切换（A1：两栏并列，验证码为默认） -->
-    <view class="tabs">
-      <view class="tab" :class="{ on: tab === 'code' }" @click="tab = 'code'"
-        >收验证码</view
-      >
-      <view class="tab" :class="{ on: tab === 'pwd' }" @click="tab = 'pwd'"
-        >用密码</view
-      >
-    </view>
+      <!-- 双栏切换（A1：两栏并列，验证码为默认） -->
+      <view class="tabs">
+        <view class="tab" :class="{ on: tab === 'code' }" @click="tab = 'code'"
+          >收验证码</view
+        >
+        <view class="tab" :class="{ on: tab === 'pwd' }" @click="tab = 'pwd'"
+          >用密码</view
+        >
+      </view>
 
-    <!-- ===== 收验证码栏：手机号 → 6 位码（1.1 现状原样） ===== -->
-    <template v-if="tab === 'code'">
-      <template v-if="step === 'phone'">
+      <!-- ===== 收验证码栏：手机号 → 6 位码（1.1 现状原样） ===== -->
+      <template v-if="tab === 'code'">
+        <template v-if="step === 'phone'">
+          <AppField label="手机号">
+            <AppInput
+              v-model="phone"
+              type="number"
+              placeholder="报名时填的 11 位手机号"
+              :maxlength="11"
+            />
+          </AppField>
+          <view v-if="hint" class="err">{{ hint }}</view>
+          <AppButton variant="pri" block :disabled="busy" @click="onNext">{{
+            busy ? "发送中…" : "下一步 · 收验证码"
+          }}</AppButton>
+        </template>
+
+        <template v-else>
+          <AppField label="6 位短信验证码">
+            <view class="frow">
+              <AppInput
+                v-model="code"
+                type="number"
+                placeholder="6 位数字"
+                :maxlength="6"
+                class="flex1"
+              />
+              <AppButton
+                variant="ghost"
+                size="sm"
+                :disabled="countdown > 0 || busy"
+                @click="onResend"
+              >
+                {{ countdown > 0 ? `${countdown}s` : "重新发送" }}
+              </AppButton>
+            </view>
+          </AppField>
+          <view v-if="hint" class="err">{{ hint }}</view>
+          <AppButton variant="pri" block :disabled="busy" @click="onVerify">{{
+            busy ? "验证中…" : "拿回我的战绩"
+          }}</AppButton>
+        </template>
+      </template>
+
+      <!-- ===== 用密码栏：手机号+密码直进（4.9）；连错 5 次只锁此路 15 分钟，短信路照常 ===== -->
+      <template v-else-if="!forgot">
         <AppField label="手机号">
           <AppInput
-            v-model="phone"
+            v-model="pwdPhone"
             type="number"
             placeholder="报名时填的 11 位手机号"
             :maxlength="11"
           />
         </AppField>
-        <view v-if="hint" class="err">{{ hint }}</view>
-        <AppButton variant="pri" block :disabled="busy" @click="onNext">{{
-          busy ? "发送中…" : "下一步 · 收验证码"
-        }}</AppButton>
-      </template>
-
-      <template v-else>
-        <AppField label="6 位短信验证码">
-          <view class="frow">
-            <AppInput
-              v-model="code"
-              type="number"
-              placeholder="6 位数字"
-              :maxlength="6"
-              class="flex1"
-            />
-            <AppButton
-              variant="ghost"
-              size="sm"
-              :disabled="countdown > 0 || busy"
-              @click="onResend"
-            >
-              {{ countdown > 0 ? `${countdown}s` : "重新发送" }}
-            </AppButton>
-          </view>
-        </AppField>
-        <view v-if="hint" class="err">{{ hint }}</view>
-        <AppButton variant="pri" block :disabled="busy" @click="onVerify">{{
-          busy ? "验证中…" : "拿回我的战绩"
-        }}</AppButton>
-      </template>
-    </template>
-
-    <!-- ===== 用密码栏：手机号+密码直进（4.9）；连错 5 次只锁此路 15 分钟，短信路照常 ===== -->
-    <template v-else-if="!forgot">
-      <AppField label="手机号">
-        <AppInput
-          v-model="pwdPhone"
-          type="number"
-          placeholder="报名时填的 11 位手机号"
-          :maxlength="11"
-        />
-      </AppField>
-      <AppField label="密码">
-        <AppInput
-          v-model="pwd"
-          placeholder="至少 6 位"
-          :maxlength="40"
-          password
-        />
-      </AppField>
-      <view v-if="pwdHint" class="err">{{ pwdHint }}</view>
-      <AppButton variant="pri" block :disabled="pwdBusy" @click="onPwdLogin">{{
-        pwdBusy ? "验证中…" : "用密码进入"
-      }}</AppButton>
-      <view v-if="locked" class="linkish switch" @click="switchToCode"
-        >等不及？切「收验证码」照常进 ▸</view
-      >
-      <view class="minor">
-        <text class="linkish" @click="startForgot">忘记密码？</text>
-      </view>
-    </template>
-
-    <!-- ===== 忘记密码三步（4.10 换锁）：手机号 → 收码 → 新密码两遍；成功即登录回栈 ===== -->
-    <template v-else>
-      <view class="fp-t">重设密码</view>
-      <template v-if="forgot === 'phone'">
-        <AppField label="手机号">
+        <AppField label="密码">
           <AppInput
-            v-model="fpPhone"
-            type="number"
-            placeholder="报名时填的 11 位手机号"
-            :maxlength="11"
-          />
-        </AppField>
-        <view v-if="fpHint" class="err">{{ fpHint }}</view>
-        <AppButton
-          variant="pri"
-          block
-          :disabled="fpBusy"
-          @click="onForgotSend"
-          >{{ fpBusy ? "发送中…" : "下一步 · 收验证码" }}</AppButton
-        >
-      </template>
-
-      <template v-else-if="forgot === 'code'">
-        <AppField label="6 位短信验证码">
-          <view class="frow">
-            <AppInput
-              v-model="fpCode"
-              type="number"
-              placeholder="6 位数字"
-              :maxlength="6"
-              class="flex1"
-            />
-            <AppButton
-              variant="ghost"
-              size="sm"
-              :disabled="fpCountdown > 0 || fpBusy"
-              @click="onForgotResend"
-            >
-              {{ fpCountdown > 0 ? `${fpCountdown}s` : "重新发送" }}
-            </AppButton>
-          </view>
-        </AppField>
-        <view v-if="fpHint" class="err">{{ fpHint }}</view>
-        <AppButton variant="pri" block :disabled="fpBusy" @click="onForgotCode"
-          >下一步 · 设新密码</AppButton
-        >
-      </template>
-
-      <template v-else>
-        <AppField label="新密码（至少 6 位）">
-          <AppInput
-            v-model="fpP1"
-            placeholder="6 位以上，纯数字也行"
+            v-model="pwd"
+            placeholder="至少 6 位"
             :maxlength="40"
             password
           />
         </AppField>
-        <AppField label="再输一遍确认">
-          <AppInput
-            v-model="fpP2"
-            placeholder="两次要一致"
-            :maxlength="40"
-            password
-          />
-        </AppField>
-        <view v-if="fpHint" class="err">{{ fpHint }}</view>
+        <view v-if="pwdHint" class="err">{{ pwdHint }}</view>
         <AppButton
           variant="pri"
           block
-          :disabled="fpBusy"
-          @click="onForgotReset"
-          >{{ fpBusy ? "重设中…" : "重设并进入" }}</AppButton
+          :disabled="pwdBusy"
+          @click="onPwdLogin"
+          >{{ pwdBusy ? "验证中…" : "用密码进入" }}</AppButton
         >
+        <view v-if="locked" class="linkish switch" @click="switchToCode"
+          >等不及？切「收验证码」照常进 ▸</view
+        >
+        <view class="minor">
+          <text class="linkish" @click="startForgot">忘记密码？</text>
+        </view>
       </template>
-      <view class="minor">
-        <text class="linkish" @click="forgot = null">返回 · 用密码登录</text>
-      </view>
-    </template>
 
-    <!-- 微信位（4.12）：给位不给死按钮，点了说明 -->
-    <view class="wx-row" @click="onWechat">
-      <text>微信一键登录</text>
-      <text class="wx-note">即将开通</text>
+      <!-- ===== 忘记密码三步（4.10 换锁）：手机号 → 收码 → 新密码两遍；成功即登录回栈 ===== -->
+      <template v-else>
+        <view class="fp-t">重设密码</view>
+        <template v-if="forgot === 'phone'">
+          <AppField label="手机号">
+            <AppInput
+              v-model="fpPhone"
+              type="number"
+              placeholder="报名时填的 11 位手机号"
+              :maxlength="11"
+            />
+          </AppField>
+          <view v-if="fpHint" class="err">{{ fpHint }}</view>
+          <AppButton
+            variant="pri"
+            block
+            :disabled="fpBusy"
+            @click="onForgotSend"
+            >{{ fpBusy ? "发送中…" : "下一步 · 收验证码" }}</AppButton
+          >
+        </template>
+
+        <template v-else-if="forgot === 'code'">
+          <AppField label="6 位短信验证码">
+            <view class="frow">
+              <AppInput
+                v-model="fpCode"
+                type="number"
+                placeholder="6 位数字"
+                :maxlength="6"
+                class="flex1"
+              />
+              <AppButton
+                variant="ghost"
+                size="sm"
+                :disabled="fpCountdown > 0 || fpBusy"
+                @click="onForgotResend"
+              >
+                {{ fpCountdown > 0 ? `${fpCountdown}s` : "重新发送" }}
+              </AppButton>
+            </view>
+          </AppField>
+          <view v-if="fpHint" class="err">{{ fpHint }}</view>
+          <AppButton
+            variant="pri"
+            block
+            :disabled="fpBusy"
+            @click="onForgotCode"
+            >下一步 · 设新密码</AppButton
+          >
+        </template>
+
+        <template v-else>
+          <AppField label="新密码（至少 6 位）">
+            <AppInput
+              v-model="fpP1"
+              placeholder="6 位以上，纯数字也行"
+              :maxlength="40"
+              password
+            />
+          </AppField>
+          <AppField label="再输一遍确认">
+            <AppInput
+              v-model="fpP2"
+              placeholder="两次要一致"
+              :maxlength="40"
+              password
+            />
+          </AppField>
+          <view v-if="fpHint" class="err">{{ fpHint }}</view>
+          <AppButton
+            variant="pri"
+            block
+            :disabled="fpBusy"
+            @click="onForgotReset"
+            >{{ fpBusy ? "重设中…" : "重设并进入" }}</AppButton
+          >
+        </template>
+        <view class="minor">
+          <text class="linkish" @click="forgot = null">返回 · 用密码登录</text>
+        </view>
+      </template>
+
+      <!-- 微信位（4.12）：给位不给死按钮，点了说明 -->
+      <view class="wx-row" @click="onWechat">
+        <text>微信一键登录</text>
+        <text class="wx-note">即将开通</text>
+      </view>
+
+      <!-- 客服出口写死在页底（6.1 修订口径：群主=开发者本人，不虚构客服微信号） -->
+      <view class="kefu">收不到验证码？联系群主或发到反馈群</view>
     </view>
-
-    <!-- 客服出口写死在页底（6.1 修订口径：群主=开发者本人，不虚构客服微信号） -->
-    <view class="kefu">收不到验证码？联系群主或发到反馈群</view>
   </PageShell>
 </template>
 
@@ -192,7 +204,7 @@
    其余 errText 原样透出（password_wrong/locked 的剩余次数与秒数已由后端文案带上）。
    1.6 末批兼任挂起接续的消费点：登录往返中名片弹层已被 PageShell.onHide 关闭，
    登录成功（三路任一）由本页凭 ui.pendingAfterLogin 快照代跑续办。 */
-import { ref, watch } from "vue";
+import { ref, watch, onMounted, onUnmounted } from "vue";
 import { onUnload } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import BackRow from "@/components/biz/BackRow.vue";
@@ -202,12 +214,18 @@ import AppButton from "@/components/ui/AppButton.vue";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import { runPendingResume } from "@/composables/pendingResume";
+import { bindBlurOnBlank, unbindBlurOnBlank } from "@/composables/blurOnBlank";
 import { ApiError, clearCardDraft, errText } from "@/api/http";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
 import { isValidPhone, newPwdError } from "@/utils/validate";
 
 const session = useSessionStore();
 const ui = useUiStore();
+
+/* 点空白收键盘（P2 通用底垫）：绑定细节见 blurOnBlank.ts 头注 */
+const tapRoot = ref<unknown>(null);
+onMounted(() => bindBlurOnBlank(tapRoot.value));
+onUnmounted(() => unbindBlurOnBlank(tapRoot.value));
 
 /* —— 1.6 挂起接续：isGuest 翻 ready 即消费——清信号位 + 清草稿 + 拿账号身份跑挂起动作
    （不再建号；续办单一源 runPendingResume，与名片卡接管成功路同款）。 */

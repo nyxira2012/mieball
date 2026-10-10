@@ -2,81 +2,94 @@
   <!-- 装扮页（5.1 子页）：预览大图（可切「别人看到的档案卡」效果）+ 分类装扮件 + 卡背背景 + 昵称保存。
        换件/背景即点即换（me 是 store 同源引用，全局同步换新）；昵称本地草稿，显式保存才落。 -->
   <PageShell>
-    <!-- 子页统一返回行（BackRow） -->
-    <BackRow />
+    <!-- 点空白收键盘：原生监听直挂包裹层元素（uni 内建 view 的 @click 在 slot 根节点位
+         不落地——login 页同款问题先行实证，见 login.vue 注释） -->
+    <view ref="tapRoot" class="tap-blur">
+      <!-- 子页统一返回行（BackRow） -->
+      <BackRow />
 
-    <view class="stag">
-      <view class="kicker">Dress Up</view>
-      <view class="brand">装<text class="bem">扮</text></view>
-    </view>
+      <view class="stag">
+        <view class="kicker">Dress Up</view>
+        <view class="brand">装<text class="bem">扮</text></view>
+      </view>
 
-    <!-- 预览两态：我的预览 / 别人看到的完整档案卡（与打球页名单点击同一份 ProfileSheet） -->
-    <AppSeg v-model="view" :options="VIEW_OPTS" />
+      <!-- 预览两态：我的预览 / 别人看到的完整档案卡（与打球页名单点击同一份 ProfileSheet） -->
+      <AppSeg v-model="view" :options="VIEW_OPTS" />
 
-    <view class="preview">
-      <ChibiAvatar :chibi="me.chibi" :size="140" />
-    </view>
-    <view v-if="isCard" class="cardwrap">
-      <ProfileSheet :user-id="0" />
-    </view>
+      <view class="preview">
+        <ChibiAvatar :chibi="me.chibi" :size="140" />
+      </view>
+      <view v-if="isCard" class="cardwrap">
+        <ProfileSheet :user-id="0" />
+      </view>
 
-    <!-- 分类装扮件（5.1「分类装扮件…即点即换即见」）：逐部件一行，变体号 chips 即点即换 -->
-    <view class="parts">
-      <view v-for="part in DRESS_PARTS" :key="part" class="part-row">
-        <text class="part-name">{{ PART_NAMES[part] }}</text>
-        <view class="variants">
-          <AppChip
-            v-for="i in DRESS_RANGES[part]"
-            :key="i - 1"
-            :kind="curVariant(part) === i - 1 ? 'ok' : 'default'"
-            @click="user.setVariant(part, i - 1)"
-            >{{ i - 1 }}</AppChip
-          >
+      <!-- 分类装扮件（5.1「分类装扮件…即点即换即见」）：逐部件一行，变体号 chips 即点即换 -->
+      <view class="parts">
+        <view v-for="part in DRESS_PARTS" :key="part" class="part-row">
+          <text class="part-name">{{ PART_NAMES[part] }}</text>
+          <view class="variants">
+            <AppChip
+              v-for="i in DRESS_RANGES[part]"
+              :key="i - 1"
+              :kind="curVariant(part) === i - 1 ? 'ok' : 'default'"
+              @click="user.setVariant(part, i - 1)"
+              >{{ i - 1 }}</AppChip
+            >
+          </view>
+        </view>
+
+        <!-- 卡背背景（5.1）：换完战力页 MyPowerCard 卡背全局联动 -->
+        <view class="part-row">
+          <text class="part-name">卡背背景</text>
+          <view class="variants">
+            <AppChip
+              v-for="b in CARD_BGS"
+              :key="b.v"
+              :kind="me.cardBg === b.v ? 'ok' : 'default'"
+              @click="user.setCardBg(b.v)"
+              >{{ b.n }}</AppChip
+            >
+          </view>
         </view>
       </view>
 
-      <!-- 卡背背景（5.1）：换完战力页 MyPowerCard 卡背全局联动 -->
-      <view class="part-row">
-        <text class="part-name">卡背背景</text>
-        <view class="variants">
-          <AppChip
-            v-for="b in CARD_BGS"
-            :key="b.v"
-            :kind="me.cardBg === b.v ? 'ok' : 'default'"
-            @click="user.setCardBg(b.v)"
-            >{{ b.n }}</AppChip
-          >
+      <!-- 昵称：初值取当前名，本地草稿不即时写 store，保存才落（toast 在 store） -->
+      <AppField label="昵称">
+        <AppInput v-model="nameDraft" placeholder="怎么称呼你" />
+      </AppField>
+      <!-- 手机号（1.1 A1 档案页）：完整号只有本人可见 + 「账号的根」换号提示；手机号不可自行换（人工） -->
+      <AppField v-if="session.account?.phone" label="手机号">
+        <view class="phonerow">
+          <text class="phone">{{ session.account.phone }}</text>
+          <text class="phint">手机号是你账号的根 · 换号先联系群主</text>
         </view>
+      </AppField>
+
+      <!-- 5.1「未来可能付费（如头像）」预告 -->
+      <NoteCard
+        class="note"
+        text="头像与背景未来可能上架付费装扮 · 当前全部免费"
+      />
+
+      <!-- 保存条：页底常驻（拇指一次点完闭环，不再回顶部摸返回）；键盘弹起骑到键盘上沿。
+         文案仍是「保存」——行为闭环了，认知不加码 -->
+      <view
+        class="savebar"
+        :style="kbH ? { transform: `translateY(-${kbH}px)` } : undefined"
+      >
+        <AppButton variant="pri" block :disabled="saveBusy" @click="onSave">{{
+          saveBusy ? "保存中…" : "保存"
+        }}</AppButton>
       </view>
     </view>
-
-    <!-- 昵称：初值取当前名，本地草稿不即时写 store，保存才落（toast 在 store） -->
-    <AppField label="昵称">
-      <AppInput v-model="nameDraft" placeholder="怎么称呼你" />
-    </AppField>
-
-    <!-- 手机号（1.1 A1 档案页）：完整号只有本人可见 + 「账号的根」换号提示；手机号不可自行换（人工） -->
-    <AppField v-if="session.account?.phone" label="手机号">
-      <view class="phonerow">
-        <text class="phone">{{ session.account.phone }}</text>
-        <text class="phint">手机号是你账号的根 · 换号先联系群主</text>
-      </view>
-    </AppField>
-
-    <AppButton variant="pri" block class="save" @click="onSave">保存</AppButton>
-
-    <!-- 5.1「未来可能付费（如头像）」预告 -->
-    <NoteCard
-      class="note"
-      text="头像与背景未来可能上架付费装扮 · 当前全部免费"
-    />
   </PageShell>
 </template>
 
 <script setup lang="ts">
 /* 装扮页（5.1 子页）：我的脸面。数据/动作全在 user store（setVariant 即点即换、saveProfile toast 内聚），
-   本页只做选择接线与预览展示。 */
-import { computed, ref } from "vue";
+   本页只做选择接线与预览展示。保存条置底 + 成功即返回（5.1 修订：任务在拇指区一次闭环，
+   toast 在 store、mine 页 ToastHost 常驻挂载——页面栈返回后提示照常亮）。 */
+import { computed, ref, onMounted, onUnmounted } from "vue";
 import PageShell from "@/components/biz/PageShell.vue";
 import BackRow from "@/components/biz/BackRow.vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
@@ -95,21 +108,55 @@ import {
   type DressPart,
 } from "@/utils/chibi";
 import { useSessionStore } from "@/stores/session";
+import { useUiStore } from "@/stores/ui";
+import { bindBlurOnBlank, unbindBlurOnBlank } from "@/composables/blurOnBlank";
+import { errText } from "@/api/http";
 import type { CardBg } from "@/api/types";
 
 const user = useUserStore();
 const session = useSessionStore();
+const ui = useUiStore();
 /** 我 = store 同一份可变引用，换件/背景/改名全产品同步 */
 const me = computed(() => user.me);
 
-/** 保存：登录态走后端（昵称+当前小人+卡背一次落云），游客回落本地演示保存（session 内分流） */
-function onSave(): void {
-  void session.saveProfile({
-    nickname: nameDraft.value,
-    chibi: { ...me.value.chibi },
-    card_bg: me.value.cardBg,
-  });
+/** 保存：登录态走后端（昵称+当前小人+卡背一次落云），游客回落本地演示保存（session 内分流）。
+    成功即 navigateBack（5.1 修订）；空名前置同规拦截（store 也会拦）——没存成不退场；
+    后端拒（ApiError）留原地，toast 说明（此前 void 不接是悬空拒绝，顺手补上消费） */
+const saveBusy = ref(false);
+async function onSave(): Promise<void> {
+  if (saveBusy.value) return;
+  if (!nameDraft.value.trim()) {
+    ui.toast("昵称不能为空");
+    return;
+  }
+  saveBusy.value = true;
+  try {
+    await session.saveProfile({
+      nickname: nameDraft.value,
+      chibi: { ...me.value.chibi },
+      card_bg: me.value.cardBg,
+    });
+    uni.navigateBack();
+  } catch (e) {
+    ui.toast(errText(e));
+  } finally {
+    saveBusy.value = false;
+  }
 }
+
+/* 键盘让位：软键盘弹起把保存条顶到键盘上沿（uni H5 3.5+/App 支持；不支持的端不触发，
+   保存条留在页底——点空白收键盘后自然可见，是同一件事的兜底） */
+const kbH = ref(0);
+onMounted(() => {
+  uni.onKeyboardHeightChange?.((res) => {
+    kbH.value = res?.height ?? 0;
+  });
+});
+
+/* 点空白收键盘（login 页同款，机制见 blurOnBlank.ts 头注） */
+const tapRoot = ref<unknown>(null);
+onMounted(() => bindBlurOnBlank(tapRoot.value));
+onUnmounted(() => unbindBlurOnBlank(tapRoot.value));
 
 /* 预览两态（string|number 对齐 AppSeg v-model 联合类型，IntentFormSheet ifFreq 同法） */
 const view = ref<string | number>("me");
@@ -190,12 +237,31 @@ const nameDraft = ref(me.value.name);
   flex-wrap: wrap;
 }
 
-/* 昵称区与保存钮间距 */
-.save {
-  margin-top: 6px;
-}
+/* 昵称区与保存钮间距；NoteCard 下面留出页底保存条的高度（page 自带底距再垫一截） */
 .note {
   margin-top: 14px;
+  margin-bottom: 40px;
+}
+
+/* ---------- 保存条：页底常驻，半透明底+发丝线（与吸附返回行同族材质） ---------- */
+.savebar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 80;
+  padding: 10px 18px calc(14px + env(safe-area-inset-bottom, 0px));
+  background: rgba(14, 14, 18, 0.92);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--line);
+  transition: transform 0.2s ease-out;
+}
+/* 宽屏画布：与 PageShell 的 480px 居中画布同宽（fixed 元素用左右归零+max-width 居中） */
+@media (min-width: 561px) {
+  .savebar {
+    max-width: 480px;
+    margin: 0 auto;
+  }
 }
 
 /* 手机号行（1.1 档案页：本人可见完整号 + 唯一钥匙提示） */

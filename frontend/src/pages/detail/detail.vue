@@ -4,6 +4,9 @@
        名单/人头/人均/状态全是后端定值（A4），加入入口读 joinable，退局窗口读 status+unlocked。
        非 tab 页：无 TabBar，仍挂全部宿主。 -->
   <PageShell>
+    <!-- 子页统一返回行：全站 navigationStyle custom 关了系统导航，详情页是六页里唯一漏挂的
+         （又常是微信分享卡落地页）——放 v-if 外，加载失败态也有出口；长页滚动吸附见 BackRow -->
+    <BackRow />
     <view v-if="game" class="stag">
       <!-- alpha:1403-1407 页头：kicker + 局名（首个 ' · ' 断行，其余保留） -->
       <view class="kicker"
@@ -294,6 +297,7 @@
 import { computed, onUnmounted, ref } from "vue";
 import { onLoad, onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
+import BackRow from "@/components/biz/BackRow.vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import AppChip from "@/components/ui/AppChip.vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
