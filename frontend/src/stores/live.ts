@@ -198,6 +198,15 @@ export const useLiveStore = defineStore("live", () => {
     liveView.value?.ended ? liveView.value : null,
   );
 
+  /** 收摊（2.6 完成）：只清本机画面——定格回看视图/现场态/跨页信号位全清，
+      账一点不动；有别的在办局由页面层接（ensureLive），store 只管原子清位 */
+  function dismissRecap(): void {
+    stopPolling();
+    live.value = null;
+    liveView.value = null;
+    pendingLiveId.value = null;
+  }
+
   /** 我的名册行 id（view.players 按 accountId 匹配身份位 me；查无返回 null——
       我不在名册：没签到没空降的新号/游客。绝不回落裸账号 id：行 id 与账号 id 是
       同库两套独立自增，数值撞车会把别人的行认成我（2026-10-11 扫码注册「提示
@@ -1265,6 +1274,7 @@ export const useLiveStore = defineStore("live", () => {
     endGame,
     liveView,
     recap,
+    dismissRecap,
     applyLiveView,
     pollLiveView,
     startPolling,

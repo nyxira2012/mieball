@@ -21,6 +21,7 @@ import {
   apiLockGame,
   apiMyGames,
   apiMyIntent,
+  apiPlaylog,
   apiPublishGame,
   apiQuitGame,
   apiRestoreGame,
@@ -121,6 +122,8 @@ export const useGameStore = defineStore("game", () => {
   const current = ref<Game | null>(null);
   const intents = ref<Intent[]>([]);
   const myIntent = ref<MyIntent | null>(null);
+  /** 打球记录（2.6）：后端已按散场倒序，整袋落位不重排；logs 页消费 */
+  const playlog = ref<{ games: Game[]; matchesCount: number } | null>(null);
   /** 读/写请求在途标记（A2 加载态；页面据此显示等待提示） */
   const loading = ref(false);
 
@@ -187,6 +190,15 @@ export const useGameStore = defineStore("game", () => {
     myIntent.value = v
       ? { slots: [...v.slots], frequency: v.frequency, note: v.note }
       : null;
+  }
+
+  /** 打球记录（2.6）：整袋落位（toGame 映射单点），排序真值在后端 */
+  async function loadPlaylog(): Promise<void> {
+    const v = await track(apiPlaylog);
+    playlog.value = {
+      games: v.games.map(toGame),
+      matchesCount: v.matches_count,
+    };
   }
 
   /* ---- 局簿写动作 ---- */
@@ -359,13 +371,17 @@ export const useGameStore = defineStore("game", () => {
 
   /** 进行中的局（live 入口页冷启动分发在用；真局来自后端派生态）。manual_lock 局截止前
       簿 state 仍 open——账开即现场（2.5 §4.4），liveOpened 定值一并算数，现场页 reload
-      才不会被 onLoad 弹回约球页 */
-  const liveGame = computed(
-    () =>
-      games.value.find((g) => g.status === "live" || g.liveOpened) ??
-      myGames.value.find((g) => g.status === "live" || g.liveOpened) ??
-      null,
-  );
+      才不会被 onLoad 弹回约球页。同时在办多个挑最近开打的（4.1-3）：开账时刻局簿
+      没有，startAt 是可用近似。 */
+  const liveGame = computed((): Game | null => {
+    const pick = (list: Game[]): Game | null => {
+      const on = list.filter((g) => g.status === "live" || g.liveOpened);
+      return on.length
+        ? on.reduce((a, b) => (b.startAt > a.startAt ? b : a))
+        : null;
+    };
+    return pick(games.value) ?? pick(myGames.value);
+  });
 
   return {
     games,
@@ -375,6 +391,7 @@ export const useGameStore = defineStore("game", () => {
     myIntent,
     loading,
     liveGame,
+    playlog,
     findGame,
     loadGames,
     loadMine,
@@ -382,6 +399,7 @@ export const useGameStore = defineStore("game", () => {
     refresh,
     loadIntents,
     loadMyIntent,
+    loadPlaylog,
     publishGame,
     editGame,
     joinGame,

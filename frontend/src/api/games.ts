@@ -110,6 +110,19 @@ export function apiMyGames(): Promise<GameViewApi[]> {
   return request("GET", "/games/mine");
 }
 
+/** 打球记录响应（2.6 §4.4 名单三笔规矩）：games 行与 /games/mine 同款
+    （game_view），已按散场倒序；matches_count=累计上场对局数，与列表行数解耦
+    （缺席照摊进列表、场数不加） */
+export interface PlaylogApi {
+  games: GameViewApi[];
+  matches_count: number;
+}
+
+/** 打球记录（Bearer）：上过场 ∨ 有账 ∨ 组织者的散场局，可含缺席行 */
+export function apiPlaylog(): Promise<PlaylogApi> {
+  return request("GET", "/games/playlog");
+}
+
 /** 局详情（可匿名；链接即门票只拦 404；终态照常 200 带状态） */
 export function apiGameDetail(id: number): Promise<GameViewApi> {
   return request("GET", `/games/${id}`);

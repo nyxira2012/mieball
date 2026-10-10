@@ -557,6 +557,7 @@ export interface LiveViewApi {
   is_organizer: boolean; // viewer 是组织者（身份块，2026-10-08 修订起随视图直读）
   is_full_power: boolean; // 组织者 ∨ 管理员（收权动作入口把关；游客恒 false）
   organizer_account_id: number; // 组织者账号（前端代收判定找其名册行）
+  is_my_game: boolean; // viewer 打过这局（2.6 名单尺；未散场/匿名恒 false）
   feed: FeedEventApi[];
   courts_count: number; // 场地片数真值（缩片先撤空闲片）
   rules: LiveRulesApi;
@@ -665,6 +666,7 @@ export interface LiveView {
   isOrganizer: boolean; // viewer 是组织者（视图身份块直读）
   isFullPower: boolean; // 组织者 ∨ 管理员：收权动作入口把关（沿 2.2 越权前置拦截）
   organizerAccountId: number; // 组织者账号（canEndLive 代收分支找组织者名册行）
+  isMyGame: boolean; // viewer 打过这局（视图身份块直读；未散场/匿名恒 false）
 }
 
 /* ---- 写动作载荷（镜像 routes/live.py 请求模型，camel 参数形；snake 线上体在 api/live.ts 逐端点内联） ---- */

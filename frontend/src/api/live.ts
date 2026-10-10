@@ -306,5 +306,6 @@ export function toLiveView(v: LiveViewApi): LiveView {
     isOrganizer: v.is_organizer,
     isFullPower: v.is_full_power,
     organizerAccountId: v.organizer_account_id,
+    isMyGame: v.is_my_game,
   };
 }

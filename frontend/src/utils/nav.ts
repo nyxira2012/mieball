@@ -48,3 +48,9 @@ export function goLive(id: number): void {
   });
   uni.switchTab({ url: TAB_ROUTES.live });
 }
+
+/** 进战报子页（2.6 散场战报/打球记录入口共用）：/pages/live/recap 是跨批协议键，
+    页面文件与 pages.json 注册在末批落地 */
+export function goRecap(id: number): void {
+  uni.navigateTo({ url: `/pages/live/recap?id=${id}` });
+}
