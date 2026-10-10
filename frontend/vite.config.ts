@@ -1,8 +1,11 @@
 import { defineConfig } from "vite";
 import uni from "@dcloudio/vite-plugin-uni";
 
+import path from "node:path";
+
 // https://vitejs.dev/config/
 export default defineConfig({
+  publicDir: path.resolve(__dirname, "public"),
   plugins: [uni()],
   server: {
     // 端口约定：前端 12543 · 后端 16588（见 AGENTS.md）
