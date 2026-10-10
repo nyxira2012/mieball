@@ -83,7 +83,7 @@ describe("newGameCard（真局 → 卡面模型：定值直读，时间现场换
       expect(card.hmText).toBe("10:00"); // ISO 现场换算
       expect(card.dayText).toBe("10.10 周六"); // 北京墙钟日段（dayToken 已退役，修复批 F2）
       expect(card.venueText).toBe("亮马河 · 滨河球场");
-      expect(card.forcedLabel).toBe("已订场 · 必开"); // 场上有号优先于空锁文案
+      expect(card.timeSub).toBe("3号"); // 场上号进时间列固定槽（join「·」），优先于空锁文案
       expect(card.slotsLeft).toBe(3);
       // 候补不进头像叠层；带的人不计入头像数
       expect(card.stackAvatars).toHaveLength(2);
@@ -116,9 +116,12 @@ describe("newGameCard（真局 → 卡面模型：定值直读，时间现场换
       ).myRole,
     ).toBe("joined");
     expect(
-      newGameCard(mkGame({ manualLock: true, forced: true })).forcedLabel,
-    ).toBe("必开");
-    expect(newGameCard(mkGame()).forcedLabel).toBeUndefined();
+      newGameCard(mkGame({ manualLock: true, forced: true })).timeSub,
+    ).toBe("必开"); // 仅手动锁（场上无号）亮「必开」
+    expect(newGameCard(mkGame({ courts: ["16号", "17号"] })).timeSub).toBe(
+      "16号·17号", // 多片 join「·」，卡片固定槽窄位显示
+    );
+    expect(newGameCard(mkGame()).timeSub).toBeUndefined();
   });
 });
 
@@ -147,13 +150,14 @@ describe("newGameCard 三态（进入现场入口 / 倒计时 / 均无）", () =
 
   it(">2h 未开账 open 局：只有倒计时，无入口（§4.2）", () => {
     const card = newGameCard(org({ startAt: hoursFromNow(3) }));
-    expect(card.countdown).toMatch(/^还有 /);
+    expect(card.countdown).toMatch(/^还有\d/); // 紧凑口径：还有3时0分（2026-10-10 用户定）
+    expect(card.dayText).toBe("今天"); // 相对日词照常上卡（2026-10-10 纠偏：删行指令已撤）
     expect(card.liveEnter).toBeUndefined();
   });
 
   it("报名中未锁定的局进两小时窗：也只有倒计时，无入口（§5）", () => {
     const card = newGameCard(org({ startAt: hoursFromNow(1.5) }));
-    expect(card.countdown).toMatch(/^还有 /);
+    expect(card.countdown).toMatch(/^还有\d/);
     expect(card.liveEnter).toBeUndefined();
   });
 
@@ -181,7 +185,7 @@ describe("newGameCard 三态（进入现场入口 / 倒计时 / 均无）", () =
     const card = newGameCard(
       org({ status: "locked", startAt: hoursFromNow(3) }),
     );
-    expect(card.countdown).toMatch(/^还有 /);
+    expect(card.countdown).toMatch(/^还有\d/);
     expect(card.liveEnter).toBeUndefined();
   });
 
@@ -253,10 +257,9 @@ describe("newGameCard 三态（进入现场入口 / 倒计时 / 均无）", () =
       org({ manualLock: true, startAt: hoursFromNow(3) }),
     );
     expect(card.liveEnter).toBeUndefined();
-    expect(card.countdown).toMatch(/^还有 /);
+    expect(card.countdown).toMatch(/^还有\d/);
   });
 });
-
 
 describe("gameTapAction（alpha:907 点局卡分支）：被邀请未加入 → join", () => {
   it("三态", () => {

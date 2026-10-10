@@ -98,9 +98,9 @@ describe("durTxt / isoHmOrDash（打多久文案与考勤时刻兜底）", () =>
 
 describe("untilTxt（alpha:975-981）", () => {
   it("分钟 / 小时 / 天 三档", () => {
-    expect(untilTxt(new Date(2026, 9, 4, 12, 30))).toBe("30 分钟");
-    expect(untilTxt(new Date(2026, 9, 4, 13, 30))).toBe("1 小时 30 分");
-    expect(untilTxt(new Date(2026, 9, 7, 12, 0))).toBe("3 天");
+    expect(untilTxt(new Date(2026, 9, 4, 12, 30))).toBe("30分");
+    expect(untilTxt(new Date(2026, 9, 4, 13, 30))).toBe("1时30分");
+    expect(untilTxt(new Date(2026, 9, 7, 12, 0))).toBe("3天");
   });
   it("已过 → null", () => {
     expect(untilTxt(new Date(2026, 9, 4, 11, 0))).toBeNull();

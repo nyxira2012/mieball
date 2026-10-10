@@ -183,10 +183,10 @@ export interface GameCardModel {
   minPlayers: number;
   maxPlayers: number;
   slotsLeft: number;
-  forcedLabel?: string; // '已订场 · 必开' / '必开'；未锁定则缺省
+  timeSub?: string; // 时间列下方固定槽小字（2026-10-10 卡面改版）：订场亮场号（'16号·17号'）、仅手动锁亮「必开」；未锁缺省
   result?: { sa: number; sb: number; myWin: boolean }; // done 战报（mock 快照域）
   myRole?: "org" | "inv" | "joined" | null;
-  countdown?: string; // 开打倒计时灰字（2.5 §4.1：'还有 N 小时 N 分'；仅在办局且没到入场窗才派生）
+  countdown?: string; // 开打倒计时灰字（2.5 §4.1；文案 2026-10-10 用户定紧凑口径：'还有12时48分'/'还有48分'/'还有1天'；仅在办局且没到入场窗才派生）
   liveEnter?: boolean; // 「进入现场」入口（2.5 §4.2/4.4：账已开 ∨ 必开且进两小时窗；waitlist/游客永无）
   stackAvatars: ChibiConfig[];
   stackPlus: string; // 头像叠层溢出文案：'+' / '+N' / '+N · 含随行'

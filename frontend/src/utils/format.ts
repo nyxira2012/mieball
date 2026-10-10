@@ -100,7 +100,7 @@ export function cardLiveEntry(g: Game): {
   const start = new Date(g.startAt).getTime();
   if (forced && Date.now() >= start - 2 * 3600_000) return { liveEnter: true }; // 与 backend/app/services/live.py _start_gate timedelta(hours=2) 同源——2.5 §4.2 两小时窗两端各算
   const u = untilTxt(new Date(g.startAt));
-  return u ? { countdown: `还有 ${u}` } : {};
+  return u ? { countdown: `还有${u}` } : {};
 }
 
 /** 真局 → 卡面模型（meet 列表用）：时间/场馆/必打标都是纯展示换算，
@@ -117,8 +117,8 @@ export function newGameCard(g: Game): GameCardModel {
     minPlayers: g.minPlayers,
     maxPlayers: g.maxPlayers,
     slotsLeft: g.slotsLeft,
-    forcedLabel: g.courts?.length
-      ? "已订场 · 必开"
+    timeSub: g.courts?.length
+      ? g.courts.join("·")
       : g.manualLock
         ? "必开"
         : undefined,

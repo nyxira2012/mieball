@@ -61,13 +61,14 @@ export function dayOrd(date: string): number {
   return m * 100 + d;
 }
 
-/** 距离某时点还有多久（alpha:975-981；已过 → null） */
+/** 距离某时点还有多久（alpha:975-981；已过 → null）。
+    紧凑口径（2026-10-10 用户定，全站剩余时间统一）：「48分」/「12时48分」/「1天」 */
 export function untilTxt(d: Date): string | null {
   const mins = Math.round((d.getTime() - new Date().getTime()) / 60000);
   if (mins <= 0) return null;
-  if (mins < 60) return `${mins} 分钟`;
-  if (mins < 1440) return `${Math.floor(mins / 60)} 小时 ${mins % 60} 分`;
-  return `${Math.round(mins / 1440)} 天`;
+  if (mins < 60) return `${mins}分`;
+  if (mins < 1440) return `${Math.floor(mins / 60)}时${mins % 60}分`;
+  return `${Math.round(mins / 1440)}天`;
 }
 
 /* ---- 1.2 ISO 时刻 ↔ 展示（真局的 startAt/endAt/deadlineAt 消费面） ---- */

@@ -264,7 +264,7 @@ const tickerItems = computed<TickerItem[]>(() => {
   if (nx && u) {
     bits.push({
       tag: "NEXT",
-      text: `距离「${nx.g.name}」${isoDay(nx.g.startAt)}${isoHm(nx.g.startAt)} 开打还有 ${u}`,
+      text: `距离「${nx.g.name}」${isoDay(nx.g.startAt)}${isoHm(nx.g.startAt)} 开打还有${u}`,
     });
   }
   if (!bits.length)

@@ -3,7 +3,11 @@
        时间大字（dd 大字 + tt 小字两行）· 局名 · 地点行 · foot 状态 chips（进行中 = live-dot + 「进行中」hot；满员 = 「满员 · 候补」full；
        否则「剩 N 坑」ok；done = 「已结束」+ 比分胜/负，隐去满员/剩坑与人数 chip）+「min-max 人」chip。
        批4 裁决①：props 收窄为卡面展示原子（GameCardModel）——meet 传真局映射、登记/记录页传 mock 映射，
-       组件不再认识任何一种 Game 形状（与数据源解耦）。头像叠层右上、角色标签右下（2026-10-04 定，勿改回）。
+       组件不再认识任何一种 Game 形状（与数据源解耦）。
+       2026-10-10 卡面改版（用户拍板，推翻 2026-10-04「头像右上/角色右下/卡面不放场号」）：
+       角色标签（我发起/被邀请/已加入）挪局名行右端（原头像叠层位，纯展示无功能，替换之；live 态让位 LIVE 角标）；
+       头像叠层缩小（26→20）挪场馆行右端；foot 撤出必打 chip 与角色 chip——「已订场」场号 /「必开」/ 倒计时灰字
+       全部落时间列下方固定槽（.tsub，钉 max-width 不随长短撑宽挤压 chips 行）。
        人均 chip 已按用户要求移除（信息仍在局详情与报名弹层）。
        is-live：珊瑚描边 + LIVE 角标；is-inv：被邀请珊瑚描边（alpha:329）。
        emit('tap')：进详情或 joinSheet 分支由父层决定（gameTapAction）；emit('enter')：卡片入场窗内
@@ -18,16 +22,27 @@
       <view class="time">
         {{ card.hmText }}
         <text class="tt">{{ card.dayText }}</text>
+        <!-- 固定槽小字（2026-10-10 卡面改版）：订场场号 / 仅手动锁「必开」，done/live 不亮 -->
+        <text v-if="card.timeSub && !done && !live" class="tsub">{{
+          card.timeSub
+        }}</text>
+        <!-- 2.5 §4.1 倒计时灰字自 foot 挪入同槽：长短不一不再挤压 chips 行 -->
+        <text v-if="card.countdown" class="tsub">{{ card.countdown }}</text>
       </view>
       <view class="meta">
         <view class="name">
           <text class="title-txt">{{ card.name }}</text>
-          <view class="stack-line">
+          <!-- 角色标识在局名行右端（2026-10-10 挪位；live 态让位右上角 LIVE 角标） -->
+          <AppChip v-if="role && !live" :kind="role">{{ roleTxt }}</AppChip>
+        </view>
+        <view class="loc">
+          <text class="loc-txt">{{ card.venueText }}</text>
+          <!-- 头像叠层（缩小）挂场馆行右端：谁在局里仍在卡面一眼可见 -->
+          <view class="loc-stack">
             <AvatarStack :avatars="card.stackAvatars" :max="5" />
             <text class="plusn">{{ card.stackPlus }}</text>
           </view>
         </view>
-        <view class="loc">{{ card.venueText }}</view>
         <view class="foot">
           <!-- done 形态：[已结束][比分 胜/负]，隐去满员/剩坑与人数 chip -->
           <template v-if="done">
@@ -45,25 +60,17 @@
           </template>
           <AppChip v-else-if="full" kind="full">满员 · 候补</AppChip>
           <AppChip v-else kind="ok">剩 {{ card.slotsLeft }} 坑</AppChip>
-          <!-- 必打标：已订场=「已订场 · 必开」，仅手动锁=「必开」；未开打的局才显示 -->
-          <AppChip v-if="card.forcedLabel && !done && !live" kind="ok">{{
-            card.forcedLabel
-          }}</AppChip>
           <AppChip v-if="!done"
             >{{ card.minPlayers }}-{{ card.maxPlayers }} 人</AppChip
           >
           <view class="sp" />
-          <AppChip v-if="role" :kind="role">{{ roleTxt }}</AppChip>
-          <!-- 2.5 卡片三态：入场窗内亮「进入现场」出口（stop 防触发整卡 tap）；否则倒计时灰字，无出口 -->
+          <!-- 2.5 卡片三态：入场窗内亮「进入现场」出口（stop 防触发整卡 tap） -->
           <view
             v-if="card.liveEnter"
             class="tbtn on-in"
             @click.stop="emit('enter')"
             >进入现场</view
           >
-          <text v-else-if="card.countdown" class="countdown">{{
-            card.countdown
-          }}</text>
         </view>
       </view>
     </view>
@@ -137,6 +144,9 @@ const roleTxt = computed(() =>
   color: var(--lemon);
   min-width: 64px;
   flex: none;
+  /* 子行固定槽一律单行省略。写在父级：uni-app 框架给 uni-text 强制
+     white-space:inherit!important，子级自写 nowrap 不生效，继承父级才落得住 */
+  white-space: nowrap;
 }
 /* alpha:108 .time small */
 .time .tt {
@@ -145,7 +155,22 @@ const roleTxt = computed(() =>
   font-size: 10px;
   color: var(--dim);
   letter-spacing: 0.2em;
-  margin-top: 4px;
+  margin-top: 2px;
+}
+/* 时间列下方固定槽小字（2026-10-10 卡面改版）：场号/必开与倒计时同族灰字。
+   钉 max-width+省略号：长短不随内容撑宽时间列挤压右侧（Anton 大字天然窄，
+   列宽由日段小字决定 ≈72px，槽位与之同宽级）；108px 卡高预算内最多两行 */
+.tsub {
+  display: block;
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--dim);
+  margin-top: 3px;
 }
 .meta {
   flex: 1;
@@ -168,30 +193,44 @@ const roleTxt = computed(() =>
   min-width: 0;
 }
 .loc {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: var(--dim);
+  line-height: 1.3;
+}
+.loc-txt {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.3;
+}
+/* 头像叠层缩小副本（26→20）：场馆行容不下原尺寸；:deep 只作用本卡 */
+.loc-stack {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+.loc-stack :deep(.stack-av) {
+  width: 20px;
+  height: 20px;
+  margin-left: -7px;
+}
+.loc-stack :deep(.stack-av:first-child) {
+  margin-left: 0;
 }
 .foot {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 8px;
   flex-wrap: nowrap;
   overflow: hidden;
 }
 .sp {
   flex: 1;
-}
-/* 2.5 §4.1 倒计时灰字（跑马灯 NEXT 同族信息，落在自己局的卡上；mono 同 .plusn 口径） */
-.countdown {
-  flex: none;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--dim);
 }
 /* alpha:123-125 live-dot 呼吸灯（pulse 在 animations.scss） */
 .live-dot {
@@ -227,11 +266,6 @@ const roleTxt = computed(() =>
 /* alpha:329 is-inv 被邀请描边 */
 .gcard.is-inv {
   border-color: rgba(255, 90, 54, 0.45);
-}
-.stack-line {
-  display: flex;
-  align-items: center;
-  flex: none;
 }
 /* alpha:132 .plusn。不设 nowrap：窄位换行是 alpha 原样 */
 .plusn {

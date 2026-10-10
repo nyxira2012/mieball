@@ -78,8 +78,22 @@
         {{ g.maxPlayers }}{{ forced ? " · 已锁定必打" : "" }}
       </view>
 
-      <AppField label="场地号 · 几片填几个号（顿号/逗号/空格隔开）">
-        <AppInput v-model="courtsText" placeholder="如：3号、5号" />
+      <!-- 场地号逐框填写（2026-10-10 订场改版，替代顿号长条框）：一框一片，
+           尾框填入内容自动添下一空框，带内容的框可单个删（退一片删一个号） -->
+      <AppField label="场地号 · 一框一片，填完自动添下一框">
+        <view class="courts-row">
+          <view v-for="(c, i) in courtInputs" :key="i" class="court-box">
+            <AppInput
+              :model-value="c"
+              :maxlength="4"
+              placeholder="如：16"
+              @update:model-value="onCourtInput(i, $event)"
+            />
+            <view v-if="c.trim()" class="court-del" @click="removeCourt(i)"
+              >×</view
+            >
+          </view>
+        </view>
         <view class="sub fh">{{ parseHint }}</view>
       </AppField>
 
@@ -140,8 +154,9 @@
 </template>
 
 <script setup lang="ts">
-/* 订场登记 BookingSheet（3.2 订场改版 · 1.2 调用点适配：async + lockGame 改名 + 空锁二段确认）。
-   场地号解析：顿号/逗号/空格/斜杠分隔，去空格去重保序——片数不单独填，就是识别出的个数。
+/* 订场登记 BookingSheet（3.2 订场改版 · 1.2 调用点适配：async + lockGame 改名 + 空锁二段确认；
+   2026-10-10：场地号从顿号长条框改逐个小框，一框一片自动添框）。
+   场地号识别口径不变：去空格 → 去重保序——片数不单独填，就是识别出的个数。
    每次打开按当前登记带出原值（SheetHost 按 type 分发，关闭即卸载重挂）。 */
 import { computed, ref, watch } from "vue";
 import AppButton from "@/components/ui/AppButton.vue";
@@ -169,11 +184,28 @@ const hasBooking = computed(() => !!g.value?.courts?.length);
     lock 端点 game_not_open 422，旗与闸不再各写一份 status 三态拼条件） */
 const canLock = computed(() => !!g.value?.my?.canLock);
 
-/** 场地号解析（公共口径）：分隔符切 → 去空 → 去重保序 */
+/** 场地号逐框态（2026-10-10 订场改版，替代顿号长条串）：一框一片，尾框有内容
+    自动添下一空框；带内容的框可单个删。已登记的原值打开时逐框带出（尾补一空框）。 */
+const courtInputs = ref<string[]>(
+  g.value?.courts?.length ? [...g.value.courts, ""] : [""],
+);
+
+function onCourtInput(i: number, v: string): void {
+  courtInputs.value[i] = v;
+  if (i === courtInputs.value.length - 1 && v.trim()) {
+    courtInputs.value.push("");
+  }
+}
+
+function removeCourt(i: number): void {
+  courtInputs.value.splice(i, 1);
+  if (!courtInputs.value.length) courtInputs.value.push("");
+}
+
+/** 识别口径（公共口径不变）：去空格 → 去重保序；空框天然滤掉 */
 const courts = computed<string[]>(() => {
   const seen = new Set<string>();
-  return courtsText.value
-    .split(/[\s,，、/]+/)
+  return courtInputs.value
     .map((s) => s.trim())
     .filter((s) => {
       if (!s || seen.has(s)) return false;
@@ -181,8 +213,6 @@ const courts = computed<string[]>(() => {
       return true;
     });
 });
-
-const courtsText = ref(g.value?.courts?.join("、") ?? "");
 const feeText = ref(g.value?.feeTotal != null ? String(g.value.feeTotal) : "");
 
 const parseHint = computed(() =>
@@ -306,6 +336,38 @@ async function onClear(): Promise<void> {
   color: var(--dim);
   font-size: 11px;
   margin-top: 6px;
+}
+/* 场地号小框行（2026-10-10 订场改版）：一框一片，wrap 排布；:deep 只收本面板，
+   不动公共 AppInput（登录页/装扮页等表单共用）。框宽按内容收——场号最多
+   三个字符（数字+字母/号）+ 左右边距（2026-10-10 用户定），容纳 3 个汉字兜底 */
+.courts-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.court-box {
+  position: relative;
+  width: 64px;
+}
+.court-box :deep(.inp) {
+  height: 40px;
+  padding: 0 6px;
+  text-align: center;
+}
+/* 单框删除角标（退一片删一个号）：只挂在有内容的框上 */
+.court-del {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--ink2);
+  border: 1px solid rgba(245, 241, 232, 0.2);
+  color: var(--dim);
+  font-size: 14px;
+  line-height: 18px;
+  text-align: center;
 }
 .btns {
   display: flex;
