@@ -193,7 +193,8 @@
         >
       </template>
     </view>
-    <view class="acc-row">
+    <!-- 退出/注销账号：未登录不显示更符合逻辑 -->
+    <view v-if="!session.isGuest" class="acc-row">
       <AppButton variant="ghost" size="sm" class="grow" @click="onLogout"
         >退出账号</AppButton
       >
@@ -288,9 +289,11 @@ function onProfileCard(): void {
 }
 /** 退出/注销走确认弹层（5.1 弹窗：两步/守卫逻辑在 AccountSheet） */
 function onLogout(): void {
+  if (session.isGuest) return;
   ui.openSheet({ type: "logout-confirm" });
 }
 function onDeleteAcc(): void {
+  if (session.isGuest) return;
   ui.openSheet({ type: "delete-confirm" });
 }
 /** 复制诊断日志（6.1 §4.6）：黑匣子导出纯本地文本进剪贴板，不联网；文案口径 spec 附录 A3 */
