@@ -138,14 +138,17 @@
             <view class="nm">{{ e.account.nickname.slice(0, 2) }}的球友</view>
           </view>
         </template>
-        <!-- 加入入口：joinable 定值（截止后/进行中照常可加，已结束只读——4.14） -->
+        <!-- 加人位（双角色共用：同一个位置同一个形状，点开各办各的事）——参加者=加入/
+             带人，组织者=邀请（翻意向列表拉人）。joinable 定值（截止后/进行中照常可加，
+             已结束只读——4.14；组织者邀请同样截止前后都开放——现场换人常翻名单）。
+             @click 必须绑具名方法：绑三元表达式会编译成「返回函数」而非调用，点了没反应 -->
         <view
-          v-if="!joined && game.joinable"
+          v-if="game.joinable && (!joined || org)"
           class="pcard join"
-          @click="onJoin"
+          @click="onSeat"
         >
           <view class="plus">＋</view>
-          <view class="nm">加入 / 带人</view>
+          <view class="nm">{{ org ? "邀请 · 拉人" : "加入 · 带人" }}</view>
         </view>
       </view>
 
@@ -167,13 +170,6 @@
           </view>
         </view>
       </template>
-
-      <!-- 组织者按钮行：翻意向拉人（截止前后都开放——现场换人常翻名单） -->
-      <view v-if="org && game.joinable" class="org-row">
-        <AppButton variant="ghost" size="sm" @click="onInvite"
-          >＋ 邀请 · 翻意向列表拉人</AppButton
-        >
-      </view>
 
       <!-- 底部动作区：加入/退局窗口与提示全按 status/unlocked 定值 -->
       <view class="actions">
@@ -197,23 +193,29 @@
           class="mid"
           >已到截止 · 不能退出</AppChip
         >
-        <!-- 锁升级三态一入口（BookingSheet；这里把动作与文案接上）。
+        <!-- 订场登记入口（BookingSheet；这里把动作与文案接上）。
              显隐直读能力旗 my.canBook（闸旗同源：后端 booking_window_error 同一份，
              散场确认前随时可改——开打中加片/买水、到点未散场照改、pending 待处置也走此门）；
-             文案只谈订场——空锁窗口在开打前（canLock 旗同源），必打语义不再提；
              done+未填价的补填形态走 canFillFee 入口（只有散场过的局留这一个口子）。
+             2026-10-10 用户定稿：按钮独占一行、文案只按「有没有场地信息」二分，不带货
+             （场地号/总价头部信息卡已有）：无场地=输入已预定场地（未锁/空锁/live 未登记
+             同句——登记即锁）；有场地非 live=已订场待开局；live 中=加场/改总价。
+             旧三态长文案（🔒锁定必打·可登记订场 等）退役，必打判定逻辑不动（面板内照旧）。
              2026-10-08 债清偿：此前拿派生 status 拼 open|locked|live，到点未散场的
              派生 done 把钮收走（后端窗其实开着）——四份窗口拷贝就此归一 -->
         <template v-if="!!game.my?.canBook">
-          <AppButton variant="ghost" class="grow sure-btn" @click="onBooking">{{
-            game.courts?.length
-              ? `🔒 已订场 · ${game.courts.join("、")} · ¥${game.feeTotal}`
-              : game.status === "live"
-                ? "🏟 订场登记 · 加一片场 / 改总价"
-                : game.manualLock
-                  ? "🔒 已锁定必打 · 去登记场地"
-                  : "🔒 锁定必打 · 可登记订场"
-          }}</AppButton>
+          <AppButton
+            variant="ghost"
+            class="grow full-row sure-btn"
+            @click="onBooking"
+            >{{
+              game.courts?.length
+                ? game.status === "live"
+                  ? "已订场 · 加场 / 改总价"
+                  : "已订场待开局"
+                : "输入已预定场地"
+            }}</AppButton
+          >
         </template>
         <!-- 补填费用（1.3 §4.5）：显隐直读 my.canFillFee（后端 fill_fee_error 同一份：
              散场过且从未填价才亮——到点未散场的派生 done 不亮，点了必 game_not_ended） -->
@@ -225,8 +227,10 @@
         <template
           v-if="org && (game.status === 'open' || game.status === 'locked')"
         >
-          <AppButton variant="ghost" @click="onEdit">改信息</AppButton>
-          <AppButton variant="ghost" class="cancel-btn" @click="onCancel"
+          <AppButton variant="ghost" class="grow" @click="onEdit"
+            >改信息</AppButton
+          >
+          <AppButton variant="ghost" class="grow cancel-btn" @click="onCancel"
             >取消局</AppButton
           >
         </template>
@@ -461,6 +465,8 @@ const onShare = () => {
 const onJoin = () => {
   if (game.value) ui.openSheet({ type: "join", gameId: game.value.id });
 };
+/** 加人位双角色分流：组织者开邀请抽屉、其他人开报名抽屉 */
+const onSeat = () => (org.value ? onInvite() : onJoin());
 /** quitSheet → ConfirmSheet(kind=quit) */
 const onQuit = () => {
   if (game.value) ui.openSheet({ type: "quit-confirm", gameId: game.value.id });
@@ -654,13 +660,7 @@ const onPlayer = (uid: number) => {
   padding-top: 18px;
 }
 
-/* ---------- 按钮行与动作区（openDetail 内联样式） ---------- */
-.org-row {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-  flex-wrap: wrap;
-}
+/* ---------- 动作区（openDetail 内联样式；组织者按钮行 .org-row 已随邀请并入加人位退役） ---------- */
 .actions {
   display: flex;
   gap: 10px;
@@ -669,6 +669,10 @@ const onPlayer = (uid: number) => {
 }
 .actions .grow {
   flex: 1;
+}
+/* 独占一行（订场入口）：长状态文案不再被同排挤到折行 */
+.actions .full-row {
+  flex-basis: 100%;
 }
 .actions .mid {
   align-self: center;
