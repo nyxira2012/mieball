@@ -2,8 +2,8 @@
   <!-- 战报子页（2.6 §4.2）：从打球记录 → 局详情「查看战报」点进，与散场当场门牌
        同貌——同一 LiveRecap 组件天然同貌。纯读：apiLiveView 直拉，不经 ensureLive
        开账流（回看不是续摊）；普通子页导航（系统返回可用），页上「完成」=返回来路。
-       未散场给中性提示、拉不到给死链句（§4.6 链接死局专用句，不说「已结束」），
-       都可返回，不白屏。 -->
+       未散场给中性提示；拉不到先探局存在性（§4.6 句面诚实：live 404 两成因——
+       局在但从没开过账不说「已被撤销」，真没有才死链句），都可返回，不白屏。 -->
   <PageShell bare>
     <!-- 加载灰块（A2）：沿现场页骨架长相，不白屏 -->
     <template v-if="booting">
@@ -20,7 +20,7 @@
       <LiveRecap :view="view" @complete="goBack" @share="onShare" />
     </template>
 
-    <!-- 200 但未散场：战报还没定格，诚实句不冒充 -->
+    <!-- 未散场（或局在但从没开过账）：战报还没定格，诚实句不冒充 -->
     <template v-else-if="notEnded">
       <view class="dead-wrap">
         <EmptyBox>
@@ -63,6 +63,7 @@ import AppButton from "@/components/ui/AppButton.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import LiveRecap from "@/components/biz/LiveRecap.vue";
 import { apiLiveView, toLiveView } from "@/api/live";
+import { apiGameDetail } from "@/api/games";
 import type { LiveView } from "@/api/types";
 import { shareLink } from "@/utils/share";
 import { liveShareUrl } from "@/utils/deeplink";
@@ -70,12 +71,12 @@ import { DEAD_LINK_MSG } from "@/utils/recap";
 
 const view = ref<LiveView | null>(null);
 const booting = ref(true);
-/** 200 但未散场：战报还没落，不亮 LiveRecap（未散场的局没有战报可翻，§4.2） */
+/** 200 但未散场（或局在但从没开过账）：战报还没落，不亮 LiveRecap（§4.2） */
 const notEnded = ref(false);
 let gameId = 0;
 
 /** 直拉定格视图（纯读，不走 ensureLive 开账流）：ended 才渲染门牌；
-    拉不到（404/断网）不 toast——死链态就是给句子和出口的 */
+    拉不到（404/断网）不 toast——先探局存在性再定落点，探不到才落死链态 */
 async function fetchView(): Promise<void> {
   if (!gameId) return;
   booting.value = true;
@@ -86,7 +87,15 @@ async function fetchView(): Promise<void> {
     if (v.ended) view.value = v;
     else notEnded.value = true;
   } catch {
-    /* 死链态兜底（下方模板分支） */
+    /* 探局存在性是为句面诚实（live 404 两成因）：局在但从没开过账时说「已被撤销」
+       是说假话 → 探到局复用未散场中性页；探不到（game_not_found/断网）落死链态，
+       重试钮即断网出口，不新增状态机 */
+    try {
+      await apiGameDetail(gameId);
+      notEnded.value = true;
+    } catch {
+      /* 死链态兜底（下方模板分支） */
+    }
   } finally {
     booting.value = false;
   }
