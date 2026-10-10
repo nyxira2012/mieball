@@ -198,12 +198,15 @@ export const useLiveStore = defineStore("live", () => {
     liveView.value?.ended ? liveView.value : null,
   );
 
-  /** 我的名册行 id（键位修正：view.players 按 accountId 匹配身份位 me；查无/无视图回落
-      账号 id 兼本地路——mock 时代行 id 即账号 id） */
-  function myRowId(): number {
+  /** 我的名册行 id（view.players 按 accountId 匹配身份位 me；查无返回 null——
+      我不在名册：没签到没空降的新号/游客。绝不回落裸账号 id：行 id 与账号 id 是
+      同库两套独立自增，数值撞车会把别人的行认成我（2026-10-11 扫码注册「提示
+      已签到却不进队」事故——新账号 id 恰等于本局某名册行 id，arriveMe 吃到别人
+      的已到场行，空降道被「你已经在场了」堵死）。mock 本地路已退役，回落无消费方） */
+  function myRowId(): number | null {
     const meId = useUserStore().me.id;
     return (
-      liveView.value?.players.find((p) => p.accountId === meId)?.id ?? meId
+      liveView.value?.players.find((p) => p.accountId === meId)?.id ?? null
     );
   }
 
@@ -269,11 +272,12 @@ export const useLiveStore = defineStore("live", () => {
   });
 
   /** 我还有几轮上场（2.1 §3 · 键位修正：队列存行 id，先换回我的行）：
-      ceil((每片人数 × 空片数 + 我的队列位 + 1) / 每片人数) */
+      ceil((每片人数 × 空片数 + 我的队列位 + 1) / 每片人数)。不在名册 → null（未签到） */
   const myRound = computed<number | null>(() => {
     const L = live.value;
     if (!L) return null;
-    const idx = L.queue.indexOf(myRowId());
+    const me = myRowId();
+    const idx = me == null ? -1 : L.queue.indexOf(me);
     if (idx < 0) return null;
     const size = courtSize(L.rules.singles);
     const empty = L.courts.filter((c) => !c.A.length && !c.B.length).length;
@@ -572,7 +576,8 @@ export const useLiveStore = defineStore("live", () => {
     await ensureLive(gameId);
     const L = live.value;
     if (!L || L.g.id !== gameId || L.endedAt) return null; // ensureLive 已 toast 兜底
-    const p = pById(L, myRowId());
+    const meRow = myRowId(); // null=我无行（新号/游客）→ 空降建行，不认别人的行
+    const p = meRow == null ? undefined : pById(L, meRow);
     if (!p) {
       const ok = await writeAction(gameId, () =>
         apiLiveDropIn(gameId, seqs().baseTotalSeq),

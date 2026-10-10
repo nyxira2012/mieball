@@ -339,6 +339,31 @@ describe("arriveMe（扫码签到）", () => {
     expect(live.live!.queue.length).toBe(queueLen);
   });
 
+  it("行 id 撞账号 id（2026-10-11 扫码注册事故回归）：别人的行恰占我的账号号 → 不认错人，照走空降道", async () => {
+    takeoverAs(42, "海淀反手王");
+    await seedStore(viewOf());
+    const live = useLiveStore();
+    // 别人的已到场行恰好占行 id 42（账号 9）——旧「查无回落账号 id」会把它当
+    // 「已到场的我」，arriveMe 吃「你已经在场了」直接返回，空降道被堵死
+    const base = liveStartView();
+    liveApi.apiLiveStart.mockResolvedValue({
+      ...base,
+      players: [
+        ...base.players,
+        { ...plv(42, "撞号球友"), account_id: 9, check: "ok", queue_pos: 0 },
+      ],
+      queue: [42],
+    });
+    await live.ensureLive(107);
+    liveApi.apiLiveDropIn.mockResolvedValue(dropinView());
+
+    const msg = await live.arriveMe(107);
+
+    expect(msg).toBe("已签到 · 进候场区"); // 没被「你已经在场了」挡住
+    expect(liveApi.apiLiveDropIn).toHaveBeenCalledWith(107, 1);
+    Object.assign(useUserStore().me, demo);
+  });
+
   it("球局不存在 → 返回 null 并提示，不建现场", async () => {
     api.apiGameDetail.mockRejectedValue(new Error("game_not_found"));
     const live = useLiveStore();
@@ -370,15 +395,23 @@ describe("真账号接管「我」位后的识别回归", () => {
     takeoverAs(42, "海淀反手王");
     await seedStore(viewOf());
     const live = useLiveStore();
-    liveApi.apiLiveStart.mockResolvedValue(absentMeView()); // 在册未到的我的行（row 42）
+    // 行 42 挂上我的账号 42：myRowId 按 accountId 认行（查无回落账号 id 已删——
+    // 那是 2026-10-11 撞号事故源，两套自增数值撞车会认错人）
+    const mine = (v: LiveViewApi): LiveViewApi => ({
+      ...v,
+      players: v.players.map((p) =>
+        p.id === 42 ? { ...p, account_id: 42 } : p,
+      ),
+    });
+    liveApi.apiLiveStart.mockResolvedValue(mine(absentMeView())); // 在册未到的我的行（row 42）
     await live.startLive(
       (await import("@/stores/game")).useGameStore().games[0]!,
     );
-    // 自服务守卫：myRowId() 兜底命中行 42（视图无 accountId=42 的行时回落身份位 me.id）
-    liveApi.apiLiveCheck.mockResolvedValue(dropinView());
+    // 自服务守卫：myRowId() 按 accountId=42 命中行 42，非全权也办得了自己的事
+    liveApi.apiLiveCheck.mockResolvedValue(mine(dropinView()));
     await live.setCheck(42, "ok");
     expect(liveApi.apiLiveCheck).toHaveBeenCalledWith(107, 42, "ok", 1);
-    liveApi.apiLiveTempo.mockResolvedValue(dropinView());
+    liveApi.apiLiveTempo.mockResolvedValue(mine(dropinView()));
     await live.togglePerson(42, "fire");
     expect(liveApi.apiLiveTempo).toHaveBeenCalledWith(107, 42, "fire", 2);
     Object.assign(useUserStore().me, demo);

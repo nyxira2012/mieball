@@ -91,7 +91,7 @@
       <view class="set-row">
         <OptionChips
           :options="introOptions"
-          :model-value="introId"
+          :model-value="introId ?? undefined"
           @update:model-value="introId = $event as number"
         />
       </view>
@@ -155,7 +155,8 @@ const arriveds = computed(() =>
 /* ---------- 带访客本地态：带上场后重置（名字清空、人数回 1） ---------- */
 const gName = ref("");
 const gCount = ref(1);
-const introId = ref<number>(liveStore.myRowId());
+// 介绍人选中值（名册行 id）：myRowId 查无我为 null（不在名册），watch 会改选首位
+const introId = ref<number | null>(liveStore.myRowId());
 
 /** 介绍人候选：已到场（谓词 isArrived）的非访客成员；「我」在册默认选中，否则取首位 */
 const introOptions = computed(() =>
@@ -176,7 +177,9 @@ watch(
 );
 
 function onBring(): void {
-  // 介绍人选项值即名册行 id（watch 保证选中项总在候选里）——后端按它挂 guarantor
+  // 介绍人选项值即名册行 id（watch 保证选中项总在候选里——按钮只在有候选时可点，
+  // 此处判空仅类型收窄：无候选时不可达）——后端按它挂 guarantor
+  if (introId.value == null) return;
   liveStore.addGuests(gCount.value, gName.value.trim(), introId.value);
   gName.value = "";
   gCount.value = 1;
