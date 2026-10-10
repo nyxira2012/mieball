@@ -43,6 +43,18 @@ uni-tabbar,
 .uni-tabbar {
   display: none !important;
 }
+/* uni-h5 给 tab 页的 uni-page-wrapper 硬缩 50px 给原生 tabBar 让位——原生条虽已
+   display:none，这 50px 照扣不还：.page（min-height:100vh）塞进矮壳每页溢出 50px，
+   全站 tab 页凭空多一截滚动量；现场页这截余量让整屏布局可被拖走（候场条离位、
+   iOS 随之收放工具栏触发高度跳变）。还回随内容生长——页面高度本由 .page 自管；
+   ::after 是同一让位机制的底部垫片（hideTabBar 时序竞争的窗口期随残留类生效），
+   一并收掉 */
+uni-page-wrapper {
+  height: auto !important;
+}
+uni-page-wrapper::after {
+  display: none !important;
+}
 /* uni-h5 框架默认 uni-text{white-space:pre-line}：文本在 flex 收缩场景会被压到
    逐字竖排（跑马灯/chips 实测），且其规则载入晚于本文件、同特异性会反超，
    故用 !important 改回 alpha 的 normal 继承；需多行的文本块各自显式设置 */

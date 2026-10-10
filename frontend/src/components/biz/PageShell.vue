@@ -21,15 +21,15 @@
 </template>
 
 <script setup lang="ts">
-import type { PropType } from 'vue';
-import { onHide } from '@dcloudio/uni-app';
-import BizBackdrop from './BizBackdrop.vue';
-import TabBar from './TabBar.vue';
-import ToastHost from './ToastHost.vue';
-import ConfettiHost from './ConfettiHost.vue';
-import SheetHost from './SheetHost.vue';
-import { useUiStore } from '@/stores/ui';
-import type { TabKey } from '@/utils/nav';
+import type { PropType } from "vue";
+import { onHide } from "@dcloudio/uni-app";
+import BizBackdrop from "./BizBackdrop.vue";
+import TabBar from "./TabBar.vue";
+import ToastHost from "./ToastHost.vue";
+import ConfettiHost from "./ConfettiHost.vue";
+import SheetHost from "./SheetHost.vue";
+import { useUiStore } from "@/stores/ui";
+import type { TabKey } from "@/utils/nav";
 
 defineProps({
   /** 当前 tab 键；不传 = 非 tab 页（detail，无 TabBar）。live 传键时配 bare（全屏三块 + 导航） */
@@ -56,6 +56,9 @@ onHide(() => ui.closeSheet());
   z-index: 1;
   box-sizing: border-box;
   min-height: 100vh;
+  /* dvh：跟随当前可视高度（100vh 在手机动态工具栏浏览器里偏大，空态页会多出
+     一截可滚动量）；旧内核不认识则回退上一行 */
+  min-height: 100dvh;
   /* alpha.html:75-76（去掉 alpha SPA 页签的 opacity/transform 过渡，uni 路由自带转场） */
   padding: calc(env(safe-area-inset-top) + 14px) 18px
     calc(var(--nav-total-h) + 86px);

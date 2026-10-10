@@ -395,9 +395,14 @@ function goOpenTonight(): void {
 
 <style lang="scss" scoped>
 /* 编排层布局：三块全屏（bare 壳 padding 归零，safe-area 由顶条/候场条各自处理）；
-   底部让出公共导航高度（TabBar fixed 常驻后候场条落在 nav 之上） */
+   底部让出公共导航高度（TabBar fixed 常驻后候场条落在 nav 之上）。
+   高度取 dvh：100vh 在手机动态工具栏浏览器里按「工具栏收起的大视口」取值，而 fixed
+   导航贴的是当前可视区——两边错位会把候场条沉进导航后面（桌面/固定视口无此分歧，
+   走查抓不到）；dvh 跟随当前可视高度，与 fixed 导航同一参照系。旧内核不认识 dvh
+   则整行丢弃、回退上一行 100vh（原行为） */
 .live-root {
   height: calc(100vh - var(--nav-total-h));
+  height: calc(100dvh - var(--nav-total-h));
   display: flex;
   flex-direction: column;
 }

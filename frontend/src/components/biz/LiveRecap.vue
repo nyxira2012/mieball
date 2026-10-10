@@ -126,9 +126,12 @@ const attendRows = computed(() =>
 </script>
 
 <style lang="scss" scoped>
-/* 回看态整页滚动（PageShell bare 壳：自补顶距 + 让出公共导航高度） */
+/* 回看态整页滚动（PageShell bare 壳：自补顶距 + 让出公共导航高度）；
+   dvh 口径同 live 页 .live-root（100vh 与 fixed 导航在手机动态工具栏下错位，
+   底部内容会沉进导航后面；旧内核回退 100vh 行） */
 .recap-root {
   height: calc(100vh - var(--nav-total-h));
+  height: calc(100dvh - var(--nav-total-h));
   overflow-y: auto;
   padding: calc(env(safe-area-inset-top) + 14px) 18px 24px;
 }
