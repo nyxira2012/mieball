@@ -16,7 +16,7 @@
    overwrite 窗不锚（操作的是「上一场落账行」，过期由后端片号闸兜底）。
    结算窗单一源 settleWindow（一次一扇：upload=上传结算谁都能传 / overwrite=改分
    重落全权；noRedeal 由入口传——清扫清单开窗传 true）：自动到分与手动入口
-   （场卡「结束对局」/残局清单「上传比分」）共用 openSettleWindow（已有窗占位
+   （场卡「本场完成」/残局清单「上传比分」）共用 openSettleWindow（已有窗占位
    不重开），「暂不结算」=closeSettleWindow 保本地分接着打；遮罩不可关的旧裁决
    仍成立（关窗丢待上传的账），非上传出口只有暂不结算。旧 settling/confirmSettle
    视图 pending 窗族已随批2 会话B 消费端切换退役删除。

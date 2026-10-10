@@ -98,7 +98,7 @@
       <LedgerSheet :visible="liveSheet?.k === 'ledger'" @close="closeLocal" />
       <RulesSheet :visible="liveSheet?.k === 'rules'" @close="closeLocal" />
       <!-- 本地结算窗（2.3 记分本地化）：开关/片/模式单一源在 store.settleWindow——
-           自动到分与手动入口（场卡「结束对局」/残局清单「上传比分」）开的是同一扇，
+           自动到分与手动入口（场卡「本场完成」/残局清单「上传比分」）开的是同一扇，
            组件直读 store 自驱，页面零透传零监听 -->
       <EndSettleModal />
       <!-- 散场残局清单（§4.9 清扫流，批6）：startSweep 开、全清后「确认散场」二次确认
@@ -219,8 +219,8 @@ function onClearScore(courtId: number): void {
   liveStore.clearScore(courtId);
   ui.toast("比分已清零");
 }
-/** 结束对局（记分本地化）：卡上入口=手动开本地上传窗——与自动到分同一扇窗
-    （一次一扇的闸在 store），先传先落 */
+/** 本场完成（记分本地化；术语「结束对局」指同一动作）：卡上入口=手动开本地上传窗
+    ——与自动到分同一扇窗（一次一扇的闸在 store），先传先落 */
 function onSettle(courtId: number): void {
   liveStore.openSettleWindow(courtId, "upload");
 }

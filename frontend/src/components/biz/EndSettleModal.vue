@@ -9,9 +9,10 @@
        落账）：点胜方在两套现成数间切换，仍当场变不等网络；访客行带「不计积分」标识
        （1.4 §4 不落账不进榜）。球友可操作（上传权=任意到场者）：全权只读态与
        「请组织者或管理员确认」旁注已删。
-       「暂不结算」=closeSettleWindow 保本地分接着打（P2-2，唯一非上传出口）；± 纠偏
-       upload 模式当场写回本机账——暂不结算后场卡接着打的就是纠偏后的分。
-       窗内「撤一分」已删（P2-1）：场卡记分行撤分就在手边，撤分唯一入口=场卡本地。
+       「暂不结算」=closeSettleWindow 保本地分接着打（P2-2，唯一非上传出口）；输入格
+       纠偏 upload 模式当场写回本机账——暂不结算后场卡接着打的就是纠偏后的分。
+       比分格数字直录替 ±（2026-10-11 裁决：不逐分记的人 0:0 起步连点不友好；
+       空=0、只拦非负整数不卡上限）。窗内「撤一分」已删（P2-1）：撤分唯一入口=场卡。
        z-110 fixed 居中；遮罩不可关（旧裁决仍成立——关窗会丢待上传的账；遮罩纯视觉
        背板无点击事件），非上传出口只有「暂不结算」。 -->
   <view class="mwrap" :class="{ on: win != null }">
@@ -46,26 +47,26 @@
         </view>
       </view>
 
-      <!-- 大比分 + ± 改分（min 0；upload 模式纠偏当场写回本机账） -->
+      <!-- 大比分输入格：空视同 0、失焦归一 -->
       <view class="md-score">
-        <view class="md-side">
-          <view class="num a">{{ sa }}</view>
-          <view class="adj">
-            <view class="adj-btn" @click="adj('a', -1)">−</view>
-            <view class="adj-btn" @click="adj('a', 1)">＋</view>
-          </view>
-        </view>
+        <input
+          class="num a"
+          :value="saText"
+          type="number"
+          @input="onScore('a', $event)"
+          @blur="onBlurScore('a')"
+        />
         <view class="c">:</view>
-        <view class="md-side">
-          <view class="num b">{{ sb }}</view>
-          <view class="adj">
-            <view class="adj-btn" @click="adj('b', -1)">−</view>
-            <view class="adj-btn" @click="adj('b', 1)">＋</view>
-          </view>
-        </view>
+        <input
+          class="num b"
+          :value="sbText"
+          type="number"
+          @input="onScore('b', $event)"
+          @blur="onBlurScore('b')"
+        />
       </view>
       <view class="md-tools">
-        <text class="edit">比分可点改</text>
+        <text class="edit">点比分格 · 直接输数字</text>
       </view>
 
       <!-- ±积分预览（胜队在前；平分未点胜方时不显示）；访客带「不计积分」标识 -->
@@ -105,7 +106,7 @@
 <script setup lang="ts">
 /* 本地结算窗呈现与联动（2.3 记分本地化；编排归 store）：本地态只有 winA/sa/sb——
    开窗时按模式重置（upload 吃本机账、胜方预选=分高方与 followWinner 同口径；
-   overwrite 吃该片最新落账 match），± 只动本地（upload 模式写回本机账），确认直调
+   overwrite 吃该片最新落账 match），比分输入只动本地（upload 模式写回本机账），确认直调
    store（uploadSettle/overwriteSettle：落账·关窗·toast 都在 store；清扫态 noRedeal
    随 settleWindow 透传）。
    联动纯函数（followWinner/canPickWinner）单一源在 store 模块，测试落 live-store.test.ts。
@@ -133,10 +134,12 @@ const kick = computed(
     `${mode.value === "overwrite" ? "REWRITE" : "SETTLE"} · ${courtName.value}`,
 );
 
-/* 本地态：比分可 ± 纠偏、胜方可点选——起点按模式吃本机账/最新落账 */
+/* 本地态：胜方可点选；比分两格文本直录，空视同 0（数字面派生） */
 const winA = ref<boolean | null>(null);
-const sa = ref(0);
-const sb = ref(0);
+const saText = ref("0");
+const sbText = ref("0");
+const sa = computed(() => Number(saText.value || "0"));
+const sb = computed(() => Number(sbText.value || "0"));
 
 /** 当前结算窗这片在视图里的片号（courtNoOf(win.courtId) 三处共用单一源） */
 const winCourtNo = computed(() => courtNoOf(win.value?.courtId ?? -1));
@@ -174,20 +177,20 @@ const namesB = computed(() =>
     链接同一真值）；该片还没落过账（正常开不到这个模式）回落 0:0 不预选 */
 
 /* 开窗对齐：settleWindow 变即按模式重置本地态（一次一扇，窗开着不会换片）；
-   ± 只动本地不触发本 watch */
+   输入只动本地不触发本 watch */
 watch(
   win,
   (w) => {
     if (!w) return;
     if (w.mode === "overwrite") {
       const m = latestMatchOf(liveStore.liveView, winCourtNo.value);
-      sa.value = m?.sa ?? 0;
-      sb.value = m?.sb ?? 0;
+      saText.value = String(m?.sa ?? 0);
+      sbText.value = String(m?.sb ?? 0);
       winA.value = m ? m.winA : null;
     } else {
       const acc = liveStore.localScores[w.courtId];
-      sa.value = acc?.sa ?? 0;
-      sb.value = acc?.sb ?? 0;
+      saText.value = String(acc?.sa ?? 0);
+      sbText.value = String(acc?.sb ?? 0);
       winA.value = followWinner(sa.value, sb.value);
     }
   },
@@ -206,21 +209,40 @@ function pick(side: "a" | "b"): void {
   winA.value = side === "a";
 }
 
-/** ± 改分：改完胜方自动跟分高方、平分清空（分低的一方当不了胜方——前端联动，
-    后端 settle-confirm/overwrite 仍把关）；upload 模式当场写回本机账——
-    「暂不结算」后场卡接着打的就是纠偏后的分（overwrite 纠的是已落账那场，
-    不碰下一盘的本机账） */
-function adj(side: "a" | "b", d: number): void {
-  if (side === "a") sa.value = Math.max(0, sa.value + d);
-  else sb.value = Math.max(0, sb.value + d);
+/** 比分直录：只收非负整数、至多 3 位（防误触长串，非分制上限——净胜 2 可无限延）；
+    胜方联动沿 ± 时代（自动跟分高方、平分清空，后端仍把关）；upload 模式输入即写回
+    本机账——「暂不结算」后场卡接着打的就是纠偏后的分 */
+function onScore(side: "a" | "b", ev: Event): void {
+  const raw =
+    (ev as { detail?: { value?: string } }).detail?.value ??
+    (ev.target as { value?: string } | null)?.value ??
+    "";
+  const digits = raw.replace(/\D/g, "").slice(0, 3);
+  if (side === "a") saText.value = digits;
+  else sbText.value = digits;
   winA.value = followWinner(sa.value, sb.value);
-  if (mode.value === "upload") {
-    const acc = liveStore.localScores[win.value?.courtId ?? -1];
-    if (acc) {
-      acc.sa = sa.value;
-      acc.sb = sb.value;
-    }
-  }
+  if (mode.value === "upload") writeBack();
+}
+
+/** 失焦归一：空与前置零收成规范十进制（""→"0"、"007"→"7"） */
+function onBlurScore(side: "a" | "b"): void {
+  if (side === "a") saText.value = String(sa.value);
+  else sbText.value = String(sb.value);
+}
+
+/** upload 模式写回本机账（± 时代同口径）；懒建替原 if(acc) 守卫——没点过一分、
+    结束时一次直录的主场景里守卫会静默丢分 */
+function writeBack(): void {
+  const w = win.value;
+  if (!w) return;
+  const acc = (liveStore.localScores[w.courtId] ??= {
+    sa: 0,
+    sb: 0,
+    history: [],
+    last: null,
+  });
+  acc.sa = sa.value;
+  acc.sb = sb.value;
 }
 
 /** ±积分预演：读视图 elo_preview 双分支——后端 _elo_settle 同一条路算好随画面给
@@ -379,7 +401,7 @@ function onConfirm(): void {
   pointer-events: none;
 }
 
-/* ---------- 大比分 + ± 小钮 ---------- */
+/* ---------- 大比分输入格 ---------- */
 .md-score {
   display: flex;
   align-items: center;
@@ -387,16 +409,18 @@ function onConfirm(): void {
   gap: 14px;
   margin: 4px 0 10px;
 }
-.md-side {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
+/* 显式定高必须：uni-input 内层 wrapper 恒为宿主内容区 100%，宿主无高有值即塌 0
+   （AppInput 同坑注） */
 .md-score .num {
+  width: 88px;
+  height: 68px;
+  border: 1px solid rgba(245, 241, 232, 0.16);
+  border-radius: 13px;
+  background: var(--ink);
+  text-align: center;
   font-family: var(--disp);
-  font-size: 44px;
-  line-height: 1;
+  font-size: 40px;
+  color: var(--cream);
 }
 .md-score .num.a {
   color: var(--lemon);
@@ -408,27 +432,6 @@ function onConfirm(): void {
   font-family: var(--disp);
   font-size: 22px;
   color: var(--coral);
-}
-.adj {
-  display: flex;
-  gap: 6px;
-}
-.adj-btn {
-  width: 24px;
-  height: 22px;
-  border-radius: 7px;
-  border: 1px solid rgba(245, 241, 232, 0.16);
-  color: var(--cream);
-  font-family: var(--mono);
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-.adj-btn:active {
-  border-color: var(--lemon);
-  color: var(--lemon);
 }
 /* 比分注 */
 .md-tools {
