@@ -60,7 +60,8 @@
       </view>
     </view>
 
-    <!-- 账号区（1.1/5.1 对齐）：密码与微信授权已随 MVP 下架（D1）；游客给找回入口 -->
+    <!-- 账号区（1.6 批3）：手机号=账号的根（A1 换号预防提示）；密码区块按 has_password
+         分流设/改密（4.8/4.11）；微信授权只给「即将开通」说明不放死按钮（4.12）；游客给登录入口 -->
     <SectionTitle title="账号" />
     <view class="acc-links">
       <view
@@ -70,13 +71,127 @@
       >
         登录 · 我是老球友（手机号找回） <text class="arr">▸</text>
       </view>
-      <view v-else class="acc-link" @click="go('/pages/mine/dress')">
-        手机号 {{ session.maskedPhone }} · 唯一钥匙 <text class="arr">▸</text>
-      </view>
+      <template v-else>
+        <view class="acc-link static">
+          <text>手机号 {{ session.maskedPhone }}</text>
+          <text class="arr">账号的根</text>
+        </view>
+        <view
+          class="acc-link"
+          @click="
+            togglePwdPanel(session.account?.has_password ? 'change' : 'set')
+          "
+        >
+          <text>{{
+            session.account?.has_password
+              ? "密码已设置 · 修改密码"
+              : "密码未设置 · 设置密码"
+          }}</text>
+          <text class="arr">{{ pwdPanel ? "▾" : "▸" }}</text>
+        </view>
+        <view class="acc-link static">
+          <text>微信授权</text>
+          <text class="arr">即将开通</text>
+        </view>
+      </template>
       <!-- 复制诊断日志（6.1 §4.6）：v-if 外=游客也可见可点；纯本地复制，误点无副作用 -->
       <view class="acc-link" @click="onCopyDiag">
         复制诊断日志 <text class="arr">▸</text>
       </view>
+    </view>
+    <!-- 换号预防提示（A1：手机号是账号的根，一律人工处理） -->
+    <view v-if="!session.isGuest" class="acc-hint">
+      手机号是你账号的根 · 换号先联系群主
+    </view>
+
+    <!-- 密码面板（4.8/4.11）：未设=发码(set_password)+新密码两遍一次提交；
+         已设=旧密+新密两遍。成功 toast 文案单一源在 session store -->
+    <view v-if="pwdPanel" class="pwd-panel">
+      <template v-if="pwdPanel === 'set'">
+        <AppField label="6 位短信验证码">
+          <view class="frow">
+            <AppInput
+              v-model="setCode"
+              type="number"
+              placeholder="6 位数字"
+              :maxlength="6"
+              class="flex1"
+            />
+            <AppButton
+              variant="ghost"
+              size="sm"
+              :disabled="setCountdown > 0 || setBusy"
+              @click="onSetSend"
+            >
+              {{
+                setCountdown > 0
+                  ? `${setCountdown}s`
+                  : setSent
+                    ? "重新发送"
+                    : "发送验证码"
+              }}
+            </AppButton>
+          </view>
+        </AppField>
+        <AppField label="新密码（至少 6 位）">
+          <AppInput
+            v-model="setP1"
+            placeholder="6 位以上，纯数字也行"
+            :maxlength="40"
+            password
+          />
+        </AppField>
+        <AppField label="再输一遍确认">
+          <AppInput
+            v-model="setP2"
+            placeholder="两次要一致"
+            :maxlength="40"
+            password
+          />
+        </AppField>
+        <view v-if="setHint" class="pwd-err">{{ setHint }}</view>
+        <AppButton
+          variant="pri"
+          block
+          :disabled="setBusy"
+          @click="onSetSubmit"
+          >{{ setBusy ? "设置中…" : "设置密码" }}</AppButton
+        >
+      </template>
+      <template v-else>
+        <AppField label="旧密码">
+          <AppInput
+            v-model="oldPwd"
+            placeholder="现在用的密码"
+            :maxlength="40"
+            password
+          />
+        </AppField>
+        <AppField label="新密码（至少 6 位）">
+          <AppInput
+            v-model="chP1"
+            placeholder="6 位以上，纯数字也行"
+            :maxlength="40"
+            password
+          />
+        </AppField>
+        <AppField label="再输一遍确认">
+          <AppInput
+            v-model="chP2"
+            placeholder="两次要一致"
+            :maxlength="40"
+            password
+          />
+        </AppField>
+        <view v-if="chHint" class="pwd-err">{{ chHint }}</view>
+        <AppButton
+          variant="pri"
+          block
+          :disabled="chBusy"
+          @click="onChangeSubmit"
+          >{{ chBusy ? "修改中…" : "确认修改" }}</AppButton
+        >
+      </template>
     </view>
     <view class="acc-row">
       <AppButton variant="ghost" size="sm" class="grow" @click="onLogout"
@@ -96,12 +211,14 @@
 <script setup lang="ts">
 /* 我的页（P10）· 5.1 我的页主页面：底账入口聚合（账单/登记/记录）+ 账号区。
    alpha:1931-1976 的 meName/战绩/ELO 段位口径保留，其余换装与账本逻辑退场。 */
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import AppChip from "@/components/ui/AppChip.vue";
 import AppButton from "@/components/ui/AppButton.vue";
+import AppField from "@/components/ui/AppField.vue";
+import AppInput from "@/components/ui/AppInput.vue";
 import TierBadge from "@/components/ui/TierBadge.vue";
 import SectionTitle from "@/components/ui/SectionTitle.vue";
 import BillSummaryCard from "@/components/biz/BillSummaryCard.vue";
@@ -114,6 +231,8 @@ import { deadRowKind } from "@/utils/format";
 import { exportText } from "@/utils/blackbox";
 import { ApiError, errText } from "@/api/http";
 import { GUEST_DUPR, duprTier, fmtDupr } from "@/utils/elo";
+import { useSmsCountdown } from "@/composables/useSmsCountdown";
+import { newPwdError } from "@/utils/validate";
 
 const user = useUserStore();
 const game = useGameStore();
@@ -181,6 +300,120 @@ function onCopyDiag(): void {
     success: () => ui.toast("已复制，发给组织者就行"),
     fail: () => ui.toast("复制没成功，再试一次"),
   });
+}
+
+/* —— 密码区块（1.6 §4.8/§4.11）：has_password 分流设/改密，面板在账号区内联展开 —— */
+
+/** 本人完整手机号（发码往这发；完整号只给自己看，展示一律走 maskedPhone） */
+function ownPhone(): string {
+  return session.account?.phone ?? "";
+}
+
+const pwdPanel = ref<"set" | "change" | null>(null);
+
+/** 行点击开合面板；换向时清另一路的残留输入 */
+function togglePwdPanel(kind: "set" | "change"): void {
+  if (pwdPanel.value === kind) {
+    pwdPanel.value = null;
+    return;
+  }
+  pwdPanel.value = kind;
+  setCode.value = "";
+  setP1.value = "";
+  setP2.value = "";
+  setHint.value = "";
+  setSent.value = false;
+  oldPwd.value = "";
+  chP1.value = "";
+  chP2.value = "";
+  chHint.value = "";
+}
+
+/** 设密码（4.8）：发码到本人手机（set_password）→ 输码+新密码两遍一次提交。
+    apiPasswordSet 只回 ok，成功后 init() 重拉本人视图翻 has_password */
+const { countdown: setCountdown, start: startSetCountdown } = useSmsCountdown();
+const setCode = ref("");
+const setP1 = ref("");
+const setP2 = ref("");
+const setHint = ref("");
+const setBusy = ref(false);
+const setSent = ref(false);
+
+async function onSetSend(): Promise<void> {
+  if (!ownPhone()) {
+    ui.toast("账号信息加载中，请稍后再试");
+    return;
+  }
+  setBusy.value = true;
+  try {
+    await session.requestCode(ownPhone(), "set_password");
+    setSent.value = true;
+    startSetCountdown();
+    ui.toast("验证码已发送");
+  } catch (e) {
+    ui.toast(errText(e));
+  } finally {
+    setBusy.value = false;
+  }
+}
+
+async function onSetSubmit(): Promise<void> {
+  setHint.value = "";
+  if (setCode.value.trim().length !== 6) {
+    setHint.value = "请输入 6 位验证码";
+    return;
+  }
+  const msg = newPwdError(setP1.value, setP2.value); // 5 位前端先拦，后端真闸兜底
+  if (msg) {
+    setHint.value = msg;
+    return;
+  }
+  setBusy.value = true;
+  try {
+    await session.setPassword(setCode.value.trim(), setP1.value); // toast 在 store
+    pwdPanel.value = null;
+    setCode.value = "";
+    setP1.value = "";
+    setP2.value = "";
+    setSent.value = false;
+    await session.init();
+  } catch (e) {
+    setHint.value = errText(e);
+  } finally {
+    setBusy.value = false;
+  }
+}
+
+/** 改密码（4.11）：例行换钥匙，其他设备无感；旧密错只提示重输（后端不计锁） */
+const oldPwd = ref("");
+const chP1 = ref("");
+const chP2 = ref("");
+const chHint = ref("");
+const chBusy = ref(false);
+
+async function onChangeSubmit(): Promise<void> {
+  chHint.value = "";
+  if (!oldPwd.value) {
+    chHint.value = "请输入旧密码";
+    return;
+  }
+  const msg = newPwdError(chP1.value, chP2.value);
+  if (msg) {
+    chHint.value = msg;
+    return;
+  }
+  chBusy.value = true;
+  try {
+    await session.changePassword(oldPwd.value, chP1.value); // toast 在 store
+    pwdPanel.value = null;
+    oldPwd.value = "";
+    chP1.value = "";
+    chP2.value = "";
+  } catch (e) {
+    chHint.value = errText(e);
+  } finally {
+    chBusy.value = false;
+  }
 }
 </script>
 
@@ -297,6 +530,42 @@ function onCopyDiag(): void {
 }
 .acc-link:active {
   color: var(--lemon);
+}
+/* 静态信息行（手机号/微信授权）：不可点，压掉 active 变色 */
+.acc-link.static {
+  cursor: default;
+}
+.acc-link.static:active {
+  color: inherit;
+}
+/* 换号预防提示（A1） */
+.acc-hint {
+  font-size: 11px;
+  color: var(--dim);
+  margin: -6px 2px 14px;
+  line-height: 1.5;
+}
+/* 密码面板：与 acc-links 同框风格 */
+.pwd-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--ink2);
+  padding: 14px 16px 16px;
+  margin-bottom: 14px;
+}
+.pwd-err {
+  font-size: 12px;
+  color: var(--coral);
+  margin: 2px 2px 12px;
+  line-height: 1.5;
+}
+.frow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.flex1 {
+  flex: 1;
 }
 /* alpha:669 flex + 按钮 flex:1 */
 .acc-row {
