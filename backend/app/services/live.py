@@ -299,14 +299,17 @@ class LiveBook(LiveSweepMixin):
             )
             self.db.add(match)
             self._apply_elo(elo_rows, len(winners))
-            self._apply_dupr(
-                match=match,
-                ended_at=ended,
-                winners=winners,
-                losers=losers,
-                score_w=score_a if winner_side == "a" else score_b,
-                score_l=score_b if winner_side == "a" else score_a,
-            )
+            # DUPR 双写只在两边都有人时结算（单边空片被抽空后无胜负两队可算；
+            # 战报行照落——名单与比分是事实，积分不动账）
+            if winners and losers:
+                self._apply_dupr(
+                    match=match,
+                    ended_at=ended,
+                    winners=winners,
+                    losers=losers,
+                    score_w=score_a if winner_side == "a" else score_b,
+                    score_l=score_b if winner_side == "a" else score_a,
+                )
             queue = self._queue_ids(rows)
             if no_redeal:
                 # 清扫态：人只回流定格——不排下一场不补位，场上的人按行序接队尾
@@ -424,15 +427,17 @@ class LiveBook(LiveSweepMixin):
             match.elo_rows = elo_rows
             self._apply_elo(elo_rows, len(winners))
             # DUPR 两轨独立（输入快照吃派生分、与 Elo 无关）：删旧明细按新胜负重插
+            # （单边空战报无胜负两队，与 settle_confirm 同守卫——删后不重插）
             self.db.execute(delete(DuprDetail).where(DuprDetail.match_id == match.id))
-            self._apply_dupr(
-                match=match,
-                ended_at=match.ended_at,
-                winners=winners,
-                losers=losers,
-                score_w=score_a if winner_side == "a" else score_b,
-                score_l=score_b if winner_side == "a" else score_a,
-            )
+            if winners and losers:
+                self._apply_dupr(
+                    match=match,
+                    ended_at=match.ended_at,
+                    winners=winners,
+                    losers=losers,
+                    score_w=score_a if winner_side == "a" else score_b,
+                    score_l=score_b if winner_side == "a" else score_a,
+                )
             self._bump_court(court)
             self._bump_total(state)
             self.db.commit()
@@ -1171,13 +1176,16 @@ class LiveBook(LiveSweepMixin):
         ).scalar_one_or_none()
         return RATING_INIT if row is None else row.rating
 
-    def _elo_preview(self, court: LiveCourt, roster: list[LivePlayer]) -> dict:
+    def _elo_preview(self, court: LiveCourt, roster: list[LivePlayer]) -> dict | None:
         """在打片的 ±积分预演双分支（§4.11，2026-10-08 收归后端单源；2026-10-09
         记分本地化改挂 playing 片——Elo 分差只看两队现分与谁胜、与比分无关，
         服务端无需知道各手机本地比分）：A 胜 / B 胜各算一套随视图给出，上传窗
         点胜方在两套现成数间切换（当场变、不等网络仍成立）。取序与 settle_confirm
         同一条路（_oncourt 语义：名册序 + 片位过滤），预演=落账：上传响应所选
-        分支的 elo_rows 与这里逐行一致。"""
+        分支的 elo_rows 与这里逐行一致。
+        单边空返 None（2026-10-10 修复）：片上的人早退清位而片行保持 playing
+        （「打短维持现状」），一边被抽空就没有对局可言——此前空列表喂进
+        _elo_settle 的均值除法直接 ZeroDivision，view 恒 500、整局卡死无自救。"""
         oncourt = [
             p
             for p in roster
@@ -1185,6 +1193,8 @@ class LiveBook(LiveSweepMixin):
         ]
         a = [p for p in oncourt if p.court_side == "a"]
         b = [p for p in oncourt if p.court_side == "b"]
+        if not a or not b:
+            return None
         return {"a": self._elo_settle(a, b), "b": self._elo_settle(b, a)}
 
     def _elo_settle(
@@ -1194,11 +1204,16 @@ class LiveBook(LiveSweepMixin):
         前端零公式：确认窗预演的 elo_preview 与落账 elo_rows 都出自本函数）：
         双打按两队人均分算期望落到个人、delta=max(1,K*(1-exp))、败方只扣涨分
         六成、地板 800；访客代入 1200 当正常玩家算（去半折口径），行内记 delta
-        但不落账。"""
+        但不落账。
+        一边没人返 []（2026-10-10 修复）：片被早退抽空后单边空的结算/预演没有
+        胜负两队，elo 不动账（_apply_elo 对空行无操作）——也是空列表喂均值
+        除法的防爆边。"""
 
         def eff(p: LivePlayer) -> int:
             return RATING_INIT if p.guest else self._rating_of(p.account_id)
 
+        if not winners or not losers:
+            return []
         w_avg = sum(eff(p) for p in winners) / len(winners)
         l_avg = sum(eff(p) for p in losers) / len(losers)
         exp = 1 / (1 + 10 ** ((l_avg - w_avg) / 400))

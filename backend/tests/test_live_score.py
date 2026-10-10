@@ -844,3 +844,123 @@ def test_deal_validates_roster_and_queue_head(client: TestClient):
         },
     )
     assert r.status_code == 422 and r.json()["error"]["code"] == "live_invalid"
+
+
+# ---- 早退抽空片（2026-10-10 事故修复：单边空 playing 片不再炸 view） ----
+
+
+def test_left_empties_side_keeps_view_alive(client: TestClient):
+    """片上的人早退清位、片行保持 playing（「打短维持现状」）：一边被抽空后
+    view 不得 500（elo_preview 单边空返 None），现场仍有自救入口（取消该片）。"""
+    env = open_live(client, seed=71, players=6)
+    gid, tok = env["game_id"], env["org"]["token"]
+    v = deal_one(client, env)
+    side_b_ids = [
+        r["id"] for r in v["players"] if r["court_no"] == 1 and r["court_side"] == "b"
+    ]
+    assert len(side_b_ids) == 2
+
+    # b 边两人先后早退（代办 left 清片位，片行仍 playing）
+    for pid in side_b_ids:
+        r = live_call(
+            client,
+            tok,
+            gid,
+            "check",
+            {"player_id": pid, "check": "left", "base_total_seq": v["total_seq"]},
+        )
+        assert r.status_code == 200, r.text
+        v = r.json()
+
+    # 视图活着：该片区 elo_preview=None（没有对局可言），其余照常
+    assert court(v, 1)["status"] == "playing"
+    assert court(v, 1)["elo_preview"] is None
+    oncourt = [r for r in v["players"] if r["court_no"] == 1]
+    assert len(oncourt) == 2  # a 边照旧在打（打短维持现状）
+
+    # 排阵另一片也不受牵连（候场够人时照常发牌）
+    q = v["queue"]
+    if len(q) >= 4:
+        r = live_call(
+            client,
+            tok,
+            gid,
+            "deal",
+            {
+                "courts": [{"court_no": 2, "a": q[:2], "b": q[2:4]}],
+                "base_total_seq": v["total_seq"],
+            },
+        )
+        assert r.status_code == 200, r.text
+
+
+def test_settle_single_sided_match_no_elo_no_dupr(client: TestClient):
+    """单边空片结算落账：战报行照落（名单比分是事实），双轨积分都不动账。"""
+    env = open_live(client, seed=72, players=6)
+    gid, tok = env["game_id"], env["org"]["token"]
+    v = deal_one(client, env)
+    losers = [r for r in v["players"] if r["court_no"] == 1 and r["court_side"] == "b"]
+    for p in losers:  # b 边全早退 → 单边空
+        r = live_call(
+            client,
+            tok,
+            gid,
+            "check",
+            {"player_id": p["id"], "check": "left", "base_total_seq": v["total_seq"]},
+        )
+        assert r.status_code == 200, r.text
+        v = r.json()
+
+    r = confirm(client, tok, gid, v)  # a 方 11:9 落账
+    assert r.status_code == 200, r.text
+    v = r.json()
+    m = v["matches"][-1]
+    assert m["elo_rows"] == []  # 无胜负两队可算，Elo 零行
+    assert [w["id"] for w in m["losers"]] == []  # 名单快照如实记空边
+
+    # Elo/DUPR 全库无这场痕迹（胜方也不吃分）
+    db = client.app.state.session_factory()
+    try:
+        assert (
+            db.execute(select(EloRating).where(EloRating.play > 0)).scalar_one_or_none()
+            is None
+        )
+        assert db.execute(select(DuprDetail)).scalar_one_or_none() is None
+    finally:
+        db.close()
+
+    # 确认即续场：剩余人下、候场补位重开——新一场两边有人，预演恢复
+    c1 = court(v, 1)
+    oncourt = [r for r in v["players"] if r["court_no"] == 1]
+    if oncourt:
+        assert c1["status"] == "playing" and c1["elo_preview"] is not None
+
+
+def test_overwrite_single_sided_match_keeps_accounts_clean(client: TestClient):
+    """单边空战报改分重落：Elo 空快照无账可退、DUPR 明细删后不重插，全链 200。"""
+    env = open_live(client, seed=73, players=6)
+    gid, tok = env["game_id"], env["org"]["token"]
+    v = deal_one(client, env)
+    for p in [r for r in v["players"] if r["court_no"] == 1 and r["court_side"] == "b"]:
+        r = live_call(
+            client,
+            tok,
+            gid,
+            "check",
+            {"player_id": p["id"], "check": "left", "base_total_seq": v["total_seq"]},
+        )
+        assert r.status_code == 200, r.text
+        v = r.json()
+    r = confirm(client, tok, gid, v)
+    assert r.status_code == 200, r.text
+    v = live_get(client, gid, tok)
+
+    r = overwrite(client, tok, gid, v, winner_side="b", score_a=9, score_b=11)
+    assert r.status_code == 200, r.text
+    m = r.json()["matches"][-1]
+    assert m["elo_rows"] == []
+    db = client.app.state.session_factory()
+    try:
+        assert db.execute(select(DuprDetail)).scalar_one_or_none() is None
+    finally:
+        db.close()

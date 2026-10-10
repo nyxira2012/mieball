@@ -71,6 +71,47 @@ def _migrate_columns(bind) -> None:
                 conn.execute(text(stmt))
 
 
+# 已从模型退役、但存量库可能还挂着的旧列（与 _NEW_COLUMNS 对偶的删列登记）。
+# create_all 不改旧表：删列若不在启动时清障，旧列里带 NOT NULL 而模型已不写的
+# （live_courts.sa/sb——2026-10-09 记分本地化退役四列）会让首次 INSERT 直接
+# IntegrityError——生产 2026-10-10「发牌八连 500」事故即此（存量表建于 10-08、
+# 删列部署后未清障）。清法不依赖 SQLite 3.35+ 的 DROP COLUMN：借道重建
+# （改名 → 按模型建新表 → 搬交集列 → 删旧表），老内核同样能跑
+_DROPPED_COLUMNS = {
+    # 2.3 §8 记分本地化（2026-10-09）：记分归各手机本地账，片行不再存进行中比分
+    "live_courts": ("sa", "sb", "last_winner_side", "pending_origin"),
+    # 1.4 §10 建号自评废除（2026-10-09，6811bd4）：起步统一 2.5，自评列退役
+    # （可空闲列不炸 INSERT，清掉只为库与模型零残留；生产实测 2026-10-10）
+    "accounts": ("self_rating",),
+}
+
+
+def _drop_legacy_columns(bind) -> None:
+    inspector = inspect(bind)
+    for table, dropped in _DROPPED_COLUMNS.items():
+        if table not in inspector.get_table_names():
+            continue
+        present = {c["name"] for c in inspector.get_columns(table)}
+        legacy = [c for c in dropped if c in present]
+        if not legacy:
+            continue  # 新库直建无旧列，空转
+        model_cols = set(Base.metadata.tables[table].columns.keys())
+        keep = sorted((present - set(legacy)) & model_cols)
+        collist = ", ".join(keep)
+        with bind.begin() as conn:
+            conn.execute(text(f"ALTER TABLE {table} RENAME TO {table}_legacy_drop"))
+        Base.metadata.tables[table].create(bind, checkfirst=False)
+        with bind.begin() as conn:
+            if keep:
+                conn.execute(
+                    text(
+                        f"INSERT INTO {table} ({collist}) "
+                        f"SELECT {collist} FROM {table}_legacy_drop"
+                    )
+                )
+            conn.execute(text(f"DROP TABLE {table}_legacy_drop"))
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     factory = make_session_factory(settings.db_url)
@@ -78,6 +119,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     bind = factory.kw["bind"]
     Base.metadata.create_all(bind)
     _migrate_columns(bind)
+    _drop_legacy_columns(bind)
 
     app = FastAPI(title="mieball API", version=API_VERSION)
     app.state.settings = settings

@@ -927,12 +927,16 @@ export const useLiveStore = defineStore("live", () => {
     return true;
   }
 
-  /** 自动排阵（收权）：补所有空片（多片同时要人按片号先后）——发牌算法在前端 */
+  /** 自动排阵（收权）：补所有空片（多片同时要人按片号先后）——发牌算法在前端。
+      只有真发出并落账才报「牌已发」：maybeDeal 返 false 是「人还没凑够一片」
+      （差人卡本身常驻提示，无需再报）或「上报失败」（writeAction 已 toast
+      报错）——此前无视返回值一律 toast「牌已发」，失败时假成功话术把报错
+      toast 顶掉，用户看着「排好又消失」却不知败在哪（2026-10-10 事故修复） */
   async function autoDeal(): Promise<void> {
     const L = live.value;
     if (!L || !needFull() || !liveView.value) return;
-    await maybeDeal(L.g.id);
-    ui.toast("牌已发 · 按当前规则排好");
+    const ok = await maybeDeal(L.g.id);
+    if (ok) ui.toast("牌已发 · 按当前规则排好");
   }
 
   /* ─────── 散场清扫链（§4.9，批6 切真） ─────── */
