@@ -3,6 +3,7 @@
    - 错误统一抛 ApiError（带后端 error.code），调用方按 code 分支，不解析中文文案。
    - 网络层细节（H5 走 /api 相对路径、开发期由 vite 代理到 16588）藏在这里。 */
 import type { LiveViewApi } from "./types";
+import { trackAct, trackErr } from "@/utils/blackbox";
 
 export class ApiError extends Error {
   code: string;
@@ -149,34 +150,50 @@ export async function request<T>(
   path: string,
   data?: unknown,
 ): Promise<T> {
-  const res = await rawRequest(method, path, data);
-  const body = res.data as
-    | {
-        error?: { code?: string; message?: string; error_id?: string };
-        view?: LiveViewApi;
-      }
-    | T;
-  if (res.statusCode >= 400) {
-    const err = (
-      body as { error?: { code?: string; message?: string; error_id?: string } }
-    )?.error;
-    // 意外错误带号（契约总则 §3 / 6.1 裁决，仅 internal_error 有 error_id）：
-    // 换成报号话术让用户照着报，errText 原样透出；业务错误与断网分支不带号
-    if (err?.error_id) {
-      throw new ApiError(
-        "internal_error",
-        `出错了，请把编号 ${err.error_id} 发到反馈群或告诉群主`,
-        res.statusCode,
-        undefined,
-        err.error_id,
-      );
+  try {
+    const res = await rawRequest(method, path, data);
+    const body = res.data as
+      | {
+          error?: { code?: string; message?: string; error_id?: string };
+          view?: LiveViewApi;
+        }
+      | T;
+    if (res.statusCode >= 400) {
+      const err = (
+        body as {
+          error?: { code?: string; message?: string; error_id?: string };
+        }
+      )?.error;
+      // 意外错误带号（契约总则 §3 / 6.1 裁决，仅 internal_error 有 error_id）：
+      // 换成报号话术让用户照着报，errText 原样透出；业务错误与断网分支不带号
+      throw err?.error_id
+        ? new ApiError(
+            "internal_error",
+            `出错了，请把编号 ${err.error_id} 发到反馈群或告诉群主`,
+            res.statusCode,
+            undefined,
+            err.error_id,
+          )
+        : new ApiError(
+            err?.code ?? "http_error",
+            err?.message ?? "出错了，请稍后再试",
+            res.statusCode,
+            (body as { view?: LiveViewApi })?.view,
+          );
     }
-    throw new ApiError(
-      err?.code ?? "http_error",
-      err?.message ?? "出错了，请稍后再试",
-      res.statusCode,
-      (body as { view?: LiveViewApi })?.view,
-    );
+    trackAct(method, path, true);
+    return body as T;
+  } catch (e) {
+    // 失败统一埋点（6.1 §4.5/§4.6）：先在上游构造好 ApiError、在此用 e.code/e.errorId
+    // 记一笔——err 行带号时含 ERR-XXX（errorId「供诊断日志记轨迹」由此成真）、act 行只
+    // POST（GET 零记录防刷新刷屏）；断网同款走这（服务器日志看不见的手机侧失败黑匣子
+    // 兜底，提示不带号 spec 4.1 禁止项），原错误原样上抛
+    const apiErr =
+      e instanceof ApiError
+        ? e
+        : new ApiError("network", "网络不给力，请稍后再试");
+    trackErr(apiErr.code, apiErr.errorId);
+    trackAct(method, path, false, apiErr.code);
+    throw e;
   }
-  return body as T;
 }

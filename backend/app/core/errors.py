@@ -288,3 +288,14 @@ def live_entry_required() -> ApiError:
 def live_too_early() -> ApiError:
     # 正式成员的开账窗：开打前两小时内（§8 两小时门槛定值裁决）
     return ApiError(403, "live_too_early", "开打前两小时内才能进现场")
+
+
+# ---- ops 读取口守卫（docs/6.1 批4；码进契约总则 §3，具名构造器两边同步）----
+
+
+def ops_key_off() -> ApiError:
+    return ApiError(403, "ops_key_off", "读取口未开放")
+
+
+def ops_key_wrong() -> ApiError:
+    return ApiError(403, "ops_key_wrong", "钥匙不对")

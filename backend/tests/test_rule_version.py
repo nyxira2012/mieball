@@ -101,6 +101,23 @@ def test_overwrite_reinserted_details_still_carry_version(client: TestClient):
     assert {d.rule_version for d in rows} == {dupr.RULES_VERSION}
 
 
+def test_version_bump_old_v1_new_v2_coexist(client: TestClient, monkeypatch):
+    """换规矩换号演练（dupr.RULES_VERSION docstring 警示的场景）：monkeypatch 改
+    模块属性后 snap 动态取值（stats.py 调用点读 dupr.RULES_VERSION，非 import 期
+    拷贝）——旧局明细仍 v1、新结算 v2 并存，事后可分辨每行分是哪套规矩算的。"""
+    env1 = open_live(client, seed=216, players=6, bring=1)
+    settled_11_9(client, env1)
+    assert {d.rule_version for d in details_of(client, env1["game_id"])} == {"v1"}
+
+    monkeypatch.setattr(dupr, "RULES_VERSION", "v2")
+    env2 = open_live(client, seed=217, players=6, bring=1)
+    settled_11_9(client, env2)
+    new = details_of(client, env2["game_id"])
+    assert len(new) == 3 and {d.rule_version for d in new} == {"v2"}
+    # 旧局记号不追改：换号只向后生效，v1 的历史行原样在库
+    assert {d.rule_version for d in details_of(client, env1["game_id"])} == {"v1"}
+
+
 # ---- 只进库不出口（球友界面不显示，spec §4.4） ----
 
 

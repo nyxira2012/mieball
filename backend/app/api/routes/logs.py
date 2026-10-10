@@ -16,6 +16,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Request
 
 from ...core.clock import CN_TZ
+from ...core.logs import APP_PREFIX, AUDIT_PREFIX
 from ..deps import require_ops_key
 
 router = APIRouter(prefix="/ops", tags=["ops"])
@@ -41,7 +42,7 @@ def read_audit_events(log_dir: str, keep_days: int, game_id: int) -> list[dict]:
     """近 keep_days 天 audit-*.log 里 game_id 命中的 JSON 行；按文件序+行序=写入序，
     天然升序。写坏的非 JSON 行跳过不炸（写侧兜底的缺口标记不落审计，防的是手改）。"""
     events = []
-    for f in _recent_files(Path(log_dir), "audit", keep_days):
+    for f in _recent_files(Path(log_dir), AUDIT_PREFIX, keep_days):
         for ln in f.read_text(encoding="utf-8").splitlines():
             try:
                 row = json.loads(ln)
@@ -61,7 +62,7 @@ def read_error_lines(log_dir: str, keep_days: int, error_id: str) -> list[str] |
     """按错误号扫 app-*.log：命中 → 向前 2 行上下文 + 向后到下一条记录首行为止
     （internal_error handler 记的 traceback 是不带行头的多行续体，向下扩到界碑
     才停——案发现场整段带出，不再被 ±2 截断）；无命中 → None。"""
-    for f in _recent_files(Path(log_dir), "app", keep_days):
+    for f in _recent_files(Path(log_dir), APP_PREFIX, keep_days):
         lines = f.read_text(encoding="utf-8").splitlines()
         hits = [i for i, ln in enumerate(lines) if error_id in ln]
         if hits:

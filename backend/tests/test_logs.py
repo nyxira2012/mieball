@@ -276,7 +276,8 @@ def test_unexpected_error_carries_error_id(tmp_path):
     r3 = crash.get("/api/games/999999/live", headers=auth(token))
     assert r3.status_code == 404
     fail_lines = [
-        ln for ln in app_log(logs_dir).splitlines()
+        ln
+        for ln in app_log(logs_dir).splitlines()
         if "access GET /api/games/999999/live 404" in ln
     ]
     assert fail_lines and any("(u=1" in ln for ln in fail_lines)

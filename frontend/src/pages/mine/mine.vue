@@ -73,6 +73,10 @@
       <view v-else class="acc-link" @click="go('/pages/mine/dress')">
         手机号 {{ session.maskedPhone }} · 唯一钥匙 <text class="arr">▸</text>
       </view>
+      <!-- 复制诊断日志（6.1 §4.6）：v-if 外=游客也可见可点；纯本地复制，误点无副作用 -->
+      <view class="acc-link" @click="onCopyDiag">
+        复制诊断日志 <text class="arr">▸</text>
+      </view>
     </view>
     <view class="acc-row">
       <AppButton variant="ghost" size="sm" class="grow" @click="onLogout"
@@ -107,6 +111,7 @@ import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import { useBillStore } from "@/stores/bill";
 import { deadRowKind } from "@/utils/format";
+import { exportText } from "@/utils/blackbox";
 import { ApiError, errText } from "@/api/http";
 import { GUEST_DUPR, duprTier, fmtDupr } from "@/utils/elo";
 
@@ -168,6 +173,14 @@ function onLogout(): void {
 }
 function onDeleteAcc(): void {
   ui.openSheet({ type: "delete-confirm" });
+}
+/** 复制诊断日志（6.1 §4.6）：黑匣子导出纯本地文本进剪贴板，不联网；文案口径 spec 附录 A3 */
+function onCopyDiag(): void {
+  uni.setClipboardData({
+    data: exportText(),
+    success: () => ui.toast("已复制，发给组织者就行"),
+    fail: () => ui.toast("复制没成功，再试一次"),
+  });
 }
 </script>
 

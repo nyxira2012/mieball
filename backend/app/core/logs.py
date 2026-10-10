@@ -35,6 +35,11 @@ ctx_journal: ContextVar[Journal | None] = ContextVar("log_journal", default=None
 _PHONE_RE = re.compile(r"(?<!\d)(1[3-9]\d)\d{4}(\d{4})(?!\d)")
 _BLOB_RE = re.compile(r"[0-9A-Za-z]{24,}")
 
+# 按天文件名前缀（写读两侧单一源：Journal 写侧与 ops 读取口/CLI 查询都从这取，
+# 文件名知识不散落两处）——app=运行流水 / audit=审计账本
+APP_PREFIX = "app"
+AUDIT_PREFIX = "audit"
+
 
 def mask(text: str | None) -> str | None:
     """脱敏（spec C3：手机号与登录钥匙明文根本不落盘）：11 位手机号→138****1234，
@@ -202,8 +207,12 @@ class Journal:
         self._close()  # 跨天切换先关旧文件（首开时是空操作）
         self._dir.mkdir(parents=True, exist_ok=True)
         # 长持有追加句柄（跨请求复用）、手动 _close 管理——非一次性文件不用 with
-        self._app = open(self._dir / f"app-{day}.log", "a", encoding="utf-8")  # noqa: SIM115
-        self._audit = open(self._dir / f"audit-{day}.log", "a", encoding="utf-8")  # noqa: SIM115
+        self._app = open(  # noqa: SIM115
+            self._dir / f"{APP_PREFIX}-{day}.log", "a", encoding="utf-8"
+        )
+        self._audit = open(  # noqa: SIM115
+            self._dir / f"{AUDIT_PREFIX}-{day}.log", "a", encoding="utf-8"
+        )
         self._day = day
         self._cleanup(day)
 
@@ -225,7 +234,7 @@ class Journal:
             datetime.strptime(day, "%Y%m%d")  # noqa: DTZ007
             - timedelta(days=self._keep_days)
         ).strftime("%Y%m%d")
-        for prefix in ("app", "audit"):
+        for prefix in (APP_PREFIX, AUDIT_PREFIX):
             for f in self._dir.glob(f"{prefix}-*.log"):
                 d = f.stem.rsplit("-", 1)[-1]
                 if len(d) == 8 and d.isdigit() and d <= cutoff:
