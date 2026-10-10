@@ -4,7 +4,7 @@
        4 个 tab 走 uni.switchTab（pages.json 已注册），保留页面实例；
        FAB 不导航，点开全局组局抽屉 ui.openSheet({type:'launch'})（对应 alpha:686 openLaunch）。
        v-html 例外登记：tab 图标与 FAB 加号为静态 SVG 字符串（alpha:681-694 逐字抄录），
-       与 ChibiAvatar 并列为全库唯二 v-html 出口——后续小程序化时集中替换为 image 静态资源。 -->
+       系全库 v-html 例外出口之一，出口清单见 src/api/types.ts——后续小程序化时集中替换为 image 静态资源。 -->
   <view class="nav">
     <view class="bar">
       <view
@@ -38,11 +38,11 @@
 </template>
 
 <script setup lang="ts">
-import type { PropType } from 'vue';
-import { useUiStore } from '@/stores/ui';
-import { useLiveStore } from '@/stores/live';
-import { goTab } from '@/utils/nav';
-import type { TabKey } from '@/utils/nav';
+import type { PropType } from "vue";
+import { useUiStore } from "@/stores/ui";
+import { useLiveStore } from "@/stores/live";
+import { goTab } from "@/utils/nav";
+import type { TabKey } from "@/utils/nav";
 
 /* 图标 SVG：alpha.html:681-694 逐字（stroke/fill 线型由下方 :deep(svg) 统一给）；
    live 球场图标为本轮新画（球场+中网，对齐 1.7 线型） */
@@ -57,10 +57,10 @@ const ICONS = {
 /** tab 配置（label/键单一来源；键与路径契约在 utils/nav 的 TabKey/TAB_ROUTES，
     FAB 夹在 meet 与 power 之间，故拆左右两组渲染） */
 const TABS = [
-  { k: 'live', label: '现场' },
-  { k: 'meet', label: '约球' },
-  { k: 'power', label: '战力' },
-  { k: 'mine', label: '我的' },
+  { k: "live", label: "现场" },
+  { k: "meet", label: "约球" },
+  { k: "power", label: "战力" },
+  { k: "mine", label: "我的" },
 ] as const satisfies readonly { k: TabKey; label: string }[];
 const TABS_L = TABS.slice(0, 2);
 const TABS_R = TABS.slice(2);
@@ -75,7 +75,7 @@ const live = useLiveStore();
 
 /** alpha:686 onclick="openLaunch()"：FAB 开全局组局抽屉 */
 function openLaunch(): void {
-  ui.openSheet({ type: 'launch' });
+  ui.openSheet({ type: "launch" });
 }
 </script>
 
@@ -139,7 +139,7 @@ function openLaunch(): void {
   color: var(--lemon);
 }
 .nbtn.on::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 2px;
   width: 16px;

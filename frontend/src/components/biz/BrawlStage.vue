@@ -17,7 +17,9 @@
           </view>
           <!-- alpha:1759 plate：#名次 + 名字 -->
           <view class="plate">
-            <view class="pno">#{{ p.pos === 'c' ? 1 : p.pos === 'l' ? 2 : 3 }}</view>
+            <view class="pno"
+              >#{{ p.pos === "c" ? 1 : p.pos === "l" ? 2 : 3 }}</view
+            >
             <view class="pnm">{{ p.u.name }}</view>
           </view>
         </view>
@@ -31,33 +33,33 @@
 <script setup lang="ts">
 /* 前三打架图 BrawlStage（alpha.html:1862-1870 + 1753-1760 bw() + 1745-1751 paddleSvg · P9）。
    【v-html 例外登记】球拍 SVG 字符串（alpha:1745-1751 paddleSvg）经 v-html 注入——
-   与 ChibiAvatar（Q 版头像）、TabBar（导航图标）并列为全库 v-html 出口；
-   小程序化时随 ChibiAvatar 一并替换为静态资源/canvas，调用方零改动。 */
-import { computed } from 'vue';
-import type { PropType } from 'vue';
-import ChibiAvatar from '@/components/ui/ChibiAvatar.vue';
-import type { User } from '@/api/types';
+   系全库 v-html 例外出口之一，出口清单见 src/api/types.ts；
+   后续小程序化时集中替换为静态资源/canvas，调用方零改动。 */
+import { computed } from "vue";
+import type { PropType } from "vue";
+import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import type { User } from "@/api/types";
 
-type Pos = 'l' | 'c' | 'r';
+type Pos = "l" | "c" | "r";
 
 const props = defineProps({
   /** 榜单前三（alpha:1827 t3=rows.slice(0,3)；[0]=C 位、[1]=左、[2]=右） */
   top3: { type: Array as PropType<User[]>, required: true },
 });
 
-const emit = defineEmits<{ (e: 'profile', userId: number): void }>();
+const emit = defineEmits<{ (e: "profile", userId: number): void }>();
 
 /** alpha:1866-1868 槽位映射：左=t3[1] · 中=t3[0] · 右=t3[2]（缺人该位留空） */
 const figs = computed<{ pos: Pos; u?: User }[]>(() => [
-  { pos: 'l', u: props.top3[1] },
-  { pos: 'c', u: props.top3[0] },
-  { pos: 'r', u: props.top3[2] },
+  { pos: "l", u: props.top3[1] },
+  { pos: "c", u: props.top3[0] },
+  { pos: "r", u: props.top3[2] },
 ]);
 
 /** alpha.html:1745-1751 paddleSvg(side,color) 逐字（rot l=-26 / r=26；C 位持左拍，alpha:1757） */
-function paddleSvg(side: 'l' | 'r', color: string): string {
-  const rot = side === 'l' ? -26 : 26;
-  return `<svg class="pd" viewBox="0 0 44 86" width="30" height="52" style="${side === 'l' ? 'left:-20px' : 'right:-20px'};transform:rotate(${rot}deg)">
+function paddleSvg(side: "l" | "r", color: string): string {
+  const rot = side === "l" ? -26 : 26;
+  return `<svg class="pd" viewBox="0 0 44 86" width="30" height="52" style="${side === "l" ? "left:-20px" : "right:-20px"};transform:rotate(${rot}deg)">
     <rect x="5" y="3" width="34" height="44" rx="15" fill="${color}"/>
     <rect x="17" y="44" width="10" height="26" rx="5" fill="#B8935A"/>
     <circle cx="15" cy="17" r="2.4" fill="rgba(0,0,0,.22)"/><circle cx="24" cy="13" r="2.4" fill="rgba(0,0,0,.22)"/>
@@ -66,9 +68,9 @@ function paddleSvg(side: 'l' | 'r', color: string): string {
 
 /** alpha:1757 paddleSvg(pos==='c'?'l':pos,'#F5F1E8')：C 位/左位左拍 · 右位右拍 */
 const paddles: Record<Pos, string> = {
-  l: paddleSvg('l', '#F5F1E8'),
-  c: paddleSvg('l', '#F5F1E8'),
-  r: paddleSvg('r', '#F5F1E8'),
+  l: paddleSvg("l", "#F5F1E8"),
+  c: paddleSvg("l", "#F5F1E8"),
+  r: paddleSvg("r", "#F5F1E8"),
 };
 </script>
 
@@ -82,7 +84,11 @@ const paddles: Record<Pos, string> = {
   overflow: hidden;
   margin-bottom: 4px;
   background:
-    radial-gradient(circle at 50% 130%, rgba(255, 90, 54, 0.14), transparent 62%),
+    radial-gradient(
+      circle at 50% 130%,
+      rgba(255, 90, 54, 0.14),
+      transparent 62%
+    ),
     var(--ink2);
 }
 /* alpha.html:473-474 .bk */

@@ -349,7 +349,8 @@ export interface LiveCourt {
 }
 
 /** 已完成场次（alpha:1710）。alpha 的 txt 为含高亮的 HTML 字符串，这里存纯文本胜者名，
-    页面渲染时拼「names 胜」（v-html 仅允许 ChibiAvatar 使用）。 */
+    页面渲染时拼「names 胜」（v-html 例外出口：ChibiAvatar / TabBar / BrawlStage / QrOverlay，
+    例外登记在各组件文件头，后续小程序化时集中替换）。 */
 export interface MatchHistory {
   names: string;
   sa: number;

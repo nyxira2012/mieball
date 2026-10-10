@@ -297,7 +297,8 @@
 
 <script setup lang="ts">
 /* 球局详情（alpha.html:1400-1467 · 1.2 接线修订面）。数据源 = game store 的 loadDetail/current；
-   分享按钮只出 toast（分享卡片降级规格§6）；「到截止判定」手动按钮退役（懒判定归后端）。 */
+   分享 = 系统分享面板优先、复制链接兜底（微信自定义卡片待服务号资质）；
+   「到截止判定」手动按钮退役（懒判定归后端）。 */
 import { computed, onUnmounted, ref } from "vue";
 import { onLoad, onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
@@ -317,6 +318,8 @@ import {
 } from "@/utils/format";
 import { durTxt, isoDay, isoHm } from "@/utils/time";
 import { goLive } from "@/utils/nav";
+import { deepUrl } from "@/utils/deeplink";
+import { copyWithToast } from "@/utils/clipboard";
 
 const store = useGameStore();
 const ui = useUiStore();
@@ -457,9 +460,20 @@ const ruleName = computed(() => {
 /** 响应式「我」id（名单行高亮） */
 const meId = computed(() => useUserStore().me.id);
 
-/** 分享 = 纯 toast（分享卡片降级，规格§6；演示模拟已随假局退役） */
-const onShare = () => {
-  ui.toast("分享卡片已生成 · 转到微信群里拉人");
+/** 分享分层（推翻旧「纯 toast」假话）：系统分享面板优先（Web Share API），
+    复制链接兜底；微信自定义卡片维持挂起（待服务号资质，规格§6） */
+const onShare = async () => {
+  if (!game.value) return; // 按钮只在 game 态渲染，这里防异步窗口错位
+  const url = deepUrl(`/pages/detail/detail?id=${game.value.id}`);
+  if (typeof navigator !== "undefined" && navigator.share) {
+    try {
+      await navigator.share({ title: game.value.name, url });
+      return;
+    } catch (e) {
+      if ((e as DOMException)?.name === "AbortError") return; // 用户取消分享，静默
+    }
+  }
+  copyWithToast(url, "链接已复制 · 去微信群里粘贴");
 };
 /** joinSheet → JoinSheet 弹层 */
 const onJoin = () => {

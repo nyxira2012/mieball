@@ -230,6 +230,7 @@ import { useUiStore } from "@/stores/ui";
 import { useBillStore } from "@/stores/bill";
 import { deadRowKind } from "@/utils/format";
 import { exportText } from "@/utils/blackbox";
+import { copyWithToast } from "@/utils/clipboard";
 import { ApiError, errText } from "@/api/http";
 import { GUEST_DUPR, duprTier, fmtDupr } from "@/utils/elo";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
@@ -298,11 +299,7 @@ function onDeleteAcc(): void {
 }
 /** 复制诊断日志（6.1 §4.6）：黑匣子导出纯本地文本进剪贴板，不联网；文案口径 spec 附录 A3 */
 function onCopyDiag(): void {
-  uni.setClipboardData({
-    data: exportText(),
-    success: () => ui.toast("已复制，发给组织者就行"),
-    fail: () => ui.toast("复制没成功，再试一次"),
-  });
+  copyWithToast(exportText(), "已复制，发给组织者就行");
 }
 
 /* —— 密码区块（1.6 §4.8/§4.11）：has_password 分流设/改密，面板在账号区内联展开 —— */
