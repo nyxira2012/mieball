@@ -372,10 +372,14 @@ export const useGameStore = defineStore("game", () => {
   /** 进行中的局（live 入口页冷启动分发在用；真局来自后端派生态）。manual_lock 局截止前
       簿 state 仍 open——账开即现场（2.5 §4.4），liveOpened 定值一并算数，现场页 reload
       才不会被 onLoad 弹回约球页。同时在办多个挑最近开打的（4.1-3）：开账时刻局簿
-      没有，startAt 是可用近似。 */
+      没有，startAt 是可用近似。已散场局（ended）不算在办（2.6 §4.1-3/§5-2）：LiveState
+      行存续使 live_opened 恒 true、拦不住 done——不排除则收摊后被 liveGame 原路接回，
+      完成钮失效；回看入口由 打球记录→局详情→战报子页 承接。 */
   const liveGame = computed((): Game | null => {
     const pick = (list: Game[]): Game | null => {
-      const on = list.filter((g) => g.status === "live" || g.liveOpened);
+      const on = list.filter(
+        (g) => (g.status === "live" || g.liveOpened) && !g.ended,
+      );
       return on.length
         ? on.reduce((a, b) => (b.startAt > a.startAt ? b : a))
         : null;

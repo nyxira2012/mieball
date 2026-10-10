@@ -242,7 +242,8 @@
            且未散场（liveOpened ∧ ¬ended）——到点未散场的局派生已是 done 但流程没散场，
            组织者要能回去补散场确认，否则局挂死在吸收态（2026-10-08 债清偿）。正式成员——
            「进入现场」吃卡片同源判定 cardLiveEntry（账开 ∨ 必开两小时窗）；
-           候补/未报名/游客无按钮（上场唯一路=现场扫码） -->
+           候补/未报名/游客无按钮（上场唯一路=现场扫码）。已散场的局（ended 锚存储事实）
+           亮「查看战报」（2.6 §4.2）：能开详情的人都见（战报链接即门票，不加身份条件） -->
       <AppChip v-if="orgGuide" class="mt12">先锁定必打，才能开始打球</AppChip>
       <AppButton
         v-else-if="org && (game.status === 'open' || game.status === 'locked')"
@@ -270,6 +271,14 @@
         @click="onLive"
         >▶ 进入现场</AppButton
       >
+      <AppButton
+        v-else-if="game.ended"
+        variant="burn"
+        block
+        class="mt12"
+        @click="onRecap"
+        >查看战报</AppButton
+      >
 
       <!-- 规则牌（规则三件 + 候补/人均口径；score_rule 未知值不显示得分规则段——旧局容错） -->
       <NoteCard class="rules">
@@ -287,11 +296,11 @@
         >。
       </NoteCard>
     </view>
-    <!-- A2：等待提示 / 链接失效说明页（文案中性） -->
+    <!-- A2：等待提示 / 链接失效说明页（2.6 §4.6 统一句：链接场景不说「已结束」） -->
     <view v-else-if="loading" class="ph">{{
       slow ? "网络有点慢 · 再等等，或稍后再来" : "正在打开这局…"
     }}</view>
-    <view v-else class="ph">这个球局不存在或已被删除</view>
+    <view v-else class="ph">{{ DEAD_LINK_MSG }}</view>
   </PageShell>
 </template>
 
@@ -317,9 +326,10 @@ import {
   SCORE_RULE_NAMES,
 } from "@/utils/format";
 import { durTxt, isoDay, isoHm } from "@/utils/time";
-import { goLive } from "@/utils/nav";
+import { goLive, goRecap } from "@/utils/nav";
 import { deepUrl } from "@/utils/deeplink";
-import { copyWithToast } from "@/utils/clipboard";
+import { shareLink } from "@/utils/share";
+import { DEAD_LINK_MSG } from "@/utils/recap";
 
 const store = useGameStore();
 const ui = useUiStore();
@@ -460,20 +470,18 @@ const ruleName = computed(() => {
 /** 响应式「我」id（名单行高亮） */
 const meId = computed(() => useUserStore().me.id);
 
-/** 分享分层（推翻旧「纯 toast」假话）：系统分享面板优先（Web Share API），
-    复制链接兜底；微信自定义卡片维持挂起（待服务号资质，规格§6） */
-const onShare = async () => {
+/** 分享（系统面板→复制兜底的降级链在 utils/share 单一源，2.6 消重；微信自定义卡片
+    维持挂起待服务号资质） */
+const onShare = () => {
   if (!game.value) return; // 按钮只在 game 态渲染，这里防异步窗口错位
-  const url = deepUrl(`/pages/detail/detail?id=${game.value.id}`);
-  if (typeof navigator !== "undefined" && navigator.share) {
-    try {
-      await navigator.share({ title: game.value.name, url });
-      return;
-    } catch (e) {
-      if ((e as DOMException)?.name === "AbortError") return; // 用户取消分享，静默
-    }
-  }
-  copyWithToast(url, "链接已复制 · 去微信群里粘贴");
+  void shareLink(
+    deepUrl(`/pages/detail/detail?id=${game.value.id}`),
+    game.value.name,
+  );
+};
+/** 查看战报（2.6 §4.2）：已散场的局亮（ended 锚存储事实），点进战报子页 */
+const onRecap = () => {
+  if (game.value) goRecap(game.value.id);
 };
 /** joinSheet → JoinSheet 弹层 */
 const onJoin = () => {

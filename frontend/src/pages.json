@@ -39,6 +39,10 @@
     {
       "path": "pages/detail/detail",
       "style": { "navigationBarTitleText": "球局详情" }
+    },
+    {
+      "path": "pages/live/recap",
+      "style": { "navigationBarTitleText": "战报" }
     }
   ],
   "globalStyle": {

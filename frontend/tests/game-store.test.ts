@@ -522,4 +522,13 @@ describe("liveGame（live 入口页冷启动分发）", () => {
     await store.loadMine();
     expect(store.liveGame).toBeNull();
   });
+
+  it("已散场局（done + live_opened + ended）：不命中——LiveState 行存续 live_opened 恒真，收摊后不被 liveGame 原路接回（2.6 §4.1-3/§5-2）", async () => {
+    api.apiListGames.mockResolvedValue([
+      mkView({ id: 4, status: "done", live_opened: true, ended: true }),
+    ]);
+    const { store } = await loadStore();
+    await store.loadGames();
+    expect(store.liveGame).toBeNull();
+  });
 });

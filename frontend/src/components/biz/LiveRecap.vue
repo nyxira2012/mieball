@@ -3,10 +3,21 @@
        比分与胜方）、名单（含访客挂谁名下）、考勤时刻（组织者与本人；分权在后端读链，
        view 里拿到 null 就不显示）。纯渲染：props 吃定格视图，零写按钮、零本地态——
        页面是翻旧账的，不是续摊的（写动作在 store sealGate 拒收「球局已结束」）。
-       战报行积分吃 matches[].eloRows（§4.11-3 落账权威数，预览不一致时以它为准）。 -->
+       战报行积分吃 matches[].eloRows（§4.11-3 落账权威数，预览不一致时以它为准）。
+       2.6 门牌三件（§4.1/4.3）：上部提示行（isMyGame 两分支，文案单一源 utils/recap）
+       + 右上角完成/分享双钮 + 分享小字「链接任何人可看」——只 emit 不执行，收摊/返回/
+       分享的编排全归页面（现场门牌与战报子页各办各的，组件零逻辑）。 -->
   <view class="recap-root">
     <!-- 「球局已结束」横幅：回看态第一眼 -->
     <view class="rp-banner">
+      <view class="rp-top">
+        <view class="rp-hint">{{ recapHint(view.isMyGame) }}</view>
+        <view class="rp-btns">
+          <view class="rp-btn" @click="emit('complete')">完成</view>
+          <view class="rp-btn share" @click="emit('share')">分享</view>
+        </view>
+      </view>
+      <view class="rp-note">链接任何人可看</view>
       <view class="kicker">REPLAY · 已散场</view>
       <view class="rp-title"
         >{{ view.players.length }} 人 · {{ matchCount }} 场战报</view
@@ -86,11 +97,16 @@
 import { computed } from "vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { isoHm, isoHmOrDash } from "@/utils/time";
+import { recapHint } from "@/utils/recap";
 import type { LivePlayer, LiveView, MatchPerson } from "@/api/types";
 
 const props = defineProps({
   view: { type: Object as () => LiveView, required: true },
 });
+
+/** 完成与分享只上报意图：现场门牌 complete=收摊编排、子页 complete=返回（§4.2），
+    share 两边同走 shareLink——页面层各办各的，这里零逻辑 */
+const emit = defineEmits<{ complete: []; share: [] }>();
 
 const matchCount = computed(() => props.view.matches.length);
 /** 旧到新落账、回看新到旧翻（与 history/feed 的「新到旧」同一观感） */
@@ -141,6 +157,45 @@ const attendRows = computed(() =>
   background: linear-gradient(160deg, var(--ink3), var(--ink2));
   padding: 14px 16px;
   margin-bottom: 18px;
+}
+/* 门牌行：提示行（醒目）+ 右上角完成/分享双钮；小字「链接任何人可看」随双钮右对齐 */
+.rp-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.rp-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--lemon);
+  margin-top: 3px;
+}
+.rp-btns {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+.rp-btn {
+  border: 1px solid rgba(255, 212, 0, 0.4);
+  border-radius: 10px;
+  padding: 5px 13px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lemon);
+}
+.rp-btn.share {
+  background: rgba(255, 212, 0, 0.12);
+}
+.rp-note {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 0.08em;
+  margin-top: 6px;
 }
 .kicker {
   font-family: var(--mono);

@@ -19,6 +19,31 @@
       </view>
     </template>
 
+    <!-- 死链态（2.6 §4.6）：带 id 进入但局拉不到（真没有/已撤销/断网）——页面级
+         一句+出口替代「toast+白骨架」；「找不到…已撤销」为链接死局专用句，不说「已
+         结束」（散场局 apiLiveView 照回 200 回看视图，吃不到这句） -->
+    <template v-else-if="deadGame">
+      <view class="empty-wrap">
+        <view class="kicker kt30">Court</view>
+        <view class="brand">现<text class="bem">场</text></view>
+        <EmptyBox class="et20">
+          <view>{{ DEAD_LINK_MSG }}</view>
+          <view class="dl-btns">
+            <AppButton
+              variant="ghost"
+              size="sm"
+              class="flex1"
+              @click="retryDead"
+              >重试</AppButton
+            >
+            <AppButton variant="pri" size="sm" class="flex1" @click="goMeet"
+              >去约球看看</AppButton
+            >
+          </view>
+        </EmptyBox>
+      </view>
+    </template>
+
     <!-- 无 live 空态（alpha:1532-1535 逐字；bare 壳下自补边距） -->
     <template v-else-if="!liveStore.hasLive">
       <view class="empty-wrap">
@@ -39,9 +64,14 @@
 
     <!-- 只读回看（2.3 §4.10，批6）：散场后扫码/从我的局点进=回看态——LiveRecap 替代
          现场编排（零写按钮；写动作 sealGate 拒收兜底）。recap 由 ensureLive endedAt
-         分流与 endGame 响应两路落地（散场即回看） -->
+         分流与 endGame 响应两路落地（散场即回看）。2.6 门牌：完成=收摊编排、
+         分享=shareLink，执行逻辑全在页面（组件只 emit） -->
     <template v-else-if="liveStore.recap">
-      <LiveRecap :view="liveStore.recap" />
+      <LiveRecap
+        :view="liveStore.recap"
+        @complete="onRecapComplete"
+        @share="onRecapShare"
+      />
     </template>
 
     <template v-else-if="L">
@@ -163,6 +193,9 @@ import { useGameStore } from "@/stores/game";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import { goMeet } from "@/utils/nav";
+import { shareLink } from "@/utils/share";
+import { liveShareUrl } from "@/utils/deeplink";
+import { DEAD_LINK_MSG } from "@/utils/recap";
 
 /** 本地弹层槽（单槽替换语义：开新的自动顶旧的；与全局 SheetPayload 互不相干）。
     confirm=危险动作确认（A3）：后果句 + 执行动作，确认后才跑 */
@@ -187,6 +220,10 @@ const liveSheet = ref<LocalSheet | null>(null);
 const qrOpen = ref(false);
 /** A2 加载中：ensureLive 在途的骨架开关（进页先拉详情的窗口期；hasLive 即撤） */
 const booting = ref(false);
+/** 死链态（2.6 §4.6）：只对带 id 进入生效——ensureLive 判负（真没有/已撤销/断网）
+    时亮，替代旧的「toast 后停骨架」；断网同页可重试，重试与去约球都是出口 */
+const deadGame = ref(false);
+const deadId = ref<number | null>(null);
 
 const personOpen = computed(() => liveSheet.value?.k === "person");
 const personId = computed(() =>
@@ -361,7 +398,8 @@ onLoad((options) => {
 onShow(() => {
   if (liveStore.hasLive) {
     liveStore.pendingLiveId = null; // 已开分支不接新局，信号位一并兜底清（残留不跨状态）
-    liveStore.startPolling(liveStore.live!.g.id); // 回前台续轮询（onHide 停的；同局幂等不重开）
+    // 回前台续轮询（onHide 停的；同局幂等不重开）；回看态是定格视图，轮询无意义（2.6）
+    if (!liveStore.recap) liveStore.startPolling(liveStore.live!.g.id);
     maybeRemoteSweep(); // 远程散场预约：局已在现场时直接开清扫
     return;
   }
@@ -370,15 +408,52 @@ onShow(() => {
      走到这说明是用户主动回现场键。A2 加载中：ensureLive 在途（拉详情等）骨架占位
      不空白，成败都收骨架；信号位消费即清（一次性；深链 id 优先时顺带清掉残留） */
   const id = liveId.value ?? liveStore.pendingLiveId ?? gameStore.liveGame?.id;
-  if (id != null) {
-    booting.value = true;
-    liveStore.ensureLive(id).finally(() => {
+  if (id != null) connectLive(id);
+});
+
+/** 接局总入口（onShow 深链 / 收摊接在办局 / 死链重试共用）：成败都收骨架；
+    判负（真没有/已撤销/断网）且没接上别的局 → 死链态（§4.6 一句+出口，不白屏） */
+function connectLive(id: number): void {
+  booting.value = true;
+  deadGame.value = false;
+  liveStore
+    .ensureLive(id)
+    .then((ok) => {
+      if (!ok && !liveStore.hasLive) {
+        deadId.value = id;
+        deadGame.value = true;
+      }
+    })
+    .finally(() => {
       booting.value = false;
       liveStore.pendingLiveId = null;
       maybeRemoteSweep(); // 开账/拉读落地后再开清扫（预约位已在对的局上）
     });
-  }
-});
+}
+
+/** 死链重试：同一 id 再接一次（断网的解药；真死局仍是死链态） */
+function retryDead(): void {
+  if (deadId.value != null) connectLive(deadId.value);
+}
+
+/* ---------- 战报门牌（2.6 §4.1/§4.3） ---------- */
+/** 完成=收摊（合同 4.1-3：只清本机画面，账一点不动；不弹确认）：还有别的在办局
+    原地接最近开打的（liveGame 口径在 game store，同 tab 不跳页），无则空态
+    「还没有进行中的球局」自然显出。深链残留 id 一并清（§4.3-4 收摊语义）：
+    不清则切走再切回 onShow `liveId ?? …` 仍拿它重接刚收掉的局，战报复活 */
+function onRecapComplete(): void {
+  liveStore.dismissRecap();
+  liveId.value = null;
+  const next = gameStore.liveGame;
+  if (next) connectLive(next.id);
+}
+/** 分享（§4.1）：系统面板→复制兜底（shareLink 单一源）；链接落点=现场页回看态
+    （散场局 apiLiveView 照回 200 回看视图）；局名有就带 */
+function onRecapShare(): void {
+  const id = liveStore.recap?.gameId;
+  if (id == null) return;
+  void shareLink(liveShareUrl(id), liveStore.live?.g.name ?? "球局战报");
+}
 /** 页面隐藏（切 tab/进退页面）清本地弹层，避免残留到别的页；轮询随之停（§4.8 对表只在看现场时发生） */
 onHide(() => {
   liveSheet.value = null;
@@ -472,6 +547,12 @@ function goOpenTonight(): void {
 .cf-btns {
   display: flex;
   gap: 10px;
+}
+/* 死链态出口双钮（重试 / 去约球） */
+.dl-btns {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
 }
 .flex1 {
   flex: 1;

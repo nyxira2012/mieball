@@ -110,11 +110,13 @@ describe("liveGame 口径（4.1-3：同时在办多个挑最近开打的）", ()
       mkView({
         id: 1,
         status: "live",
+        ended: false, // 在办局未散场（本文件 mkView 默认 ended:true 是散场局形状）
         start_at: "2026-10-08T10:00:00+08:00",
       }),
       mkView({
         id: 2,
         status: "live",
+        ended: false,
         start_at: "2026-10-08T15:00:00+08:00",
       }),
     ]);
@@ -125,7 +127,13 @@ describe("liveGame 口径（4.1-3：同时在办多个挑最近开打的）", ()
 
   it("单局在办照旧命中：簿 state 仍 open 但 live_opened 的 manual_lock 局也算（2.5 §4.4）", async () => {
     api.apiListGames.mockResolvedValue([
-      mkView({ id: 5, status: "open", manual_lock: true, live_opened: true }),
+      mkView({
+        id: 5,
+        status: "open",
+        manual_lock: true,
+        live_opened: true,
+        ended: false, // 在办局未散场（同上，默认 ended:true 会吃 2.6 修正后的在办口径）
+      }),
     ]);
     const store = await loadStore();
     await store.loadGames();

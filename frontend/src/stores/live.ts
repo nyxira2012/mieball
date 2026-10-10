@@ -85,6 +85,7 @@ import {
 } from "@/utils/rotate";
 import { ELO_INIT, GUEST_DUPR } from "@/utils/elo";
 import { recommend } from "@/utils/recommend";
+import { DEAD_LINK_MSG } from "@/utils/recap";
 import { useGameStore } from "./game";
 import { useUiStore } from "./ui";
 import { useUserStore } from "./user";
@@ -401,16 +402,19 @@ export const useLiveStore = defineStore("live", () => {
   /** 确保现场开的是目标局（跳转/深链/扫码直达共用的守门口径，后端总账路）：
       - 拉读 200 → applyLiveView + startPolling（散场视图不再轮询——定格回看）；
         局簿没缓存这局时顺手 loadDetail 回填 g（深链冷设备顶条降级修复，批6 P2）；
-      - 404 live_not_found → 终态局（done/terminated/cancelled）拦「球局不存在或已结束」，
+      - 404 live_not_found → 终态局（done/terminated/cancelled）拦「找不到这个球局，
+        可能已被撤销」（2.6 §4.6 链接死局句：不说「已结束」——散场恰恰是翻得回战报
+        的状态；apiLiveView 对散场局照回 200 回看视图，404 只发生在真没有/已撤销），
         否则走开账后端路（组织者；幂等）；
       - 同局已开 → 续轮询 + 先对一拍（不靠计时器等 3s）；已散场同局 → 拉定格回看，
-        写入口由 sealGate 与后端 live_ended 拦（§4.2/§4.10）。 */
-  async function ensureLive(id: number): Promise<void> {
+        写入口由 sealGate 与后端 live_ended 拦（§4.2/§4.10）。
+      返回是否接上了（页面据此切死链态：失败只 toast 不留画面，2.6 前页面停骨架）。 */
+  async function ensureLive(id: number): Promise<boolean> {
     const cur = live.value;
     if (cur && cur.g.id === id) {
       if (!cur.endedAt) startPolling(id);
       void pollLiveView(id);
-      return;
+      return true;
     }
     let raw: LiveViewApi;
     try {
@@ -418,7 +422,7 @@ export const useLiveStore = defineStore("live", () => {
     } catch (e) {
       if (!(e instanceof ApiError) || e.code !== "live_not_found") {
         ui.toast(errText(e));
-        return;
+        return false;
       }
       const gs = useGameStore();
       let g = gs.findGame(id);
@@ -426,16 +430,15 @@ export const useLiveStore = defineStore("live", () => {
         try {
           g = await gs.loadDetail(id);
         } catch {
-          ui.toast("球局不存在或已结束");
-          return;
+          ui.toast(DEAD_LINK_MSG);
+          return false;
         }
       }
       if (["done", "terminated", "cancelled"].includes(g.status)) {
-        ui.toast("球局不存在或已结束");
-        return;
+        ui.toast(DEAD_LINK_MSG);
+        return false;
       }
-      await startLive(g);
-      return;
+      return !!(await startLive(g));
     }
     const first = toLiveView(raw);
     applyLiveView(first);
@@ -450,7 +453,7 @@ export const useLiveStore = defineStore("live", () => {
       try {
         await useGameStore().loadDetail(id);
       } catch {
-        return;
+        return true; // 拉不到（无权限/已删）留 stub 不拦路——视图本身已接上
       }
       // 期间视图没被轮询推进才重放首拍（推进过的那拍已带最新号，重放旧的会回拨；
       // 轮询对表 totalSeq 不变不 apply——没有这步 stub 会一直占着顶条）
@@ -460,6 +463,7 @@ export const useLiveStore = defineStore("live", () => {
       )
         applyLiveView(toLiveView(raw));
     }
+    return true;
   }
 
   /** 行是否在后端总账（视图行走后端写；空降/本地造的行走本地旧路） */

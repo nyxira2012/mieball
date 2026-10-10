@@ -1565,7 +1565,7 @@ describe("ensureLive（守门分流：拉读 → 开账 / 终态拦 / 回看）"
     expect(live.liveView!.totalSeq).toBe(7);
     live.stopPolling();
   });
-  it("404 + 终态局（done/terminated/cancelled）→ toast「球局不存在或已结束」不建现场", async () => {
+  it("404 + 终态局（done/terminated/cancelled）→ toast「找不到这个球局，可能已被撤销」不建现场（2.6 §4.6 链接死局句，不说「已结束」）", async () => {
     for (const status of ["done", "terminated", "cancelled"] as const) {
       vi.resetModules();
       setActivePinia(createPinia());
@@ -1577,8 +1577,8 @@ describe("ensureLive（守门分流：拉读 → 开账 / 终态拦 / 回看）"
       liveApi.apiLiveView.mockRejectedValue(
         new ApiError("live_not_found", "现场不存在", 404),
       );
-      await live.ensureLive(900);
-      expect(ui.toastMsg).toBe("球局不存在或已结束");
+      await expect(live.ensureLive(900)).resolves.toBe(false);
+      expect(ui.toastMsg).toBe("找不到这个球局，可能已被撤销");
       expect(live.hasLive).toBe(false);
       expect(liveApi.apiLiveStart).not.toHaveBeenCalled();
     }
