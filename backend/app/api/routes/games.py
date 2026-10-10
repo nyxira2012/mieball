@@ -119,13 +119,22 @@ def list_games(
     return book.list_for(viewer_id=account.id if account else None)
 
 
-# /mine 必须先于 /{game_id} 声明：FastAPI 按声明序匹配，否则 "mine" 被当成 id
+# /mine、/playlog 必须先于 /{game_id} 声明：FastAPI 按声明序匹配，否则被当成 id
 @router.get("/mine")
 def my_games(
     account: Account = Depends(require_account),
     book: GameBook = Depends(get_game_book),
 ):
     return book.mine(account_id=account.id)
+
+
+@router.get("/playlog")
+def my_playlog(
+    account: Account = Depends(require_account),
+    book: GameBook = Depends(get_game_book),
+):
+    """打球记录（2.6 §4.4）：三笔规矩算好的局列表 + 累计上场对局数。"""
+    return book.playlog(account_id=account.id)
 
 
 @router.get("/{game_id}")

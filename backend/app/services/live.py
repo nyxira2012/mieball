@@ -42,6 +42,7 @@ from . import live_rotation
 from .accounts import person_view
 from .game_views import derive, is_forced
 from .live_sweep import ARRIVED, LiveSweepMixin
+from .playlog import is_my_game
 from .stats import StatsLedger
 
 # 开账起笔的 rules 快照默认值（镜像前端 startLive 起笔，2.2 批2 §4.1）：
@@ -877,6 +878,9 @@ class LiveBook(LiveSweepMixin):
             "is_organizer": is_organizer,
             "is_full_power": is_organizer
             or (viewer_id is not None and viewer_id in (state.admins or [])),
+            # 提示行身份定值（2.6 §4.3-3）：判定的尺与打球记录名单三笔规矩同一把
+            # （playlog 单一源），前端不自判；未散场局按名单前提恒 False
+            "is_my_game": is_my_game(self.db, game_id, viewer_id),
             "organizer_account_id": game.organizer_id,
             "feed": state.feed or [],
             "courts_count": state.courts_count,

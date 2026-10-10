@@ -40,6 +40,7 @@ from .game_views import (
     masked,
 )
 from .live import LiveBook
+from .playlog import matches_count, played_game_ids
 
 VISIBILITIES = ("played", "public", "invite_only")
 # 工具箱受理窗口 TOOLBOX_STATUSES 已随写窗谓词迁 game_views（闸旗同源，
@@ -198,6 +199,31 @@ class GameBook:
             if keep:
                 out.append(self._view(game, viewer_id=account_id, batch=batch))
         return out
+
+    # ---- 打球记录（2.6 §4.4）：名单三笔规矩另立一把尺，与 mine() 的「我的局」语义无涉 ----
+
+    def playlog(self, *, account_id: int) -> dict:
+        """打球记录（附录 A4：名单后端算好给，页面不自判）：行同 mine() 同款
+        （with_entries=False），按散场时刻倒序（同刻 id desc 兜稳定序）；
+        matches_count=累计上场对局数，与列表行数解耦（缺席照摊进列表、场数不加）。"""
+        self._evaluate()
+        ids = played_game_ids(self.db, account_id)
+        games = (
+            self.db.execute(
+                select(Game)
+                .where(Game.id.in_(ids))
+                .order_by(Game.ended_at.desc(), Game.id.desc())
+            )
+            .scalars()
+            .all()
+        )
+        batch = self._list_batch(games, account_id)
+        return {
+            "games": [
+                self._view(game, viewer_id=account_id, batch=batch) for game in games
+            ],
+            "matches_count": matches_count(self.db, account_id),
+        }
 
     # ---- 详情（链接即门票：匿名可看、档位不拦；终态照常 200 带状态） ----
 
