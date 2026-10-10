@@ -2,7 +2,9 @@
   <!-- 未成局卡 · alpha.html:919-931 deadCard 对齐：
        terminated（未成局）：局到截止人数不足自动终止后，组织者「我的局」里留的记录（整体 opacity:.75），
          时间位固定「未成/局」两行；地点行 = 开打时刻 · 场馆 · 截止时 heads/min 人 · 低于最少自动终止；
-         foot =「名单 N 人原样保留」chip + 恢复/撤局两个 tbtn。
+         foot =「名单 N 人原样保留」chip + 恢复一个 tbtn（terminated 唯一出路是恢复——撤局是
+         待处置态的处置出口，1.2 §4.9；后端 cancel 窗口只收 open/locked/pending，原型图双钮
+         里的撤局在此卡必报错，已收）。
        pending（待处置，4.9）：恢复后的局等组织者处置，foot 换成 锁定必打/撤局 两个处置出口，
          处置完局离开待处置区回正常列表。同族一卡两态（分派见 utils/format deadRowKind）。 -->
   <view class="gcard">
@@ -26,7 +28,7 @@
           <!-- pending 的「锁定必打」进订场面板（空锁二段确认 + 登记订场同一入口，4.7/4.9） -->
           <view v-if="pending" class="tbtn on-in" @click.stop="emit('lock')">🔒 锁定必打</view>
           <view v-else class="tbtn on-in" @click.stop="emit('restore')">↻ 恢复</view>
-          <view class="tbtn on-no" @click.stop="emit('cancel')">撤局</view>
+          <view v-if="pending" class="tbtn on-no" @click.stop="emit('cancel')">撤局</view>
         </view>
       </view>
     </view>
@@ -42,7 +44,7 @@ import { isoDay, isoHm } from '@/utils/time'
 
 defineProps({
   game: { type: Object as PropType<Game>, required: true },
-  /** true = 恢复后的待处置态：锁必打/撤局两出口（4.9）；false = 未成局：恢复/撤局 */
+  /** true = 恢复后的待处置态：锁必打/撤局两出口（4.9）；false = 未成局：恢复（terminated 走恢复） */
   pending: { type: Boolean, default: false },
 })
 const emit = defineEmits<{ (e: 'restore'): void; (e: 'lock'): void; (e: 'cancel'): void }>()

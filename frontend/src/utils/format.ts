@@ -58,8 +58,9 @@ export const gameTapAction = (g: Game): "join" | "detail" =>
   !!g.my?.invited && !g.my?.myEntry ? "join" : "detail";
 
 /** 我的局里终局行的显示分派（meet 死局区三分，4.8/4.9/4.10）：
-    pending=组织者待处置卡（锁必打/撤局两出口）；terminated=组织者未成局卡（恢复/撤局）或
-    参加者当日灰字行；cancelled=参加者灰字行（组织者撤局不留痕，后端本就不回，防御）。
+    pending=组织者待处置卡（锁必打/撤局两出口）；terminated=组织者未成局卡（恢复，4.9——terminated
+    走恢复，撤局是待处置的出口）或参加者当日灰字行；cancelled=参加者灰字行（后端死亡当日返回、
+    次日收走；组织者侧永不回——撤局不留痕，与 games.py mine 同口径）。
     「当日」口径在后端 mine（读时过滤、次日不返回），前端只管渲染不判日期。 */
 export const deadRowKind = (g: Game): "pending" | "restore" | "gray" | null => {
   if (g.status === "pending") return isOrg(g) ? "pending" : null;

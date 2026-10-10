@@ -93,7 +93,6 @@
         :key="g.id"
         :game="g"
         @restore="onRestore(g)"
-        @cancel="onCancel(g)"
       />
     </template>
     <template v-if="grayMine.length">
