@@ -1,16 +1,14 @@
 <template>
-  <!-- 我的战力卡（alpha.html:1844-1861 结构 · 1.4 批4v1 主数字切 DUPR）：
-       rank 位 #N / 未开局 — · ChibiAvatar 76（点卡开我的档案、点头像去「我的」页 stopPropagation alpha:1847）·
-       段位 TierBadge（duprTier 档名）+ 未定级标记 · 大分数 fmtDupr + DUPR 单位 ·
-       本月涨跌 ▲▼（DUPR 明细月净胜，stats card 口径）·
-       底部数据行（真实口径：胜负+月净胜；小时/大卡随 mock 退役）。 -->
+  <!-- 我的战力卡（alpha.html:1844-1861）：rank 位 #N / 未开局 — · ChibiAvatar 76
+       （点卡开我的档案、点头像去「我的」页）· 主数字随视图：DUPR 分层三位小数+
+       段位徽章 / Elo 整数无段位 · 底部数据行带本月涨跌。 -->
   <view
     class="mycardp"
     :class="`bg-${me.cardBg || 'neon'}`"
     @click="emit('profile')"
   >
     <view class="top-row">
-      <!-- alpha:1846 rkbox：#N 或 —（未开局/未入榜参考区） -->
+      <!-- alpha:1846 rkbox：#N 或 —（未开局/未入榜参考区；Elo 视图名次跟 Elo 榜走） -->
       <view class="rkbox">
         <view class="rk">{{ played && rank > 0 ? "#" + rank : "—" }}</view>
         <view class="rl">MY RANK</view>
@@ -23,20 +21,29 @@
       <view class="info">
         <view class="nrow">
           <text class="ttl">{{ cardTitle }}</text>
-          <!-- 1.4 §2 段位档名；未定级小 chip（1.4 §5 可信度两态） -->
-          <TierBadge v-if="played" :tier="duprTier(me.dupr ?? GUEST_DUPR)" />
-          <text v-else class="tierb-fb">?</text>
-          <text v-if="played && me.provisional" class="prov">未定级</text>
+          <!-- 段位/未定级是 DUPR 定级概念，Elo 视图不出现 -->
+          <template v-if="mode === 'dupr'">
+            <TierBadge v-if="played" :tier="duprTier(me.dupr ?? GUEST_DUPR)" />
+            <text v-else class="tierb-fb">?</text>
+            <text v-if="played && me.provisional" class="prov">未定级</text>
+          </template>
         </view>
-        <!-- alpha:1852-1855 myscore：DUPR 三位小数主数字（未开局/未定级 dim） -->
+        <!-- alpha:1852-1855 myscore：DUPR 未定级 dim（起步分不作数）、Elo 未开局 dim -->
         <view class="myscore">
-          <text class="big" :class="{ dim: !played || me.provisional }">{{
-            fmtDupr(me.dupr ?? GUEST_DUPR)
-          }}</text>
-          <text class="unit">DUPR</text>
-          <text v-if="played" class="d" :class="me.month >= 0 ? 'up' : 'dn'">
-            {{ me.month >= 0 ? "▲" : "▼" }}{{ Math.abs(me.month) }} 本月
-          </text>
+          <template v-if="mode === 'elo'">
+            <text class="big" :class="{ dim: !played }">{{ myElo }}</text>
+            <text class="unit">Elo</text>
+          </template>
+          <template v-else>
+            <DuprScore
+              :d="me.dupr ?? GUEST_DUPR"
+              class="big"
+              :class="{ dim: !played || me.provisional }"
+            />
+            <text class="unit">DUPR</text>
+          </template>
+          <!-- 涨跌小签删：与底部数据行「本月 ±N」双份显示，且名次框+头像夹出的
+               窄列放不下三件（320 必两行）；榜单行/档案列宽富余，涨跌签照旧 -->
         </view>
       </view>
     </view>
@@ -47,20 +54,25 @@
 </template>
 
 <script setup lang="ts">
-/* 我的战力卡（alpha.html:1844-1861 · P9 · 1.4 批4v1 主数字切 DUPR）。business 件：
-   组合 ui 件（ChibiAvatar/TierBadge）+ 业务数据。rank 位（myRank）由 power 页按
-   rankRows 算好传入（0=不在榜：未开局或未满 5 场的参考区）。 */
+/* 我的战力卡（alpha.html:1844-1861 · P9）。business 件：组合 ui 件
+   （ChibiAvatar/TierBadge/DuprScore）+ 业务数据。rank 位由 power 页按当前
+   视图的榜算好传入（0=不在榜：未开局或 DUPR 视图未满 5 场的参考区）。 */
 import { computed } from "vue";
+import type { PropType } from "vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import TierBadge from "@/components/ui/TierBadge.vue";
+import DuprScore from "@/components/ui/DuprScore.vue";
+import type { ScoreMode } from "@/api/types";
 import { useUserStore } from "@/stores/user";
 import { useSessionStore } from "@/stores/session";
-import { GUEST_DUPR, duprTier, fmtDupr } from "@/utils/elo";
+import { ELO_INIT, GUEST_DUPR, duprTier } from "@/utils/elo";
 import { goTab } from "@/utils/nav";
 
 defineProps({
-  /** 我的排名（alpha:1826 myRank=rows.findIndex(u=>u.id===0)+1；未开局时组件内不展示） */
+  /** 我的排名（alpha:1826 myRank=rows.findIndex(...)+1；未开局时组件内不展示） */
   rank: { type: Number, default: 0 },
+  /** 分数视图（power 页胶囊）：'dupr'=分层三位小数+段位；'elo'=整数+无段位 */
+  mode: { type: String as PropType<ScoreMode>, default: "dupr" },
 });
 
 const emit = defineEmits<{ (e: "profile"): void }>();
@@ -76,6 +88,10 @@ const cardTitle = computed(() => {
   if (session.isGuest) return "访客";
   return played.value ? "我的战力卡" : "我的起步分";
 });
+/** 我的 Elo 吃榜单行（账号视图不带 elo；游客/未拉榜回落展示兜底 1200） */
+const myElo = computed(
+  () => userStore.leaderboard.find((u) => u.id === me.id)?.elo ?? ELO_INIT,
+);
 /** 数据行：胜负来自 dupr 账（win/play 真值），月净胜 me.month（stats card 口径） */
 const telemetry = computed(() =>
   played.value
@@ -258,13 +274,6 @@ const telemetry = computed(() =>
   font-family: var(--mono);
   font-size: 10px;
   color: var(--dim);
-}
-/* alpha.html:449 .d.up/.d.dn（本月涨跌两色，MyPowerCard/RankRow/ProfileSheet 各自持有） */
-.d.up {
-  color: var(--lemon);
-}
-.d.dn {
-  color: var(--coral);
 }
 /* alpha.html:1858 运动数据行（mono 11px 居中 · 上分隔线 · 超出省略） */
 .telemetry {

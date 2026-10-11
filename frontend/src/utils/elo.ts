@@ -12,9 +12,13 @@ export const ELO_INIT = 1200; // 展示兜底位：名册无积分行的默认�
     对齐后端 dupr.py GUEST_DUPR）。rankOf/live 兜底/mock zhao 三处消费 */
 export const GUEST_DUPR = 2.5;
 
-/** DUPR 主数字：三位小数（1.4 §1 形态，如 3.52 → "3.520"） */
-export function fmtDupr(d: number): string {
-  return d.toFixed(3);
+/** DUPR 主数字分段：head=整数位（原字号原色）、tail=小数位含点（".520"）
+    由消费方缩淡——整数给档位重心、小数留精度的通行分层。唯一消费口
+    ui/DuprScore 组件（整串 fmtDupr 已随分层退役：三位小数口径由本函数钉） */
+export function duprParts(d: number): { head: string; tail: string } {
+  const s = d.toFixed(3);
+  const i = s.indexOf(".");
+  return { head: s.slice(0, i), tail: s.slice(i) };
 }
 
 /** DUPR 小字：一位小数（现场候场条/卡片小字用） */

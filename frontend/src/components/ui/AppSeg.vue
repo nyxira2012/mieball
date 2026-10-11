@@ -15,7 +15,8 @@
 
 <script setup lang="ts">
 /* alpha.html:188-192 .seg 分段选择（大字 + 可选 small 副标），
-   组局表单时长/频率段用它（战力页切换胶囊已随 1.4 批4v2 退役删除） */
+   组局表单时长/频率段用它（战力页切换胶囊是小 pill 形态，样式在 power.vue
+   scoped——2026-10-12 已恢复，形态不同不共用本组件） */
 import type { PropType } from "vue";
 
 export interface SegOption {

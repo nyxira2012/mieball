@@ -32,13 +32,14 @@ export const GUEST_USER: User = {
   cardBg: "neon",
 };
 
-/** 账号视图（AccountView/榜单行同形）→ 档案 User：elo 轨不在账号视图，
-    保留现场结算行的回填值（live store 落） */
+/** 账号视图（AccountView/榜单行同形）→ 档案 User：elo 只在榜单行有
+    （elo_rating 直读，无行后端回 1200）；账号视图不带 elo，保留现场
+    结算行的回填值（live store 落） */
 function accountToUser(view: AccountView | LeaderboardRowApi): User {
   return {
     id: view.id,
     name: view.name,
-    elo: 0,
+    elo: "elo_rating" in view ? view.elo_rating : 0,
     dupr: view.dupr_rating,
     provisional: view.dupr_provisional,
     duprGames: view.dupr_games,

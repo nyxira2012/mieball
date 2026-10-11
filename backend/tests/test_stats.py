@@ -2,7 +2,8 @@
 
 锁的契约：匿名可读（战力页游客照看）；裸数组、DUPR 降序同分 id 升序（稳定排序）；
 行形状 = 账号身份（id/name/chibi/card_bg）+ card 四件套（rating/provisional/games/
-wins/last5/month_net）；0 场新号在列（provisional=true、games=0——前端「参考」区）；
+wins/last5/month_net）+ elo_rating（Elo 娱乐轨只读，4.1 战力页切换的娱乐视图）；
+0 场新号在列（provisional=true、games=0——前端「参考」区）；
 注销账号不列（历史不留痕）；不漏手机号（榜单是公开面，比 /users/{id} 更紧）。
 战绩底数直插 DuprRating（seed_demo ④ 同一先例：演示底数没有服务层正路，
 card 读的就是这张表，口径不破）。
@@ -13,7 +14,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from app.core import clock
-from app.db.models import DuprRating
+from app.db.models import DuprRating, EloRating
 
 from .conftest import code_of, send_code, signup
 
@@ -26,6 +27,14 @@ def seed_rating(client: TestClient, account_id: int, rating: float, games: int) 
             account_id=account_id, rating=rating, games=games, updated_at=clock.now()
         )
     )
+    db.commit()
+    db.close()
+
+
+def seed_elo(client: TestClient, account_id: int, rating: int) -> None:
+    """直插 Elo 娱乐轨行（seed_demo 同一先例）：榜单只读不落账。"""
+    db = client.app.state.session_factory()
+    db.add(EloRating(account_id=account_id, rating=rating))
     db.commit()
     db.close()
 
@@ -44,7 +53,7 @@ def test_leaderboard_anonymous_sorted_and_shaped(client: TestClient):
     ratings = [r["dupr_rating"] for r in rows]
     assert ratings == sorted(ratings, reverse=True)  # 全表降序
     top = rows[0]
-    # 行形状：身份四件 + 战绩六件，snake_case（契约总则 §1）
+    # 行形状：身份四件 + 战绩六件 + elo 一件，snake_case（契约总则 §1）
     assert set(top) == {
         "id",
         "name",
@@ -56,10 +65,28 @@ def test_leaderboard_anonymous_sorted_and_shaped(client: TestClient):
         "dupr_wins",
         "dupr_last5",
         "dupr_month_net",
+        "elo_rating",
     }
     assert top["name"] == "李四"
     assert top["dupr_games"] == 6 and top["dupr_provisional"] is False
     assert "phone" not in top and "phone_tail" not in top  # 公开面不漏号
+
+
+def test_leaderboard_elo_rating_field(client: TestClient):
+    """elo_rating：有行直读、无行回初始 1200（没打过落账局的新号）；
+    排序仍只吃 DUPR——Elo 高的垫底也照样垫底（娱乐视图前端自己排）。"""
+    a = signup(client, "13900000001", "d1", nickname="甲", nickname_set=True)
+    b = signup(client, "13900000002", "d2", nickname="乙", nickname_set=True)
+    aid, bid = a["account"]["id"], b["account"]["id"]
+    seed_rating(client, aid, 4.4, 6)  # 甲 DUPR 高 → 榜首
+    seed_rating(client, bid, 2.8, 5)  # 乙 DUPR 低 → 次席
+    seed_elo(client, bid, 1368)  # 乙 Elo 反超高——榜单序不因 Elo 翻
+
+    rows = client.get("/api/stats/leaderboard").json()
+    by_id = {r["id"]: r for r in rows}
+    assert [r["id"] for r in rows] == [aid, bid]  # 仍按 DUPR 降序
+    assert by_id[bid]["elo_rating"] == 1368  # 有行直读
+    assert by_id[aid]["elo_rating"] == 1200  # 无行回初始分
 
 
 def test_leaderboard_zero_game_tie_and_deactivated(client: TestClient, sent):

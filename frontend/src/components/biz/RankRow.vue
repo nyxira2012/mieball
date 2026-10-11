@@ -1,8 +1,9 @@
 <template>
-  <!-- 榜单单行（alpha.html:1765-1773 rankRowHtml 结构 · 1.4 批4v1 切 DUPR）：
-       名次大字（参考区行 unrated → 「—」不参与排名）· 头像 40 · 名 + 我徽章 + ♥ + 未定级 +
-       TierBadge（duprTier 档名）· Last5Dots + 近 5 场 · N 战 ·
-       右列 fmtDupr + DUPR 单位 + 本月涨跌（Elo 轨口径）。前三 top-1/2/3 高亮，新批次行 lazy-in 入场。 -->
+  <!-- 榜单单行（alpha.html:1765-1773 rankRowHtml 结构）：名次大字（参考区行
+       unrated → 「—」不参与排名）· 头像 40 · 名 + 我徽章 + ♥ + 未定级 +
+       TierBadge（段位/未定级是 DUPR 定级概念，Elo 视图不出现）·
+       Last5Dots + 近 5 场 · N 战 · 右列主数字随视图：DUPR 分层三位小数 / Elo 整数 ·
+       本月涨跌。前三 top-1/2/3 高亮，新批次行 lazy-in 入场。 -->
   <view
     class="rank-row"
     :class="[topCls, { 'lazy-in': lazy }]"
@@ -17,8 +18,13 @@
         <!-- alpha:1770 u.id===CURRENT_USER_ID → 「我」徽章 · liked → ♥（本地态） -->
         <text v-if="userStore.isMe(user.id)" class="badge fire">我</text>
         <text v-if="userStore.isLiked(user.id)" class="hrt">♥</text>
-        <TierBadge :tier="duprTier(user.dupr ?? GUEST_DUPR)" />
-        <text v-if="user.provisional" class="prov">未定级</text>
+        <TierBadge
+          v-if="mode === 'dupr'"
+          :tier="duprTier(user.dupr ?? GUEST_DUPR)"
+        />
+        <text v-if="mode === 'dupr' && user.provisional" class="prov"
+          >未定级</text
+        >
       </view>
       <view class="st">
         <Last5Dots :results="user.last5 || []" />
@@ -26,8 +32,14 @@
       </view>
     </view>
     <view class="elo">
-      <text class="sc">{{ fmtDupr(user.dupr ?? GUEST_DUPR) }}</text>
-      <text class="unit">DUPR</text>
+      <template v-if="mode === 'elo'">
+        <text class="sc">{{ user.elo }}</text>
+        <text class="unit">Elo</text>
+      </template>
+      <template v-else>
+        <DuprScore :d="user.dupr ?? GUEST_DUPR" />
+        <text class="unit">DUPR</text>
+      </template>
       <text class="d" :class="user.month >= 0 ? 'up' : 'dn'">
         {{ user.month >= 0 ? "▲" : "▼" }}{{ Math.abs(user.month) }} 本月
       </text>
@@ -36,17 +48,18 @@
 </template>
 
 <script setup lang="ts">
-/* 评分排行单行 RankRow（alpha.html:1765-1773 · P9 · 1.4 批4v1 切 DUPR）。
-   business 件：组合 ChibiAvatar/TierBadge/Last5Dots。
-   unrated=参考区行（1.4 §6：未满 5 场不参与排名，位次列「—」、不吃前三高亮）。 */
+/* 评分排行单行 RankRow（alpha.html:1765-1773 · P9）。business 件：组合
+   ChibiAvatar/TierBadge/Last5Dots/DuprScore。unrated=参考区行（1.4 §6：
+   未满 5 场不参与排名，位次列「—」、不吃前三高亮）。 */
 import { computed } from "vue";
 import type { PropType } from "vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import TierBadge from "@/components/ui/TierBadge.vue";
 import Last5Dots from "@/components/ui/Last5Dots.vue";
+import DuprScore from "@/components/ui/DuprScore.vue";
+import type { ScoreMode, User } from "@/api/types";
 import { useUserStore } from "@/stores/user";
-import type { User } from "@/api/types";
-import { GUEST_DUPR, duprTier, fmtDupr } from "@/utils/elo";
+import { GUEST_DUPR, duprTier } from "@/utils/elo";
 
 const props = defineProps({
   /** 榜单行球员（rankRows 过滤 !shadow && play>0 后的有序一条） */
@@ -57,6 +70,8 @@ const props = defineProps({
   lazy: { type: Boolean, default: false },
   /** 参考区行（未满 5 场，1.4 §6）：无位次、不参与排名 */
   unrated: { type: Boolean, default: false },
+  /** 分数视图（power 页胶囊）：'dupr'=分层三位小数+段位；'elo'=整数+无段位 */
+  mode: { type: String as PropType<ScoreMode>, default: "dupr" },
 });
 
 const emit = defineEmits<{ (e: "profile", userId: number): void }>();

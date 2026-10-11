@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..core import clock
-from ..db.models import Account, DuprDetail, DuprRating
+from ..db.models import Account, DuprDetail, DuprRating, EloRating
 from . import dupr
 
 
@@ -110,8 +110,9 @@ class StatsLedger:
         """战力榜全量（1.4 §8 留的榜单端点欠账）：全部在册账号一行一份名片
         （card 同一口径——名字/小人来自账号行，战绩四件套来自 card），
         DUPR 降序、同分 id 升序（契约总则 §5 稳定排序）。注销账号不列
-        （历史不留痕，1.1 注销口径）。演示库规模逐人 card() 直查，
-        批量化等真有量级需求再做。"""
+        （历史不留痕，1.1 注销口径）。行另带 elo_rating（Elo 娱乐轨只读——
+        4.1 战力页 DUPR/Elo 切换的娱乐视图用；榜单排序口径仍只吃 DUPR）。
+        演示库规模逐人 card() 直查，批量化等真有量级需求再做。"""
         accounts = (
             self.db.execute(
                 select(Account)
@@ -121,6 +122,12 @@ class StatsLedger:
             .scalars()
             .all()
         )
+        # Elo 一人一行全表一趟取齐（免逐人 N+1；无行=没打过落账局，回初始 1200，
+        # 与 EloRating.rating 默认值同源——常量真身在 live.py RATING_INIT，
+        # 这里不 import 它防 stats←live 循环）
+        elo_map = {
+            r.account_id: r.rating for r in self.db.execute(select(EloRating)).scalars()
+        }
         out = []
         for a in accounts:
             c = self.card(a.id)
@@ -136,6 +143,7 @@ class StatsLedger:
                     "dupr_wins": c["wins"],
                     "dupr_last5": c["last5"],
                     "dupr_month_net": c["month_net"],
+                    "elo_rating": elo_map.get(a.id, 1200),
                 }
             )
         out.sort(key=lambda r: (-r["dupr_rating"], r["id"]))

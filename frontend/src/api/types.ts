@@ -16,6 +16,10 @@ export interface ChibiConfig {
 /** 我的战力卡卡背（alpha:1844 bg-neon/gold/cyber/aurora） */
 export type CardBg = "neon" | "gold" | "cyber" | "aurora";
 
+/** 战力页分数视图（4.1 分数切换）：'dupr'=榜单正式口径（默认——排序/段位/
+    定级门槛全吃 DUPR）；'elo'=娱乐视图（按 Elo 重排，无段位无定级门槛） */
+export type ScoreMode = "dupr" | "elo";
+
 /** 现场签到五态（alpha:1579） */
 export type CheckStatus = "ok" | "late" | "left" | "absent" | "join";
 

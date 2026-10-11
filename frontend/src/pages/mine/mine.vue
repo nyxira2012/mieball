@@ -18,10 +18,10 @@
         <view class="mname">{{ meName }}</view>
         <view class="mrecord">{{ record }}</view>
         <view class="mchips">
-          <!-- alpha:1939 me-elo 位（1.4 批4v1 切 DUPR）：tierB 徽章 + DUPR 分 + 档名（chip ok） -->
+          <!-- alpha:1939 me-elo 位：tierB 徽章 + DUPR 分 + 档名（chip ok） -->
           <AppChip kind="ok">
             <TierBadge :tier="meTier" /> DUPR
-            {{ fmtDupr(me.dupr ?? GUEST_DUPR) }} · {{ meTier }}
+            <DuprScore :d="me.dupr ?? GUEST_DUPR" /> · {{ meTier }}
           </AppChip>
           <!-- alpha:656 尾号 chip：登录后是账号真实尾号，游客回落演示尾号 -->
           <AppChip>尾号 ···{{ session.phoneTail }}</AppChip>
@@ -222,6 +222,7 @@ import AppButton from "@/components/ui/AppButton.vue";
 import AppField from "@/components/ui/AppField.vue";
 import AppInput from "@/components/ui/AppInput.vue";
 import TierBadge from "@/components/ui/TierBadge.vue";
+import DuprScore from "@/components/ui/DuprScore.vue";
 import SectionTitle from "@/components/ui/SectionTitle.vue";
 import BillSummaryCard from "@/components/biz/BillSummaryCard.vue";
 import { useGameStore } from "@/stores/game";
@@ -232,7 +233,7 @@ import { useBillStore } from "@/stores/bill";
 import { exportText } from "@/utils/blackbox";
 import { copyWithToast } from "@/utils/clipboard";
 import { ApiError, errText } from "@/api/http";
-import { GUEST_DUPR, duprTier, fmtDupr } from "@/utils/elo";
+import { GUEST_DUPR, duprTier } from "@/utils/elo";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
 import { newPwdError } from "@/utils/validate";
 

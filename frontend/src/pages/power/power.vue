@@ -1,7 +1,8 @@
 <template>
   <PageShell tab="power">
     <view>
-      <!-- 标题区（alpha.html:1831-1843） -->
+      <!-- 标题区 + 分数切换胶囊（alpha.html:1831-1843。胶囊换 DUPR/Elo 新对——
+           原 Elo/NTRP 对里的 NTRP 已随 1.4 双轨制废除，默认 DUPR） -->
       <view class="stag">
         <view class="head">
           <view>
@@ -9,25 +10,40 @@
             <!-- alpha:1835 <h1 class="brand" style="margin-bottom:0">战<em>力</em>榜（em 用 text 承载，避堵小程序） -->
             <view class="brand">战<text class="em">力</text>榜</view>
           </view>
+          <!-- alpha:1837-1840 sw-capsule：DUPR=榜单正式口径 / Elo=按 Elo 重排的娱乐视图 -->
+          <view class="sw-capsule">
+            <text
+              class="sw-opt"
+              :class="{ on: mode === 'dupr' }"
+              @click="setMode('dupr')"
+              >DUPR</text
+            >
+            <text
+              class="sw-opt"
+              :class="{ on: mode === 'elo' }"
+              @click="setMode('elo')"
+              >Elo</text
+            >
+          </view>
         </view>
-        <!-- alpha:1842 副标题（1.4 批4v1 改双轨说明） -->
-        <view class="sub sub-mt">
-          DUPR 积分 2.0-8.0 管排名与配平 · 积分（Elo）另记涨跌
-        </view>
+        <!-- alpha:1842 副标题随视图换文案：介绍当前那套积分 -->
+        <view class="sub sub-mt">{{ subLine }}</view>
       </view>
 
       <!-- 我的战力卡（alpha:1844-1861）：点卡开我的档案，卡内头像去「我的」页 -->
-      <MyPowerCard :rank="myRank" @profile="openProfile(userStore.me.id)" />
+      <MyPowerCard
+        :rank="myRank"
+        :mode="mode"
+        @profile="openProfile(userStore.me.id)"
+      />
 
-      <!-- 前三打架图（alpha:1862-1870）：点人开档案 -->
-      <SectionTitle title="前三 · 对峙中" more="点人看档案" />
+      <!-- 前三打架图（alpha:1862-1870）：点人开档案。区头「奶茶三分糖」为
+           用户定稿（前三＝三分糖，取自用户原话；卡内 TOP 3 · BRAWL 兜底语义） -->
+      <SectionTitle title="奶茶三分糖" />
       <BrawlStage :top3="t3" @profile="openProfile" />
 
-      <!-- 评分排行（alpha:1871-1875）：前三高亮 · 懒加载每批 5 条 · 满 5 场才入榜（1.4 §6） -->
-      <SectionTitle
-        title="评分排行"
-        :more="`${rows.length} 球员在榜 · 前三高亮`"
-      />
+      <!-- 评分排行（alpha:1871-1875）：前三高亮 · 懒加载每批 5 条 · 满 5 场才入榜（DUPR 视图，1.4 §6） -->
+      <SectionTitle title="评分排行" />
       <view class="rank-frame">
         <view class="rank-list">
           <RankRow
@@ -36,6 +52,7 @@
             :user="u"
             :index="i"
             :lazy="i >= lazyFrom"
+            :mode="mode"
             @profile="openProfile"
           />
           <!-- 空榜/加载/失败三态：0 圈员=空榜句；在途=加载句；失败=点击重试 -->
@@ -55,7 +72,8 @@
         </view>
       </view>
 
-      <!-- 参考区（1.4 §6 榜单门槛）：打过但未满 5 场的未定级者，列此不参与排名 -->
+      <!-- 参考区（1.4 §6，DUPR 视图专属——满 5 场门槛是 DUPR 定级概念，
+           Elo 娱乐视图不设参考区）：未定级者列此不参与排名 -->
       <template v-if="refs.length">
         <SectionTitle
           title="参考 · 未定级"
@@ -75,7 +93,8 @@
         </view>
       </template>
 
-      <!-- 规则折叠（alpha:1876-1885 结构 · 1.4 批4v1 文案改双轨说明） -->
+      <!-- 规则折叠（alpha:1876-1885 结构。文案先说两套分是什么、再说机制，
+           一条一行——引擎参数（K 值/地板）不入文案：调参不该牵动文案） -->
       <view class="rulefold" :class="{ open: rOpen }">
         <view class="rfhead" @click="rOpen = !rOpen">
           <text>积分怎么算的？</text>
@@ -83,21 +102,21 @@
         </view>
         <view class="rfbody">
           <view
-            >· <text class="b">双轨记分</text>：同一场球落两本账——DUPR
-            积分管配平、榜单与段位；积分（Elo）管结束对局的涨跌爽感。</view
+            >· <text class="b">DUPR</text>（Dynamic Universal Pickleball
+            Rating，读『丢per』）：匹克球界的通用评分，2.0–8.0 三位小数。</view
           >
           <view
-            >· <text class="b">DUPR 积分</text>：2.0-8.0 三位小数；建号 2.5
-            起步，满 5 场定级，只算近 30 场。</view
+            >· <text class="b">DUPR</text> 只看最近 30 场：起步 2.5，打满 5
+            场定级入榜。</view
           >
           <view
-            >· <text class="b">积分（Elo）</text>：初始 1200 · 地板 800 ·
-            K=24，赢强者涨得多；结束对局弹窗里 ± 的就是它。</view
+            >· <text class="b">Elo</text>（埃洛，Elo Rating
+            System）：每场结算都涨跌的娱乐分，起步 1200，赢了强手涨得多。</view
           >
           <view
             >·
-            <text class="b">访客与双打</text
-            >：双打按两队人均算、败方只扣胜方涨分的六成；访客不计分不进榜。</view
+            <text class="b">双打与访客</text
+            >：双打按两队人均算；朋友带来的访客不计分、不进榜。</view
           >
         </view>
       </view>
@@ -109,10 +128,12 @@
 </template>
 
 <script setup lang="ts">
-/* 战力页（alpha.html:1824-1889 renderPower · P9 · 1.4 批4v1 榜单切 DUPR）。
-   榜单数据后端化：/stats/leaderboard 单一源（user store 缓存与灌 people）；
-   榜单懒加载 = alpha:1774-1822 的滚动通道（§2.4：IntersectionObserver → onPageScroll 距底 160px）；
-   榜单/打架图/我的卡点击 → ui.openSheet({type:'profile',userId})。 */
+/* 战力页（alpha.html:1824-1889 renderPower · P9）。榜单数据后端化：
+   /stats/leaderboard 单一源（user store 缓存与灌 people，行带 elo_rating 供
+   娱乐视图——Elo 视图前端按 Elo 重排，榜单端点排序口径仍只吃 DUPR，1.4 §11）。
+   榜单懒加载 = alpha:1774-1822 的滚动通道（§2.4：IntersectionObserver →
+   onPageScroll 距底 160px）；榜单/打架图/我的卡点击 →
+   ui.openSheet({type:'profile',userId})。 */
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { onPageScroll, onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
@@ -121,6 +142,7 @@ import BrawlStage from "@/components/biz/BrawlStage.vue";
 import RankRow from "@/components/biz/RankRow.vue";
 import SectionTitle from "@/components/ui/SectionTitle.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
+import type { ScoreMode } from "@/api/types";
 import { useUiStore } from "@/stores/ui";
 import { useUserStore } from "@/stores/user";
 import { errText } from "@/api/http";
@@ -131,18 +153,41 @@ const userStore = useUserStore();
 /** 定级门槛（1.4 §5/§6：满 5 场入榜=定级；play 即 dupr_games） */
 const RATED_PLAY = 5;
 
-/** 榜单（后端 DUPR 降序单一源）：满 5 场入榜；打过但不足 5 场进参考区；
-    0 场新号两区都不进（第一场球打出第一版排名） */
-const rows = computed(() =>
-  userStore.leaderboard.filter(
-    (u) => userStore.hasPlayed(u) && u.play >= RATED_PLAY,
-  ),
+/** 分数视图（4.1 分数切换）：'dupr'=榜单正式口径（默认）；'elo'=娱乐视图
+    （Elo 重排、无段位无定级门槛） */
+const mode = ref<ScoreMode>("dupr");
+function setMode(m: ScoreMode): void {
+  if (mode.value === m) return;
+  mode.value = m;
+  rankLimit.value = RANK_PAGE;
+  lazyFrom.value = RANK_PAGE;
+  nextTick(() => measure()); // 换榜=换页高，重测保 160px 触发线
+}
+
+/** 副标题随视图介绍两套积分（alpha:1842 副标题随模式换文案的形；
+    文案用户定稿逐字——一句一行，全名细节归底部折叠区） */
+const subLine = computed(() =>
+  mode.value === "dupr"
+    ? "DUPR（DU Pickleball Rating）丢per，匹克球通用评分"
+    : "ELO（埃洛，Elo Rating System）相对积分排名",
 );
-/** 参考区（1.4 §6）：未定级者同序排列但无位次 */
+
+/** 打过球的在册球友（两视图共用底池；0 场新号两区都不进） */
+const playedList = computed(() =>
+  userStore.leaderboard.filter((u) => userStore.hasPlayed(u)),
+);
+/** 当前视图的榜（myRank/t3/shown 全跟它走）：DUPR=后端序直用、滤满 5 场
+    定级门槛（1.4 §6）；Elo=无门槛打过就排，前端按 Elo 降序同分 id 升序重排 */
+const rows = computed(() => {
+  if (mode.value === "elo")
+    return [...playedList.value].sort((a, b) => b.elo - a.elo || a.id - b.id);
+  return playedList.value.filter((u) => u.play >= RATED_PLAY);
+});
+/** 参考区（1.4 §6，DUPR 视图专属——门槛是 DUPR 定级概念）：未满 5 场无位次 */
 const refs = computed(() =>
-  userStore.leaderboard.filter(
-    (u) => userStore.hasPlayed(u) && u.play < RATED_PLAY,
-  ),
+  mode.value === "dupr"
+    ? playedList.value.filter((u) => u.play < RATED_PLAY)
+    : [],
 );
 /** alpha:1826 myRank = rows.findIndex(u=>u.id===me.id)+1（游客 id 0 恒不在榜 → 0） */
 const myRank = computed(
@@ -253,6 +298,41 @@ watch(rOpen, () => nextTick(() => measure()));
 /* alpha:1835 power 大字 margin-bottom:0（其余 brand/em 版式走全局 .brand 类） */
 .brand {
   margin: 6px 0 0;
+}
+/* alpha.html:194-200 sw-capsule 分数切换胶囊（样式逐字搬原型；只在战力页用，
+   不入 ui 组件库；AppSeg 是表单大分段控件，形态不同不共用） */
+.sw-capsule {
+  display: inline-flex;
+  align-items: center;
+  background: var(--ink2);
+  border: 1px solid rgba(245, 241, 232, 0.14);
+  border-radius: 99px;
+  padding: 3px;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.2s;
+  flex: none;
+  margin-bottom: 2px; /* 与 .head 底对齐时给胶囊一点呼吸 */
+}
+.sw-capsule:active {
+  border-color: rgba(255, 212, 0, 0.4);
+}
+.sw-opt {
+  padding: 5px 12px;
+  font-family: var(--disp);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  border-radius: 99px;
+  transition:
+    background 0.2s,
+    color 0.2s;
+  line-height: 1;
+}
+.sw-opt.on {
+  background: var(--lemon);
+  color: var(--ink);
+  box-shadow: 0 0 10px rgba(255, 212, 0, 0.25);
 }
 /* alpha:1842 sub margin-top:6px */
 .sub-mt {

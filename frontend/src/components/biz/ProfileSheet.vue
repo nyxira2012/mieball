@@ -22,13 +22,12 @@
           <text v-if="isMe && !session.isGuest" class="badge fire">我</text>
           <text v-if="userStore.isLiked(u.id)" class="hrt">♥</text>
         </view>
-        <!-- alpha:1906-1910 徽章 + 大分数 + 单位 + 本月涨跌（1.4 批4v1：主数字/徽章切 DUPR，
-             涨跌=stats card 月净胜；未定级小 chip 1.4 §5） -->
+        <!-- alpha:1906-1910 徽章 + 大分数 + 单位 + 本月涨跌（涨跌=stats card 月净胜）。
+             档案是名片面：永远 DUPR 口径，不随战力页切换 -->
         <view class="scorerow">
           <TierBadge v-if="played" :tier="duprTier(u.dupr ?? GUEST_DUPR)" />
-          <text class="big">{{
-            played ? fmtDupr(u.dupr ?? GUEST_DUPR) : "—"
-          }}</text>
+          <DuprScore v-if="played" :d="u.dupr ?? GUEST_DUPR" class="big" />
+          <text v-else class="big">—</text>
           <text class="unit">{{ played ? "DUPR" : "起步" }}</text>
           <text v-if="played && u.provisional" class="prov">未定级</text>
           <text v-if="played" class="d" :class="u.month >= 0 ? 'up' : 'dn'">
@@ -76,12 +75,13 @@ import { computed, watch } from "vue";
 import type { PropType } from "vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import TierBadge from "@/components/ui/TierBadge.vue";
+import DuprScore from "@/components/ui/DuprScore.vue";
 import Last5Dots from "@/components/ui/Last5Dots.vue";
 import { useUserStore } from "@/stores/user";
 import { useSessionStore } from "@/stores/session";
 import { useGameStore } from "@/stores/game";
 import { useUiStore } from "@/stores/ui";
-import { GUEST_DUPR, duprTier, fmtDupr } from "@/utils/elo";
+import { GUEST_DUPR, duprTier } from "@/utils/elo";
 import { freqName, slotName } from "@/utils/format";
 
 const props = defineProps({

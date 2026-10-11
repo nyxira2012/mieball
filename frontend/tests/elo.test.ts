@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ELO_INIT, duprTier, fmtDupr, fmtDupr1 } from "@/utils/elo";
+import { ELO_INIT, duprParts, duprTier, fmtDupr1 } from "@/utils/elo";
 
 /* settleElo 的公式用例已随 2026-10-08 收归后端退役（前端零公式零镜像）——数字
    守门移至后端 test_live_score.py 的 test_pending_elo_preview_two_branches_equal_
@@ -14,11 +14,16 @@ describe("elo 展示残留位（公式已收归后端唯一源）", () => {
 });
 
 describe("DUPR 展示（1.4 §1/§2：三位小数 + 段位档）", () => {
-  it("fmtDupr 三位小数（主数字形态）", () => {
-    expect(fmtDupr(3.52)).toBe("3.520");
-    expect(fmtDupr(3.5)).toBe("3.500");
-    expect(fmtDupr(4)).toBe("4.000");
-    expect(fmtDupr(2.875)).toBe("2.875");
+  it("duprParts 三位小数分段（主数字分层形态；2026-10-12 分层批，整串 fmtDupr 退役）", () => {
+    expect(duprParts(3.52)).toEqual({ head: "3", tail: ".520" });
+    expect(duprParts(3.5)).toEqual({ head: "3", tail: ".500" });
+    expect(duprParts(4)).toEqual({ head: "4", tail: ".000" });
+    expect(duprParts(2.875)).toEqual({ head: "2", tail: ".875" });
+    // head+tail 拼回 = 三位小数整串（口径自洽）
+    for (const d of [2.0, 2.5, 3.052, 4.4, 7.999]) {
+      const { head, tail } = duprParts(d);
+      expect(head + tail).toBe(d.toFixed(3));
+    }
   });
 
   it("fmtDupr1 一位小数（现场小字）", () => {
