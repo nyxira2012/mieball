@@ -50,19 +50,9 @@
       />
     </AppField>
 
-    <!-- 地点 chips 4 项 + 手输（照旧） -->
+    <!-- 地点 · 球馆名（常用3馆 + 输入框 + 候选胶囊） -->
     <AppField label="地点 · 球馆名">
-      <OptionChips
-        :model-value="venOn"
-        :options="VENS"
-        @update:model-value="venOn = String($event)"
-      />
-      <view v-if="venOn === '手输新场地'" class="mt8">
-        <AppInput
-          v-model="vCustom"
-          placeholder="手输新场地：如 亮马河 · 滨河球场"
-        />
-      </view>
+      <VenuePicker v-model="venueSel" />
     </AppField>
 
     <!-- 谁能翻到（1.2 A1 新增三选，默认跟我打过的人） -->
@@ -143,7 +133,8 @@ import WheelPicker from "@/components/ui/WheelPicker.vue";
 import { useGameStore } from "@/stores/game";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
-import { venueSuggestions } from "@/api/dict";
+import VenuePicker from "@/components/biz/VenuePicker.vue";
+import { recordVenue } from "@/utils/venues";
 import type { CourtMode, PublishGameInput, Visibility } from "@/api/types";
 import { MODE_NAMES, SCORE_RULE_NAMES, autoGameName } from "@/utils/format";
 import { beijingAt, isoDay, isoDayOff, isoParts, toIso } from "@/utils/time";
@@ -192,9 +183,6 @@ const visHint = computed(() => {
   if (lf.visibility === "public") return "任何人翻约球页都能看到这局";
   return "列表里不出现 · 只把链接或邀请发给人";
 });
-/** 地点 chips：场馆建议名单一源（api/dict）+ 手输项 */
-const VENS = [...venueSuggestions, "手输新场地"];
-
 /** 分钟 ↔ 网格下标（夹取） */
 const m2g = (m: number): number =>
   Math.max(0, Math.min(Math.round(m / STEP), GRID_N - 1));
@@ -215,8 +203,9 @@ const lf = reactive({
   rotation: "balance" as CourtMode,
   scoreRule: "rally" as "rally" | "serve",
 });
-const venOn = ref("");
-const vCustom = ref("");
+
+/** 选定地点 */
+const venueSel = ref("");
 
 /* 开打拨盘：dayI + startMin/endMin（分钟）为真值，tIdx 为派生下标 */
 const dayI = ref(2);
@@ -349,12 +338,6 @@ watch([dayI, startMin], () => {
   if (dlAuto.value) applyDl(autoDlDate.value);
 });
 
-/* ---- 地点 / 人数 ---- */
-const venueSel = computed(() =>
-  venOn.value === "手输新场地"
-    ? vCustom.value.trim() || venOn.value
-    : venOn.value,
-);
 /** 自动默认名「日段 · 地点」：占位提示与不填时的发布名同源（utils/format 的 autoGameName） */
 const autoName = computed(() =>
   autoGameName(dayLabels.value[dayI.value], venueSel.value),
@@ -388,15 +371,12 @@ function init(): void {
   lf.gid = ed ? ed.id : 0;
   lf.name = ed ? ed.name : "";
   lf.visibility = ed ? ed.visibility : "played";
-  const loc = ed ? ed.venueName : VENS[0];
+  venueSel.value = ed ? ed.venueName : "";
   lf.min = ed ? ed.minPlayers : 4;
   lf.cap = ed ? ed.maxPlayers : 6;
   lf.scoring = ed ? ed.scoring : 11;
   lf.rotation = ed ? ed.rotation : "balance";
   lf.scoreRule = ed?.scoreRule === "serve" ? "serve" : "rally";
-  venOn.value = VENS.includes(loc) ? loc : "手输新场地";
-  vCustom.value =
-    venOn.value === "手输新场地" && !VENS.includes(loc) ? loc : "";
   if (ed) {
     // 走查#1 收口：编辑回填按北京墙钟取数（此前 new Date(iso).getHours() 吃设备时区，非东八区机器回填漂 3 小时）
     const sp = isoParts(ed.startAt);
@@ -455,6 +435,7 @@ async function publish(): Promise<void> {
       const { deadline_at: _omit, ...edits } = input; // 截止不在改局参数表（不变承诺3）
       void _omit;
       await game.editGame(lf.gid, edits);
+      recordVenue(input.venue_name);
     } else {
       // 1.1 先看后报：游客建局先弹名片建号卡，建号成功由弹层接着发布（表单值随身带走不重填）
       if (session.isGuest) {
@@ -463,6 +444,7 @@ async function publish(): Promise<void> {
         return;
       }
       await game.publishGame(input);
+      recordVenue(input.venue_name);
       goMeet(); // 发布成功回约球页（alpha:1397 go('meet')）
     }
     ui.closeSheet();
