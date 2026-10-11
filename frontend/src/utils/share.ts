@@ -3,13 +3,14 @@
    uni 全局调用不 import——utils 不碰框架的例外适配位，同 nav.ts/clipboard.ts 先例。 */
 import { copyWithToast } from "./clipboard";
 
-/** 分享链接：navigator.share 优先（AbortError=用户取消，静默）；无 share /
-    调用失败 → 复制链接兜底（copyWithToast，成功 toast 文案全站单一）。调用方只给
-    链接与文案，其余分流细节不外泄 */
+/** 分享链接：navigator.share 优先（AbortError=用户取消，静默）→ 复制链接兜底，
+    其余分流细节不外泄。copyMsg 可换兜底提示语——战报分享带「任何人可看」知情
+    小字（2.6 §6；局详情链接可见性另档，不传即默认句） */
 export async function shareLink(
   url: string,
   title: string,
   text?: string,
+  copyMsg?: string,
 ): Promise<void> {
   if (typeof navigator !== "undefined" && navigator.share) {
     try {
@@ -19,5 +20,5 @@ export async function shareLink(
       if ((e as DOMException)?.name === "AbortError") return; // 用户取消分享，静默
     }
   }
-  copyWithToast(url, "链接已复制 · 去微信群里粘贴");
+  copyWithToast(url, copyMsg ?? "链接已复制 · 去微信群里粘贴");
 }

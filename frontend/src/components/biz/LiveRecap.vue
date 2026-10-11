@@ -1,33 +1,39 @@
 <template>
-  <!-- 只读回看（2.3 §4.10）：散场后扫码/从我的局点进看到的画面——战报（每片每场的
-       比分与胜方）、名单（含访客挂谁名下）、考勤时刻（组织者与本人；分权在后端读链，
-       view 里拿到 null 就不显示）。纯渲染：props 吃定格视图，零写按钮、零本地态——
-       页面是翻旧账的，不是续摊的（写动作在 store sealGate 拒收「球局已结束」）。
-       战报行积分吃 matches[].eloRows（§4.11-3 落账权威数，预览不一致时以它为准）。
-       2.6 门牌三件（§4.1/4.3）：上部提示行（isMyGame 两分支，文案单一源 utils/recap）
-       + 右上角完成/分享双钮 + 分享小字「链接任何人可看」——只 emit 不执行，收摊/返回/
-       分享的编排全归页面（现场门牌与战报子页各办各的，组件零逻辑）。 -->
+  <!-- 只读回看（2.3 §4.10）：散场后扫码/从记录点进——战报/名单/考勤（分权在后端读链，
+       view 里 null 就不显），纯渲染零写动作（写了 store sealGate 也拒收「球局已结束」）。
+       2026-10-12 UI 修订（2.6 §8）：海报头主视觉=梗句封面（MemeHeadline 吃上过场
+       昵称随机定格，用户拍板）；「已结束」全页只说一遍（REPLAY + 已散场戳）；完成/
+       分享为动作行正常按钮、只 emit 不执行——编排归页面；去向提示行只给现场门牌·
+       这局的人（door prop）；知情小字随分享降级走不常驻（shareLink copyMsg）；
+       名单行全场 ±分=eloTotals 加总落账行；页脚出路钮 emit meet。 -->
   <view class="recap-root">
-    <!-- 「球局已结束」横幅：回看态第一眼 -->
     <view class="rp-banner">
-      <view class="rp-top">
-        <view class="rp-hint">{{ recapHint(view.isMyGame) }}</view>
-        <view class="rp-btns">
-          <view class="rp-btn" @click="emit('complete')">完成</view>
-          <view class="rp-btn share" @click="emit('share')">分享</view>
-        </view>
+      <view class="rp-kick">
+        <text class="kick-txt">REPLAY</text>
+        <text class="rp-stamp">已散场</text>
       </view>
-      <view class="rp-note">链接任何人可看</view>
-      <view class="kicker">REPLAY · 已散场</view>
-      <view class="rp-title"
-        >{{ view.players.length }} 人 · {{ matchCount }} 场战报</view
-      >
-      <view class="rp-times">{{
-        `${isoHm(view.startedAt)} 开打 · ${isoHm(view.endedAt ?? "")} 散场`
+      <view class="rp-hero">
+        <MemeHeadline :names="playedNames" />
+      </view>
+      <view class="rp-meta">{{
+        `${view.players.length} 人 · ${matchCount} 场 · ${isoHm(view.startedAt)} — ${isoHm(view.endedAt ?? "")}`
       }}</view>
+      <view v-if="showHint" class="rp-hint">▸ {{ RECAP_HINT }}</view>
+      <view class="rp-actions">
+        <AppButton
+          variant="ghost"
+          size="sm"
+          class="flex1"
+          @click="emit('complete')"
+          >完成</AppButton
+        >
+        <AppButton variant="pri" size="sm" class="flex1" @click="emit('share')"
+          >分享</AppButton
+        >
+      </view>
     </view>
 
-    <!-- 战报（matches 全量：片号/第几场/名单/比分/胜方/时刻/访客标识；新到旧翻） -->
+    <!-- 战报（全量：片号/场次/名单/比分/胜方/时刻；新到旧翻） -->
     <view class="rp-sec-t">战报</view>
     <template v-if="matchCount">
       <view v-for="(m, i) in matchesDesc" :key="i" class="rp-match">
@@ -48,7 +54,7 @@
             <text class="side">B</text>
           </view>
         </view>
-        <!-- 落账积分（elo_rows 权威）：每人一行 ±delta；访客带标识有展示值不落账 -->
+        <!-- 落账积分（eloRows 权威）：访客有展示值不落账，带标识 -->
         <view v-if="m.eloRows.length" class="m-elo">
           <view v-for="(r, j) in m.eloRows" :key="j" class="e-row">
             <text class="e-nm"
@@ -56,7 +62,7 @@
               }}<text v-if="r.guest" class="gtag">访客 · 不计积分</text></text
             >
             <text class="e-d" :class="r.delta >= 0 ? 'up' : 'dn'">{{
-              r.delta >= 0 ? `+${r.delta}` : `−${Math.abs(r.delta)}`
+              fmtDelta(r.delta)
             }}</text>
           </view>
         </view>
@@ -64,53 +70,95 @@
     </template>
     <EmptyBox v-else text="这场没落下战报" />
 
-    <!-- 名单（含访客挂谁名下） -->
+    <!-- 名单（含访客挂谁名下；注册球员行尾全场 ±合计，没上过场/访客不显） -->
     <view class="rp-sec-t">名单</view>
-    <view v-for="p in view.players" :key="p.id" class="rp-row">
+    <view v-for="row in rosterRows" :key="row.p.id" class="rp-row">
       <view class="r-nm"
-        >{{ p.name }}<text v-if="p.guest" class="gtag">访客 · 不计积分</text
-        ><text v-if="p.dropin" class="gtag dropin">空降</text></view
+        >{{ row.p.name
+        }}<text v-if="row.p.guest" class="gtag">访客 · 不计积分</text
+        ><text v-if="row.p.dropin" class="gtag dropin">空降</text></view
       >
-      <view class="r-meta">{{ guarantorTxt(p) }}</view>
+      <view class="r-meta">
+        <text v-if="row.eloTxt" class="r-elo" :class="row.eloCls">{{
+          row.eloTxt
+        }}</text>
+        <text v-if="row.meta">{{ row.meta }}</text>
+      </view>
     </view>
 
-    <!-- 考勤时刻（分权：组织者全见、本人见自己——其余人 view 里是 null，整段隐藏） -->
+    <!-- 考勤时刻（分权：组织者全见、本人见自己——其余 null 整段隐藏） -->
     <template v-if="attendRows.length">
       <view class="rp-sec-t">考勤时刻</view>
       <view v-for="r in attendRows" :key="r.id" class="rp-row">
         <view class="r-nm">{{ r.name }}</view>
-        <view class="r-meta att">
+        <view class="r-meta">
           <text class="t">到 {{ isoHmOrDash(r.arriveAt) }}</text>
           <text class="t">走 {{ isoHmOrDash(r.leftAt) }}</text>
         </view>
       </view>
     </template>
 
-    <view class="rp-foot">球局已结束 · 只读回看</view>
+    <!-- 出路钮换旧「球局已结束 · 只读回看」（无信息量，kicker 已说清） -->
+    <view class="rp-foot">
+      <AppButton variant="pri" block @click="emit('meet')"
+        >来约场球吧</AppButton
+      >
+    </view>
   </view>
 </template>
 
 <script setup lang="ts">
-/* 回看视图纯渲染（2.3 §4.10）：props 吃 LiveView 定格视图（ensureLive endedAt 分流 /
-   endGame 响应落地两路同源），无本地态无写动作。访客标识与预览行同款口径
-   （MatchPerson.guest / EloRow.guest）；担保人按 guarantorAccountId 对回名册行解析。 */
-import { computed } from "vue";
+/* 回看视图纯渲染（2.3 §4.10）：props 吃 LiveView 定格视图，零本地态零写动作；
+   名单全场 ±分吃 utils/recap.eloTotals（落账行加总不重算）。 */
+import { computed, type PropType } from "vue";
+import AppButton from "@/components/ui/AppButton.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
+import MemeHeadline from "@/components/biz/MemeHeadline.vue";
 import { isoHm, isoHmOrDash } from "@/utils/time";
-import { recapHint } from "@/utils/recap";
+import { RECAP_HINT, eloTotals } from "@/utils/recap";
 import type { LivePlayer, LiveView, MatchPerson } from "@/api/types";
 
 const props = defineProps({
   view: { type: Object as () => LiveView, required: true },
+  /** 门牌：live=现场格（提示行只在这门给）、page=战报子页（从记录进来，指路绕圈不给） */
+  door: { type: String as PropType<"live" | "page">, default: "live" },
 });
 
-/** 完成与分享只上报意图：现场门牌 complete=收摊编排、子页 complete=返回（§4.2），
-    share 两边同走 shareLink——页面层各办各的，这里零逻辑 */
-const emit = defineEmits<{ complete: []; share: [] }>();
+/** 只上报意图不执行（complete 现场门牌=收摊/子页=返回）——编排归页面，这里零逻辑 */
+const emit = defineEmits<{ complete: []; share: []; meet: [] }>();
 
 const matchCount = computed(() => props.view.matches.length);
-/** 旧到新落账、回看新到旧翻（与 history/feed 的「新到旧」同一观感） */
+/** 旧到新落账、回看新到旧翻（与 history/feed 同一观感） */
 const matchesDesc = computed(() => [...props.view.matches].reverse());
+
+/** 去向提示行只给现场门牌·这局的人（is_my_game 后端定值，前端不自判） */
+const showHint = computed(() => props.door === "live" && props.view.isMyGame);
+
+/** 梗句候选=上过场的昵称（落账快照收名；去重与剔除归 pickMeme） */
+const playedNames = computed(() =>
+  props.view.matches.flatMap((m) =>
+    [...m.winners, ...m.losers].map((p) => p.name),
+  ),
+);
+
+/** 名单行拼装：状态句 + 全场 ±分（访客关联不了名册行——同名会串且不落账；没上过场查无） */
+const rosterRows = computed(() => {
+  const totals = eloTotals(props.view.matches);
+  return props.view.players.map((p) => {
+    const elo = p.accountId != null ? totals.get(p.accountId) : undefined;
+    return {
+      p,
+      meta: guarantorTxt(p),
+      eloTxt: elo !== undefined ? fmtDelta(elo) : "",
+      eloCls: elo == null ? "" : elo > 0 ? "up" : elo < 0 ? "dn" : "",
+    };
+  });
+});
+
+/** ±分统一格式（战报行与名单行同一副面孔） */
+function fmtDelta(d: number): string {
+  return d > 0 ? `+${d}` : d < 0 ? `−${Math.abs(d)}` : "±0";
+}
 
 /** 一侧名单：胜方/败方从快照取（落账定格事实，join 名册反而要二次查） */
 function names(
@@ -122,7 +170,7 @@ function names(
   return rows.map((p) => p.name).join(" / ") || "—";
 }
 
-/** 访客挂谁名下（§4.10 名单含访客挂谁名下）；正式球友带出场状态句 */
+/** 访客挂谁名下（§4.10）；正式球友带出场状态句 */
 function guarantorTxt(p: LivePlayer): string {
   if (p.guarantorAccountId != null) {
     const g = props.view.players.find(
@@ -135,7 +183,6 @@ function guarantorTxt(p: LivePlayer): string {
   return "";
 }
 
-/** 考勤时刻区（有值才显示：view 分权后普通人拿不到别人的时刻） */
 const attendRows = computed(() =>
   props.view.players.filter((p) => p.arriveAt || p.leftAt),
 );
@@ -143,77 +190,82 @@ const attendRows = computed(() =>
 
 <style lang="scss" scoped>
 /* 回看态整页滚动（PageShell bare 壳：自补顶距 + 让出公共导航高度）；
-   dvh 口径同 live 页 .live-root（100vh 与 fixed 导航在手机动态工具栏下错位，
-   底部内容会沉进导航后面；旧内核回退 100vh 行） */
+   dvh 口径同 live 页（100vh 与 fixed 导航在手机动态工具栏下错位，旧内核回退 100vh 行） */
 .recap-root {
   height: calc(100vh - var(--nav-total-h));
   height: calc(100dvh - var(--nav-total-h));
   overflow-y: auto;
   padding: calc(env(safe-area-inset-top) + 14px) 18px 24px;
 }
+/* 海报头（梗句封面做主视觉——MemeHeadline 随机定格；记分横幅顶线 + 斜纹纸纹打底，
+   右上歪斜橡皮戳「已散场」——定格旧账的签名件） */
 .rp-banner {
-  border: 1px solid rgba(255, 212, 0, 0.25);
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 212, 0, 0.22);
   border-radius: var(--r-md);
-  background: linear-gradient(160deg, var(--ink3), var(--ink2));
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 212, 0, 0.035) 0 1px,
+      transparent 1px 14px
+    ),
+    linear-gradient(160deg, var(--ink3), var(--ink2));
+  box-shadow: inset 0 2px 0 rgba(255, 212, 0, 0.4);
   padding: 14px 16px;
   margin-bottom: 18px;
 }
-/* 门牌行：提示行（醒目）+ 右上角完成/分享双钮；小字「链接任何人可看」随双钮右对齐 */
-.rp-top {
+.rp-kick {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
 }
-.rp-hint {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.6;
-  color: var(--lemon);
-  margin-top: 3px;
-}
-.rp-btns {
-  flex: none;
-  display: flex;
-  gap: 8px;
-}
-.rp-btn {
-  border: 1px solid rgba(255, 212, 0, 0.4);
-  border-radius: 10px;
-  padding: 5px 13px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--lemon);
-}
-.rp-btn.share {
-  background: rgba(255, 212, 0, 0.12);
-}
-.rp-note {
-  text-align: right;
-  font-family: var(--mono);
-  font-size: 9px;
-  color: var(--dim);
-  letter-spacing: 0.08em;
-  margin-top: 6px;
-}
-.kicker {
+.kick-txt {
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.3em;
+  letter-spacing: 0.34em;
   text-transform: uppercase;
   color: var(--dim);
 }
-.rp-title {
-  font-family: var(--disp);
-  font-size: 22px;
-  margin: 6px 0 2px;
+.rp-stamp {
+  transform: rotate(-6deg);
+  border: 1.5px solid rgba(255, 212, 0, 0.85);
+  border-radius: 7px;
+  padding: 3px 8px 3px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: var(--lemon);
+  box-shadow:
+    0 0 0 3px rgba(255, 212, 0, 0.1),
+    inset 0 0 10px rgba(255, 212, 0, 0.08);
 }
-.rp-times {
+.rp-hero {
+  margin: 12px 0 8px;
+}
+.rp-meta {
   font-family: var(--mono);
   font-size: 10px;
   color: var(--dim);
   letter-spacing: 0.08em;
+}
+.rp-hint {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 212, 0, 0.1);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--lemon);
+}
+.rp-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+.flex1 {
+  flex: 1;
 }
 .rp-sec-t {
   font-family: var(--mono);
@@ -223,7 +275,6 @@ const attendRows = computed(() =>
   color: var(--dim);
   margin: 16px 0 8px;
 }
-/* 战报卡：卡头（片号·场次+时刻）→ A/B 两队与大比分 → 落账积分行 */
 .rp-match {
   border: 1px solid rgba(245, 241, 232, 0.08);
   border-radius: 12px;
@@ -292,7 +343,6 @@ const attendRows = computed(() =>
 .m-num.a {
   color: var(--lemon);
 }
-/* 落账积分行（elo_rows）：访客行带「不计积分」标识、delta 照显（展示值） */
 .m-elo {
   border-top: 1px dashed rgba(245, 241, 232, 0.12);
   margin-top: 6px;
@@ -319,7 +369,6 @@ const attendRows = computed(() =>
 .e-d.dn {
   color: var(--coral);
 }
-/* 名单/考勤行（LedgerSheet 行构同族，tokens 换过） */
 .rp-row {
   display: flex;
   align-items: center;
@@ -337,17 +386,26 @@ const attendRows = computed(() =>
   min-width: 0;
 }
 .r-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
   font-family: var(--mono);
   font-size: 10px;
   color: var(--dim);
   letter-spacing: 0.06em;
-  flex: none;
 }
-.r-meta.att {
-  display: flex;
-  gap: 10px;
+.r-elo {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
 }
-/* 徽章（与 EndSettleModal 预览行同款 gtag 语言） */
+.r-elo.up {
+  color: var(--lemon);
+}
+.r-elo.dn {
+  color: var(--coral);
+}
 .gtag {
   margin-left: 6px;
   font-family: var(--mono);
@@ -359,12 +417,6 @@ const attendRows = computed(() =>
   color: var(--ice);
 }
 .rp-foot {
-  text-align: center;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--dim);
-  letter-spacing: 0.14em;
-  margin-top: 18px;
-  opacity: 0.7;
+  margin: 22px 4px 6px;
 }
 </style>

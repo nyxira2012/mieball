@@ -15,9 +15,16 @@
       </view>
     </template>
 
-    <!-- 战报门牌（200 且已散场）：完成=返回，分享同现场门牌（链接任何人可看） -->
+    <!-- 战报门牌（200 且已散场）：完成=返回来路，分享同现场门牌；door=page 不给
+         去向提示行（从记录进来的，指路是绕圈话） -->
     <template v-else-if="view">
-      <LiveRecap :view="view" @complete="goBack" @share="onShare" />
+      <LiveRecap
+        :view="view"
+        door="page"
+        @complete="goBack"
+        @share="onShare"
+        @meet="goMeet"
+      />
     </template>
 
     <!-- 未散场（或局在但从没开过账）：战报还没定格，诚实句不冒充 -->
@@ -67,8 +74,8 @@ import { apiGameDetail } from "@/api/games";
 import type { LiveView } from "@/api/types";
 import { shareLink } from "@/utils/share";
 import { liveShareUrl } from "@/utils/deeplink";
-import { DEAD_LINK_MSG } from "@/utils/recap";
-import { goBackOrMeet } from "@/utils/nav";
+import { DEAD_LINK_MSG, RECAP_COPY_MSG } from "@/utils/recap";
+import { goBackOrMeet, goMeet } from "@/utils/nav";
 
 const view = ref<LiveView | null>(null);
 const booting = ref(true);
@@ -119,10 +126,10 @@ function goBack(): void {
   goBackOrMeet();
 }
 
-/** 分享（§4.3 链接任何人可看）：战报链接落点=现场页回看态，谁点开谁看 */
+/** 分享（§4.3 链接任何人可看）：链接落点=现场页回看态；兜底提示带知情小字 */
 function onShare(): void {
   if (!view.value) return;
-  void shareLink(liveShareUrl(gameId), "球局战报");
+  void shareLink(liveShareUrl(gameId), "球局战报", undefined, RECAP_COPY_MSG);
 }
 </script>
 

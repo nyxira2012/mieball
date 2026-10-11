@@ -67,4 +67,18 @@ describe("shareLink（分享分层：系统面板优先，复制兜底）", () =
       "链接已复制 · 去微信群里粘贴",
     );
   });
+
+  it("copyMsg 定制：战报分享带「任何人可看」知情小字（2026-10-12 修订）", async () => {
+    vi.stubGlobal("navigator", {});
+    await shareLink(
+      "https://x.y/live?id=1",
+      "球局战报",
+      undefined,
+      "链接已复制 · 任何人可看 · 去微信粘贴",
+    );
+    expect(clipboard.copyWithToast).toHaveBeenCalledWith(
+      "https://x.y/live?id=1",
+      "链接已复制 · 任何人可看 · 去微信粘贴",
+    );
+  });
 });
