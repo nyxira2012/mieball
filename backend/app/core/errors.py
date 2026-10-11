@@ -210,11 +210,6 @@ def live_not_found() -> ApiError:
     return ApiError(404, "live_not_found", "现场不存在")
 
 
-def live_not_started(msg: str = "现场还没开始") -> ApiError:
-    # 同码分支说话（沿 not_organizer 先例）：开账窗口不对等分支由调用方给 message
-    return ApiError(409, "live_not_started", msg)
-
-
 def live_ended() -> ApiError:
     # 散场后旧画面的写动作一律拒收，回这一句（2.3 §4.10/附录 B1）
     return ApiError(409, "live_ended", "球局已结束")

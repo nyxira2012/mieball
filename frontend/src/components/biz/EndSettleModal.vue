@@ -239,7 +239,6 @@ function writeBack(): void {
     sa: 0,
     sb: 0,
     history: [],
-    last: null,
   });
   acc.sa = sa.value;
   acc.sb = sb.value;

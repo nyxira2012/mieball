@@ -51,7 +51,8 @@
       <view class="d-card" @click="go('/pages/mine/signup')">
         <view class="d-t">参加登记</view>
         <view class="d-s"
-          >共 {{ mySignups.length }} 局 · 打完 {{ myDone.length }} 局</view
+          >共 {{ game.mySignups.length }} 局 · 打完
+          {{ game.myDone.length }} 局</view
         >
       </view>
       <view class="d-card" @click="go('/pages/mine/logs')">
@@ -228,7 +229,6 @@ import { useUserStore } from "@/stores/user";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import { useBillStore } from "@/stores/bill";
-import { deadRowKind } from "@/utils/format";
 import { exportText } from "@/utils/blackbox";
 import { copyWithToast } from "@/utils/clipboard";
 import { ApiError, errText } from "@/api/http";
@@ -243,22 +243,11 @@ const ui = useUiStore();
 const bill = useBillStore();
 
 /* 账单卡三数（1.3 批4）：全量口径后端定值，进页拉一次（游客空账；断网静默沿用上次）。
-   登记双卡同页重拉 myGames（游客 401 静默——没有「我的局」） */
+   登记双卡同页重拉 myGames（游客 no_identity 静默在 game store 单一出口） */
 onShow(() => {
   bill.loadTotal().catch(() => undefined);
-  game.loadMine().catch((e) => {
-    if (!(e instanceof ApiError && e.code === "no_identity"))
-      ui.toast(errText(e));
-  });
+  game.loadMine().catch((e) => ui.toast(errText(e)));
 });
-
-/* 登记口径（与登记页 signup.vue 同式）：myGames 去死局行；打完 = done 计数 */
-const mySignups = computed(() =>
-  game.myGames.filter((g) => deadRowKind(g) === null),
-);
-const myDone = computed(() =>
-  mySignups.value.filter((g) => g.status === "done"),
-);
 
 /** 账号区行的手机号打码口径在 session store（maskedPhone 单一源，AccountSheet 同消费） */
 

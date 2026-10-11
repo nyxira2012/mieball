@@ -42,7 +42,7 @@ from . import live_rotation
 from .accounts import person_view
 from .game_views import derive, is_forced
 from .live_sweep import ARRIVED, LiveSweepMixin
-from .playlog import is_my_game
+from .playlog import is_my_game_at
 from .stats import StatsLedger
 
 # 开账起笔的 rules 快照默认值（镜像前端 startLive 起笔，2.2 批2 §4.1）：
@@ -284,7 +284,9 @@ class LiveBook(LiveSweepMixin):
             oncourt = self._oncourt(rows, court_no)
             winners = [r for r in oncourt if r.court_side == winner_side]
             losers = [r for r in oncourt if r.court_side != winner_side]
-            elo_rows = self._elo_settle(winners, losers)
+            elo_rows = self._elo_settle(
+                winners, losers, self._ratings_of([r.account_id for r in oncourt])
+            )
             ended = clock.now()
             match = LiveMatch(
                 game_id=game_id,
@@ -419,7 +421,11 @@ class LiveBook(LiveSweepMixin):
             for row in match.elo_rows[: len(match.winners)]:
                 if not row["guest"] and row["account_id"] is not None:
                     self._elo_row(row["account_id"]).win -= 1
-            elo_rows = self._elo_settle(winners, losers)
+            elo_rows = self._elo_settle(
+                winners,
+                losers,
+                self._ratings_of([r.account_id for r in (*winners, *losers)]),
+            )
             match.winner_side = winner_side
             match.sa = score_a
             match.sb = score_b
@@ -830,6 +836,7 @@ class LiveBook(LiveSweepMixin):
         # 代位分与小人一次查齐（3s 轮询 + 每个写动作响应都走这里，逐人查会放大成 N+1；
         # chibi 随行下发——前端名册头像不再向演示世界借位，2026-10-10 mock 退役）
         rates = stats.pairing_ratings([p.account_id for p in roster])
+        elo_rates = self._ratings_of([p.account_id for p in roster])
         chibis = {
             a.id: a.chibi
             for a in self.db.execute(
@@ -880,7 +887,7 @@ class LiveBook(LiveSweepMixin):
             or (viewer_id is not None and viewer_id in (state.admins or [])),
             # 提示行身份定值（2.6 §4.3-3）：判定的尺与打球记录名单三笔规矩同一把
             # （playlog 单一源），前端不自判；未散场局按名单前提恒 False
-            "is_my_game": is_my_game(self.db, game_id, viewer_id),
+            "is_my_game": is_my_game_at(self.db, game_id, viewer_id),
             "organizer_account_id": game.organizer_id,
             "feed": state.feed or [],
             "courts_count": state.courts_count,
@@ -906,7 +913,9 @@ class LiveBook(LiveSweepMixin):
                     # 在打片的 ±积分预演双分支（上传/改分窗两套现成数，§4.11）；
                     # 其余片 null
                     "elo_preview": (
-                        self._elo_preview(c, roster) if c.status == "playing" else None
+                        self._elo_preview(c, roster, elo_rates)
+                        if c.status == "playing"
+                        else None
                     ),
                 }
                 for c in courts
@@ -1174,35 +1183,48 @@ class LiveBook(LiveSweepMixin):
         m = self._latest_match(game_id, court_no)
         return m is not None and self._same_result(m, winner_side, sa, sb)
 
-    def _rating_of(self, account_id: int) -> int:
-        row = self.db.execute(
-            select(EloRating).where(EloRating.account_id == account_id)
-        ).scalar_one_or_none()
-        return RATING_INIT if row is None else row.rating
+    def _ratings_of(self, account_ids: list[int]) -> dict[int, int]:
+        """Elo 现分批查（一次 in 拉齐，pairing_ratings 同款防 N+1 手法）：结算/预演
+        的 eff 真值源——3s 轮询的 view 预演、settle 两入口都走这里，逐人点查会在
+        全场最热端点上放大成几十条点查。缺行（开账首见前的空降等）回 RATING_INIT。"""
+        ids = sorted({a for a in account_ids if a is not None})
+        if not ids:
+            return {}
+        found = {
+            r.account_id: r.rating
+            for r in self.db.execute(
+                select(EloRating).where(EloRating.account_id.in_(ids))
+            ).scalars()
+        }
+        return {a: found.get(a, RATING_INIT) for a in ids}
 
-    def _elo_preview(self, court: LiveCourt, roster: list[LivePlayer]) -> dict | None:
+    def _elo_preview(
+        self, court: LiveCourt, roster: list[LivePlayer], ratings: dict[int, int]
+    ) -> dict | None:
         """在打片的 ±积分预演双分支（§4.11，2026-10-08 收归后端单源；2026-10-09
         记分本地化改挂 playing 片——Elo 分差只看两队现分与谁胜、与比分无关，
         服务端无需知道各手机本地比分）：A 胜 / B 胜各算一套随视图给出，上传窗
         点胜方在两套现成数间切换（当场变、不等网络仍成立）。取序与 settle_confirm
-        同一条路（_oncourt 语义：名册序 + 片位过滤），预演=落账：上传响应所选
-        分支的 elo_rows 与这里逐行一致。
+        同一条路（_oncourt 单一源：名册序 + 片位过滤），预演=落账：上传响应所选
+        分支的 elo_rows 与这里逐行一致。ratings 由调用方批查递入（_ratings_of）。
         单边空返 None（2026-10-10 修复）：片上的人早退清位而片行保持 playing
         （「打短维持现状」），一边被抽空就没有对局可言——此前空列表喂进
         _elo_settle 的均值除法直接 ZeroDivision，view 恒 500、整局卡死无自救。"""
-        oncourt = [
-            p
-            for p in roster
-            if p.court_no == court.court_no and p.court_side in ("a", "b")
-        ]
+        oncourt = self._oncourt(roster, court.court_no)
         a = [p for p in oncourt if p.court_side == "a"]
         b = [p for p in oncourt if p.court_side == "b"]
         if not a or not b:
             return None
-        return {"a": self._elo_settle(a, b), "b": self._elo_settle(b, a)}
+        return {
+            "a": self._elo_settle(a, b, ratings),
+            "b": self._elo_settle(b, a, ratings),
+        }
 
     def _elo_settle(
-        self, winners: list[LivePlayer], losers: list[LivePlayer]
+        self,
+        winners: list[LivePlayer],
+        losers: list[LivePlayer],
+        ratings: dict[int, int],
     ) -> list[dict]:
         """结算每人一行、胜队在前（§4.6-2/§4.11）——Elo 唯一算路（2026-10-08 起
         前端零公式：确认窗预演的 elo_preview 与落账 elo_rows 都出自本函数）：
@@ -1211,15 +1233,18 @@ class LiveBook(LiveSweepMixin):
         但不落账。
         一边没人返 []（2026-10-10 修复）：片被早退抽空后单边空的结算/预演没有
         胜负两队，elo 不动账（_apply_elo 对空行无操作）——也是空列表喂均值
-        除法的防爆边。"""
+        除法的防爆边。ratings 由调用方批查递入（_ratings_of），均值与行内
+        rating_before 同一次取数（不重复查）。"""
 
         def eff(p: LivePlayer) -> int:
-            return RATING_INIT if p.guest else self._rating_of(p.account_id)
+            return RATING_INIT if p.guest else ratings.get(p.account_id, RATING_INIT)
 
         if not winners or not losers:
             return []
-        w_avg = sum(eff(p) for p in winners) / len(winners)
-        l_avg = sum(eff(p) for p in losers) / len(losers)
+        w_eff = [eff(p) for p in winners]
+        l_eff = [eff(p) for p in losers]
+        w_avg = sum(w_eff) / len(winners)
+        l_avg = sum(l_eff) / len(losers)
         exp = 1 / (1 + 10 ** ((l_avg - w_avg) / 400))
         delta = max(1, round(_ELO_K * (1 - exp)))
         loss = max(1, round(delta * 0.6))
@@ -1233,8 +1258,8 @@ class LiveBook(LiveSweepMixin):
                 "delta": d,
             }
             for p, before, d in [
-                *[(p, eff(p), delta) for p in winners],
-                *[(p, eff(p), -loss) for p in losers],
+                *zip(winners, w_eff, [delta] * len(winners)),
+                *zip(losers, l_eff, [-loss] * len(losers)),
             ]
         ]
 

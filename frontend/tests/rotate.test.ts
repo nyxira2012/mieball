@@ -87,7 +87,6 @@ function mkLive(
     history: [],
     round: 0,
     rules: R0(),
-    courtSeqNext: 0,
     ...opts,
   };
 }
@@ -276,7 +275,7 @@ describe("splitSides（2.4 §4.5 分边真值）", () => {
 });
 
 describe("fillCourt / fillAllCourts（2.4 §4.3 补满即打）", () => {
-  it("空片补满：按怎么公分边、比分清零、新队连庄清零、courtSeq/tenure 起算", () => {
+  it("空片补满：按怎么公分边、比分清零、新队连庄清零", () => {
     const ps = Array.from({ length: 8 }, (_, i) => mkP(3.2 - i * 0.1));
     const court = mkCourt([], [], {
       id: 0,
@@ -287,7 +286,6 @@ describe("fillCourt / fillAllCourts（2.4 §4.3 补满即打）", () => {
     });
     const live = mkLive("rotate", ps, {
       rules: R({ down: "loser" }),
-      courtSeqNext: 4,
       courts: [court],
     });
     fillCourt(live, court);
@@ -299,8 +297,6 @@ describe("fillCourt / fillAllCourts（2.4 §4.3 补满即打）", () => {
       streakA: 0,
       streakB: 0,
     });
-    expect(ps[0].courtSeq).toBe(5); // 新发上场序
-    expect(ps[0].tenure).toBe(0); // 资历从 0 起算
     expect(live.queue).toEqual(ps.slice(4).map((p) => p.id));
   });
 
@@ -311,7 +307,6 @@ describe("fillCourt / fillAllCourts（2.4 §4.3 补满即打）", () => {
     const court = mkCourt([], [], { id: 0 });
     const live = mkLive("rotate", [a, b, c], {
       rules: R(),
-      courtSeqNext: 0,
       courts: [court],
     });
     fillCourt(live, court);
@@ -326,7 +321,6 @@ describe("fillCourt / fillAllCourts（2.4 §4.3 补满即打）", () => {
     const court = mkCourt([], [], { id: 0, singles: true });
     const live = mkLive("rotate", ps, {
       rules: R(),
-      courtSeqNext: 0,
       courts: [court],
     });
     fillCourt(live, court);
@@ -342,7 +336,6 @@ describe("fillCourt / fillAllCourts（2.4 §4.3 补满即打）", () => {
     ps[0].fire = true; // 连战者必进首片
     const live = mkLive("rotate", ps, {
       rules: R(),
-      courtSeqNext: 0,
       courts: [c0, c1, c2],
     });
     live.g.maxPlayers = 12;

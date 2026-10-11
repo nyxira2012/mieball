@@ -37,6 +37,18 @@ def is_forced(game: Game) -> bool:
     return bool(game.courts) or game.manual_lock
 
 
+def owned_game(db: Session, game_id: int, organizer_id: int) -> Game:
+    """组织者守卫单一源（GameBook._owned / BillBook._owned_game 同委托）：
+    查无 → 404，非本人局 → 403。账是钱的事只认组织者本人（C2），不走 live 分级权
+    ——两簿此前靠 docstring 互认口径，收此地后权限语义改动只改这一处。"""
+    game = db.get(Game, game_id)
+    if game is None:
+        raise errors.game_not_found()
+    if game.organizer_id != organizer_id:
+        raise errors.not_organizer()
+    return game
+
+
 def derive(game: Game, now: datetime) -> str:
     """派生视图态：locked 随时刻翻 locked/live/done；
     pending 拖过开打 = 死局（待处置没有处置价值的时刻，僵尸出口由懒判定落库）。"""

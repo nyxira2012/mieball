@@ -604,7 +604,7 @@ describe("startPolling / stopPolling（3s 轮询器）", () => {
 /* ─────────── 批5a：写链（组载荷 → api → 响应视图落地；stale/断网两防线） ─────────── */
 
 describe("point / undoPoint / clearScore（记分本地化：纯本地账，零网络零 seq）", () => {
-  it("point：只写本机账零 api 调用——加分落 last、比分即反馈无 toast、总账不动（本地账从 0:0 起记，不种子服务端旧分）", async () => {
+  it("point：只写本机账零 api 调用——流水栈记账、比分即反馈无 toast、总账不动（本地账从 0:0 起记，不种子服务端旧分）", async () => {
     const { live, ui } = await inPlay();
     live.point(0, "a");
     live.point(0, "a");
@@ -617,7 +617,6 @@ describe("point / undoPoint / clearScore（记分本地化：纯本地账，零�
       sa: 2,
       sb: 1,
       history: ["a", "a", "b"],
-      last: "b",
     });
     expect(ui.toastMsg).toBeFalsy(); // 比分即反馈
     expect(live.liveView!.totalSeq).toBe(7); // 零 seq：总账没动
@@ -659,7 +658,7 @@ describe("point / undoPoint / clearScore（记分本地化：纯本地账，零�
     live.point(0, "a"); // 12:10 开窗
     expect(live.settleWindow?.mode).toBe("upload");
   });
-  it("undoPoint 按流水栈撤回（零 api；支持连续撤回到底，0:0 静默；末位同步维护 last）", async () => {
+  it("undoPoint 按流水栈撤回（零 api；支持连续撤回到底，0:0 静默）", async () => {
     const { live } = await inPlay();
     live.undoPoint(0); // 无账静默
     live.point(0, "a");
@@ -669,35 +668,30 @@ describe("point / undoPoint / clearScore（记分本地化：纯本地账，零�
       sa: 2,
       sb: 1,
       history: ["a", "b", "a"],
-      last: "a",
     });
     live.undoPoint(0); // 撤回 a
     expect(live.localScores[0]).toEqual({
       sa: 1,
       sb: 1,
       history: ["a", "b"],
-      last: "b",
     });
     live.undoPoint(0); // 撤回 b
     expect(live.localScores[0]).toEqual({
       sa: 1,
       sb: 0,
       history: ["a"],
-      last: "a",
     });
     live.undoPoint(0); // 撤回 a，归零
     expect(live.localScores[0]).toEqual({
       sa: 0,
       sb: 0,
       history: [],
-      last: null,
     });
     live.undoPoint(0); // 已归零再撤静默
     expect(live.localScores[0]).toEqual({
       sa: 0,
       sb: 0,
       history: [],
-      last: null,
     });
     expect(Object.values(liveApi).every((m) => m.mock.calls.length === 0)).toBe(
       true,
@@ -714,7 +708,6 @@ describe("point / undoPoint / clearScore（记分本地化：纯本地账，零�
       sa: 0,
       sb: 0,
       history: [],
-      last: null,
     });
     expect(ui.toastMsg).toBeFalsy();
   });
@@ -748,7 +741,6 @@ describe("上传结算与改分重落（记分本地化：先传先落 / settle_
       sa: 0,
       sb: 0,
       history: [],
-      last: null,
     });
     expect(live.settleWindow).toBeNull();
     expect(ui.toastMsg).toBe("积分落账 · 下一场已排好");
@@ -805,7 +797,6 @@ describe("上传结算与改分重落（记分本地化：先传先落 / settle_
       sa: 0,
       sb: 0,
       history: [],
-      last: null,
     }); // 本机账对齐清零
     expect(live.settleWindow).toBeNull();
   });
@@ -851,7 +842,6 @@ describe("上传结算与改分重落（记分本地化：先传先落 / settle_
       sa: 0,
       sb: 0,
       history: [],
-      last: null,
     });
   });
   it("overwriteSettle：needFull 前端闸（球友拒「请找组织者或管理员」不发）；全权 → 载荷（无 noRedeal）+ toast「比分已改 · 积分已重算」+ 同片窗关", async () => {
@@ -922,7 +912,6 @@ describe("结算窗锚代次（批3 修复）", () => {
       sa: 0,
       sb: 0,
       history: [],
-      last: null,
     }); // 本地账清零
     expect(ui.toastMsg).toBe("现场已更新 · 这场已有人记账");
   });
@@ -938,7 +927,6 @@ describe("结算窗锚代次（批3 修复）", () => {
       sa: 1,
       sb: 0,
       history: ["a"],
-      last: "a",
     });
   });
 
@@ -954,7 +942,6 @@ describe("结算窗锚代次（批3 修复）", () => {
       sa: 0,
       sb: 0,
       history: [],
-      last: null,
     });
     expect(live.settleWindow).toBeNull();
     // 有落账行：latestMatchOf 取该片最新行拼服务端同款句

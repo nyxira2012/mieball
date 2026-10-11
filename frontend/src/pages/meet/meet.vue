@@ -162,7 +162,7 @@
    - 数据走 game store 真接口（loadGames/loadMine/loadIntents/loadMyIntent），onShow 重拉；
    - 列表只按时间筛（档位可见性后端已滤；done 局不上找局打——裁决⑧，历史归我的局/详情）；
    - 置顶/跑马灯/点卡分支全读 my 块定值（A4 画面不自算）。 */
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { onPageScroll, onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import GameCard from "@/components/biz/GameCard.vue";
@@ -186,8 +186,9 @@ import {
   slotName,
 } from "@/utils/format";
 import { isoDay, isoDayOff, isoHm, isoParts, untilTxt } from "@/utils/time";
-import { ApiError, errText } from "@/api/http";
+import { errText } from "@/api/http";
 import { goGame, goLive } from "@/utils/nav";
+import { useSlowHint } from "@/composables/useSlowHint";
 
 const game = useGameStore();
 const liveStore = useLiveStore();
@@ -302,20 +303,8 @@ const grayMine = computed(() =>
   game.myGames.filter((g) => deadRowKind(g) === "gray"),
 );
 
-/* ---- A2 加载：等待提示，超 2 秒提示网络问题 ---- */
-const slow = ref(false);
-let slowTimer: ReturnType<typeof setTimeout> | null = null;
-watch(
-  () => game.loading,
-  (on) => {
-    if (slowTimer) clearTimeout(slowTimer);
-    if (on) slowTimer = setTimeout(() => (slow.value = true), 2000);
-    else slow.value = false;
-  },
-);
-onUnmounted(() => {
-  if (slowTimer) clearTimeout(slowTimer);
-});
+/* ---- A2 加载：等待提示，超 2 秒提示网络问题（useSlowHint 单一源，detail 同款） ---- */
+const { slow } = useSlowHint(() => game.loading);
 
 /* ---- 意向区（alpha:1058-1061/1093）：scope 熟人=同局打过（intent.known 后端定值，裁决②） ---- */
 const ipool = computed(() =>
@@ -430,13 +419,9 @@ onMounted(() => {
 onShow(() => {
   // 每次回页重拉：真局状态随时刻翻（懒判定发生在任何人打开的那一刻），本地不能装「最新」
   game.loadGames().catch((e) => ui.toast(errText(e)));
-  game.loadMine().catch((e) => {
-    // 游客没有「我的局」（401 no_identity 静默降级），别把「请先登录」糊游客一脸
-    if (!(e instanceof ApiError && e.code === "no_identity"))
-      ui.toast(errText(e));
-  });
+  game.loadMine().catch((e) => ui.toast(errText(e))); // 游客 no_identity 静默在 game store
   game.loadIntents().catch((e) => ui.toast(errText(e)));
-  game.loadMyIntent().catch(() => undefined); // 游客无意向，静默
+  game.loadMyIntent().catch(() => undefined); // 意向失败不打断约球页浏览（游客静默在 store）
   nextTick(() => measureHead());
 });
 /* 布局影响 headTop 的变化都要重测（折叠/筛选/scope/我的意向/球局与意向条数） */

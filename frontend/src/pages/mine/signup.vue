@@ -41,22 +41,17 @@ import FilterChips from "@/components/ui/FilterChips.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useGameStore } from "@/stores/game";
 import { useUiStore } from "@/stores/ui";
-import { deadRowKind, newGameCard } from "@/utils/format";
-import { ApiError, errText } from "@/api/http";
+import { newGameCard } from "@/utils/format";
+import { errText } from "@/api/http";
 import { goGame } from "@/utils/nav";
 import type { Game } from "@/api/types";
 
 const game = useGameStore();
 const ui = useUiStore();
 
-/** 我的登记全集：myGames 去掉死局行（pending/恢复窗/灰字——约球页已接管处置出口） */
-const mySignups = computed(() =>
-  game.myGames.filter((g) => deadRowKind(g) === null),
-);
-/** 打完口径：done 局（散场封存/到点结束都算） */
-const myDone = computed(() =>
-  mySignups.value.filter((g) => g.status === "done"),
-);
+/* 登记全集/打完口径单一源在 game store（mySignups/myDone，我的页同消费） */
+const mySignups = computed(() => game.mySignups);
+const myDone = computed(() => game.myDone);
 
 /* 状态单选（BillPeriod 同族窄类型；FilterChips v-model 已收窄为 string|number） */
 const mode = ref<string | number>("all");
@@ -91,12 +86,9 @@ function openGame(g: Game): void {
 }
 
 /* 每次进页重拉：真局状态随时刻翻（懒判定发生在任何人打开的那一刻）；
-   游客 401 no_identity 静默（没有「我的局」，空态文案自解释） */
+   游客 no_identity 静默在 game store 单一出口（空态文案自解释） */
 onShow(() => {
-  game.loadMine().catch((e) => {
-    if (!(e instanceof ApiError && e.code === "no_identity"))
-      ui.toast(errText(e));
-  });
+  game.loadMine().catch((e) => ui.toast(errText(e)));
 });
 </script>
 

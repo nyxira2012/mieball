@@ -43,7 +43,7 @@ import { useGameStore } from "@/stores/game";
 import { useUiStore } from "@/stores/ui";
 import { PERIOD_OPTS, periodFrom, type BillPeriod } from "@/stores/bill";
 import { newGameCard } from "@/utils/format";
-import { ApiError, errText } from "@/api/http";
+import { errText } from "@/api/http";
 import { goGame } from "@/utils/nav";
 import type { Game } from "@/api/types";
 
@@ -76,10 +76,7 @@ function openGame(g: Game): void {
 }
 
 onShow(() => {
-  game.loadPlaylog().catch((e) => {
-    if (!(e instanceof ApiError && e.code === "no_identity"))
-      ui.toast(errText(e));
-  });
+  game.loadPlaylog().catch((e) => ui.toast(errText(e))); // 游客 no_identity 静默在 game store
 });
 </script>
 

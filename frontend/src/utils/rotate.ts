@@ -1,7 +1,23 @@
 /* 发牌/轮换引擎（2.4 多片并行 · 纯函数：live 状态作为参数传入、原地更新 —— 与 live store 共用同一份引用）。
    旧串行引擎（avail/fillCourts/nextMatch/maxCourts + cur/lastWinners）已随批2 删除。 */
-import type { LiveCourt, LiveState, PairingMode, User } from "@/api/types";
+import type {
+  CheckStatus,
+  LiveCourt,
+  LiveState,
+  PairingMode,
+  User,
+} from "@/api/types";
 import { GUEST_DUPR } from "./elo";
+
+/** 「算到场」谓词单一源（store 转出口给候场条/签到浮层/二维码浮层消费；
+    rotate 内部发牌池与 store 考勤同一把尺）：ok 正常 / late 迟到已到 / join 中途加入；
+    absent 未到、left 早退不算 */
+export const isArrived = (c?: CheckStatus): boolean =>
+  c === "ok" || c === "late" || c === "join";
+
+/** 空片谓词单一源（片上 A/B 两半边都没人＝没在打）：myRound 差几轮/发牌前查重/
+    记分与撤局守卫共用——布尔式散写已收此处，别再手拼 */
+export const isIdle = (c: LiveCourt): boolean => !c.A.length && !c.B.length;
 
 /** 按找现场玩家（alpha:1491 pById） */
 export function pById(live: LiveState, id: number): User | undefined {
@@ -11,7 +27,7 @@ export function pById(live: LiveState, id: number): User | undefined {
 /** 已占片数（非空片：A/B 任一半边有人即在打）——live 顶条场地输入校验
     （在打的片不能收）共用。 */
 export function usedCourts(live: LiveState): number {
-  return live.courts.filter((c) => c.A.length || c.B.length).length;
+  return live.courts.filter((c) => !isIdle(c)).length;
 }
 
 /** 某名册行此刻在打哪片（A/B 任一半边含之；不在场上 → undefined）——换人出/入
@@ -54,31 +70,21 @@ export function courtCount(live: LiveState): number {
 /** 可打人数（推荐口径 2.4 §4.2）：片上 + 候场队；absent/left 不算（不进发牌池） */
 export function activePlayers(live: LiveState): number {
   const onCourt = live.courts.reduce((s, c) => s + c.A.length + c.B.length, 0);
-  const waiting = live.queue.filter((id) => {
-    const p = pById(live, id);
-    return p && p.check !== "absent" && p.check !== "left";
-  }).length;
+  const waiting = live.queue.filter((id) =>
+    isArrived(pById(live, id)?.check),
+  ).length;
   return onCourt + waiting;
 }
 
 /** 可发判定（单一口径）：在场且非缺席早退、不在歇轮 */
 function issuable(live: LiveState, id: number): boolean {
   const p = pById(live, id);
-  return !!p && p.check !== "absent" && p.check !== "left" && !p.skip;
+  return !!p && isArrived(p.check) && !p.skip;
 }
 
 /** 候场队里此刻可发人数（在场且非缺席早退、不在歇轮）——补坑前「够不够」的判定源 */
 function readyCount(live: LiveState): number {
   return live.queue.filter((id) => issuable(live, id)).length;
-}
-
-/** 上场登记：发上场先后序（资历并列的 tiebreak）、资历从 0 起算 */
-function enterCourt(live: LiveState, id: number): void {
-  const p = pById(live, id);
-  if (!p) return;
-  live.courtSeqNext += 1;
-  p.courtSeq = live.courtSeqNext;
-  p.tenure = 0;
 }
 
 /** 队首取 n 人发牌（2.4 §4.8）：连战（fire）优先收——「设了的人下次发牌排最前」（与歇互斥）；
@@ -88,7 +94,7 @@ export function takeFromQueue(live: LiveState, n: number): number[] {
   if (n <= 0) return [];
   const ok = (id: number): User | undefined => {
     const p = pById(live, id);
-    return p && p.check !== "absent" && p.check !== "left" ? p : undefined;
+    return p && isArrived(p.check) ? p : undefined;
   };
   const pre = new Set(live.queue.filter((id) => ok(id)?.fire).slice(0, n)); // 连战优先
   const taken: number[] = [...pre];
@@ -129,10 +135,11 @@ export function splitSides(
 }
 
 /** 空片补满即打（2.4 §4.3）：按 court.singles（过渡期可 ≠ rules.singles）取一整片，
-    按当前怎么配分边，新队连庄清零、courtSeq/tenure 起算。补不满留空（差人卡呈现），不动队列。 */
+    按当前怎么配分边，新队连庄清零。补不满留空（差人卡呈现），不动队列。
+    （回流补位/资历记账真值在后端 live_rotation，前端不再镜像——enterCourt 已随批2 删。） */
 export function fillCourt(live: LiveState, court: LiveCourt): void {
   const rules = live.rules;
-  if (court.A.length || court.B.length) return;
+  if (!isIdle(court)) return;
   const size = courtSize(court.singles);
   if (readyCount(live) < size) return;
   const ids = takeFromQueue(live, size);
@@ -141,10 +148,8 @@ export function fillCourt(live: LiveState, court: LiveCourt): void {
   court.B = B;
   court.sa = 0;
   court.sb = 0;
-  court.last = undefined;
   court.streakA = 0;
   court.streakB = 0;
-  for (const id of ids) enterCourt(live, id);
 }
 
 /** 按片号先后补所有空片（多片同时要人时，候场队按片号先后供给） */

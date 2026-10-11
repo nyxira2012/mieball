@@ -43,8 +43,6 @@ export interface User {
   dropin?: boolean; // 空降进场：没报名扫码直入名册（§4.4 全场看得到的标记；线上名单/候补不动）
   arriveAt?: string; // ISO · 首次到场时刻（出勤底账，time.ts toIso 落/isoHm 显）
   leftAt?: string; // ISO · 早退离场时刻
-  courtSeq?: number; // 现场态 · 上场先后序（LiveState.courtSeqNext 递增发放；2.4 资历并列时先上的先下）
-  tenure?: number; // 现场态 · 连续在场场数（上场=0 起，每结束一场 +1，下场清 0——2.4 N人下按此排「待得最久」）
 }
 
 /** 出勤底账一行（§4.14 观察点：几点到/几点走/访客谁带的）。
@@ -343,7 +341,6 @@ export interface LiveCourt {
   sa: number; // 旧位恒 0 占位——真值挂 localScores，留 0 兼 mock 树必填（删旧归 1.3）
   sb: number; // 同 sa
   scoring?: number; // 片分制快照（视图缺行时本地补空片走 g.scoring 兜底，2.6）
-  last?: "a" | "b"; // 旧位不再读——undoPoint 回退改吃 localScores.last（删旧归 1.3）
   streakA: number; // 连庄数——跟半边不跟人（手动换人不动连庄，2.4 §4.9）
   streakB: number;
 }
@@ -373,7 +370,6 @@ export interface LiveState {
   endedAt?: string; // 散场时刻（apiLiveEnd 落）：有值=现场封存转只读回看（§4.9/4.10）；live 态保留供回看与底账查
   ledger: LedgerRow[]; // 出勤底账（applyLiveView 随视图 players 重建：到/走/访客谁带的）
   rules: RotationRules; // 2.4 轮换四件套（startLive 起必挂：自选前 down 跟推荐走）
-  courtSeqNext: number; // 上场先后序发号器（courtSeq 的源——资历并列的 tiebreak）
 }
 
 /** 组局表单提交值（线上形状 snake_case，POST /games 请求体镜像；契约§1）。

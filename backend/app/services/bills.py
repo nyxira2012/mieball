@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from ..core import clock, errors
 from ..db.models import Account, Bill, BillRow, Game, LivePlayer
 from .accounts import ANON_NAME, person_view
-from .game_views import fill_fee_error
+from .game_views import fill_fee_error, owned_game
 
 # 补填写串行（沿两簿先例）：SQLite 无行锁，「查未填→落价→出账」check-then-act 全锁内；
 # 与散场链（live 的锁）的竞态由 ended_at 守卫互斥——未散场进不了补填、散场后进不了 end
@@ -40,16 +40,17 @@ SPLIT_VERSION = "v1"
 
 def _split(
     shares: list[tuple[int, str, int, int]], total: int, organizer_id: int
-) -> tuple[dict[int, int], int]:
+) -> tuple[dict[int, int], int, int]:
     """分账唯一算法（§8 裁决，generate 与 preview 同吃这一份）：base=总价//人头
     向下抹零，非组织者=base×份额，组织者=总价−Σ非组织者（差额兜底在内）——
     合计恒等于总价（不变承诺 1）。确认页亮的数=点定后出的账，改抹零规则只改这里。
-    回 (各人摊额, 总人头)：heads 与分账同一出处，列账侧不再各算一遍防口径漂移。"""
+    回 (各人摊额, 总人头, 人均 base)：heads 与 base 与分账同一出处，亮数侧
+    （per_head 落库/确认页）不再重算同式防口径漂移。"""
     heads = sum(share for *_, share in shares)
     base = total // heads
     amounts = {aid: base * share for aid, _, _, share in shares if aid != organizer_id}
     amounts[organizer_id] = total - sum(amounts.values())
-    return amounts, heads
+    return amounts, heads, base
 
 
 def generate(db: Session, game: Game) -> Bill | None:
@@ -75,8 +76,7 @@ class BillBook:
         if fee is None or fee <= 0:
             return None  # 未定价不出账（挂提醒等补填）；免费局（0 元）无账可出
         shares = self._shares(game)
-        amounts, heads = _split(shares, fee, game.organizer_id)
-        base = fee // heads
+        amounts, heads, base = _split(shares, fee, game.organizer_id)
         bill = Bill(
             game_id=game.id,
             fee_total=fee,
@@ -129,8 +129,7 @@ class BillBook:
         确认页亮出的数就是点定后出的账，两处永远是同一个数。"""
         game = self._owned_game(game_id, organizer_id)
         shares = self._shares(game)
-        amounts, heads = _split(shares, amount, game.organizer_id)
-        base = amount // heads
+        amounts, heads, base = _split(shares, amount, game.organizer_id)
         return {
             "heads": heads,
             "per_head": base,
@@ -342,14 +341,9 @@ class BillBook:
     # ---- 内部 ----
 
     def _owned_game(self, game_id: int, organizer_id: int) -> Game:
-        """组织者守卫（同 GameBook._owned 口径）：账是钱的事，只认组织者本人——
-        管理员现场同权但不沾账（C2），不走 live 的分级权。"""
-        game = self.db.get(Game, game_id)
-        if game is None:
-            raise errors.game_not_found()
-        if game.organizer_id != organizer_id:
-            raise errors.not_organizer()
-        return game
+        """组织者守卫（单一源 game_views.owned_game，局簿同份）：账是钱的事，只认
+        组织者本人——管理员现场同权但不沾账（C2），不走 live 的分级权。"""
+        return owned_game(self.db, game_id, organizer_id)
 
     def _billed_game(self, game_id: int) -> tuple[Game, Bill]:
         """有账的局（settle 用）：没这场局 game_not_found、没出账 bill_not_found。"""
@@ -367,11 +361,7 @@ class BillBook:
         """组织者守卫 + 有账守卫（receive 用）：越权先于账存在与否——
         球友探测别人的局号拿到的也是同一个 403，不借错误码差异嗅探账本。"""
         game = self._owned_game(game_id, organizer_id)
-        bill = self.db.execute(
-            select(Bill).where(Bill.game_id == game_id)
-        ).scalar_one_or_none()
-        if bill is None:
-            raise errors.bill_not_found()
+        _, bill = self._billed_game(game_id)  # 二次 db.get 同体命中，无额外查询
         return game, bill
 
     def _row_or_404(self, bill_id: int, account_id: int) -> BillRow:

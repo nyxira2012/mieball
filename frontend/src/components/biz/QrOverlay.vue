@@ -39,7 +39,7 @@
 import { computed } from "vue";
 import { useLiveStore, isArrived } from "@/stores/live";
 import { qrSvg } from "@/utils/qr";
-import { deepUrl } from "@/utils/deeplink";
+import { liveShareUrl } from "@/utils/deeplink";
 
 defineProps({
   visible: { type: Boolean, default: false },
@@ -63,7 +63,7 @@ const ended = computed(() => !!liveStore.live?.endedAt);
 /** 码芯内容：进现场的深链（id>0 才编——stub 局没有真 id，不编废链接） */
 const qrText = computed(() => {
   const id = liveStore.liveView?.gameId ?? liveStore.live?.g.id ?? 0;
-  return id > 0 ? deepUrl(`/pages/live/live?id=${id}`) : "";
+  return id > 0 ? liveShareUrl(id) : "";
 });
 const svg = computed(() => (qrText.value ? qrSvg(qrText.value) : ""));
 </script>

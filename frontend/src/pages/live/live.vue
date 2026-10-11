@@ -290,30 +290,33 @@ function openProfile(id: number): void {
   ui.openSheet({ type: "profile", userId: id });
 }
 
-/** ＋到场：游客先名片建号（选项A 扫码自签到链路保留）；抽屉是代办工具（§4.3 代办到场/带访客），
-    非全权不开（A3 入口即拦，needFull 单一源）——球友自己报到走「我到了」钮或扫码 arriveMe */
-function onCheckin(): void {
+/** 签到族共门（＋到场/我到了同闸）：取当前局；游客先名片建号（选项A 扫码自签到
+    链路保留，建号成功自动签到），登录后返回局 id 放行 */
+function guestGate(): { gameId: number } | null {
   const g = L.value?.g;
-  if (!g) return;
+  if (!g) return null;
   if (session.isGuest) {
     ui.signupThen({ pendingCheckin: { gameId: g.id } });
-    return;
+    return null;
   }
-  if (!liveStore.needFull()) return;
+  return { gameId: g.id };
+}
+
+/** ＋到场：抽屉是代办工具（§4.3 代办到场/带访客），非全权不开（A3 入口即拦，
+    needFull 单一源）——球友自己报到走「我到了」钮或扫码 arriveMe */
+function onCheckin(): void {
+  const t = guestGate();
+  if (!t || !liveStore.needFull()) return;
   liveSheet.value = { k: "checkin" };
 }
 
 /** 我到了（A1 自己那行的醒目签到键；§5-2 断裂修复）：显式点一下才算签（§4.2 深链不自动签）。
     已登录成员直走 arriveMe——未入册空降建行、在册未到 setCheck 自报、已到场吃
-    「你已经在场了」句，全在链内；游客照旧先名片建号（同 ＋到场，建号成功自动签到） */
+    「你已经在场了」句，全在链内 */
 function onArriveMe(): void {
-  const g = L.value?.g;
-  if (!g) return;
-  if (session.isGuest) {
-    ui.signupThen({ pendingCheckin: { gameId: g.id } });
-    return;
-  }
-  void liveStore.arriveMe(g.id);
+  const t = guestGate();
+  if (!t) return;
+  void liveStore.arriveMe(t.gameId);
 }
 
 /** 规则抽屉入口（2.4 §4.1 推翻 2.2 批1 入口拦截）：球友照开、抽屉内只读化
@@ -492,40 +495,7 @@ function goOpenTonight(): void {
   padding: calc(env(safe-area-inset-top) + 14px) 18px;
 }
 
-/* 加载骨架（A2）：顶条/两卡/候场条的形状暗示，灰条脉动即可——不追形似 */
-.skel-wrap {
-  padding: calc(env(safe-area-inset-top) + 20px) 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.sk {
-  border-radius: 12px;
-  background: rgba(245, 241, 232, 0.06);
-  animation: skpulse 1.2s ease-in-out infinite;
-}
-.sk-t {
-  height: 96px;
-}
-.sk-card {
-  height: 150px;
-}
-.sk-card.d1 {
-  animation-delay: 0.15s;
-}
-.sk-bar {
-  height: 54px;
-  animation-delay: 0.3s;
-}
-@keyframes skpulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
-}
+/* 加载骨架（A2）：.skel-wrap/.sk 族是全局类（base.scss 单一源，recap 子页同款） */
 
 .kt30 {
   margin-top: 30px;

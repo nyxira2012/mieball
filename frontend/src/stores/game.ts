@@ -26,7 +26,6 @@ import {
   apiQuitGame,
   apiRestoreGame,
   apiSaveIntent,
-  type FeePreviewApi,
   type GameViewApi,
   type IntentViewApi,
 } from "@/api/games";
@@ -37,6 +36,8 @@ import type {
   MyIntent,
   PublishGameInput,
 } from "@/api/types";
+import { ApiError } from "@/api/http";
+import { deadRowKind } from "@/utils/format";
 import { useUiStore } from "./ui";
 
 /** game_view（线上 snake）→ Game（store camel）：唯一映射点 */
@@ -159,12 +160,23 @@ export const useGameStore = defineStore("game", () => {
 
   /* ---- 读 ---- */
 
+  /** 游客静默闸（「我的」数据族单一出口）：游客没有「我的局/我的意向/打球记录」，
+      401 no_identity 归静默空，其余错误照抛由页面 errText toast——各页面不再
+      各写一遍特判（页面只管 toast）。bills store 的 isDemo 前置空视图是同族先例 */
+  function guestQuiet(fn: () => Promise<void>): Promise<void> {
+    return fn().catch((e) => {
+      if (!(e instanceof ApiError && e.code === "no_identity")) throw e;
+    });
+  }
+
   async function loadGames(): Promise<void> {
     games.value = (await track(apiListGames)).map(toGame);
   }
 
   async function loadMine(): Promise<void> {
-    myGames.value = (await track(apiMyGames)).map(toGame);
+    await guestQuiet(async () => {
+      myGames.value = (await track(apiMyGames)).map(toGame);
+    });
   }
 
   /** 详情（终态照常 200；不存在抛 game_not_found 由页面转说明页） */
@@ -186,19 +198,23 @@ export const useGameStore = defineStore("game", () => {
   }
 
   async function loadMyIntent(): Promise<void> {
-    const v = await track(apiMyIntent);
-    myIntent.value = v
-      ? { slots: [...v.slots], frequency: v.frequency, note: v.note }
-      : null;
+    await guestQuiet(async () => {
+      const v = await track(apiMyIntent);
+      myIntent.value = v
+        ? { slots: [...v.slots], frequency: v.frequency, note: v.note }
+        : null;
+    });
   }
 
   /** 打球记录（2.6）：整袋落位（toGame 映射单点），排序真值在后端 */
   async function loadPlaylog(): Promise<void> {
-    const v = await track(apiPlaylog);
-    playlog.value = {
-      games: v.games.map(toGame),
-      matchesCount: v.matches_count,
-    };
+    await guestQuiet(async () => {
+      const v = await track(apiPlaylog);
+      playlog.value = {
+        games: v.games.map(toGame),
+        matchesCount: v.matches_count,
+      };
+    });
   }
 
   /* ---- 局簿写动作 ---- */
@@ -299,12 +315,18 @@ export const useGameStore = defineStore("game", () => {
     return g;
   }
 
-  /** 补填确认步定值（1.3 §4.5「将按人均 X 元向 N 人出账」）：纯现算，不落库不 toast */
+  /** 补填确认步定值（1.3 §4.5「将按人均 X 元向 N 人出账」）：纯现算，不落库不 toast。
+      snake→camel 在此收口（映射规约同 toGame），组件不吃线上形状 */
   async function feePreview(
     id: number,
     amount: number,
-  ): Promise<FeePreviewApi> {
-    return track(() => apiGameFeePreview(id, amount));
+  ): Promise<{ heads: number; perHead: number; organizerShare: number }> {
+    const v = await track(() => apiGameFeePreview(id, amount));
+    return {
+      heads: v.heads,
+      perHead: v.per_head,
+      organizerShare: v.organizer_share,
+    };
   }
 
   /** 补填总价（散场后从未填价的局）：>0 当场出账、=0 只定值；价格就此定死 */
@@ -387,6 +409,14 @@ export const useGameStore = defineStore("game", () => {
     return pick(games.value) ?? pick(myGames.value);
   });
 
+  /** 登记口径（5.1 单一源，我的页与登记页同消费）：myGames 去死局行；打完 = done */
+  const mySignups = computed(() =>
+    myGames.value.filter((g) => deadRowKind(g) === null),
+  );
+  const myDone = computed(() =>
+    mySignups.value.filter((g) => g.status === "done"),
+  );
+
   return {
     games,
     myGames,
@@ -395,6 +425,8 @@ export const useGameStore = defineStore("game", () => {
     myIntent,
     loading,
     liveGame,
+    mySignups,
+    myDone,
     playlog,
     findGame,
     loadGames,

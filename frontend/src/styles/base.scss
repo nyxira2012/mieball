@@ -218,3 +218,39 @@ h1.brand em,
   color: var(--coral);
   background: rgba(255, 90, 54, 0.08);
 }
+
+/* 加载骨架灰块（A2 · live/recap 两页共用的全局类）：顶条/两卡/候场条的形状暗示，
+   灰条脉动即可——不追形似（页面直接写 .skel-wrap + .sk 变体，不再各自 scoped 复制） */
+.skel-wrap {
+  padding: calc(env(safe-area-inset-top) + 20px) 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.sk {
+  border-radius: 12px;
+  background: rgba(245, 241, 232, 0.06);
+  animation: skpulse 1.2s ease-in-out infinite;
+}
+.sk-t {
+  height: 96px;
+}
+.sk-card {
+  height: 150px;
+}
+.sk-card.d1 {
+  animation-delay: 0.15s;
+}
+.sk-bar {
+  height: 54px;
+  animation-delay: 0.3s;
+}
+@keyframes skpulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}

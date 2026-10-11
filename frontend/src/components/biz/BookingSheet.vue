@@ -26,7 +26,7 @@
         {{
           isZeroFee
             ? "免费场 · 费用定为 ¥0，不出账，提醒消失"
-            : `将按人均 ¥${preview.per_head} 元向 ${preview.heads} 人出账`
+            : `将按人均 ¥${preview.perHead} 元向 ${preview.heads} 人出账`
         }}
       </view>
 
@@ -165,7 +165,6 @@ import AppInput from "@/components/ui/AppInput.vue";
 import { useGameStore } from "@/stores/game";
 import { useUiStore } from "@/stores/ui";
 import { errText } from "@/api/http";
-import type { FeePreviewApi } from "@/api/games";
 
 const props = defineProps({
   gameId: { type: Number, required: true },
@@ -236,8 +235,13 @@ const feeHint = computed(() => {
     : `按现在 ${hs} 人 · 人均 ¥${Math.round(n / Math.max(1, hs))}（人多会更低）`;
 });
 
-/* ---- 补填形态（1.3 §4.5）：填数 → fee-preview 定值确认步 → 点定出账 ---- */
-const preview = ref<FeePreviewApi | null>(null);
+/* ---- 补填形态（1.3 §4.5）：填数 → fee-preview 定值确认步 → 点定出账 ----
+   （store 已收 camel 映射，组件不吃线上 snake 形状） */
+const preview = ref<{
+  heads: number;
+  perHead: number;
+  organizerShare: number;
+} | null>(null);
 const isZeroFee = computed(() => Number(feeText.value) === 0);
 
 /* 防呆（§4.5「这最后一眼能拦住」）：总价一改，旧定值即作废、确认步弹回填数步——

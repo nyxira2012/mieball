@@ -250,7 +250,7 @@
         variant="burn"
         block
         class="mt12"
-        @click="onStart"
+        @click="onLive"
         >▶ 开始打球</AppButton
       >
       <AppButton
@@ -308,7 +308,7 @@
 /* 球局详情（alpha.html:1400-1467 · 1.2 接线修订面）。数据源 = game store 的 loadDetail/current；
    分享 = 系统分享面板优先、复制链接兜底（微信自定义卡片待服务号资质）；
    「到截止判定」手动按钮退役（懒判定归后端）。 */
-import { computed, onUnmounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { onLoad, onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import BackRow from "@/components/biz/BackRow.vue";
@@ -327,9 +327,10 @@ import {
 } from "@/utils/format";
 import { durTxt, isoDay, isoHm } from "@/utils/time";
 import { goLive, goRecap } from "@/utils/nav";
-import { deepUrl } from "@/utils/deeplink";
+import { gameShareUrl } from "@/utils/deeplink";
 import { shareLink } from "@/utils/share";
 import { DEAD_LINK_MSG } from "@/utils/recap";
+import { useSlowHint } from "@/composables/useSlowHint";
 
 const store = useGameStore();
 const ui = useUiStore();
@@ -343,26 +344,18 @@ onLoad((options) => {
   gameId.value = Number.isFinite(n) ? n : null;
 });
 
-/* A2 加载：等待提示，超 2 秒提示网络问题（仿 meet.vue slowTimer） */
-const slow = ref(false);
-let slowTimer: ReturnType<typeof setTimeout> | null = null;
+/* A2 加载：等待提示，超 2 秒提示网络问题（useSlowHint 单一源，meet 同款） */
+const { slow } = useSlowHint(() => loading.value);
 
 onShow(() => {
   if (gameId.value == null || loading.value) return;
   loading.value = true;
-  if (slowTimer) clearTimeout(slowTimer);
-  slowTimer = setTimeout(() => (slow.value = true), 2000);
   store
     .loadDetail(gameId.value)
     .catch(() => undefined) // 404/断网 → 走下方说明页兜底
     .finally(() => {
       loading.value = false;
-      if (slowTimer) clearTimeout(slowTimer);
-      slow.value = false; // 复位毛刺：上一轮慢网点亮的 slow 不能带进下一轮加载
     });
-});
-onUnmounted(() => {
-  if (slowTimer) clearTimeout(slowTimer);
 });
 
 const game = computed(() =>
@@ -474,10 +467,7 @@ const meId = computed(() => useUserStore().me.id);
     维持挂起待服务号资质） */
 const onShare = () => {
   if (!game.value) return; // 按钮只在 game 态渲染，这里防异步窗口错位
-  void shareLink(
-    deepUrl(`/pages/detail/detail?id=${game.value.id}`),
-    game.value.name,
-  );
+  void shareLink(gameShareUrl(game.value.id), game.value.name);
 };
 /** 查看战报（2.6 §4.2）：已散场的局亮（ended 锚存储事实），点进战报子页 */
 const onRecap = () => {
@@ -516,10 +506,7 @@ const onInvite = () => {
   if (game.value)
     ui.openSheet({ type: "invite-to-game", gameId: game.value.id });
 };
-/** 开始打球 → 现场页（goLive 内 ensureLive 统一守门） */
-const onStart = () => {
-  if (game.value) goLive(game.value.id);
-};
+/** 开始打球/回现场 → 现场页（goLive 内 ensureLive 统一守门；开始与回现场同一路） */
 const onLive = () => {
   if (game.value) goLive(game.value.id);
 };

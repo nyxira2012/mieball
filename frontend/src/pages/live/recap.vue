@@ -125,40 +125,7 @@ function onShare(): void {
 </script>
 
 <style lang="scss" scoped>
-/* 骨架灰块（沿 live.vue 长相；bare 壳自补边距） */
-.skel-wrap {
-  padding: calc(env(safe-area-inset-top) + 20px) 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.sk {
-  border-radius: 12px;
-  background: rgba(245, 241, 232, 0.06);
-  animation: skpulse 1.2s ease-in-out infinite;
-}
-.sk-t {
-  height: 96px;
-}
-.sk-card {
-  height: 150px;
-}
-.sk-card.d1 {
-  animation-delay: 0.15s;
-}
-.sk-bar {
-  height: 54px;
-  animation-delay: 0.3s;
-}
-@keyframes skpulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
-}
+/* 骨架灰块：.skel-wrap/.sk 族全局类（base.scss 单一源，沿现场页长相） */
 
 /* 提示页（未散场/死链）：自补壳层边距（同现场页 .empty-wrap 口径） */
 .dead-wrap {

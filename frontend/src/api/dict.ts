@@ -12,7 +12,9 @@ export const slots: Slot[] = [
 
 /** 场馆建议名单一源：LaunchSheet 地点 chips（「手输新场地」伪选项由 LaunchSheet 自加） */
 export const venueSuggestions = [
-  "工体北路 · 京篮匹克球馆",
-  "望京 · 花家地球馆",
-  "五棵松 · 万事达球馆",
+  "中冠（佛子岭）",
+  "星跃X（山姆）",
+  "热浪（林里桥）",
+  "李宁（体育园）",
+  "三琪广场",
 ];

@@ -458,9 +458,17 @@ describe("saveIntent / delIntent（意向簿）", () => {
 describe("feePreview / setFee（补填链，1.3 §4.5）", () => {
   it("feePreview 纯现算直通：回定值、不落 store、不 toast（组件确认步定值源头）", async () => {
     const { store, ui } = await loadStore();
-    const preview = { heads: 12, per_head: 58, organizer_share: 62 };
-    api.apiGameFeePreview.mockResolvedValue(preview);
-    await expect(store.feePreview(5, 700)).resolves.toEqual(preview);
+    api.apiGameFeePreview.mockResolvedValue({
+      heads: 12,
+      per_head: 58,
+      organizer_share: 62,
+    });
+    // store 收 camel 映射（组件不吃线上 snake 形状，映射规约同 toGame）
+    await expect(store.feePreview(5, 700)).resolves.toEqual({
+      heads: 12,
+      perHead: 58,
+      organizerShare: 62,
+    });
     expect(api.apiGameFeePreview).toHaveBeenCalledWith(5, 700);
     expect(ui.toastMsg).toBe(""); // 不 toast
     expect(store.games).toHaveLength(0); // 不落 store（纯现算，不回填）

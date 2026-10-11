@@ -182,7 +182,7 @@ const playing = computed(
 /** 本机账（记分本地化的显示源：服务端不记进行中比分，视图 sa/sb 位恒 0）；
     无账（这片还没点过分）显示 0:0 */
 const local = computed(
-  () => liveStore.localScores[props.court.id] ?? { sa: 0, sb: 0, last: null },
+  () => liveStore.localScores[props.court.id] ?? { sa: 0, sb: 0, history: [] },
 );
 
 /** 该片最新落账战报（「上一场 · 改分」入口的真值源，latestMatchOf 单一源——

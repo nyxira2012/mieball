@@ -36,11 +36,13 @@ from .game_views import (
     death_day,
     derive,
     game_view,
+    is_forced,
     lock_window_error,
     masked,
+    owned_game,
 )
 from .live import LiveBook
-from .playlog import matches_count, played_game_ids
+from .playlog import playlog_source
 
 VISIBILITIES = ("played", "public", "invite_only")
 # 工具箱受理窗口 TOOLBOX_STATUSES 已随写窗谓词迁 game_views（闸旗同源，
@@ -207,7 +209,7 @@ class GameBook:
         （with_entries=False），按散场时刻倒序（同刻 id desc 兜稳定序）；
         matches_count=累计上场对局数，与列表行数解耦（缺席照摊进列表、场数不加）。"""
         self._evaluate()
-        ids = played_game_ids(self.db, account_id)
+        ids, matches_count = playlog_source(self.db, account_id)
         games = (
             self.db.execute(
                 select(Game)
@@ -222,7 +224,7 @@ class GameBook:
             "games": [
                 self._view(game, viewer_id=account_id, batch=batch) for game in games
             ],
-            "matches_count": matches_count(self.db, account_id),
+            "matches_count": matches_count,
         }
 
     # ---- 详情（链接即门票：匿名可看、档位不拦；终态照常 200 带状态） ----
@@ -557,13 +559,8 @@ class GameBook:
     # ---- 内部 ----
 
     def _owned(self, game_id: int, organizer_id: int) -> Game:
-        """组织者守卫：查无 → 404，非本人局 → 403（改局与工具箱动作共用）。"""
-        game = self.db.get(Game, game_id)
-        if game is None:
-            raise errors.game_not_found()
-        if game.organizer_id != organizer_id:
-            raise errors.not_organizer()
-        return game
+        """组织者守卫（单一源 game_views.owned_game，账簿同份）：改局与工具箱动作共用。"""
+        return owned_game(self.db, game_id, organizer_id)
 
     def _check_booking_window(self, game: Game) -> None:
         """订场/清空的改价窗口（1.3 §4.5 修订①）——真值收在 game_views.
@@ -598,7 +595,7 @@ class GameBook:
                 .all()
             )
             for game in expired:
-                forced = game.manual_lock or bool(game.courts)
+                forced = is_forced(game)  # 必开单一源（开账闸/卡片同份，手拼已收）
                 if forced or self._heads(game.id) >= game.min_players:
                     game.state = "locked"
                 else:
