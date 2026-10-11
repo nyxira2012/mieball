@@ -63,10 +63,10 @@ const list = computed<Game[]>(() => {
   return from ? all.filter((g) => new Date(g.startAt) >= from) : all;
 });
 
-/** 空态文案二分：整袋就空=还没打过；筛完才空=换个筛法（沿用原句语义） */
+/** 空态文案二分：整袋就空=还没打过（指路去打第一场）；筛完才空=换个筛法 */
 const emptyText = computed(() =>
   (game.playlog?.games.length ?? 0) === 0
-    ? "还没有打过的球局"
+    ? "还没有打过的球局 · 去约球页打第一场"
     : "这段期间没有打过的局 · 换个筛法",
 );
 

@@ -41,7 +41,8 @@
           <!-- 空榜/加载/失败三态：0 圈员=空榜句；在途=加载句；失败=点击重试 -->
           <EmptyBox v-if="!rows.length" :text="boardTxt" @click="retryBoard" />
         </view>
-        <!-- alpha:1874/1774-1784 尾部：点击亦可加载；全部加载完显示完毕文案（逐字） -->
+        <!-- alpha:1874/1774-1784 尾部：上滑/点尾行加载；全部加载完显示完毕文案。
+             2026-10-11 删「(x/y) · 点击亦可加载」——计数与说明书双病（同约球页意向区头） -->
         <view class="rank-tail" @click="loadMoreRank">
           <template v-if="done">
             <text class="tl-dim"
@@ -50,10 +51,6 @@
           </template>
           <template v-else>
             <text class="tl-lemon">↑ 上滑显示更多</text>
-            <!-- alpha:1782 两段间原有空格，这里用 4px 间距近似 -->
-            <text class="tl-dim tl-gap"
-              >({{ rankLimit }}/{{ rows.length }}) · 点击亦可加载</text
-            >
           </template>
         </view>
       </view>
@@ -288,16 +285,13 @@ watch(rOpen, () => nextTick(() => measure()));
   color: var(--lemon);
   background: rgba(255, 212, 0, 0.05);
 }
-/* alpha:1779/1782 尾部两态配色 */
+/* alpha:1779/1782 尾部两态配色（2026-10-11 只剩上滑/完毕两态，tl-gap 随计数行删） */
 .tl-dim {
   color: var(--dim);
 }
 .tl-lemon {
   color: var(--lemon);
   font-weight: 700;
-}
-.tl-gap {
-  margin-left: 4px;
 }
 /* alpha.html:532 .rulefold */
 .rulefold {

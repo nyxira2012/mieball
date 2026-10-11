@@ -6,13 +6,16 @@ import { errText } from "@/api/http";
 import { useGameStore } from "@/stores/game";
 import { useLiveStore } from "@/stores/live";
 import { useUiStore } from "@/stores/ui";
+import { useUserStore } from "@/stores/user";
 import type { SignupPending } from "@/stores/ui";
 import { goMeet } from "@/utils/nav";
+import { autoGameName } from "@/utils/format";
 
 export async function runPendingResume(pending: SignupPending): Promise<void> {
   const game = useGameStore();
   const liveStore = useLiveStore();
   const ui = useUiStore();
+  const user = useUserStore();
   try {
     if (pending.pendingJoin) {
       await game.joinGame(
@@ -20,7 +23,12 @@ export async function runPendingResume(pending: SignupPending): Promise<void> {
         pending.pendingJoin.bring,
       );
     } else if (pending.pendingLaunch) {
-      await game.publishGame(pending.pendingLaunch);
+      // 游客发局未填名：此刻建号已成、昵称已落地，兜底名「昵称 · 场馆」在此落定
+      // （与 LaunchSheet 同源 autoGameName；填表时算会落进「访客/你的昵称」）
+      const input = { ...pending.pendingLaunch };
+      if (!input.name)
+        input.name = autoGameName(user.me.name, input.venue_name);
+      await game.publishGame(input);
       goMeet(); // 建局成功回约球页（与 LaunchSheet.publish 同径）
     } else if (pending.pendingCheckin) {
       await liveStore.arriveMe(pending.pendingCheckin.gameId); // 2.1 选项A：建号即球友，自动「我到了」

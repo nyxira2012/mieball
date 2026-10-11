@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Game, Person } from "@/api/types";
 import {
+  autoGameName,
   courtDisplayName,
   deadRowKind,
   freqName,
@@ -338,6 +339,16 @@ describe("slotName / freqName / slotBig（alpha:890-891, 1023-1024）", () => {
     expect(slotBig("ln")).toEqual(["午休", "工作日"]);
     expect(slotBig("we-d")).toEqual(["白天", "周末"]);
     expect(slotBig("we-n")).toEqual(["晚上", "周末"]);
+  });
+});
+
+describe("autoGameName（自动局名「昵称 · 场馆末段」，2026-10-11 时间锚改人锚）", () => {
+  it("昵称+场馆；复合场馆取末段；空场馆单用昵称", () => {
+    expect(autoGameName("亮马河 Ken", "亮马河 · 滨河球场")).toBe(
+      "亮马河 Ken · 滨河球场",
+    );
+    expect(autoGameName("老王", "朝阳馆")).toBe("老王 · 朝阳馆");
+    expect(autoGameName("老王", "")).toBe("老王");
   });
 });
 

@@ -24,9 +24,7 @@
       </AppField>
 
       <AppField label="选个头像">
-        <view class="preset-note"
-          >点一下秒选；跳过用默认图案（装扮页可细调）</view
-        >
+        <view class="preset-note">跳过就用默认图案 · 装扮页可细调</view>
         <view class="presets">
           <view
             v-for="(p, i) in PRESETS"

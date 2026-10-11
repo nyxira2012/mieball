@@ -102,12 +102,10 @@
       >
     </template>
 
-    <!-- alpha:1091-1097 意向区头：CSS 吸顶 + 贴底钉位；整头点击切换焦点，scope 两钮 stopPropagation -->
+    <!-- alpha:1091-1097 意向区头：CSS 吸顶 + 贴底钉位；整头点击切换焦点（无提示文案，纯加成交互），
+         scope 两钮 stopPropagation；当前档位看按钮亮态，不出统计行 -->
     <view class="isec-head" :style="dockStyle" @click="focusIntent">
       <text class="mh-t">意向</text>
-      <text class="mh-n"
-        >{{ scopeLabel }} {{ ipool.length }} 条 · 点击切换焦点 ⇅</text
-      >
       <view class="sp" />
       <view
         class="mhbtn"
@@ -123,7 +121,8 @@
       >
     </view>
 
-    <!-- alpha:1098-1102 意向区内容：我的意向条（改/删）或 留意向入口 + IntentCard 列表 + 说明行 -->
+    <!-- alpha:1098-1102 意向区内容：我的意向条（改/删）或 留意向入口 + IntentCard 列表
+         （自己的意向只在顶部条，不进卡列表） -->
     <view class="intent-sec">
       <view v-if="game.myIntent" class="idock-my">
         <text class="my-txt"
@@ -146,11 +145,7 @@
         :intent="i"
         @tap="onIntentTap(i)"
       />
-      <EmptyBox v-if="!ipool.length" text="这里还没有意向" />
-
-      <view class="sub intent-note"
-        >默认只看打过球的 · 点击卡片查看球友名片</view
-      >
+      <EmptyBox v-if="!ipool.length" :text="intentEmptyText" />
     </view>
 
     <view class="tailpad" />
@@ -178,6 +173,7 @@ import { useGameStore } from "@/stores/game";
 import { useLiveStore } from "@/stores/live";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
+import { useUserStore } from "@/stores/user";
 import {
   deadRowKind,
   freqName,
@@ -194,6 +190,7 @@ const game = useGameStore();
 const liveStore = useLiveStore();
 const session = useSessionStore();
 const ui = useUiStore();
+const user = useUserStore();
 
 /* ---- 游客入口（见模板注释）：建号直开名片卡（无挂起动作，名片卡内含老球友找回） ---- */
 function onSignup(): void {
@@ -252,7 +249,7 @@ const tickerItems = computed<TickerItem[]>(() => {
     .forEach((g) =>
       bits.push({
         tag: "邀请",
-        text: `${g.organizer.nickname} 邀你加入「${g.name}」· 点一下就加入`,
+        text: `${g.organizer.nickname} 邀你加入「${g.name}」`,
       }),
     );
   const nx = game.myGames
@@ -268,7 +265,7 @@ const tickerItems = computed<TickerItem[]>(() => {
     });
   }
   if (!bits.length)
-    bits.push({ tag: "NOW", text: "暂无要开的局 · 意向底坞里攒下一场" });
+    bits.push({ tag: "NOW", text: "暂无要开的局 · 意向里攒着下一场" });
   return bits;
 });
 
@@ -306,12 +303,20 @@ const grayMine = computed(() =>
 /* ---- A2 加载：等待提示，超 2 秒提示网络问题（useSlowHint 单一源，detail 同款） ---- */
 const { slow } = useSlowHint(() => game.loading);
 
-/* ---- 意向区（alpha:1058-1061/1093）：scope 熟人=同局打过（intent.known 后端定值，裁决②） ---- */
-const ipool = computed(() =>
-  game.intents.filter((i) => intentScope.value === "all" || i.known),
+/* ---- 意向区（alpha:1058-1061/1093）：scope 熟人=同局打过（intent.known 后端定值，裁决②）。
+     后端列表是全量意向簿（组织者翻的主场景），自己的意向在顶部「我的意向」条已有——
+     卡列表只放别人的（user.me 身份位单一源，游客 id=0 天然无碰撞） ---- */
+const others = computed(() =>
+  game.intents.filter((i) => i.account.id !== user.me.id),
 );
-const scopeLabel = computed(() =>
-  intentScope.value === "all" ? "所有人" : "打过",
+const ipool = computed(() =>
+  others.value.filter((i) => intentScope.value === "all" || i.known),
+);
+/* 空态两分：没有别人的意向 → 召唤留意向（冷启动转化点）；有但「打过」档滤空 → 指路切档 */
+const intentEmptyText = computed(() =>
+  others.value.length
+    ? "打过的人还没留意向 · 切到「所有人」看看"
+    : "告诉球友留下意向吧",
 );
 /* alpha:1061 我的意向摘要：slots 以「 / 」相连 */
 const myIntentLine = computed(() =>
@@ -625,10 +630,6 @@ watch(
   flex: none;
 }
 /* 小操作按钮走全局 .tbtn/.tbtn.on-no（base.scss 收源） */
-.intent-note {
-  font-size: 11px;
-  margin: 2px 2px 0;
-}
 .tailpad {
   height: 24px;
 }

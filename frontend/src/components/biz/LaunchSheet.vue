@@ -133,6 +133,7 @@ import WheelPicker from "@/components/ui/WheelPicker.vue";
 import { useGameStore } from "@/stores/game";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
+import { useUserStore } from "@/stores/user";
 import VenuePicker from "@/components/biz/VenuePicker.vue";
 import { recordVenue } from "@/utils/venues";
 import type { CourtMode, PublishGameInput, Visibility } from "@/api/types";
@@ -149,6 +150,7 @@ const props = defineProps({
 const game = useGameStore();
 const session = useSessionStore();
 const ui = useUiStore();
+const user = useUserStore();
 
 /* ---- 拨盘常量与网格 ---- */
 const DAY_N = 14; // 日期范围：今天起 14 天
@@ -199,7 +201,7 @@ const lf = reactive({
   min: 4,
   cap: 6,
   visibility: "played" as Visibility,
-  scoring: 11,
+  scoring: 15,
   rotation: "balance" as CourtMode,
   scoreRule: "rally" as "rally" | "serve",
 });
@@ -338,9 +340,11 @@ watch([dayI, startMin], () => {
   if (dlAuto.value) applyDl(autoDlDate.value);
 });
 
-/** 自动默认名「日段 · 地点」：占位提示与不填时的发布名同源（utils/format 的 autoGameName） */
+/** 自动默认名「昵称 · 场馆」（utils/format 的 autoGameName 单一源）：占位提示与不填时的
+    发布名同源；游客填表时还没昵称，占位喂「你的昵称」中性词，真名延迟到真正发布那一刻
+    （登录者此处直接落定，游客建号成功后由 pendingResume 落定——防「访客 · 场馆」入库） */
 const autoName = computed(() =>
-  autoGameName(dayLabels.value[dayI.value], venueSel.value),
+  autoGameName(session.isGuest ? "你的昵称" : user.me.name, venueSel.value),
 );
 
 function lfMin(v: number): void {
@@ -374,7 +378,7 @@ function init(): void {
   venueSel.value = ed ? ed.venueName : "";
   lf.min = ed ? ed.minPlayers : 4;
   lf.cap = ed ? ed.maxPlayers : 6;
-  lf.scoring = ed ? ed.scoring : 11;
+  lf.scoring = ed ? ed.scoring : 15;
   lf.rotation = ed ? ed.rotation : "balance";
   lf.scoreRule = ed?.scoreRule === "serve" ? "serve" : "rally";
   if (ed) {
@@ -416,7 +420,8 @@ async function publish(): Promise<void> {
     playStart.value.getTime() + (endMin.value - startMin.value) * 60000,
   );
   const input: PublishGameInput = {
-    name: lf.name.trim() || autoName.value,
+    // 游客未填名时带空名走——建号前没有昵称，兜底名由 pendingResume 在真正发布那刻落定
+    name: lf.name.trim() || (session.isGuest ? "" : autoName.value),
     start_at: toIso(playStart.value),
     end_at: toIso(endDate),
     deadline_at: isEd.value ? "" : toIso(dlDate.value),

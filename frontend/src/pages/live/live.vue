@@ -44,19 +44,16 @@
       </view>
     </template>
 
-    <!-- 无 live 空态（alpha:1532-1535 逐字；bare 壳下自补边距） -->
+    <!-- 无 live 空态（alpha:1532-1535 版式；bare 壳下自补边距）。按钮文案 2026-10-11 改——
+         没球打的去向是约球页的两个低门槛动作（找局/留意向），不再预设用户当组织者 -->
     <template v-else-if="!liveStore.hasLive">
       <view class="empty-wrap">
         <view class="kicker kt30">Court</view>
         <view class="brand">现<text class="bem">场</text></view>
         <EmptyBox class="et20">
           <view>还没有进行中的球局</view>
-          <AppButton
-            variant="pri"
-            size="sm"
-            class="go-btn"
-            @click="goOpenTonight"
-            >去开今晚的局 ▸</AppButton
+          <AppButton variant="pri" size="sm" class="go-btn" @click="goMeet"
+            >先约球或留下意向 ▸</AppButton
           >
         </EmptyBox>
       </view>
@@ -464,11 +461,6 @@ onHide(() => {
   liveStore.stopPolling();
 });
 onUnload(() => liveStore.stopPolling());
-
-/** alpha:1534-1535 空态按钮 → 约球页找局/发局（mock 演示局已随隔离线退场，101 不再是落点） */
-function goOpenTonight(): void {
-  goMeet();
-}
 </script>
 
 <style lang="scss" scoped>

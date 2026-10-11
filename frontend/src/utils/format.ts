@@ -69,10 +69,13 @@ export const deadRowKind = (g: Game): "pending" | "restore" | "gray" | null => {
   return null;
 };
 
-/** 自动局名「日段 · 场馆末段」单一源（不填名时的兜底名）：LaunchSheet 占位/发布共用，
-    改规则只动这里，预览名与落库名不会劈叉 */
-export const autoGameName = (time: string, venue: string): string =>
-  `${time.split(" ")[0]} · ${venue.split(" · ").pop()}`;
+/** 自动局名「昵称 · 场馆末段」单一源（不填名时的兜底名）：LaunchSheet 占位/发布共用，
+    改规则只动这里，预览名与落库名不会劈叉；场馆空则单用昵称（2026-10-11 时间锚改人锚——
+    日期卡面另有，名字里「谁组的局」辨识度更高） */
+export const autoGameName = (nickname: string, venue: string): string => {
+  const tail = venue.split(" · ").pop()?.trim() ?? "";
+  return tail ? `${nickname} · ${tail}` : nickname;
+};
 
 /** 卡片入场两字段派生（2.5 §4.1/4.2/4.4）：只对「我的局」（组织者 ∨ 正式报名；waitlist/被邀/
     游客永无入口）判定——

@@ -12,10 +12,11 @@
       <view class="sheet-hint"
         >翻意向列表挑人 · 局会出现在 ta 的「我的局」里，点一下就加入</view
       >
-      <!-- 后端已排未邀在前、已邀靠后（updated_at 倒序），前端保持该序 -->
-      <template v-if="game.intents.length">
+      <!-- 后端已排未邀在前、已邀靠后（updated_at 倒序），前端保持该序；
+           自己与已在本局的人不进挑人列表（见 script pickable，视角减法） -->
+      <template v-if="pickable.length">
         <view
-          v-for="i in game.intents"
+          v-for="i in pickable"
           :key="i.account.id"
           class="mrow"
           @click="onInvite(g.id, i.account.id)"
@@ -34,7 +35,7 @@
           </view>
         </view>
       </template>
-      <EmptyBox v-else text="还没有人留意向" />
+      <EmptyBox v-else :text="inviteEmptyText" />
     </template>
 
     <!-- ===== to-slot：翻我发起的局（alpha:1243-1247） ===== -->
@@ -107,9 +108,24 @@ const mineOpen = computed(() =>
   game.myGames.filter((x) => !!x.my?.isOrganizer && x.status === "open"),
 );
 
+/** to-game 挑人：全量意向簿减去自己（给自己发邀请是胡闹）与已在本局的人
+    （报名/候补再邀是空动作、还会错标「已邀」）——与约球页意向区同口径的视角减法 */
+const pickable = computed(() => {
+  const inGame = new Set((g.value?.entries ?? []).map((e) => e.account.id));
+  return game.intents.filter(
+    (i) => i.account.id !== userStore.me.id && !inGame.has(i.account.id),
+  );
+});
+/** 空态两分：意向簿真空 / 有但全在局里——同一条出路（分享链接拉人），两句都说实话 */
+const inviteEmptyText = computed(() =>
+  game.intents.length
+    ? "留意向的都已经在局里了 · 把链接分享出去拉新球友"
+    : "还没有人留意向 · 把局链接分享出去拉人",
+);
+
 /** alpha:1242 无局可邀：toast + openLaunch（换发局表单弹层）——挂载即判定。
     to-game 打开即拉意向：面板吃 store.intents，但只有约球页 onShow 预载过，
-    直达 detail（分享链接/刷新）时是空的，不拉会误显「还没有人留意向」。 */
+    直达 detail（分享链接/刷新）时是空的，不拉会误显空态。 */
 onMounted(() => {
   if (
     props.mode === "to-slot" &&

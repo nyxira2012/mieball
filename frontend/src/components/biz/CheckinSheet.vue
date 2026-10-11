@@ -78,7 +78,7 @@
           </view>
         </view>
       </template>
-      <EmptyBox v-else text="还没有人到场" />
+      <EmptyBox v-else text="还没有人到场 · 也可出示签到二维码让大家扫" />
     </view>
 
     <!-- ---------- 段3 带访客 ---------- -->

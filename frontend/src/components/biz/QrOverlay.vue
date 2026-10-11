@@ -5,6 +5,8 @@
        与 ChibiAvatar（Q 版头像）、TabBar（导航图标）、BrawlStage（球拍）并列的 v-html 出口；
        后续小程序化时集中替换为静态资源/canvas，调用方零改动。 -->
   <view class="qrwrap" :class="{ on: visible }" @click="emit('close')">
+    <!-- 可见关闭钮（2026-10-11 替代说明书式「点一下关闭」）：整层本就点哪都关，这里给个看得见的把手 -->
+    <view class="qr-close" @click.stop="emit('close')">✕</view>
     <view class="qr-card" @click.stop="emit('close')">
       <!-- 码不销毁（§4.9-4：散场转只读回看，同一张码扫出来就是回看） -->
       <view class="qr-box">
@@ -27,7 +29,6 @@
           >扫码签到进场 · <text class="hi">没报名的空降也扫这码</text></view
         >
       </template>
-      <view class="s s2">点一下关闭</view>
     </view>
   </view>
 </template>
@@ -94,6 +95,27 @@ const svg = computed(() => (qrText.value ? qrSvg(qrText.value) : ""));
   visibility: visible;
   pointer-events: auto;
 }
+/* 可见关闭钮：右上角圆圈 ✕（dim 配色不抢码的视线）。触点 44×44（BackRow 热区先例），
+   视觉圆 34px 经 ::before 内缩 5px 画出——几何与初版一致，只放大了可点面积 */
+.qr-close {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 13px);
+  right: 15px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+  font-size: 15px;
+}
+.qr-close::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(245, 241, 232, 0.28);
+  border-radius: 50%;
+}
 .qr-card {
   background: var(--cream);
   border-radius: 18px;
@@ -145,10 +167,6 @@ const svg = computed(() => (qrText.value ? qrSvg(qrText.value) : ""));
   color: var(--dim);
   letter-spacing: 0.12em;
   margin-top: 5px;
-}
-.qr-meta .s2 {
-  margin-top: 14px;
-  opacity: 0.6;
 }
 .qr-meta .hint {
   font-size: 11px;
