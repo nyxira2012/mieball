@@ -9,9 +9,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
+import { goBackOrMeet } from "@/utils/nav";
 
 function goBack(): void {
-  uni.navigateBack();
+  /* 栈感知兜底：正常入栈返回照旧；深链冷启动（微信分享卡直落 detail 等）栈无底，
+     navigateBack 空转——改切约球页，返回行永远是活出口 */
+  goBackOrMeet();
 }
 
 /* 吸附感知：滚动超过一小格即视为钉住（阈值 4px 顺带滤掉 iOS 回弹毛刺）。

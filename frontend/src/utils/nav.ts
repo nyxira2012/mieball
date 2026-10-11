@@ -29,6 +29,17 @@ export function goMeet(): void {
   goTab("meet");
 }
 
+/** 返回兜底（BackRow 返回行 / recap 子页完成键 共用）：栈里有上一页就正常返回；
+    深链或收藏夹冷启动时栈无底、navigateBack 是静默空操作——改切约球页，子页不留死胡同
+    （分享链接落的两个面：局详情链接直落 detail 非tab页即此病灶；战报链接落 live tab 自带 TabBar） */
+export function goBackOrMeet(): void {
+  if (getCurrentPages().length > 1) {
+    uni.navigateBack();
+    return;
+  }
+  goMeet();
+}
+
 /** 进球局详情页：路径 + query 契约单一源（meet/bills/logs/signup/live 六处共用） */
 export function goGame(id: number): void {
   uni.navigateTo({ url: `/pages/detail/detail?id=${id}` });

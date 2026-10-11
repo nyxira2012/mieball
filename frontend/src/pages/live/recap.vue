@@ -68,6 +68,7 @@ import type { LiveView } from "@/api/types";
 import { shareLink } from "@/utils/share";
 import { liveShareUrl } from "@/utils/deeplink";
 import { DEAD_LINK_MSG } from "@/utils/recap";
+import { goBackOrMeet } from "@/utils/nav";
 
 const view = ref<LiveView | null>(null);
 const booting = ref(true);
@@ -112,9 +113,10 @@ onLoad((options) => {
   void fetchView();
 });
 
-/** 完成＝退出这页回到来路（§4.2 普通子页；系统返回同效） */
+/** 完成＝退出这页回到来路（§4.2 普通子页；系统返回同效）；
+    URL 被收藏/转发冷开时栈无底——兜底切约球页（nav 契约，BackRow 同款） */
 function goBack(): void {
-  uni.navigateBack();
+  goBackOrMeet();
 }
 
 /** 分享（§4.3 链接任何人可看）：战报链接落点=现场页回看态，谁点开谁看 */
