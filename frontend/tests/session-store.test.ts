@@ -392,7 +392,7 @@ describe("微信钥匙（1.7）", () => {
       bind_token: "bt-1",
     });
     const r = await session.wechatLogin("wx_alice");
-    expect(r).toBe("ok");
+    expect(r).toEqual({ status: "ok", randomName: false });
     expect(session.status).toBe("ready");
     expect(session.account?.id).toBe(42);
     expect(session.wechatBindToken).toBe("bt-1");
@@ -406,12 +406,12 @@ describe("微信钥匙（1.7）", () => {
       bind_token: "bt-2",
     });
     const r = await session.wechatLogin("wx_new");
-    expect(r).toBe("unbound");
+    expect(r).toEqual({ status: "unbound", randomName: false });
     expect(session.isGuest).toBe(true);
     expect(session.wechatBindToken).toBe("bt-2");
   });
 
-  it("wechatLogin 快进建号（1.8 created·随机名）：落身份清草稿，报名字不说绑上", async () => {
+  it("wechatLogin 快进建号（1.8 created·随机名）：落身份清草稿，回报 randomName 不抢着报名字", async () => {
     vi.spyOn(http, "deviceMarker").mockReturnValue("dev-9");
     const session = useSessionStore();
     const ui = useUiStore();
@@ -425,7 +425,7 @@ describe("微信钥匙（1.7）", () => {
       fast: true,
       nickname: "阿强",
     });
-    expect(r).toBe("created");
+    expect(r).toEqual({ status: "created", randomName: true });
     expect(authApi.apiWechatLogin).toHaveBeenCalledWith(
       "wx_new",
       "dev-9",
@@ -436,11 +436,11 @@ describe("微信钥匙（1.7）", () => {
     expect(useUserStore().me.name).toBe("球友8421");
     expect(http.setToken).toHaveBeenCalledWith("wx-new");
     expect(http.clearCardDraft).toHaveBeenCalled(); // 与建号同款清草稿
-    expect(ui.toastMsg).toBe("名单里你叫『球友8421』，随时可改");
+    expect(ui.toastMsg).toBe(""); // 不立即 toast——名字句由 login.vue 排队（动作句先说）
     expect(session.wechatBindToken).toBeNull(); // 快进一次完成绑定，无凭条
   });
 
-  it("wechatLogin 快进建号·非随机名：不报任何话（动作原话由续办分支自己回）", async () => {
+  it("wechatLogin 快进建号·非随机名：回报 randomName=false，不报任何话（动作原话由续办分支自己回）", async () => {
     vi.spyOn(http, "deviceMarker").mockReturnValue("dev-9");
     const session = useSessionStore();
     const ui = useUiStore();
@@ -454,7 +454,7 @@ describe("微信钥匙（1.7）", () => {
       fast: true,
       nickname: "阿强",
     });
-    expect(r).toBe("created");
+    expect(r).toEqual({ status: "created", randomName: false });
     expect(session.status).toBe("ready");
     expect(ui.toastMsg).toBe(""); // 手填名主人自己知道，不在这说
   });

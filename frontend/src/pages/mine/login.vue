@@ -512,7 +512,7 @@ async function handleWechatReturn(code: string, state: string): Promise<void> {
         fast: ctx.fast,
         nickname: ctx.nickname,
       });
-      if (r === "unbound") {
+      if (r.status === "unbound") {
         // 生面孔/没绑的老球友共用一副面孔（4.2/4.3）：现有名片卡原样，
         // 新面孔填卡；老球友点右上角「登录」走短信/密码，验证完自动正式绑上。
         // 落卡来源位置 wechat-return：找回面不快进、主钮保持手填（1.8 4.7）——
@@ -523,9 +523,22 @@ async function handleWechatReturn(code: string, state: string): Promise<void> {
         ui.toast("这个微信还没绑过账号 · 填张名片建号，或点右上角登录验证");
         return;
       }
-      if (r === "created") {
-        // 快进建号成（1.8 4.1）：随机名的名字回执 session 已报、动作原话由
-        // 续办分支自己回——这里只落地续办+回原页，不另加话
+      if (r.status === "created") {
+        // 快进建号成（1.8 4.1）：动作原话由续办分支自己回；随机名主人不知道
+        // 自己叫什么——名字句让动作句先说（单槽 toast 谁后到谁顶掉），有挂起
+        // 动作时等 AppToast 2200ms 展示完再补报，无动作立即说
+        if (r.randomName && session.account) {
+          const sayName = () =>
+            ui.toast(`名单里你叫『${session.account?.name}』，随时可改`);
+          const hasPendingAction =
+            ctx.pending &&
+            (ctx.pending.pendingJoin ||
+              ctx.pending.pendingLaunch ||
+              ctx.pending.pendingCheckin ||
+              ctx.pending.pendingIntent);
+          if (hasPendingAction) setTimeout(sayName, 2400);
+          else sayName();
+        }
         await landAfterWechat(ctx);
         return;
       }

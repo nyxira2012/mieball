@@ -267,7 +267,7 @@
 <script setup lang="ts">
 /* 我的页（P10）· 5.1 我的页主页面：底账入口聚合（账单/登记/记录）+ 账号区。
    alpha:1931-1976 的 meName/战绩/ELO 段位口径保留，其余换装与账本逻辑退场。 */
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
@@ -475,6 +475,18 @@ const bindBusy = ref(false);
 const bindSent = ref(false);
 const { countdown: bindCountdown, start: startBindCountdown } =
   useSmsCountdown();
+
+/* 面板是登录态无号账号的私有面：身份或号码一变（收编换身份/退出变游客），
+   展开态与输入/错误/占用指路全是上一具身份的残留——整块作废收起
+   （倒计时 useSmsCountdown 自管，不用手动清） */
+watch([() => session.isGuest, () => session.maskedPhone], () => {
+  bindPanel.value = false;
+  bindPhone.value = "";
+  bindCode.value = "";
+  bindHint.value = "";
+  bindTaken.value = false;
+  bindSent.value = false;
+});
 
 /** 行点击开合面板；开合都清残留输入（密码面板 toggle 同款） */
 function toggleBindPanel(): void {

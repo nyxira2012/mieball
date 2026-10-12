@@ -129,13 +129,13 @@ export const useSessionStore = defineStore("session", () => {
   /** 微信认人（4.1/4.2）：绑了直接进；没绑落凭条转名片/验证。凭条恒落位——
       绑着的微信想搬到别的账号，下一个验明正身凭它顶替换绑（4.5 下文）。
       1.8 快进支（opts.fast，动作弹卡主钮出发）：微信没绑过则后端直接开号
-      （created：微信生而正式绑、无凭条、与建号同款清草稿）；仅随机名时报名字
-      （回执不是补绑提示，4.1 结果 2），非随机名不在这说——挂起动作的原话
-      由续办分支自己回，不重复。 */
+      （created：微信生而正式绑、无凭条、与建号同款清草稿）。这里不 toast：
+      单槽 toast 会被续办动作原话立刻顶掉——randomName 交回调用方（login.vue）
+      排队，动作句说完再报名字（4.1 结果 2）。 */
   async function wechatLogin(
     code: string,
     opts?: { fast?: boolean; nickname?: string },
-  ): Promise<"ok" | "unbound" | "created"> {
+  ): Promise<{ status: "ok" | "unbound" | "created"; randomName: boolean }> {
     const res = await apiWechatLogin(
       code,
       deviceMarker(),
@@ -144,15 +144,14 @@ export const useSessionStore = defineStore("session", () => {
     );
     if (res.status === "created") {
       admitSession({ token: res.token, account: res.account }, true);
-      if (res.nickname_random) {
-        ui.toast(`名单里你叫『${res.account.name}』，随时可改`);
-      }
-      return "created";
+      // 名字句让动作句先说——单槽 toast 顶替，randomName 交调用方 2400ms 后补报
+      return { status: "created", randomName: res.nickname_random };
     }
     wechatBindToken.value = res.bind_token;
-    if (res.status === "unbound") return "unbound";
+    if (res.status === "unbound")
+      return { status: "unbound", randomName: false };
     admitSession({ token: res.token, account: res.account }, false);
-    return "ok";
+    return { status: "ok", randomName: false };
   }
 
   /** 占卡「微信验证进入」（4.4/4.5）：正式绑才放行（接管级），指路文案后端给全；
