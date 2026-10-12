@@ -25,6 +25,8 @@ vi.mock("@/api/auth", () => ({
   apiPasswordReset: vi.fn(),
   apiPasswordChange: vi.fn(),
   apiPasswordRedeem: vi.fn(),
+  apiPhoneBindSend: vi.fn(),
+  apiPhoneBind: vi.fn(),
   apiWechatUrl: vi.fn(),
   apiWechatLogin: vi.fn(),
   apiWechatRedeem: vi.fn(),
@@ -317,6 +319,65 @@ describe("改名片（A3）", () => {
     expect(useUserStore().me.name).toBe("路人甲");
     // 还原游客名，避免影响其他用例
     useUserStore().me.name = demo.name;
+  });
+});
+
+/* ---- 补绑手机号（1.8 §4.4）：发码透传 / 确认换装翻真 / 尾号假回落修复 ---- */
+describe("补绑手机号（1.8 §4.4）", () => {
+  /** 快进号视图：phone/phone_tail 两键皆无（后端有号才给），微信生而正式绑 */
+  const fastView: AccountView = {
+    id: 43,
+    name: "球友8421",
+    chibi: view.chibi,
+    card_bg: "gold",
+    deactivated: false,
+    has_password: false,
+    wechat_bound: true,
+  };
+
+  it("phoneTail 修复（A1）：无号快进号 → null（页面显「未绑手机」），不吃演示尾号", async () => {
+    vi.spyOn(http, "getToken").mockReturnValue("fast-token");
+    vi.mocked(authApi.apiMe).mockResolvedValue({ account: fastView });
+    const session = useSessionStore();
+    await session.init();
+    expect(session.account?.phone_tail).toBeUndefined();
+    expect(session.phoneTail).toBeNull();
+  });
+
+  it("phoneTail 修复（A1）：游客（无账号）同样 null，不再回落 4721", () => {
+    const session = useSessionStore();
+    expect(session.phoneTail).toBeNull();
+  });
+
+  it("补绑发码：409 phone_taken_redirect 原样透传不吞，身份态不动（指路不登出）", async () => {
+    const session = useSessionStore();
+    session.$patch({ status: "ready", account: fastView });
+    vi.mocked(authApi.apiPhoneBindSend).mockRejectedValue(
+      Object.assign(new Error("这个手机号注册过。如果你就是号主，去登录页…"), {
+        code: "phone_taken_redirect",
+        status: 409,
+      }),
+    );
+    await expect(session.bindPhoneSend("13800001111")).rejects.toMatchObject({
+      code: "phone_taken_redirect",
+    });
+    expect(session.status).toBe("ready"); // 不 logout 不清 token（技术设计 §3.1-1）
+  });
+
+  it("补绑确认：核销后本人视图原位换装，尾号/微信行立即翻真 + toast 在 store", async () => {
+    const session = useSessionStore();
+    session.$patch({ status: "ready", account: fastView });
+    vi.mocked(authApi.apiPhoneBind).mockResolvedValue({
+      account: { ...view, wechat_bound: true },
+    });
+    await session.bindPhoneConfirm("13800001111", "123456");
+
+    expect(authApi.apiPhoneBind).toHaveBeenCalledWith("13800001111", "123456");
+    expect(session.account?.phone_tail).toBe("1111");
+    expect(session.phoneTail).toBe("1111");
+    expect(session.wechatBound).toBe(true);
+    expect(useUserStore().me.id).toBe(42);
+    expect(useUiStore().toastMsg).toBe("手机号已绑定");
   });
 });
 

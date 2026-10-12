@@ -23,8 +23,11 @@
             <TierBadge :tier="meTier" /> DUPR <DuprScore :d="duprOf(me)" /> ·
             {{ meTier }}
           </AppChip>
-          <!-- alpha:656 尾号 chip：登录后是账号真实尾号，游客回落演示尾号 -->
-          <AppChip>尾号 ···{{ session.phoneTail }}</AppChip>
+          <!-- 尾号 chip（1.8 A1）：有号显真实尾号；无号（含游客）显「未绑手机」，
+               不吃演示尾号（假尾号骗人，顺带修正） -->
+          <AppChip>{{
+            session.phoneTail ? `尾号 ···${session.phoneTail}` : "未绑手机"
+          }}</AppChip>
           <!-- 档案卡 = 别人看到的完整档案（与打球页名单点击同支弹层，userId 0 = 我） -->
           <AppChip @click="onProfileCard">档案卡 ▸</AppChip>
           <!-- 装扮入口（与点头像同页） -->
@@ -61,17 +64,24 @@
       </view>
     </view>
 
-    <!-- 账号区（1.6 批3）：手机号=账号的根（A1 换号预防提示）；密码区块按 has_password
-         分流设/改密（4.8/4.11）；微信授权只给「即将开通」说明不放死按钮（4.12）；游客给登录入口 -->
+    <!-- 账号区（1.6 批3 · 1.8 修订）：手机号行两态（无号=「未绑定」安静行点开补绑面板，
+         除此外零补绑提示）；密码区块按 has_password 分流设/改密（4.8/4.11）；
+         微信行两态（已绑才显示）；游客给登录入口 -->
     <SectionTitle title="账号" />
     <view class="acc-links">
       <view v-if="session.isGuest" class="acc-link" @click="goLogin">
         登录 · 我是老球友（手机号找回） <text class="arr">▸</text>
       </view>
       <template v-else>
-        <view class="acc-link static">
+        <!-- 手机号行两态（1.8 A1）：有号静态照旧；无号安静常驻行（样式同「密码未设置」，
+             不标红不推送）点开补绑面板 -->
+        <view v-if="session.maskedPhone" class="acc-link static">
           <text>手机号 {{ session.maskedPhone }}</text>
           <text class="arr">账号的根</text>
+        </view>
+        <view v-else class="acc-link" @click="toggleBindPanel">
+          <text>手机号未绑定 · 补上能收通知</text>
+          <text class="arr">{{ bindPanel ? "▾" : "▸" }}</text>
         </view>
         <view
           class="acc-link"
@@ -86,9 +96,9 @@
           }}</text>
           <text class="arr">{{ pwdPanel ? "▾" : "▸" }}</text>
         </view>
-        <view class="acc-link static">
-          <text>微信授权</text>
-          <text class="arr">即将开通</text>
+        <!-- 微信行两态（1.8 用户裁决）：已绑静态行；未绑不显示整行（「即将开通」退役） -->
+        <view v-if="session.wechatBound" class="acc-link static">
+          <text>微信已绑定</text>
         </view>
       </template>
       <!-- 复制诊断日志（6.1 §4.6）：v-if 外=游客也可见可点；纯本地复制，误点无副作用 -->
@@ -96,9 +106,9 @@
         复制诊断日志 <text class="arr">▸</text>
       </view>
     </view>
-    <!-- 换号预防提示（A1：手机号是账号的根，一律人工处理） -->
-    <view v-if="!session.isGuest" class="acc-hint">
-      手机号是你账号的根 · 换号先联系群主
+    <!-- 换号预防提示（A1）：无号（快进号）不显示；「平台客服」对齐 1.6 冻结原文 -->
+    <view v-if="!session.isGuest && session.maskedPhone" class="acc-hint">
+      手机号是你账号的根 · 换号先联系平台客服
     </view>
 
     <!-- 密码面板（4.8/4.11）：未设=发码(set_password)+新密码两遍一次提交；
@@ -190,6 +200,54 @@
         >
       </template>
     </view>
+    <!-- 补绑面板（1.8 §4.4）：输号（用途说明与名片卡同文，api/dict 单一源）→ 收码 →
+         输码确认。占用拒=后端指路话术全文上面板错误行 + 「去登录页」出口——
+         只跳转不 logout 不清 token（收编靠登录页验证那一刻快进号会话还活着） -->
+    <view v-if="bindPanel" class="pwd-panel">
+      <AppField label="11 位手机号">
+        <view class="frow">
+          <AppInput
+            v-model="bindPhone"
+            type="number"
+            placeholder="11 位手机号"
+            :maxlength="11"
+            class="flex1"
+          />
+          <AppButton
+            variant="ghost"
+            size="sm"
+            :disabled="bindCountdown > 0 || bindBusy"
+            @click="onBindSend"
+          >
+            {{
+              bindCountdown > 0
+                ? `${bindCountdown}s`
+                : bindSent
+                  ? "重新发送"
+                  : "获取验证码"
+            }}
+          </AppButton>
+        </view>
+        <view class="bind-note">{{ PHONE_USE_NOTE }}</view>
+      </AppField>
+      <AppField label="6 位短信验证码">
+        <AppInput
+          v-model="bindCode"
+          type="number"
+          placeholder="6 位数字"
+          :maxlength="6"
+        />
+      </AppField>
+      <view v-if="bindHint" class="pwd-err">{{ bindHint }}</view>
+      <view v-if="bindTaken" class="bind-go" @click="goLogin">去登录页 ▸</view>
+      <AppButton
+        variant="pri"
+        block
+        :disabled="bindBusy"
+        @click="onBindConfirm"
+        >{{ bindBusy ? "绑定中…" : "确认绑定" }}</AppButton
+      >
+    </view>
     <!-- 退出/注销账号：未登录不显示更符合逻辑 -->
     <view v-if="!session.isGuest" class="acc-row">
       <AppButton variant="ghost" size="sm" class="grow" @click="onLogout"
@@ -229,9 +287,10 @@ import { useBillStore } from "@/stores/bill";
 import { exportText } from "@/utils/blackbox";
 import { copyWithToast } from "@/utils/clipboard";
 import { ApiError, errText } from "@/api/http";
+import { PHONE_USE_NOTE } from "@/api/dict";
 import { duprOf, duprTier } from "@/utils/elo";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
-import { newPwdError } from "@/utils/validate";
+import { isValidPhone, newPwdError } from "@/utils/validate";
 import { goLogin } from "@/utils/nav";
 
 const user = useUserStore();
@@ -402,6 +461,82 @@ async function onChangeSubmit(): Promise<void> {
     chBusy.value = false;
   }
 }
+
+/* —— 补绑手机号（1.8 §4.4）：安静行点开的两步面板（仿密码面板交互）。
+    占用拒不 toast、走面板内错误行显后端指路话术全文；错误随再次发码/确认清掉 —— */
+
+const bindPanel = ref(false);
+const bindPhone = ref("");
+const bindCode = ref("");
+const bindHint = ref("");
+/** phone_taken_redirect 才亮「去登录页」出口（其他错误只有话术行） */
+const bindTaken = ref(false);
+const bindBusy = ref(false);
+const bindSent = ref(false);
+const { countdown: bindCountdown, start: startBindCountdown } =
+  useSmsCountdown();
+
+/** 行点击开合面板；开合都清残留输入（密码面板 toggle 同款） */
+function toggleBindPanel(): void {
+  bindPanel.value = !bindPanel.value;
+  bindPhone.value = "";
+  bindCode.value = "";
+  bindHint.value = "";
+  bindTaken.value = false;
+  bindSent.value = false;
+}
+
+async function onBindSend(): Promise<void> {
+  if (!isValidPhone(bindPhone.value)) {
+    ui.toast("请输入 11 位手机号");
+    return;
+  }
+  bindBusy.value = true;
+  try {
+    await session.bindPhoneSend(bindPhone.value.trim());
+    bindHint.value = "";
+    bindTaken.value = false;
+    bindSent.value = true;
+    startBindCountdown();
+    ui.toast("验证码已发送");
+  } catch (e) {
+    bindHint.value = errText(e);
+    bindTaken.value =
+      e instanceof ApiError && e.code === "phone_taken_redirect";
+  } finally {
+    bindBusy.value = false;
+  }
+}
+
+async function onBindConfirm(): Promise<void> {
+  bindHint.value = "";
+  bindTaken.value = false;
+  if (!isValidPhone(bindPhone.value)) {
+    bindHint.value = "请输入 11 位手机号";
+    return;
+  }
+  if (bindCode.value.trim().length !== 6) {
+    bindHint.value = "请输入 6 位验证码";
+    return;
+  }
+  bindBusy.value = true;
+  try {
+    await session.bindPhoneConfirm(
+      bindPhone.value.trim(),
+      bindCode.value.trim(),
+    ); // toast 在 store
+    bindPanel.value = false;
+    bindPhone.value = "";
+    bindCode.value = "";
+    bindSent.value = false;
+  } catch (e) {
+    bindHint.value = errText(e);
+    bindTaken.value =
+      e instanceof ApiError && e.code === "phone_taken_redirect";
+  } finally {
+    bindBusy.value = false;
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -545,6 +680,19 @@ async function onChangeSubmit(): Promise<void> {
   color: var(--coral);
   margin: 2px 2px 12px;
   line-height: 1.5;
+}
+/* 补绑面板（1.8）：用途说明与名片卡同文（api/dict 单一源）；去登录页出口随指路话术亮 */
+.bind-note {
+  font-size: 11px;
+  color: var(--dim);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+.bind-go {
+  font-size: 12px;
+  color: var(--lemon);
+  margin: -6px 2px 12px;
+  cursor: pointer;
 }
 .frow {
   display: flex;

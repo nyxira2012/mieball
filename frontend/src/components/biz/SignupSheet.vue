@@ -45,10 +45,8 @@
           placeholder="11 位手机号"
           :maxlength="11"
         />
-        <view class="pnote"
-          >用于球局紧急通知、防鸽子和跨设备找回；同局球友会看到你的尾号 4
-          位</view
-        >
+        <!-- 用途说明原文单一源在 api/dict（1.8 批3：我的页补绑面板同消费） -->
+        <view class="pnote">{{ PHONE_USE_NOTE }}</view>
       </AppField>
 
       <!-- 1.8 A1 环境分流：微信内+动作弹出 → 主钮=微信授权登录（两下快进建号，
@@ -181,7 +179,7 @@ import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import { runPendingResume } from "@/composables/pendingResume";
-import { CHIBI_PRESETS } from "@/api/dict";
+import { CHIBI_PRESETS, PHONE_USE_NOTE } from "@/api/dict";
 import type { CardPayload } from "@/api/auth";
 import {
   ApiError,

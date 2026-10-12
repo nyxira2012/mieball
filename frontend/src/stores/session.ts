@@ -15,6 +15,8 @@ import {
   apiPasswordRedeem,
   apiPasswordReset,
   apiPasswordSet,
+  apiPhoneBind,
+  apiPhoneBindSend,
   apiRedeem,
   apiSendCode,
   apiSignup,
@@ -44,13 +46,18 @@ export const useSessionStore = defineStore("session", () => {
   const wechatBindToken = ref<string | null>(null);
 
   const isGuest = computed(() => status.value !== "ready");
-  /** 名片尾号（游客回落到演示尾号，页面 chip 不断色） */
-  const phoneTail = computed(() => account.value?.phone_tail ?? "4721");
+  /** 名片尾号：无号（快进号/游客）→ null，页面尾号位显「未绑手机」——
+      不回落演示尾号（1.8 A1：假尾号骗人，顺带修正） */
+  const phoneTail = computed<string | null>(
+    () => account.value?.phone_tail ?? null,
+  );
   /** 本人手机号打码（139****1234）：我的页账号区与注销短信步共用展示口径；无账号 → null */
   const maskedPhone = computed<string | null>(() => {
     const p = account.value?.phone ?? "";
     return p ? `${p.slice(0, 3)}****${p.slice(-4)}` : null;
   });
+  /** 微信绑没绑（AccountView 持久定值，1.8 批3）：我的页「微信已绑定」行两态唯一判定 */
+  const wechatBound = computed(() => account.value?.wechat_bound ?? false);
 
   /* ---- 动作 ---- */
 
@@ -230,6 +237,22 @@ export const useSessionStore = defineStore("session", () => {
     ui.toast("密码已修改 · 其他设备不用重新登录");
   }
 
+  /* ---- 补绑手机号（1.8 §4.4）：快进号随时补上，必须收码验证。
+      占用拒 phone_taken_redirect 原样上抛（指路话术后端单一源，面板内显示 +
+      去登录页出口——指路不登出：收编靠 redeem 那刻快进号会话还活着） ---- */
+
+  async function bindPhoneSend(phone: string): Promise<void> {
+    await apiPhoneBindSend(phone);
+  }
+
+  /** 确认绑上：核销后用返回的最新本人视图原位换装（改名片同款），尾号/微信行立即翻真 */
+  async function bindPhoneConfirm(phone: string, code: string): Promise<void> {
+    const { account: view } = await apiPhoneBind(phone, code);
+    account.value = view;
+    useUserStore().applyAccount(view);
+    ui.toast("手机号已绑定");
+  }
+
   /** 退出登录（4.3/A3）：服务端作废本机钥匙 + 本机清记忆；网络失败也照样退出本机 */
   async function logout(): Promise<void> {
     try {
@@ -308,6 +331,7 @@ export const useSessionStore = defineStore("session", () => {
     isGuest,
     phoneTail,
     maskedPhone,
+    wechatBound,
     wechatBindToken,
     init,
     signupWithCard,
@@ -320,6 +344,8 @@ export const useSessionStore = defineStore("session", () => {
     passwordRedeem,
     setPassword,
     changePassword,
+    bindPhoneSend,
+    bindPhoneConfirm,
     logout,
     deactivateAccount,
     saveProfile,

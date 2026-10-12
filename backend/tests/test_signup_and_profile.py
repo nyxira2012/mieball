@@ -17,6 +17,7 @@ def test_signup_creates_account_and_self_view(client: TestClient):
     assert acc["phone"] == "13800001111"  # 本人见全号
     assert acc["phone_tail"] == "1111"
     assert acc["chibi"]["shirt"] == 5  # 未选形象 → 默认小人
+    assert acc["wechat_bound"] is False  # 纯手机号账号没绑微信（1.8 批3 微信行两态）
     # 建号直发的钥匙未验证：视图里不给验证标记（对外无此字段即无所谓，自我确认即可）
     assert me(client, out["token"])["name"] == "海淀反手王"
 

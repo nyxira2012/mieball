@@ -9,7 +9,7 @@ export type SmsPurpose =
   | "deactivate"
   | "set_password"
   | "reset_password"
-  | "bind_phone"; // 1.8：快进号补绑手机号（判定反转：有账号当场拒；API 函数批3 落位）
+  | "bind_phone"; // 1.8：快进号补绑手机号（判定反转：有账号当场拒，apiPhoneBindSend）
 
 /** 本人视图（GET /me、signup/redeem/profile 的返回） */
 export interface AccountView {
@@ -25,6 +25,7 @@ export interface AccountView {
   dupr_month_net?: number; // 本月净胜场
   deactivated: boolean;
   has_password: boolean; // 密码钥匙已设（1.6）：设置页「设/改密」与占卡「用密码进入」的唯一判定依据
+  wechat_bound?: boolean; // 微信登记位有无（1.8 批3）：我的页「微信已绑定」行两态唯一判定（仅本人视图给）
   phone?: string;
   phone_tail?: string;
 }
@@ -163,6 +164,21 @@ export function apiPasswordRedeem(
     card,
     ...(bindToken ? { bind_token: bindToken } : {}),
   });
+}
+
+/* ---- 补绑手机号（1.8 §4.4 快进号随时补上）——须登录态；错误原样透传 ---- */
+
+/** 补绑发码：号码已有账号 → 409 phone_taken_redirect（指路话术后端单一源，message 原样上抛） */
+export function apiPhoneBindSend(phone: string): Promise<void> {
+  return request("POST", "/auth/sms", { phone, purpose: "bind_phone" });
+}
+
+/** 补绑确认：核销后落号 + phone_verified，回最新本人视图（尾号/微信行立即翻真） */
+export function apiPhoneBind(
+  phone: string,
+  code: string,
+): Promise<{ account: AccountView }> {
+  return request("POST", "/auth/phone/bind", { phone, code });
 }
 
 /* ---- 微信钥匙（1.7）——请求字段逐字镜像 auth.py，规则全在 stores/session 与后端 ---- */

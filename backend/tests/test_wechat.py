@@ -530,6 +530,7 @@ def test_fast_account_shape_and_relogin(client: TestClient):
     # 无号即无 phone/phone_tail（前端据此显「未绑手机」，不回落假尾号）
     v = me(client, res["token"])
     assert "phone" not in v and "phone_tail" not in v
+    assert v["wechat_bound"] is True  # 本人视图持久给「微信已绑定」行用（1.8 批3）
     res2 = wechat_login(client, "wx_shape|阿形")
     assert res2["status"] == "ok"
     assert me(client, res2["token"])["name"] == "阿形"
