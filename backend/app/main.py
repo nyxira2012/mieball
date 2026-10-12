@@ -45,6 +45,11 @@ _NEW_COLUMNS = {
         "pwd_fail_count": "INTEGER NOT NULL DEFAULT 0",
         "pwd_locked_until": "DATETIME",
         "pwd_grace_until": "DATETIME",
+        # 1.7 批1：微信钥匙登记位三列（存量行未绑；唯一性走 _ENSURE_INDEXES——
+        # SQLite 的 ALTER ADD COLUMN 加不了 UNIQUE 约束）
+        "wechat_openid": "VARCHAR(64)",
+        "wechat_verified": "BOOLEAN NOT NULL DEFAULT 0",
+        "wechat_bound_at": "DATETIME",
     },
     # 6.1 批5：规则版本记号（明细/账单落账时的口径版本，值见 dupr.RULES_VERSION
     # 与 bills.SPLIT_VERSION；存量行 NULL=不回填——旧数据按当时的规矩算的不追认）
@@ -69,6 +74,13 @@ def _migrate_columns(bind) -> None:
         with bind.begin() as conn:
             for stmt in todo:
                 conn.execute(text(stmt))
+
+
+# 存量表补建索引（create_all 对已存在的表不建其索引；ALTER ADD COLUMN 又带不了
+# UNIQUE）——一律 IF NOT EXISTS，新库老库空转无害。1.7 批1：微信登记位唯一索引
+_ENSURE_INDEXES = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ix_accounts_wechat_openid ON accounts (wechat_openid)",
+)
 
 
 # 已从模型退役、但存量库可能还挂着的旧列（与 _NEW_COLUMNS 对偶的删列登记）。
@@ -120,6 +132,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     Base.metadata.create_all(bind)
     _migrate_columns(bind)
     _drop_legacy_columns(bind)
+    with bind.begin() as conn:
+        for stmt in _ENSURE_INDEXES:
+            conn.execute(text(stmt))
 
     app = FastAPI(title="mieball API", version=API_VERSION)
     app.state.settings = settings

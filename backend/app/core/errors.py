@@ -116,6 +116,53 @@ def password_locked(retry_after: int) -> ApiError:
     )
 
 
+# ---- 微信钥匙（docs/1.7 第四把；文案即分流指引，前端按 code 提示不解析中文）----
+
+
+def wechat_off() -> ApiError:
+    # 通道未配置（资质没到位）：维持 1.6 占位语义（原句逐字沿用），配置一填即点亮
+    return ApiError(503, "wechat_off", "微信登录即将开通 · 资质到位后点亮")
+
+
+def wechat_code_invalid() -> ApiError:
+    # 授权凭证过期/已用过（微信侧 5 分钟一次性）：可自愈，重点一次即走通
+    return ApiError(400, "wechat_code_invalid", "微信授权已过期，请再点一次")
+
+
+def wechat_unavailable() -> ApiError:
+    # 微信官方服务不通/网络断：三把旧钥匙完全不受影响
+    return ApiError(503, "wechat_unavailable", "微信登录暂时不可用，可先用短信或密码")
+
+
+def wechat_unbound() -> ApiError:
+    # 占卡「微信验证进入」时该微信从没绑过（4.5 甲）：与「顺手绑在本账号」（甲'）
+    # 同用一句通用话术——两情形用户看同一句话即知下一步
+    return ApiError(
+        404,
+        "wechat_unbound",
+        "这个微信还证明不了这个账号是你的——用短信或密码验证进入，进去就自动绑牢",
+    )
+
+
+def wechat_bound_other() -> ApiError:
+    # 该微信绑在另一个账号上：不透露那个账号是谁；换绑走验证顶替（4.5 乙下文）
+    return ApiError(
+        409,
+        "wechat_bound_other",
+        "这个微信已经属于另一个账号——这个账号请用短信或密码验证",
+    )
+
+
+def wechat_binding_weak() -> ApiError:
+    # 绑过这个账号但只是建号时顺手绑的（4.5 甲'）——放行等于给冒填者开门；
+    # 话术与 wechat_unbound 同句（指路是同一句，用户无需分清两情形）
+    return ApiError(
+        403,
+        "wechat_binding_weak",
+        "这个微信还证明不了这个账号是你的——用短信或密码验证进入，进去就自动绑牢",
+    )
+
+
 # ---- 球局域（docs/1.2 技术设计 §2.3；账号域旧码一律不动） ----
 
 

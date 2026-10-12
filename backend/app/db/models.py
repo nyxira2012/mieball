@@ -6,6 +6,8 @@
 - device_keys.fingerprint 存钥匙指纹不存原文；verified 标记"发出时是否经短信验证"，
   是 D4 规则（短信验证杀未验证钥匙）的依据。
 - phone_codes 一表三用：验证码本体 + 限频计数（60 秒/一天 N 条按行数算，不另建计数表）。
+- 微信钥匙（1.7）：accounts 三列登记位（openid 唯一索引 / verified 镜像钥匙两档 /
+  绑定时刻）+ wechat_pendings 绑定凭条（指纹制、10 分钟一次性）。
 
 球局域（1.2）games / entries / invites / intents：
 - games.state 只有 5 个存储值；locked 之后的"进行中/已结束"是读时派生不落库（技术设计 §2.4）。
@@ -55,6 +57,9 @@ from .engine import Base
 
 class Account(Base):
     __tablename__ = "accounts"
+    # 微信登记位全局唯一（一个微信一个账号；NULL 不参与唯一，未绑多行不冲突）——
+    # 唯一索引不在模型里声明（删列重建的测试路径会与改名表上的同名索引撞车），
+    # 由 main._ENSURE_INDEXES 启动补建（IF NOT EXISTS 幂等，新库老库一趟覆盖）
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # 在册账号的手机号全局唯一；注销时置 NULL 释放（NULL 不参与唯一约束）
@@ -78,6 +83,15 @@ class Account(Base):
     pwd_fail_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     pwd_locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     pwd_grace_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # ---- 微信钥匙登记位（1.7 第四把）----
+    # 规则与 device_keys.verified 完全镜像：wechat_verified="绑定那一刻手机号是否
+    # 验过"——验明正身时绑的=True（微信进门等同短信），纯建号顺手绑的=False
+    # （等同未验证钥匙，验明正身时自动解开，D4 防冒填者的镜像）；接管/注销/换锁清位
+    wechat_openid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    wechat_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    wechat_bound_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class DeviceKey(Base):
@@ -115,6 +129,20 @@ class PhoneCode(Base):
     used_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
     )  # 用过/作废的时间戳
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class WechatPending(Base):
+    """微信绑定凭条（1.7）：授权认人后的"生面孔"凭条——建号/验明正身时刻凭它
+    顺手绑上。只存指纹不存原文（同钥匙/验证码规矩）；10 分钟一次性，过期行在
+    下次核销时顺手清扫。"""
+
+    __tablename__ = "wechat_pendings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    openid: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 

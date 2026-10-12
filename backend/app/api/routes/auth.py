@@ -37,6 +37,8 @@ class CardIn(BaseModel):
 class SignupIn(BaseModel):
     device_marker: str
     card: CardIn
+    # 1.7 微信绑定凭条：授权认人后的"生面孔"建号时带着，顺手绑（可空）
+    bind_token: str | None = None
 
 
 class SmsIn(BaseModel):
@@ -52,6 +54,7 @@ class RedeemIn(BaseModel):
     purpose: Literal["recovery", "takeover"]
     device_marker: str
     card: CardIn | None = None
+    bind_token: str | None = None  # 1.7：验明正身时刻凭它正式绑微信
 
 
 class DeactivateIn(BaseModel):
@@ -74,6 +77,7 @@ class PasswordLoginIn(BaseModel):
     phone: str
     password: str
     device_marker: str
+    bind_token: str | None = None  # 1.7：验明正身时刻凭它正式绑微信
 
 
 class PasswordResetIn(BaseModel):
@@ -81,6 +85,7 @@ class PasswordResetIn(BaseModel):
     code: str
     password: str
     device_marker: str
+    bind_token: str | None = None
 
 
 class PasswordChangeIn(BaseModel):
@@ -93,6 +98,37 @@ class PasswordRedeemIn(BaseModel):
     password: str
     device_marker: str
     card: CardIn | None = None
+    bind_token: str | None = None
+
+
+class WechatUrlIn(BaseModel):
+    """跳微信授权页的完整地址（1.7 A4）：地址由这边拼好，画面只管跳。"""
+
+    redirect_uri: str
+    state: str
+
+
+class WechatLoginIn(BaseModel):
+    code: str
+    device_marker: str
+
+
+class WechatRedeemIn(BaseModel):
+    """占卡「微信验证进入」（1.7 §4.4/4.5）：phone=占卡时填的那个号。"""
+
+    code: str
+    phone: str
+    device_marker: str
+    card: CardIn | None = None
+
+
+def _session_out(view: dict, token: str, wechat_bound: bool) -> dict:
+    """五路发钥匙端点共用收口；绑定真成了才带 wechat_bound（画面据此说「已绑上」，
+    没绑上绝不说——1.7 §5 验收锁）。"""
+    out = {"token": token, "account": view}
+    if wechat_bound:
+        out["wechat_bound"] = True
+    return out
 
 
 @router.post("/signup")
@@ -100,15 +136,16 @@ def signup(
     body: SignupIn,
     book: AccountBook = Depends(get_account_book),
 ):
-    view, token = book.signup(
+    view, token, wechat_bound = book.signup(
         phone=body.card.phone,
         device_marker=body.device_marker,
         nickname=body.card.nickname,
         nickname_set=body.card.nickname_set,
         chibi=body.card.chibi,
         chibi_set=body.card.chibi_set,
+        bind_token=body.bind_token,
     )
-    return {"token": token, "account": view}
+    return _session_out(view, token, wechat_bound)
 
 
 @router.get("/me")
@@ -162,14 +199,15 @@ def redeem(
     body: RedeemIn,
     book: AccountBook = Depends(get_account_book),
 ):
-    view, token = book.redeem(
+    view, token, wechat_bound = book.redeem(
         phone=body.phone,
         code=body.code,
         purpose=body.purpose,
         device_marker=body.device_marker,
         card=body.card.model_dump(exclude_none=False) if body.card else None,
+        bind_token=body.bind_token,
     )
-    return {"token": token, "account": view}
+    return _session_out(view, token, wechat_bound)
 
 
 @router.post("/deactivate")
@@ -200,10 +238,13 @@ def password_login(
     body: PasswordLoginIn,
     book: AccountBook = Depends(get_account_book),
 ):
-    view, token = book.login_password(
-        phone=body.phone, password=body.password, device_marker=body.device_marker
+    view, token, wechat_bound = book.login_password(
+        phone=body.phone,
+        password=body.password,
+        device_marker=body.device_marker,
+        bind_token=body.bind_token,
     )
-    return {"token": token, "account": view}
+    return _session_out(view, token, wechat_bound)
 
 
 @router.post("/password/reset")
@@ -211,13 +252,14 @@ def password_reset(
     body: PasswordResetIn,
     book: AccountBook = Depends(get_account_book),
 ):
-    view, token = book.reset_password(
+    view, token, wechat_bound = book.reset_password(
         phone=body.phone,
         code=body.code,
         password=body.password,
         device_marker=body.device_marker,
+        bind_token=body.bind_token,
     )
-    return {"token": token, "account": view}
+    return _session_out(view, token, wechat_bound)
 
 
 @router.post("/password/change")
@@ -235,9 +277,53 @@ def password_redeem(
     body: PasswordRedeemIn,
     book: AccountBook = Depends(get_account_book),
 ):
-    view, token = book.redeem_password(
+    view, token, wechat_bound = book.redeem_password(
         phone=body.phone,
         password=body.password,
+        device_marker=body.device_marker,
+        card=body.card.model_dump(exclude_none=False) if body.card else None,
+        bind_token=body.bind_token,
+    )
+    return _session_out(view, token, wechat_bound)
+
+
+# ---- 微信钥匙（docs/1.7）：纯搬运，规则全在 WechatMixin/WeChatGate ----
+
+
+@router.post("/wechat/url")
+def wechat_url(
+    body: WechatUrlIn,
+    book: AccountBook = Depends(get_account_book),
+):
+    return {"url": book.wechat.build_url(body.redirect_uri, body.state)}
+
+
+@router.post("/wechat/login")
+def wechat_login(
+    body: WechatLoginIn,
+    book: AccountBook = Depends(get_account_book),
+):
+    status, first, second, bind_token = book.wechat_login(
+        code=body.code, device_marker=body.device_marker
+    )
+    if status == "unbound":
+        return {"status": "unbound", "bind_token": first}
+    return {
+        "status": "ok",
+        "token": first,
+        "account": second,
+        "bind_token": bind_token,
+    }
+
+
+@router.post("/wechat/redeem")
+def wechat_redeem(
+    body: WechatRedeemIn,
+    book: AccountBook = Depends(get_account_book),
+):
+    view, token = book.wechat_redeem(
+        code=body.code,
+        phone=body.phone,
         device_marker=body.device_marker,
         card=body.card.model_dump(exclude_none=False) if body.card else None,
     )

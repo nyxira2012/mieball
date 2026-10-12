@@ -10,6 +10,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODE="${1:-all}"
 
+# 若存在 .env 配置文件，自动读入环境变量
+if [ -f "$ROOT/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env"
+  set +a
+fi
+
 # ---------- 后端（FastAPI · 16588） ----------
 start_backend() {
   cd "$ROOT/backend"

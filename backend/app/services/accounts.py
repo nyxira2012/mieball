@@ -8,6 +8,9 @@
 - D5 规则：接管时只覆盖 B 明确填过的名片字段（带 *_set 显式标志，不做值推断）；
 - 密码钥匙（1.6）：逻辑全在 PasswordMixin（services/passwords.py），本文件只留
   接管/注销挂点——接管=密码随全钥匙作废+设密宽限窗，注销=密码随账号消亡；
+- 微信钥匙（1.7）：逻辑全在 WechatMixin（services/wechat.py），本文件只留
+  建号/验明正身/接管/注销四个挂点——建号顺手绑（弱档）、验明正身绑（正式档，
+  顺手档同刻解开）、接管/注销清位；绑定失败静默跳过不拖主流程；
 - 隐私出口：对外只有昵称+小人；同局加尾号 4 位；本人见全号；已注销统一占位。
   全产品展示他人一律经 view()，别处不得直读 Account。
 """
@@ -30,6 +33,7 @@ from .keys import KeyVault
 from .passwords import PasswordMixin
 from .sms import SmsGate
 from .stats import StatsLedger
+from .wechat import WeChatGate, WechatMixin
 
 PHONE_RE = re.compile(r"^1[3-9]\d{9}$")
 # 与前端 utils/chibi.ts DRESS_RANGES 同一真值（六部件各自的变体数）
@@ -61,11 +65,12 @@ def person_view(account: Account | None) -> dict:
     }
 
 
-class AccountBook(PasswordMixin):
-    def __init__(self, db: Session, sms: SmsGate, keys: KeyVault):
+class AccountBook(PasswordMixin, WechatMixin):
+    def __init__(self, db: Session, sms: SmsGate, keys: KeyVault, wechat: WeChatGate):
         self.db = db
         self.sms = sms
         self.keys = keys
+        self.wechat = wechat
 
     # ---- 建号（4.2：点报名那一刻填名片，建号发钥匙一步完成） ----
 
@@ -78,8 +83,11 @@ class AccountBook(PasswordMixin):
         nickname_set: bool = False,
         chibi: dict[str, Any] | None = None,
         chibi_set: bool = False,
-    ) -> tuple[dict, str]:
-        """返回 (本人视图, 钥匙原文)。手机号已被占用且不可续接时抛 phone_taken。"""
+        bind_token: str | None = None,
+    ) -> tuple[dict, str, bool]:
+        """返回 (本人视图, 钥匙原文, 微信绑没绑上)。手机号已被占用且不可续接时抛
+        phone_taken。微信挂点（1.7 §4.2）：带着绑定凭条来的，建号顺手绑（弱档——
+        建号不验短信，绑定可靠级别跟着低）；凭条过期/冲突静默跳过，不拖建号。"""
 
         self._check_phone(phone)
         nickname = _resolve_nickname(nickname if nickname_set else None)
@@ -88,7 +96,8 @@ class AccountBook(PasswordMixin):
         existing = self._active_by_phone(phone)
         if existing is not None:
             token = self._resume_or_taken(existing, device_marker)
-            return self.view(existing.id, viewer="self"), token
+            bound = self._try_bind(existing, bind_token, verified=False)
+            return self.view(existing.id, viewer="self"), token, bound
 
         account = Account(
             phone=phone,
@@ -108,11 +117,13 @@ class AccountBook(PasswordMixin):
             if existing is None:
                 raise
             token = self._resume_or_taken(existing, device_marker)
-            return self.view(existing.id, viewer="self"), token
+            bound = self._try_bind(existing, bind_token, verified=False)
+            return self.view(existing.id, viewer="self"), token, bound
         # id 在 flush 时已回填（模型无 server 端默认值），view() 又走同库会话——不必 refresh
 
+        bound = self._try_bind(account, bind_token, verified=False)
         token = self.keys.issue(account.id, device_marker, verified=False)
-        return self.view(account.id, viewer="self"), token
+        return self.view(account.id, viewer="self"), token, bound
 
     # ---- 短信换钥匙（4.4 找回 / 4.5 接管：验证成功即身份裁决） ----
 
@@ -124,9 +135,12 @@ class AccountBook(PasswordMixin):
         purpose: Literal["recovery", "takeover"],
         device_marker: str,
         card: dict[str, Any] | None = None,
-    ) -> tuple[dict, str]:
+        bind_token: str | None = None,
+    ) -> tuple[dict, str, bool]:
         """验证通过后发"已验证钥匙"。D4：杀未验证钥匙；接管另杀全部+密码作废。
-        D5：接管合并名片。两路都留设密宽限窗（4.8：刚验完短信，设密码不重复发码）。"""
+        D5：接管合并名片。两路都留设密宽限窗（4.8：刚验完短信，设密码不重复发码）。
+        微信挂点（1.7 §4.3）：验明正身=正式绑的好时机——凭条在手顺手绑上（顶替换绑）；
+        D4 微信面：顺手绑档同刻解开（真主人验证，冒填者的微信即死）。"""
         self._check_phone(phone)
         account = self._active_by_phone(phone)
         if account is None:
@@ -136,18 +150,21 @@ class AccountBook(PasswordMixin):
 
         if purpose == "takeover":
             # 前主人/冒填者一律清场（含已验证钥匙——号码回收场景），密码一并作废，
-            # 再并入真主人名片
+            # 微信登记位一并清（1.7 接管清场），再并入真主人名片
             self.keys.revoke_all(account.id)
             self._wipe_password(account)
+            self._clear_binding(account)
             self._merge_card(account, card)
         else:
             self.keys.revoke_unverified(account.id)
+            self._sweep_weak_binding(account)
         self._grant_grace(account)
         account.phone_verified = True
         self.db.commit()
 
+        bound = self._try_bind(account, bind_token, verified=True)
         token = self.keys.issue(account.id, device_marker, verified=True)
-        return self.view(account.id, viewer="self"), token
+        return self.view(account.id, viewer="self"), token, bound
 
     # ---- 注销（4.6：档案匿名化、手机号释放、历史封存、全钥匙失效） ----
 
@@ -163,6 +180,7 @@ class AccountBook(PasswordMixin):
         self._wipe_password(
             account
         )  # 密码随账号消亡（4.6：重注册是全新账号、无旧密码）
+        self._clear_binding(account)  # 微信登记位随账号消亡（1.7 §4.10：释放可再绑）
         account.phone = None  # 释放：同一号将来可注册全新账号（历史不继承）
         account.phone_verified = False
         account.nickname = ANON_NAME

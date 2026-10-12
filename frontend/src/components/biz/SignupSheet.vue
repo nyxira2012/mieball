@@ -9,7 +9,7 @@
     <template v-if="mode === 'card'">
       <view class="trow">
         <view class="sheet-t">{{ title }}</view>
-        <view class="login-link" @click="goLogin">登录 ▸</view>
+        <view class="login-link" @click="goLoginWithDraft">登录 ▸</view>
       </view>
       <view class="sheet-hint"
         >填张名片就同时建号 · 以后永远免密，不用记密码</view
@@ -27,7 +27,7 @@
         <view class="preset-note">跳过就用默认图案 · 装扮页可细调</view>
         <view class="presets">
           <view
-            v-for="(p, i) in PRESETS"
+            v-for="(p, i) in CHIBI_PRESETS"
             :key="i"
             class="ptile"
             :class="{ on: picked === i }"
@@ -54,6 +54,14 @@
       <AppButton variant="pri" block :disabled="busy" @click="onSubmitCard">
         {{ busy ? "提交中…" : actionLabel }}
       </AppButton>
+
+      <!-- 微信一键登录（1.7 §8 修订·认人门）：老球友换设备/微信重装的最短路——绑过的
+           微信两下进门、挂起动作接着办；没绑过回来还是这张卡（草稿与凭条都在手里）。
+           note 文案指路防新面孔误点（误点多绕一趟授权往返，草稿不丢） -->
+      <view class="wx-row cardwx" @click="onWechatLogin">
+        <text>微信一键登录</text>
+        <text class="wx-note">换过手机/微信重装过？点两下找回</text>
+      </view>
     </template>
 
     <!-- ===== 态二：手机号已被占用（1.6 §4.5 三证明出口） ===== -->
@@ -69,10 +77,11 @@
         <AppButton variant="ghost" block @click="mode = 'pwd'"
           >用密码进入</AppButton
         >
-        <!-- 微信位（1.6 §4.12）：给位不给死按钮，点了说明 -->
+        <!-- 微信验证进入（1.7 点亮）：正式绑才放行（接管级，与短信出口同待遇）；
+             没绑/绑别处点了回来一句指路（后端文案）。不在微信里只说明 -->
         <view class="wx-row" @click="onWechat">
           <text>微信验证进入</text>
-          <text class="wx-note">即将开通</text>
+          <text class="wx-note">正式绑过的微信两下进门</text>
         </view>
         <view class="relink" @click="mode = 'card'">不是我的号？返回重填</view>
       </view>
@@ -151,6 +160,7 @@ import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import { runPendingResume } from "@/composables/pendingResume";
+import { CHIBI_PRESETS } from "@/api/dict";
 import type { CardPayload } from "@/api/auth";
 import {
   ApiError,
@@ -161,6 +171,8 @@ import {
 } from "@/api/http";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
 import { isValidPhone } from "@/utils/validate";
+import { beginWechatAuth } from "@/utils/wechat";
+import { goLogin } from "@/utils/nav";
 import type { ChibiConfig, PublishGameInput } from "@/api/types";
 
 const props = defineProps({
@@ -190,18 +202,6 @@ const props = defineProps({
 
 const session = useSessionStore();
 const ui = useUiStore();
-
-/** 预设头像组（D2）：提前搭配好的 Q 版小人，点一下即选；细调去装扮页 */
-const PRESETS: { c: ChibiConfig }[] = [
-  { c: { skin: 0, hair: 0, hc: 0, shirt: 5, face: 0, acc: 0 } },
-  { c: { skin: 1, hair: 5, hc: 0, shirt: 1, face: 1, acc: 2 } },
-  { c: { skin: 0, hair: 2, hc: 5, shirt: 7, face: 3, acc: 1 } },
-  { c: { skin: 0, hair: 1, hc: 2, shirt: 2, face: 0, acc: 0 } },
-  { c: { skin: 1, hair: 4, hc: 3, shirt: 6, face: 2, acc: 0 } },
-  { c: { skin: 2, hair: 0, hc: 1, shirt: 4, face: 1, acc: 1 } },
-  { c: { skin: 0, hair: 3, hc: 4, shirt: 0, face: 3, acc: 0 } },
-  { c: { skin: 1, hair: 1, hc: 5, shirt: 3, face: 0, acc: 1 } },
-];
 
 /** pwd=占卡三出口之二（1.6 §4.5）：内联密码接管 */
 const mode = ref<"card" | "occupied" | "pwd" | "sms">("card");
@@ -279,12 +279,12 @@ function cardPayload(): CardPayload {
     phone: phone.value.trim(),
     nickname: nickname.value,
     nickname_set: !!nickname.value.trim(),
-    chibi: picked.value != null ? PRESETS[picked.value].c : undefined,
+    chibi: picked.value != null ? CHIBI_PRESETS[picked.value].c : undefined,
     chibi_set: picked.value != null,
   };
 }
 
-/** 挂起动作快照：goLogin 落信号位与成功续办两处同用 */
+/** 挂起动作快照：goLoginWithDraft 落信号位与成功续办两处同用 */
 function pendingSnapshot() {
   return {
     pendingJoin: props.pendingJoin,
@@ -297,10 +297,26 @@ function pendingSnapshot() {
 /* 右上角【登录】（1.6 §4.2 全天候明门）：先 flush 草稿（登完回来已填内容不丢），
    挂起动作快照落信号位，直达登录页。弹层会随宿主页 onHide 被关、本组件卸载——
    登录回来由登录页凭信号位快照代跑续办，不靠本组件存活。 */
-function goLogin(): void {
+function goLoginWithDraft(): void {
   flushDraft();
   ui.pendingAfterLogin = pendingSnapshot();
-  uni.navigateTo({ url: "/pages/mine/login" });
+  goLogin();
+}
+
+/** 填卡态「微信一键登录」（1.7 §8 修订）：同款先存后跳，但不带手机号——走认人门
+    而非占卡验证。绑过的微信回来直接进（挂起动作接着办）；没绑过落回这张名片卡
+    （绑定凭条在 session store 攥着，填完提交/任一验证即顺手绑）。 */
+async function onWechatLogin(): Promise<void> {
+  flushDraft();
+  try {
+    const url = await beginWechatAuth({
+      pending: pendingSnapshot(),
+      toast: (m) => ui.toast(m),
+    });
+    location.href = url;
+  } catch {
+    /* 已 toast：不在微信里 / 通道未开 / 要地址失败 */
+  }
 }
 
 /* ---- 提交名片 ---- */
@@ -352,9 +368,21 @@ async function onPwdRedeem(): Promise<void> {
   }
 }
 
-/** 微信位（1.6 §4.12）：资质未到，点了只说明，不放死按钮 */
-function onWechat(): void {
-  ui.toast("微信登录即将开通 · 资质到位后点亮");
+/** 占卡「微信验证进入」（1.7 §4.4/4.5）：与「登录」链接同款先存后跳——名片草稿
+    flush 进本机（回来重建名片用）、挂起快照进转场包（回来接着办），整页跳微信。
+    回来由登录页收尾：正式绑→接管进入；否则一句指路（后端文案），短信/密码出口照常。 */
+async function onWechat(): Promise<void> {
+  flushDraft();
+  try {
+    const url = await beginWechatAuth({
+      phone: phone.value.trim(),
+      pending: pendingSnapshot(),
+      toast: (m) => ui.toast(m),
+    });
+    location.href = url;
+  } catch {
+    /* 已 toast：不在微信里 / 通道未开 / 要地址失败 */
+  }
 }
 
 /* ---- 占用 → 接管 ---- */
@@ -452,6 +480,10 @@ function afterSuccess(msg: string): void {
 }
 .wx-row:active {
   border-color: rgba(255, 212, 0, 0.4);
+}
+/* 填卡态微信行：紧随确定钮补间距（占卡态在 .exits 的 gap 里，不吃这条） */
+.cardwx {
+  margin-top: 14px;
 }
 .wx-note {
   font-family: var(--mono);

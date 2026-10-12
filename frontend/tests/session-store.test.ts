@@ -25,6 +25,9 @@ vi.mock("@/api/auth", () => ({
   apiPasswordReset: vi.fn(),
   apiPasswordChange: vi.fn(),
   apiPasswordRedeem: vi.fn(),
+  apiWechatUrl: vi.fn(),
+  apiWechatLogin: vi.fn(),
+  apiWechatRedeem: vi.fn(),
 }));
 
 const view: AccountView = {
@@ -188,6 +191,7 @@ describe("密码钥匙（4.8~4.11）", () => {
       "13800001111",
       "pw123456",
       "dev-9",
+      undefined, // 1.7 微信凭条槽位（没凭条也占位传 undefined）
     );
     expect(http.setToken).toHaveBeenCalledWith("tp");
     expect(session.status).toBe("ready");
@@ -211,6 +215,7 @@ describe("密码钥匙（4.8~4.11）", () => {
       "654321",
       "new-pass",
       "dev-9",
+      undefined,
     );
     expect(http.setToken).toHaveBeenCalledWith("tr");
     expect(useUserStore().me.id).toBe(42);
@@ -235,6 +240,7 @@ describe("密码钥匙（4.8~4.11）", () => {
       "pw123456",
       "dev-9",
       card,
+      undefined,
     );
     expect(http.setToken).toHaveBeenCalledWith("td");
     expect(session.status).toBe("ready");
@@ -311,5 +317,79 @@ describe("改名片（A3）", () => {
     expect(useUserStore().me.name).toBe("路人甲");
     // 还原游客名，避免影响其他用例
     useUserStore().me.name = demo.name;
+  });
+});
+
+/* ---- 微信钥匙（1.7）：认人门两支 / 凭条捎带 / 绑成了才说绑上 ---- */
+describe("微信钥匙（1.7）", () => {
+  it("wechatLogin 绑了：直进（落钥匙换档案），凭条顺手攥在手里", async () => {
+    const session = useSessionStore();
+    vi.mocked(authApi.apiWechatLogin).mockResolvedValue({
+      status: "ok",
+      token: "wx-token",
+      account: view,
+      bind_token: "bt-1",
+    });
+    const r = await session.wechatLogin("wx_alice");
+    expect(r).toBe("ok");
+    expect(session.status).toBe("ready");
+    expect(session.account?.id).toBe(42);
+    expect(session.wechatBindToken).toBe("bt-1");
+    expect(http.setToken).toHaveBeenCalledWith("wx-token");
+  });
+
+  it("wechatLogin 没绑：身份不动（仍游客），凭条落位等下一个验明正身动作", async () => {
+    const session = useSessionStore();
+    vi.mocked(authApi.apiWechatLogin).mockResolvedValue({
+      status: "unbound",
+      bind_token: "bt-2",
+    });
+    const r = await session.wechatLogin("wx_new");
+    expect(r).toBe("unbound");
+    expect(session.isGuest).toBe(true);
+    expect(session.wechatBindToken).toBe("bt-2");
+  });
+
+  it("凭条在手建号：捎带上 bind_token；绑成了说「已绑上」并清凭条", async () => {
+    const session = useSessionStore();
+    const ui = useUiStore();
+    session.wechatBindToken = "bt-3";
+    vi.mocked(authApi.apiSignup).mockResolvedValue({
+      token: "t",
+      account: view,
+      wechat_bound: true,
+    });
+    await session.signupWithCard({ phone: "13800001111" });
+    expect(authApi.apiSignup).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "bt-3",
+    );
+    expect(ui.toastMsg).toContain("微信号已绑上");
+    expect(session.wechatBindToken).toBeNull();
+  });
+
+  it("绑定没成（后端没回 wechat_bound）：不说「已绑上」，凭条清空不留死凭条乱捎", async () => {
+    const session = useSessionStore();
+    const ui = useUiStore();
+    session.wechatBindToken = "bt-4";
+    vi.mocked(authApi.apiSignup).mockResolvedValue({
+      token: "t",
+      account: view,
+    });
+    await session.signupWithCard({ phone: "13800001111" });
+    expect(ui.toastMsg).not.toContain("微信号已绑上");
+    expect(session.wechatBindToken).toBeNull();
+  });
+
+  it("占卡微信验证（wechatRedeem）：放行则接管进入、草稿清掉", async () => {
+    const session = useSessionStore();
+    vi.mocked(authApi.apiWechatRedeem).mockResolvedValue({
+      token: "t",
+      account: view,
+    });
+    await session.wechatRedeem("wx_dave", "13800001111");
+    expect(session.status).toBe("ready");
+    expect(http.clearCardDraft).toHaveBeenCalled();
   });
 });

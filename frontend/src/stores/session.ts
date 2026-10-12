@@ -19,6 +19,8 @@ import {
   apiSendCode,
   apiSignup,
   apiUpdateProfile,
+  apiWechatLogin,
+  apiWechatRedeem,
   type AccountView,
   type CardPayload,
   type SessionPayload,
@@ -35,6 +37,11 @@ export const useSessionStore = defineStore("session", () => {
   /** guest=游客（含启动认人失败静默降级）；ready=已带有效钥匙 */
   const status = ref<"guest" | "ready" | "init">("init");
   const account = ref<AccountView | null>(null);
+  /** 微信绑定凭条（1.7）：授权认人后攥在手里，下一个验明正身动作（建号/短信/密码）
+      自动捎带上——绑成了后端回 wechat_bound，这里统一说「已绑上」并清凭条；
+      验证失败不烧凭条（后端一次性，十分钟自然过期）。仅内存：整页跳转后由
+      登录页回话重新落位（wechatLogin 回话里带）。 */
+  const wechatBindToken = ref<string | null>(null);
 
   const isGuest = computed(() => status.value !== "ready");
   /** 名片尾号（游客回落到演示尾号，页面 chip 不断色） */
@@ -67,10 +74,18 @@ export const useSessionStore = defineStore("session", () => {
     }
   }
 
-  /** 名片建号（4.2）：成功落钥匙+档案并清草稿；手机号被占抛 ApiError('phone_taken') 由弹层接 */
+  /** 名片建号（4.2）：成功落钥匙+档案并清草稿；手机号被占抛 ApiError('phone_taken') 由弹层接。
+      1.7：微信凭条在手则捎带——建号顺手绑（弱档），绑成了提示不说谎（没绑上不说）；
+      捎带过的凭条服务端已一次性核销，成功后清空防死凭条乱捎（失败不动、留着重试） */
   async function signupWithCard(card: CardPayload): Promise<AccountView> {
-    const res = await apiSignup(card, deviceMarker());
-    return admitSession(res, true);
+    const res = await apiSignup(
+      card,
+      deviceMarker(),
+      wechatBindToken.value ?? undefined,
+    );
+    const out = admitSession(res, true);
+    wechatBindToken.value = null;
+    return out;
   }
 
   /** 发验证码（60 秒冷却/一天上限等错误原样抛，弹层按 code 提示） */
@@ -81,14 +96,47 @@ export const useSessionStore = defineStore("session", () => {
     await apiSendCode(phone, purpose);
   }
 
-  /** 验证码换钥匙（4.4 找回 / 4.5 接管）：接管带名片做 D5 合并 */
+  /** 验证码换钥匙（4.4 找回 / 4.5 接管）：接管带名片做 D5 合并；
+      1.7：微信凭条捎带——验明正身=正式绑的好时机（老账号自动接上，4.3） */
   async function redeemCode(
     phone: string,
     code: string,
     purpose: "recovery" | "takeover",
     card?: CardPayload,
   ): Promise<AccountView> {
-    const res = await apiRedeem(phone, code, purpose, deviceMarker(), card);
+    const res = await apiRedeem(
+      phone,
+      code,
+      purpose,
+      deviceMarker(),
+      card,
+      wechatBindToken.value ?? undefined,
+    );
+    const out = admitSession(res, true);
+    wechatBindToken.value = null;
+    return out;
+  }
+
+  /* ---- 微信钥匙（1.7 第四把）：认人门 + 占卡微信验证 ---- */
+
+  /** 微信认人（4.1/4.2）：绑了直接进；没绑落凭条转名片/验证。凭条恒落位——
+      绑着的微信想搬到别的账号，下一个验明正身凭它顶替换绑（4.5 下文）。 */
+  async function wechatLogin(code: string): Promise<"ok" | "unbound"> {
+    const res = await apiWechatLogin(code, deviceMarker());
+    wechatBindToken.value = res.bind_token;
+    if (res.status === "unbound") return "unbound";
+    admitSession({ token: res.token, account: res.account }, false);
+    return "ok";
+  }
+
+  /** 占卡「微信验证进入」（4.4/4.5）：正式绑才放行（接管级），指路文案后端给全；
+      转场包里存过名片草稿的重建（明确填过的才覆盖，D5 同规） */
+  async function wechatRedeem(
+    code: string,
+    phone: string,
+    card?: CardPayload,
+  ): Promise<AccountView> {
+    const res = await apiWechatRedeem(code, phone, deviceMarker(), card);
     return admitSession(res, true);
   }
 
@@ -96,13 +144,21 @@ export const useSessionStore = defineStore("session", () => {
      原样上抛、身份态不动（请求成功才落钥匙， reject 时一行未执行） ---- */
 
   /** 密码登录（4.9）/ 忘记密码重置（4.10）：换钥匙不清名片草稿——
-     草稿是登录前挂起的报名/建局续办要用的工作面（A1 已填内容不丢） */
+      草稿是登录前挂起的报名/建局续办要用的工作面（A1 已填内容不丢）；
+      1.7：微信凭条捎带（密码路也是验明正身，B1 两处都消费） */
   async function passwordLogin(
     phone: string,
     password: string,
   ): Promise<AccountView> {
-    const res = await apiPasswordLogin(phone, password, deviceMarker());
-    return admitSession(res, false);
+    const res = await apiPasswordLogin(
+      phone,
+      password,
+      deviceMarker(),
+      wechatBindToken.value ?? undefined,
+    );
+    const out = admitSession(res, false);
+    wechatBindToken.value = null;
+    return out;
   }
 
   async function passwordReset(
@@ -110,8 +166,16 @@ export const useSessionStore = defineStore("session", () => {
     code: string,
     password: string,
   ): Promise<AccountView> {
-    const res = await apiPasswordReset(phone, code, password, deviceMarker());
-    return admitSession(res, false);
+    const res = await apiPasswordReset(
+      phone,
+      code,
+      password,
+      deviceMarker(),
+      wechatBindToken.value ?? undefined,
+    );
+    const out = admitSession(res, false);
+    wechatBindToken.value = null;
+    return out;
   }
 
   /** 占卡「用密码进入」（4.5 三出口之二）：密码接管，名片已并入账号 → 与 redeemCode 同款清草稿 */
@@ -120,8 +184,16 @@ export const useSessionStore = defineStore("session", () => {
     password: string,
     card?: CardPayload,
   ): Promise<AccountView> {
-    const res = await apiPasswordRedeem(phone, password, deviceMarker(), card);
-    return admitSession(res, true);
+    const res = await apiPasswordRedeem(
+      phone,
+      password,
+      deviceMarker(),
+      card,
+      wechatBindToken.value ?? undefined,
+    );
+    const out = admitSession(res, true);
+    wechatBindToken.value = null;
+    return out;
   }
 
   /** 首设密码（4.8）：短信码或宽限窗验身后落锁；成功文案单一源在这 */
@@ -165,14 +237,18 @@ export const useSessionStore = defineStore("session", () => {
     useUserStore().resetGuest();
   }
 
-  /** 换钥匙入会壳：五路动作（建号/短信接管/密码登录·重置·接管）共用同一落钥匙五连，
-      请求成功才动身份态、reject 时一行未执行；是否清名片草稿由调用点显式裁定
-      （只有 redeem 路清——登录/重置路的草稿是挂起续办的工作面，不能动） */
+  /** 换钥匙入会壳：五路动作（建号/短信接管/密码登录·重置·接管）+ 微信认人共用同一
+      落钥匙五连，请求成功才动身份态、reject 时一行未执行；是否清名片草稿由调用点
+      显式裁定（只有 redeem 路清——登录/重置路的草稿是挂起续办的工作面，不能动）。
+      1.7：绑成了才说「已绑上」（wechat_bound 后端定值，一个字不编）并清凭条 */
   function admitSession(res: SessionPayload, clearDraft: boolean): AccountView {
     setToken(res.token);
     account.value = res.account;
     status.value = "ready";
     useUserStore().applyAccount(res.account);
+    if (res.wechat_bound) {
+      ui.toast("微信号已绑上 · 下次微信一键直接进");
+    }
     if (clearDraft) clearCardDraft();
     return res.account;
   }
@@ -213,10 +289,13 @@ export const useSessionStore = defineStore("session", () => {
     isGuest,
     phoneTail,
     maskedPhone,
+    wechatBindToken,
     init,
     signupWithCard,
     requestCode,
     redeemCode,
+    wechatLogin,
+    wechatRedeem,
     passwordLogin,
     passwordReset,
     passwordRedeem,

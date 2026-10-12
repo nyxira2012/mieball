@@ -8,6 +8,8 @@ _active_by_phone / _merge_card 等）。四把钥匙裁决全部内聚在下列�
 - 接管=全设备钥匙连同密码一并作废（4.5），宽限窗 10 分钟内设新密免再发码；
 - 锁的是账号的"用密码"这一条路：login/redeem 共用一份连错计数，满 5 次锁 15 分钟；
   改密码验旧密是已登录语境，不计锁（4.11）；短信端点永不互波及。
+- 微信挂点（1.7）：login/reset/redeem 三路都是验明正身时刻——顺手绑档解开、
+  凭条在手正式绑上；绑定逻辑本体在 WechatMixin（services/wechat.py）。
 """
 
 from __future__ import annotations
@@ -41,9 +43,15 @@ class PasswordMixin:
         self.db.commit()
 
     def login_password(
-        self, *, phone: str, password: str, device_marker: str
-    ) -> tuple[dict, str]:
-        """密码登录（4.9）：与短信验证同待遇——杀未验证钥匙、发已验证钥匙。"""
+        self,
+        *,
+        phone: str,
+        password: str,
+        device_marker: str,
+        bind_token: str | None = None,
+    ) -> tuple[dict, str, bool]:
+        """密码登录（4.9）：与短信验证同待遇——杀未验证钥匙、发已验证钥匙。
+        微信挂点（1.7 §4.3）：验明正身=正式绑的好时机（顺手绑档同刻解开）。"""
         self._check_phone(phone)
         account = self._active_by_phone(phone)
         if account is None:
@@ -52,15 +60,24 @@ class PasswordMixin:
         self._require_hash(account)
         self._fail_or_pass(account, password)
         self.keys.revoke_unverified(account.id)
+        self._sweep_weak_binding(account)
         self.db.commit()
+        bound = self._try_bind(account, bind_token, verified=True)
         token = self.keys.issue(account.id, device_marker, verified=True)
-        return self.view(account.id, viewer="self"), token
+        return self.view(account.id, viewer="self"), token, bound
 
     def reset_password(
-        self, *, phone: str, code: str, password: str, device_marker: str
-    ) -> tuple[dict, str]:
+        self,
+        *,
+        phone: str,
+        code: str,
+        password: str,
+        device_marker: str,
+        bind_token: str | None = None,
+    ) -> tuple[dict, str, bool]:
         """忘记密码重置（4.10）：短信验明正身 → 换锁（所有设备钥匙作废只留当前台）
-        → 落新密码。换锁即新锁：旧密码连同旧连错计数一并清场。"""
+        → 落新密码。换锁即新锁：旧密码连同旧连错计数一并清场。
+        微信挂点（1.7 C3）：换锁不清正式绑（本人多条活路），顺手绑档随验明正身解开。"""
         self._check_phone(phone)
         account = self._active_by_phone(phone)
         if account is None:
@@ -72,9 +89,11 @@ class PasswordMixin:
         account.password_hash = security.hash_password(password)
         account.pwd_fail_count = 0
         account.pwd_locked_until = None
+        self._sweep_weak_binding(account)
         self.db.commit()
+        bound = self._try_bind(account, bind_token, verified=True)
         token = self.keys.issue(account.id, device_marker, verified=True)
-        return self.view(account.id, viewer="self"), token
+        return self.view(account.id, viewer="self"), token, bound
 
     def change_password(self, account_id: int, *, old: str, new: str) -> None:
         """例行换钥匙（4.11）：验旧落新，其他设备不动。旧密错只提示重输，不计锁。"""
@@ -95,9 +114,11 @@ class PasswordMixin:
         password: str,
         device_marker: str,
         card: dict[str, Any] | None = None,
-    ) -> tuple[dict, str]:
+        bind_token: str | None = None,
+    ) -> tuple[dict, str, bool]:
         """密码接管（占卡三出口之二，4.5）：知道密码即主人证明，接管语义与
-        redeem(takeover) 完全一致（名片合并 D5、全钥匙+密码作废、宽限窗置位）。"""
+        redeem(takeover) 完全一致（名片合并 D5、全钥匙+密码作废、宽限窗置位）；
+        微信登记位一并清场（1.7 接管清场），凭条在手随后正式绑上。"""
         self._check_phone(phone)
         account = self._active_by_phone(phone)
         if account is None:
@@ -107,11 +128,13 @@ class PasswordMixin:
         self._fail_or_pass(account, password)
         self.keys.revoke_all(account.id)
         self._wipe_password(account)
+        self._clear_binding(account)
         self._grant_grace(account)
         self._merge_card(account, card)
         self.db.commit()
+        bound = self._try_bind(account, bind_token, verified=True)
         token = self.keys.issue(account.id, device_marker, verified=True)
-        return self.view(account.id, viewer="self"), token
+        return self.view(account.id, viewer="self"), token, bound
 
     # ---- 挂点（accounts.py 的 redeem/deactivate 调，逻辑不许落回那边） ----
 

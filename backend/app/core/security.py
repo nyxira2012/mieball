@@ -35,6 +35,15 @@ def code_fingerprint(phone: str, purpose: str, code: str) -> str:
     return _hmac(f"code:{phone}:{purpose}:{code}")
 
 
+def new_bind_token() -> str:
+    """微信绑定凭条原文（1.7）：与设备钥匙同规格，只发一次，库里只落指纹。"""
+    return secrets.token_urlsafe(32)
+
+
+def bind_fingerprint(token: str) -> str:
+    return _hmac(f"wxb:{token}")
+
+
 def hash_password(plain: str) -> str:
     """密码暗记："盐$pepper(pbkdf2(原文, 盐))"。盐每密码随机，同文不同记。"""
     salt = secrets.token_hex(16)

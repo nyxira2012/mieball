@@ -36,13 +36,20 @@ export interface CardPayload {
 export interface SessionPayload {
   token: string;
   account: AccountView;
+  /** 1.7 微信绑定凭条生效标记：绑定真成了才回 true（没绑上绝不说——画面据此说「已绑上」） */
+  wechat_bound?: boolean;
 }
 
 export function apiSignup(
   card: CardPayload,
   device: string,
+  bindToken?: string,
 ): Promise<SessionPayload> {
-  return request("POST", "/auth/signup", { device_marker: device, card });
+  return request("POST", "/auth/signup", {
+    device_marker: device,
+    card,
+    ...(bindToken ? { bind_token: bindToken } : {}),
+  });
 }
 
 export function apiMe(): Promise<{ account: AccountView | null }> {
@@ -72,6 +79,7 @@ export function apiRedeem(
   purpose: "recovery" | "takeover",
   device: string,
   card?: CardPayload,
+  bindToken?: string,
 ): Promise<SessionPayload> {
   return request("POST", "/auth/redeem", {
     phone,
@@ -79,6 +87,7 @@ export function apiRedeem(
     purpose,
     device_marker: device,
     card,
+    ...(bindToken ? { bind_token: bindToken } : {}),
   });
 }
 
@@ -100,11 +109,13 @@ export function apiPasswordLogin(
   phone: string,
   password: string,
   device: string,
+  bindToken?: string,
 ): Promise<SessionPayload> {
   return request("POST", "/auth/password/login", {
     phone,
     password,
     device_marker: device,
+    ...(bindToken ? { bind_token: bindToken } : {}),
   });
 }
 
@@ -114,12 +125,14 @@ export function apiPasswordReset(
   code: string,
   password: string,
   device: string,
+  bindToken?: string,
 ): Promise<SessionPayload> {
   return request("POST", "/auth/password/reset", {
     phone,
     code,
     password,
     device_marker: device,
+    ...(bindToken ? { bind_token: bindToken } : {}),
   });
 }
 
@@ -136,10 +149,55 @@ export function apiPasswordRedeem(
   password: string,
   device: string,
   card?: CardPayload,
+  bindToken?: string,
 ): Promise<SessionPayload> {
   return request("POST", "/auth/password/redeem", {
     phone,
     password,
+    device_marker: device,
+    card,
+    ...(bindToken ? { bind_token: bindToken } : {}),
+  });
+}
+
+/* ---- 微信钥匙（1.7）——请求字段逐字镜像 auth.py，规则全在 stores/session 与后端 ---- */
+
+/** 要授权地址（A4：地址后端拼好，画面只管跳） */
+export function apiWechatUrl(
+  redirectUri: string,
+  state: string,
+): Promise<{ url: string }> {
+  return request("POST", "/auth/wechat/url", {
+    redirect_uri: redirectUri,
+    state,
+  });
+}
+
+/** 认人门回话：绑了直接进（钥匙在手），没绑发绑定凭条（转名片/验证时顺手绑） */
+export type WechatLoginResult =
+  | { status: "ok"; token: string; account: AccountView; bind_token: string }
+  | { status: "unbound"; bind_token: string };
+
+export function apiWechatLogin(
+  code: string,
+  device: string,
+): Promise<WechatLoginResult> {
+  return request("POST", "/auth/wechat/login", {
+    code,
+    device_marker: device,
+  });
+}
+
+/** 占卡「微信验证进入」（只认正式绑，接管级——文案与放行全由后端裁定） */
+export function apiWechatRedeem(
+  code: string,
+  phone: string,
+  device: string,
+  card?: CardPayload,
+): Promise<SessionPayload> {
+  return request("POST", "/auth/wechat/redeem", {
+    code,
+    phone,
     device_marker: device,
     card,
   });

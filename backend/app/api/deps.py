@@ -15,6 +15,7 @@ from ..services.intents import IntentBook
 from ..services.keys import KeyVault
 from ..services.live import LiveBook
 from ..services.sms import SmsGate
+from ..services.wechat import WeChatGate
 
 
 def get_db(request: Request):
@@ -27,7 +28,9 @@ def get_db(request: Request):
 
 def get_account_book(request: Request, db: Session = Depends(get_db)) -> AccountBook:
     settings = request.app.state.settings
-    return AccountBook(db, SmsGate(db, settings), KeyVault(db))
+    return AccountBook(
+        db, SmsGate(db, settings), KeyVault(db), WeChatGate(db, settings)
+    )
 
 
 def get_game_book(db: Session = Depends(get_db)) -> GameBook:

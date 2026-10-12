@@ -12,7 +12,8 @@
         <view class="kicker">Old Friend</view>
         <view class="brand">我是<text class="bem">老球友</text></view>
         <view class="sub"
-          >换了手机 / 微信重装过？收条短信或用密码，名片报名战绩全拿回来</view
+          >换了手机 /
+          微信重装过？收条短信、用密码或微信点两下，名片报名战绩全拿回来</view
         >
       </view>
 
@@ -187,10 +188,11 @@
         </view>
       </template>
 
-      <!-- 微信位（4.12）：给位不给死按钮，点了说明 -->
+      <!-- 微信一键登录（1.7 点亮）：微信里跳授权页两下进门；不在微信里/通道没开
+           点了只说明（占位语义照旧，配置一填自动变真——静态角标删了防点亮后说谎） -->
       <view class="wx-row" @click="onWechat">
         <text>微信一键登录</text>
-        <text class="wx-note">即将开通</text>
+        <text class="wx-note">微信里点两下进门</text>
       </view>
 
       <!-- 客服出口写死在页底（6.1 修订口径：群主=开发者本人，不虚构客服微信号） -->
@@ -203,9 +205,11 @@
 /* 找回/登录页：双栏状态机，动作走 session store；错误按 ApiError.code 分流提示，
    其余 errText 原样透出（password_wrong/locked 的剩余次数与秒数已由后端文案带上）。
    1.6 末批兼任挂起接续的消费点：登录往返中名片弹层已被 PageShell.onHide 关闭，
-   登录成功（三路任一）由本页凭 ui.pendingAfterLogin 快照代跑续办。 */
+   登录成功（三路任一）由本页凭 ui.pendingAfterLogin 快照代跑续办。
+   1.7 微信键点亮：本页也是微信授权回跳的落点——整页跳转回来带着授权凭证，
+   转场包（占卡手机号/挂起动作/回跳落点）在本机，此处消费收尾。 */
 import { ref, watch, onMounted, onUnmounted } from "vue";
-import { onUnload } from "@dcloudio/uni-app";
+import { onLoad, onUnload } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import BackRow from "@/components/biz/BackRow.vue";
 import AppField from "@/components/ui/AppField.vue";
@@ -215,9 +219,19 @@ import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import { runPendingResume } from "@/composables/pendingResume";
 import { bindBlurOnBlank, unbindBlurOnBlank } from "@/composables/blurOnBlank";
-import { ApiError, clearCardDraft, errText } from "@/api/http";
+import { ApiError, clearCardDraft, errText, readCardDraft } from "@/api/http";
+import { CHIBI_PRESETS } from "@/api/dict";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
 import { isValidPhone, newPwdError } from "@/utils/validate";
+import {
+  beginWechatAuth,
+  clearWechatCtx,
+  ctxFresh,
+  navToPath,
+  readWechatCtx,
+} from "@/utils/wechat";
+import type { CardPayload } from "@/api/auth";
+import type { SignupPending } from "@/stores/ui";
 
 const session = useSessionStore();
 const ui = useUiStore();
@@ -445,10 +459,108 @@ async function onForgotReset(): Promise<void> {
   }
 }
 
-/** 微信位（4.12）：资质未到，点了只说明，不放死按钮 */
-function onWechat(): void {
-  ui.toast("微信登录即将开通 · 资质到位后点亮");
+/** 微信一键登录（1.7 §4.1/4.2）：微信里=真按钮跳授权页；不在微信里/通道没开=
+    说明占位（beginWechatAuth 已把话说完，这里只接住短路）。 */
+async function onWechat(): Promise<void> {
+  try {
+    const url = await beginWechatAuth({ toast: (m) => ui.toast(m) });
+    location.href = url; // 整页跳去微信授权确认页，回来走 onLoad 的 code 消费
+  } catch {
+    /* 已 toast：不在微信里 / 通道未开 / 要地址失败 */
+  }
 }
+
+/* —— 微信授权回跳收尾（1.7）：登录页是回跳落点，onLoad 收授权凭证。
+   整页跳转后 SPA 重启、内存态全丢——出发前的转场包在本机（utils/wechat 存）。
+   分流：有占卡手机号=占卡微信验证（正式绑才放行，接管级）；没有=认人门
+   （绑了直进；没绑落现有名片卡，凭条在 session store 攥着，提交/验证即顺手绑）。 */
+const wxBusy = ref(false);
+const wxBack = ref<string | null>(null);
+
+onLoad((options) => {
+  let code = options?.code ? String(options.code) : "";
+  let state = options?.state ? String(options.state) : "";
+  if (!code && typeof window !== "undefined" && window.location?.search) {
+    const params = new URLSearchParams(window.location.search);
+    code = params.get("code") || "";
+    state = params.get("state") || "";
+  }
+  if (!code) return;
+  void handleWechatReturn(code, state);
+});
+
+async function handleWechatReturn(code: string, state: string): Promise<void> {
+  if (typeof window !== "undefined" && window.history?.replaceState) {
+    const cleanUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState({}, "", cleanUrl);
+  }
+  const ctx = readWechatCtx();
+  clearWechatCtx();
+  if (!ctxFresh(ctx, state)) {
+    ui.toast("微信授权已失效，请再点一次");
+    return;
+  }
+  wxBusy.value = true;
+  try {
+    if (ctx.phone) {
+      await session.wechatRedeem(code, ctx.phone, cardFromDraft(ctx.phone));
+      await landAfterWechat(ctx, "已进入你的账号");
+    } else {
+      const r = await session.wechatLogin(code);
+      if (r === "unbound") {
+        // 生面孔/没绑的老球友共用一副面孔（4.2/4.3）：现有名片卡原样，
+        // 新面孔填卡；老球友点右上角「登录」走短信/密码，验证完自动正式绑上
+        ui.signupThen((ctx.pending ?? {}) as SignupPending);
+        wxBack.value = ctx.back;
+        ui.toast("这个微信还没绑过账号 · 填张名片建号，或点右上角登录验证");
+        return;
+      }
+      await landAfterWechat(ctx, "欢迎回来 · 战绩都在");
+    }
+  } catch (e) {
+    ui.toast(errText(e)); // wechat_unbound/bound_other/binding_weak 指路文案后端给全
+  } finally {
+    wxBusy.value = false;
+  }
+}
+
+/** 回跳落地：回来说去哪（转场包的 back）；占卡带来的挂起动作也在这接着办 */
+async function landAfterWechat(
+  ctx: { back: string; pending?: SignupPending },
+  msg: string,
+): Promise<void> {
+  ui.toast(msg);
+  if (ctx.pending) await runPendingResume(ctx.pending);
+  navToPath(ctx.back);
+}
+
+/** 占卡微信验证带的名片重建（D5 同规：明确填过的才覆盖）——草稿是出发前
+    SignupSheet flush 进本机的，picked 下标映射同一份预设组（dict 单一源） */
+function cardFromDraft(phone: string): CardPayload | undefined {
+  const draft = readCardDraft<{ nickname?: string; picked?: number | null }>();
+  if (!draft) return undefined;
+  const picked = draft.picked ?? null;
+  return {
+    phone,
+    nickname: draft.nickname ?? "",
+    nickname_set: !!draft.nickname?.trim(),
+    chibi: picked != null ? CHIBI_PRESETS[picked].c : undefined,
+    chibi_set: picked != null,
+  };
+}
+
+/* —— 微信回跳的落地导航：signupThen 路成功后 isGuest 翻 ready 时回 back
+   （普通三栏流程 wxBack 为空、行为与 1.6 完全一致）—— */
+watch(
+  () => session.isGuest,
+  (guest, prev) => {
+    if (prev && !guest && wxBack.value && !ui.pendingAfterLogin) {
+      const back = wxBack.value;
+      wxBack.value = null;
+      navToPath(back);
+    }
+  },
+);
 </script>
 
 <style lang="scss" scoped>
