@@ -173,7 +173,7 @@ import {
 import type { Bill, BillPayer, BillStatus } from "@/api/types";
 import { errText } from "@/api/http";
 import { useUiStore } from "@/stores/ui";
-import { goGame } from "@/utils/nav";
+import { goGame, goLogin } from "@/utils/nav";
 
 const bill = useBillStore();
 const ui = useUiStore();
@@ -202,11 +202,6 @@ async function refresh(p: BillPeriod = bill.period): Promise<void> {
 onShow(() => {
   void refresh();
 });
-
-/** 游客态登录入口（4.9 修订：无演示数据，空账自持 + 登录换真账） */
-function goLogin(): void {
-  uni.navigateTo({ url: "/pages/mine/login" });
-}
 
 /** 行副标题：待付写明欠谁（4.1），其余只记散场那天；
     「含带来的朋友 ×N」小字在模板行内另起一行（4.1，复用 .gray-flag） */

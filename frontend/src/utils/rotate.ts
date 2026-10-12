@@ -7,7 +7,7 @@ import type {
   PairingMode,
   User,
 } from "@/api/types";
-import { GUEST_DUPR } from "./elo";
+import { duprOf } from "./elo";
 
 /** 「算到场」谓词单一源（store 转出口给候场条/签到浮层/二维码浮层消费；
     rotate 内部发牌池与 store 考勤同一把尺）：ok 正常 / late 迟到已到 / join 中途加入；
@@ -46,9 +46,9 @@ export function courtOfPerson(
    live_rotation.requeue_after_confirm——确认响应视图落地即排好，前端不再镜像。 */
 
 /** 均衡排序用分（1.4 §6 消费矩阵修订：配对吃 DUPR——未定级吃派生分，2.5 起）：dupr 直用，
-    访客/缺数兜底 2.5（GUEST_DUPR，1.4 §4 修订：与新号起步同源） */
+    访客/缺数兜底 2.5（duprOf 单一源，1.4 §4 修订：与新号起步同源） */
 export function rankOf(p: User | undefined): number {
-  return p?.dupr ?? GUEST_DUPR;
+  return duprOf(p);
 }
 
 /** 本地到分判定（2.3 记分本地化）：任一方够线且净胜 ≥2——与后端判分同式，

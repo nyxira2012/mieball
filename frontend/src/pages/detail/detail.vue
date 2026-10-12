@@ -262,9 +262,7 @@
         >▶ 开始打球</AppButton
       >
       <AppButton
-        v-else-if="
-          org && (game.status === 'live' || (game.liveOpened && !game.ended))
-        "
+        v-else-if="org && liveOngoing(game)"
         variant="burn"
         block
         class="mt12"
@@ -330,6 +328,7 @@ import { useUiStore } from "@/stores/ui";
 import {
   cardLiveEntry,
   isOrg,
+  liveOngoing,
   MODE_NAMES,
   SCORE_RULE_NAMES,
 } from "@/utils/format";

@@ -17,10 +17,10 @@
    圆角 26px 顶部黄描边、遮罩点击关闭。transition 类切换语义与 alpha .on 一致 */
 defineProps({
   visible: { type: Boolean, default: false },
-  title: { type: String, default: '' },
-  hint: { type: String, default: '' },
-})
-const emit = defineEmits<{ (e: 'close'): void }>()
+  title: { type: String, default: "" },
+  hint: { type: String, default: "" },
+});
+const emit = defineEmits<{ (e: "close"): void }>();
 </script>
 
 <style lang="scss" scoped>
@@ -35,7 +35,9 @@ const emit = defineEmits<{ (e: 'close'): void }>()
   pointer-events: none;
   /* visibility 一并收：backdrop-filter 对 opacity:0 元素照样生效，不收会把整页常驻压糊 */
   visibility: hidden;
-  transition: 0.25s, visibility 0.25s;
+  transition:
+    0.25s,
+    visibility 0.25s;
 }
 .mask.on {
   opacity: 1;
@@ -78,10 +80,12 @@ const emit = defineEmits<{ (e: 'close'): void }>()
   color: var(--dim);
   margin-bottom: 16px;
 }
-/* P11 桌面宽屏（§2.5，alpha #phone 同构）：>560px 时遮罩/面板约束到 480px 画布居中。
-   两者均为 left/right 双侧定位，补 max-width + margin auto 即水平居中，其余不动。 */
+/* P11 桌面宽屏（§2.5，alpha #phone 同构）：>560px 时面板收 480px 画布居中
+   （left/right 双侧定位 + max-width + margin auto）。遮罩不随之收——它是全站
+   弹层「点外即关」的唯一通路（档案等弹层无自带关闭钮），收进画布后桌面两侧
+   点击落空成死区（2026-10-11 修复）；保持 inset:0 全屏，与 QrOverlay/
+   EndSettleModal 的全屏遮罩口径一致。 */
 @media (min-width: 561px) {
-  .mask,
   .sheet {
     max-width: 480px;
     margin: 0 auto;

@@ -178,10 +178,18 @@ import {
   deadRowKind,
   freqName,
   gameTapAction,
+  liveOngoing,
   newGameCard,
   slotName,
 } from "@/utils/format";
-import { isoDay, isoDayOff, isoHm, isoParts, untilTxt } from "@/utils/time";
+import {
+  WD_CN,
+  isoDay,
+  isoDayOff,
+  isoHm,
+  isoParts,
+  untilTxt,
+} from "@/utils/time";
 import { errText } from "@/api/http";
 import { goGame, goLive } from "@/utils/nav";
 import { useSlowHint } from "@/composables/useSlowHint";
@@ -197,20 +205,22 @@ function onSignup(): void {
   ui.openSheet({ type: "signup-card" });
 }
 
-/* ---- 远程散场（2.3 §4.9）：我组织的进行中的局；落预约位后 goLive——
-     live 页 ensureLive 落地即自动开清扫流（同一链，逐片处理照常二次确认） ---- */
+/* ---- 远程散场（2.3 §4.9）：我组织的「账开着还没散场」的局；落预约位后 goLive——
+     live 页 ensureLive 落地即自动开清扫流（同一链，逐片处理照常二次确认）。
+     口径吃 liveOngoing 单一源（提前开账/到点未散场与 detail 回现场、liveGame 同规） ---- */
 const myLiveOrg = computed(() =>
-  game.myGames.filter((g) => g.status === "live" && g.my?.isOrganizer),
+  game.myGames.filter((g) => liveOngoing(g) && g.my?.isOrganizer),
 );
 function onRemoteSweep(g: Game): void {
   liveStore.sweepOnArrive = g.id;
   goLive(g.id);
 }
 
-/* ---- 头部（alpha:1072 日期行） ---- */
+/* ---- 头部（alpha:1072 日期行）：北京墙钟单一源 isoParts——同页卡片「今天/明天」
+     标签也走它，非东八区设备上头部日期才不会与卡片错位（走查#1 同族收口） ---- */
 const dateLine = computed(() => {
-  const d = new Date();
-  return `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 星期${"日一二三四五六"[d.getDay()]}`;
+  const p = isoParts(new Date());
+  return `${p.m} 月 ${p.d} 日 · 星期${WD_CN[p.wd]}`;
 });
 
 /* ---- 状态（alpha:956） ---- */

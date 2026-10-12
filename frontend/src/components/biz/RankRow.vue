@@ -18,10 +18,7 @@
         <!-- alpha:1770 u.id===CURRENT_USER_ID → 「我」徽章 · liked → ♥（本地态） -->
         <text v-if="userStore.isMe(user.id)" class="badge fire">我</text>
         <text v-if="userStore.isLiked(user.id)" class="hrt">♥</text>
-        <TierBadge
-          v-if="mode === 'dupr'"
-          :tier="duprTier(user.dupr ?? GUEST_DUPR)"
-        />
+        <TierBadge v-if="mode === 'dupr'" :tier="duprTier(duprOf(user))" />
         <text v-if="mode === 'dupr' && user.provisional" class="prov"
           >未定级</text
         >
@@ -37,7 +34,7 @@
         <text class="unit">Elo</text>
       </template>
       <template v-else>
-        <DuprScore :d="user.dupr ?? GUEST_DUPR" />
+        <DuprScore :d="duprOf(user)" />
         <text class="unit">DUPR</text>
       </template>
       <text class="d" :class="user.month >= 0 ? 'up' : 'dn'">
@@ -59,7 +56,7 @@ import Last5Dots from "@/components/ui/Last5Dots.vue";
 import DuprScore from "@/components/ui/DuprScore.vue";
 import type { ScoreMode, User } from "@/api/types";
 import { useUserStore } from "@/stores/user";
-import { GUEST_DUPR, duprTier } from "@/utils/elo";
+import { duprOf, duprTier } from "@/utils/elo";
 
 const props = defineProps({
   /** 榜单行球员（rankRows 过滤 !shadow && play>0 后的有序一条） */

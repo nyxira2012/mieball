@@ -19,8 +19,8 @@
               ></view
             >
             <view class="ps-elo"
-              ><text class="elo-b">{{ fmtDupr1(p.dupr ?? GUEST_DUPR) }}</text> ·
-              已打 {{ p.play }} 场<text v-if="p.shadow" class="ps-guest">
+              ><text class="elo-b">{{ fmtDupr1(duprOf(p)) }}</text> · 已打
+              {{ p.play }} 场<text v-if="p.shadow" class="ps-guest">
                 · 访客（不计积分）</text
               ></view
             >
@@ -91,8 +91,7 @@
                 }}<text v-if="r.u.shadow" class="badge guest">访客</text></view
               >
               <view class="row-meta"
-                >已打 {{ r.u.play }} 场 · DUPR
-                {{ fmtDupr1(r.u.dupr ?? GUEST_DUPR) }}</view
+                >已打 {{ r.u.play }} 场 · DUPR {{ fmtDupr1(duprOf(r.u)) }}</view
               >
             </view>
             <text class="row-go">换 ‹</text>
@@ -125,7 +124,7 @@ import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
 import { pById } from "@/utils/rotate";
-import { GUEST_DUPR, fmtDupr1 } from "@/utils/elo";
+import { duprOf, fmtDupr1 } from "@/utils/elo";
 
 const props = defineProps({
   visible: { type: Boolean, default: false },

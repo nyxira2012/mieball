@@ -65,3 +65,9 @@ export function goLive(id: number): void {
 export function goRecap(id: number): void {
   uni.navigateTo({ url: `/pages/live/recap?id=${id}` });
 }
+
+/** 进登录页（SignupSheet 名片卡 / bills / mine 三处共用）：游客态的统一出路。
+    带挂起动作的续办跳转（名片卡草稿等）由调用方先落 pendingAfterLogin 信号位再调这里 */
+export function goLogin(): void {
+  uni.navigateTo({ url: "/pages/mine/login" });
+}

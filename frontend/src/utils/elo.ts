@@ -21,6 +21,13 @@ export function duprParts(d: number): { head: string; tail: string } {
   return { head: s.slice(0, i), tail: s.slice(i) };
 }
 
+/** DUPR 展示取数：空值（未定级/访客缺数/查无此人）按访客标准分兜底（1.4 §4）——
+    兜底动作单一源（2026-10-12 收编：原先六文件 13 处各拼一遍 ?? GUEST_DUPR），
+    改兜底口径只动这里；入参可空（rotate 配对查无行时 p 为 undefined） */
+export function duprOf(u?: { dupr?: number | null } | null): number {
+  return u?.dupr ?? GUEST_DUPR;
+}
+
 /** DUPR 小字：一位小数（现场候场条/卡片小字用） */
 export function fmtDupr1(d: number): string {
   return d.toFixed(1);

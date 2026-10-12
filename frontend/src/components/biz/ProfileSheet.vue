@@ -25,8 +25,8 @@
         <!-- alpha:1906-1910 徽章 + 大分数 + 单位 + 本月涨跌（涨跌=stats card 月净胜）。
              档案是名片面：永远 DUPR 口径，不随战力页切换 -->
         <view class="scorerow">
-          <TierBadge v-if="played" :tier="duprTier(u.dupr ?? GUEST_DUPR)" />
-          <DuprScore v-if="played" :d="u.dupr ?? GUEST_DUPR" class="big" />
+          <TierBadge v-if="played" :tier="duprTier(duprOf(u))" />
+          <DuprScore v-if="played" :d="duprOf(u)" class="big" />
           <text v-else class="big">—</text>
           <text class="unit">{{ played ? "DUPR" : "起步" }}</text>
           <text v-if="played && u.provisional" class="prov">未定级</text>
@@ -81,7 +81,7 @@ import { useUserStore } from "@/stores/user";
 import { useSessionStore } from "@/stores/session";
 import { useGameStore } from "@/stores/game";
 import { useUiStore } from "@/stores/ui";
-import { GUEST_DUPR, duprTier } from "@/utils/elo";
+import { duprOf, duprTier } from "@/utils/elo";
 import { freqName, slotName } from "@/utils/format";
 
 const props = defineProps({

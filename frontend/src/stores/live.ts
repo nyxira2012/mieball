@@ -1030,11 +1030,10 @@ export const useLiveStore = defineStore("live", () => {
         ? old.g.organizer.id < 0 && cached
           ? cached
           : old.g
-        : (cached ?? stubGame(v));
-    const base = src ?? stubGame(v);
+        : (cached ?? stubGame(v)); // 两支都非空，无需再兜底
     const names = Array.from(
       { length: v.courtsCount },
-      (_, i) => base.courts?.[i] ?? `${i + 1}号`,
+      (_, i) => src.courts?.[i] ?? `${i + 1}号`,
     );
     const userStore = useUserStore();
     const people = userStore.people;
@@ -1089,7 +1088,7 @@ export const useLiveStore = defineStore("live", () => {
         .filter((p) => p.courtNo === no && p.courtSide === side)
         .map((p) => p.id);
     const L: LiveState = {
-      g: { ...base, courts: names, scoring: v.rules.scoring },
+      g: { ...src, courts: names, scoring: v.rules.scoring },
       roster,
       queue: [...v.queue],
       courts: v.courts.map((c) => ({

@@ -886,8 +886,11 @@ class LiveBook(LiveSweepMixin):
             "is_full_power": is_organizer
             or (viewer_id is not None and viewer_id in (state.admins or [])),
             # 提示行身份定值（2.6 §4.3-3）：判定的尺与打球记录名单三笔规矩同一把
-            # （playlog 单一源），前端不自判；未散场局按名单前提恒 False
-            "is_my_game": is_my_game_at(self.db, game_id, viewer_id),
+            # （playlog 单一源），前端不自判；未散场局按名单前提恒 False——散场旗
+            # 先行短路（谓词收尾那条 Game 重查也一并省掉），3s 轮询热路径上
+            # 在办局不再白跑战报 JSON/账单谓词
+            "is_my_game": game.ended_at is not None
+            and is_my_game_at(self.db, game_id, viewer_id),
             "organizer_account_id": game.organizer_id,
             "feed": state.feed or [],
             "courts_count": state.courts_count,

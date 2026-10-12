@@ -29,8 +29,7 @@
             ></view
           >
           <view class="meta"
-            >已打 {{ r.u.play }} 场 · DUPR
-            {{ fmtDupr1(r.u.dupr ?? GUEST_DUPR) }}</view
+            >已打 {{ r.u.play }} 场 · DUPR {{ fmtDupr1(duprOf(r.u)) }}</view
           >
         </view>
         <text
@@ -55,7 +54,7 @@ import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
 import { useUserStore } from "@/stores/user";
 import { courtSize } from "@/utils/rotate";
-import { GUEST_DUPR, fmtDupr1 } from "@/utils/elo";
+import { duprOf, fmtDupr1 } from "@/utils/elo";
 
 defineProps({
   visible: { type: Boolean, default: false },

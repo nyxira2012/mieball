@@ -44,15 +44,9 @@
           </view>
         </view>
         <view class="foot">
-          <!-- done 形态：[已结束][比分 胜/负]，隐去满员/剩坑与人数 chip -->
+          <!-- done 形态：[已结束]，隐去满员/剩坑与人数 chip（比分看局详情/战报，卡面不放） -->
           <template v-if="done">
             <AppChip>已结束</AppChip>
-            <AppChip v-if="card.result">
-              <text :class="card.result.myWin ? 'res-w' : 'res-l'"
-                >{{ card.result.sa }} · {{ card.result.sb }}
-                {{ card.result.myWin ? "胜" : "负" }}</text
-              >
-            </AppChip>
           </template>
           <template v-else-if="live">
             <view class="live-dot" />
@@ -241,13 +235,6 @@ const roleTxt = computed(() =>
   box-shadow: 0 0 0 0 rgba(255, 90, 54, 0.6);
   animation: pulse 1.6s infinite;
   flex: none;
-}
-/* 5.1 done 比分 chip 的胜负色 */
-.res-w {
-  color: var(--lemon);
-}
-.res-l {
-  color: var(--coral);
 }
 /* alpha:126-129 is-live 珊瑚描边 + LIVE 角标 */
 .gcard.is-live {

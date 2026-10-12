@@ -23,7 +23,7 @@
           <text class="ttl">{{ cardTitle }}</text>
           <!-- 段位/未定级是 DUPR 定级概念，Elo 视图不出现 -->
           <template v-if="mode === 'dupr'">
-            <TierBadge v-if="played" :tier="duprTier(me.dupr ?? GUEST_DUPR)" />
+            <TierBadge v-if="played" :tier="duprTier(duprOf(me))" />
             <text v-else class="tierb-fb">?</text>
             <text v-if="played && me.provisional" class="prov">未定级</text>
           </template>
@@ -36,7 +36,7 @@
           </template>
           <template v-else>
             <DuprScore
-              :d="me.dupr ?? GUEST_DUPR"
+              :d="duprOf(me)"
               class="big"
               :class="{ dim: !played || me.provisional }"
             />
@@ -65,7 +65,7 @@ import DuprScore from "@/components/ui/DuprScore.vue";
 import type { ScoreMode } from "@/api/types";
 import { useUserStore } from "@/stores/user";
 import { useSessionStore } from "@/stores/session";
-import { ELO_INIT, GUEST_DUPR, duprTier } from "@/utils/elo";
+import { ELO_INIT, duprOf, duprTier } from "@/utils/elo";
 import { goTab } from "@/utils/nav";
 
 defineProps({

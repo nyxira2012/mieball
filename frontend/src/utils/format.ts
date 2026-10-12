@@ -107,6 +107,14 @@ export function cardLiveEntry(g: Game): {
   return u ? { countdown: `还有${u}` } : {};
 }
 
+/** 「这局的现场账开着还没散场」单一口径（2.5 §4.4 账开即现场）：status 已 live ∨
+    liveOpened（提前开账时簿 state 仍 open/locked），且未散场。meet 远程散场横幅、
+    detail「回到现场」、game store liveGame 三处同消费（2026-10-12 收编：原先三处
+    各写一遍，meet 只写了 status 窄版，提前开账与到点未散场两类局横幅漏亮） */
+export function liveOngoing(g: Game): boolean {
+  return (g.status === "live" || g.liveOpened) && !g.ended;
+}
+
 /** 真局 → 卡面模型（meet 列表用）：时间/场馆/必打标都是纯展示换算，
     人头进度读后端定值 slotsLeft；角色与头像来自 entries+my */
 export function newGameCard(g: Game): GameCardModel {
@@ -134,7 +142,7 @@ export function newGameCard(g: Game): GameCardModel {
           ? "inv"
           : null,
     stackAvatars: formal.slice(0, 5).map((e) => e.account.chibi),
-    stackPlus: `+${g.heads - 5 > 0 ? g.heads - 5 : ""}`,
+    stackPlus: g.heads > 5 ? `+${g.heads - 5}` : "+",
     ...cardLiveEntry(g),
   };
 }

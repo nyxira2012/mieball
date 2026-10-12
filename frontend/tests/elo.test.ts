@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ELO_INIT, duprParts, duprTier, fmtDupr1 } from "@/utils/elo";
+import { ELO_INIT, duprOf, duprParts, duprTier, fmtDupr1 } from "@/utils/elo";
 
 /* settleElo 的公式用例已随 2026-10-08 收归后端退役（前端零公式零镜像）——数字
    守门移至后端 test_live_score.py 的 test_pending_elo_preview_two_branches_equal_
@@ -24,6 +24,13 @@ describe("DUPR 展示（1.4 §1/§2：三位小数 + 段位档）", () => {
       const { head, tail } = duprParts(d);
       expect(head + tail).toBe(d.toFixed(3));
     }
+  });
+
+  it("duprOf 兜底单一源：空值/缺行一律回访客标准分 2.5（1.4 §4；六文件 13 处收编）", () => {
+    expect(duprOf({ dupr: 3.52 })).toBe(3.52);
+    expect(duprOf({})).toBe(2.5);
+    expect(duprOf({ dupr: null })).toBe(2.5);
+    expect(duprOf(undefined)).toBe(2.5); // rotate 配对查无行
   });
 
   it("fmtDupr1 一位小数（现场小字）", () => {

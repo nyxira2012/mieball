@@ -20,8 +20,8 @@
         <view class="mchips">
           <!-- alpha:1939 me-elo 位：tierB 徽章 + DUPR 分 + 档名（chip ok） -->
           <AppChip kind="ok">
-            <TierBadge :tier="meTier" /> DUPR
-            <DuprScore :d="me.dupr ?? GUEST_DUPR" /> · {{ meTier }}
+            <TierBadge :tier="meTier" /> DUPR <DuprScore :d="duprOf(me)" /> ·
+            {{ meTier }}
           </AppChip>
           <!-- alpha:656 尾号 chip：登录后是账号真实尾号，游客回落演示尾号 -->
           <AppChip>尾号 ···{{ session.phoneTail }}</AppChip>
@@ -65,11 +65,7 @@
          分流设/改密（4.8/4.11）；微信授权只给「即将开通」说明不放死按钮（4.12）；游客给登录入口 -->
     <SectionTitle title="账号" />
     <view class="acc-links">
-      <view
-        v-if="session.isGuest"
-        class="acc-link"
-        @click="go('/pages/mine/login')"
-      >
+      <view v-if="session.isGuest" class="acc-link" @click="goLogin">
         登录 · 我是老球友（手机号找回） <text class="arr">▸</text>
       </view>
       <template v-else>
@@ -233,9 +229,10 @@ import { useBillStore } from "@/stores/bill";
 import { exportText } from "@/utils/blackbox";
 import { copyWithToast } from "@/utils/clipboard";
 import { ApiError, errText } from "@/api/http";
-import { GUEST_DUPR, duprTier } from "@/utils/elo";
+import { duprOf, duprTier } from "@/utils/elo";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
 import { newPwdError } from "@/utils/validate";
+import { goLogin } from "@/utils/nav";
 
 const user = useUserStore();
 const game = useGameStore();
@@ -268,7 +265,7 @@ const record = computed(() =>
     : `${me.value.play} 场 · ${me.value.win} 胜 · 胜率 ${Math.round((me.value.win / me.value.play) * 100)}%`,
 );
 /** DUPR chip 的档名（utils/elo.ts duprTier；未填按 3.0 起步档） */
-const meTier = computed(() => duprTier(me.value.dupr ?? GUEST_DUPR));
+const meTier = computed(() => duprTier(duprOf(me.value)));
 
 /* —— 导航（uni 路由集中在页面层，store 不碰 uni.*；路由在模板处直读） —— */
 function go(url: string): void {

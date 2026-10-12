@@ -7,6 +7,7 @@ import {
   freqName,
   gameTapAction,
   isOrg,
+  liveOngoing,
   newGameCard,
   slotBig,
   slotName,
@@ -281,6 +282,25 @@ describe("gameTapAction（alpha:907 点局卡分支）：被邀请未加入 → 
       ),
     ).toBe("detail"); // 已加入的邀请不算
     expect(gameTapAction(mkGame())).toBe("detail");
+  });
+});
+
+describe("liveOngoing（「账开着还没散场」单一口径：meet 横幅/detail 回现场/liveGame 同消费）", () => {
+  it("status=live 在办、liveOpened 提前开账（簿仍 open/locked）也在办", () => {
+    expect(liveOngoing(mkGame({ status: "live" }))).toBe(true);
+    expect(liveOngoing(mkGame({ status: "open", liveOpened: true }))).toBe(
+      true,
+    );
+    expect(liveOngoing(mkGame({ status: "locked", liveOpened: true }))).toBe(
+      true,
+    );
+  });
+  it("已散场（ended）不算在办；没开账的 open/locked 也不算", () => {
+    expect(
+      liveOngoing(mkGame({ status: "done", liveOpened: true, ended: true })),
+    ).toBe(false);
+    expect(liveOngoing(mkGame({ status: "open" }))).toBe(false);
+    expect(liveOngoing(mkGame({ status: "locked" }))).toBe(false);
   });
 });
 

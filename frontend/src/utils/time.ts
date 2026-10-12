@@ -1,64 +1,14 @@
-/* 时间工具（alpha:958-981） */
+/* 时间工具（alpha:958-981；1.2 切真后端 ISO 时刻后，mock 时代的中文日段解析
+   三件 gameTime/splitGameTime/dayOrd 已随 2026-10-12 精简批退役——src 零消费） */
 
-const WK: Record<string, number> = {
-  周日: 0,
-  周一: 1,
-  周二: 2,
-  周三: 3,
-  周四: 4,
-  周五: 5,
-  周六: 6,
-}; // alpha:963
-
-/** 把「今晚 19:00 / 周六 14:00 / 下周三 20:00 / 10.06 周一 19:00」解析成 Date
-    （alpha:959-974 逐字对齐；入参为 g.t / g.deadline）
-    判定顺序：首段是「M.DD」精确日期 → 当年该日（组局改版后拨盘产物，已过不回绕）；
-    含「后天」→ 后天；含「明」→ 明天；「下周X」→ 下周；「周X」→ 本周，今天的周X已过顺延下周（alpha:970）。 */
-export function gameTime(t: string): Date {
-  const parts = t.split(" ");
-  const day = parts[0];
-  const [H, M] = (parts[parts.length - 1] ?? "0:00").split(":").map(Number);
-  const now = new Date();
-  const d = new Date(now);
-  if (/^\d{1,2}\.\d{1,2}$/.test(day)) {
-    const [m, dd] = day.split(".").map(Number);
-    return new Date(now.getFullYear(), m - 1, dd, H, M);
-  }
-  if (/后天/.test(day)) d.setDate(d.getDate() + 2);
-  else if (/明/.test(day)) d.setDate(d.getDate() + 1);
-  else if (day.startsWith("下周")) {
-    const w = WK[day.slice(1)] ?? 3;
-    d.setDate(d.getDate() + ((w - d.getDay() + 7) % 7) + 7);
-  } else if (WK[day] !== undefined) {
-    const delta = (WK[day] - d.getDay() + 7) % 7;
-    d.setDate(d.getDate() + delta);
-    d.setHours(H, M, 0, 0);
-    if (d <= now) d.setDate(d.getDate() + 7); // 今天的周X已过 → 顺延下周
-    return d;
-  }
-  d.setHours(H, M, 0, 0);
-  return d;
-}
-
-/** 局时间串拆分（GameCard 时间位与 detail hero 共用）：末段=时刻、前段拼接=日段
-    （3.3 改版后 t 可能是「10.06 周一 19:00」三段式；格式再变只改这里）。 */
-export function splitGameTime(t: string): { day: string; hm: string } {
-  const p = t.split(" ");
-  return { day: p.slice(0, -1).join(" "), hm: p[p.length - 1] ?? "" };
-}
+/** 周名（isoDay 日段与 meet 头部日期行同消费） */
+export const WD_CN = "日一二三四五六";
 
 /** 打多久文案：整/半小时 → 「N 小时」（1.5 这种），其余（拨盘 5 分步进会出 115 分钟这类）→ 「N 分钟」。
     dur 吃小时数（detail 页 endAt-startAt 现算分钟后 /60 喂入） */
 export function durTxt(dur: number): string {
   const m = Math.round(dur * 60);
   return m % 30 === 0 ? `${m / 60} 小时` : `${m} 分钟`;
-}
-
-/** 'M.DD' → 同年（2026）内可比较的天序：月*100+日 单调递增（I3.2 自 stores/bill.ts 迁入：
-    纯日期序函数归 utils；账单/局日期年份恒为当年，mock 无跨年） */
-export function dayOrd(date: string): number {
-  const [m, d] = date.split(".").map(Number);
-  return m * 100 + d;
 }
 
 /** 距离某时点还有多久（alpha:975-981；已过 → null）。
@@ -150,7 +100,7 @@ export function isoDay(t: string | Date): string {
   const p = isoParts(t);
   const off = isoDayOff(t);
   if (off >= 0 && off <= 2) return ["今天", "明天", "后天"][off];
-  return `${p.m}.${String(p.d).padStart(2, "0")} 周${"日一二三四五六"[p.wd]}`;
+  return `${p.m}.${String(p.d).padStart(2, "0")} 周${WD_CN[p.wd]}`;
 }
 
 /** ISO → 北京墙钟 'HH:mm'——真局卡面与 detail hero 大字共用 */

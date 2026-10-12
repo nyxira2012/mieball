@@ -37,7 +37,7 @@ import type {
   PublishGameInput,
 } from "@/api/types";
 import { ApiError } from "@/api/http";
-import { deadRowKind } from "@/utils/format";
+import { deadRowKind, liveOngoing } from "@/utils/format";
 import { useUiStore } from "./ui";
 
 /** game_view（线上 snake）→ Game（store camel）：唯一映射点 */
@@ -399,9 +399,7 @@ export const useGameStore = defineStore("game", () => {
       完成钮失效；回看入口由 打球记录→局详情→战报子页 承接。 */
   const liveGame = computed((): Game | null => {
     const pick = (list: Game[]): Game | null => {
-      const on = list.filter(
-        (g) => (g.status === "live" || g.liveOpened) && !g.ended,
-      );
+      const on = list.filter(liveOngoing);
       return on.length
         ? on.reduce((a, b) => (b.startAt > a.startAt ? b : a))
         : null;

@@ -42,7 +42,6 @@ function accountToUser(view: AccountView | LeaderboardRowApi): User {
     elo: "elo_rating" in view ? view.elo_rating : 0,
     dupr: view.dupr_rating,
     provisional: view.dupr_provisional,
-    duprGames: view.dupr_games,
     play: view.dupr_games,
     win: view.dupr_wins,
     month: view.dupr_month_net ?? 0,
