@@ -120,9 +120,28 @@ export const useSessionStore = defineStore("session", () => {
   /* ---- 微信钥匙（1.7 第四把）：认人门 + 占卡微信验证 ---- */
 
   /** 微信认人（4.1/4.2）：绑了直接进；没绑落凭条转名片/验证。凭条恒落位——
-      绑着的微信想搬到别的账号，下一个验明正身凭它顶替换绑（4.5 下文）。 */
-  async function wechatLogin(code: string): Promise<"ok" | "unbound"> {
-    const res = await apiWechatLogin(code, deviceMarker());
+      绑着的微信想搬到别的账号，下一个验明正身凭它顶替换绑（4.5 下文）。
+      1.8 快进支（opts.fast，动作弹卡主钮出发）：微信没绑过则后端直接开号
+      （created：微信生而正式绑、无凭条、与建号同款清草稿）；仅随机名时报名字
+      （回执不是补绑提示，4.1 结果 2），非随机名不在这说——挂起动作的原话
+      由续办分支自己回，不重复。 */
+  async function wechatLogin(
+    code: string,
+    opts?: { fast?: boolean; nickname?: string },
+  ): Promise<"ok" | "unbound" | "created"> {
+    const res = await apiWechatLogin(
+      code,
+      deviceMarker(),
+      opts?.fast,
+      opts?.nickname,
+    );
+    if (res.status === "created") {
+      admitSession({ token: res.token, account: res.account }, true);
+      if (res.nickname_random) {
+        ui.toast(`名单里你叫『${res.account.name}』，随时可改`);
+      }
+      return "created";
+    }
     wechatBindToken.value = res.bind_token;
     if (res.status === "unbound") return "unbound";
     admitSession({ token: res.token, account: res.account }, false);

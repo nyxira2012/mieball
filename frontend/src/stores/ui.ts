@@ -23,6 +23,9 @@ export const useUiStore = defineStore("ui", () => {
 
   function openSheet(p: SheetPayload): void {
     sheet.value = p;
+    // 1.8 名片卡来源位随开卡复位（signupThen 直开/约球页游客入口都经此）：
+    // 登录页回跳落卡后 login.vue 再覆写 wechat-return——顺序即语义
+    if (p.type === "signup-card") signupCardFrom.value = "action";
   }
   function closeSheet(): void {
     sheet.value = null;
@@ -45,6 +48,11 @@ export const useUiStore = defineStore("ui", () => {
      卫生：登录页手动返回仍游客由 login 页 onUnload 兜清（why 注释在消费点旁）。 */
   const pendingAfterLogin = ref<SignupPending | null>(null);
 
+  /* —— 1.8 名片卡来源位（4.7 防误快进护栏）：action=动作弹出（微信内主钮
+     =微信授权登录快进）；wechat-return=登录页微信键落下的找回卡（主钮保持手填，
+     防老球友在找回面被快进岔成临时账号）。内存非持久，随开卡复位（见 openSheet）。 */
+  const signupCardFrom = ref<"action" | "wechat-return">("action");
+
   /* —— P3 纯增量：全局撒花触发器（alpha:839-845 confetti(n) 的状态层入口）——
      Confetti.vue（P1）是纯展示件，只接受 trigger 计数 + count 粒数两个 props，
      因此除 confettiKey 计数器外需附带 confettiN 携带本波粒数（14=开下一轮 / 56=收局，P8a/P8b 用）。
@@ -63,6 +71,7 @@ export const useUiStore = defineStore("ui", () => {
     confettiKey,
     confettiN,
     pendingAfterLogin,
+    signupCardFrom,
     openSheet,
     closeSheet,
     signupThen,

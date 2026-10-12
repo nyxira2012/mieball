@@ -23,8 +23,14 @@ export interface WechatAuthCtx {
   state: string;
   /** 回跳落点（hash 路径含查询串，如 /pages/detail/detail?id=5） */
   back: string;
-  /** 占卡「微信验证进入」带着的手机号（登录页一键登录没有它） */
+  /** 占卡「微信验证进入」带着的手机号（登录页一键登录没有它）。
+      1.8：快进建号不看手机号——此字段只有占卡验证路消费，created 支不碰 */
   phone?: string;
+  /** 卡上「叫什么」手填值（1.8 快进建号昵称第一优先级）；空手填不存 */
+  nickname?: string;
+  /** 动作弹卡主钮出发=true（1.8 快进建号）；登录页微信键出发不存——
+      回跳后端默认 False，unbound 仍发凭条落卡（4.7 找回面不快进护栏） */
+  fast?: boolean;
   /** 跳走前进行到一半的动作（回来接着办，1.6 接着办承诺不因换通道打折） */
   pending?: SignupPending;
   /** 出发时刻：转场包只活十分钟，与绑定凭条同刻度 */
@@ -126,6 +132,10 @@ export function authRedirectUrl(path: string): string {
  */
 export async function beginWechatAuth(opts: {
   phone?: string;
+  /** 1.8 快进建号：动作弹卡主钮（微信内）出发才带——授权回来直接开号 */
+  fast?: boolean;
+  /** 卡上「叫什么」手填值（快进建号昵称第一优先级；空手填不传） */
+  nickname?: string;
   pending?: SignupPending;
   toast: (msg: string) => void;
 }): Promise<string> {
@@ -140,6 +150,8 @@ export async function beginWechatAuth(opts: {
     state,
     back: backPathForAuth(),
     phone: opts.phone,
+    fast: opts.fast,
+    nickname: opts.nickname,
     pending: opts.pending,
     ts: Date.now(),
   });

@@ -506,13 +506,27 @@ async function handleWechatReturn(code: string, state: string): Promise<void> {
       await session.wechatRedeem(code, ctx.phone, cardFromDraft(ctx.phone));
       await landAfterWechat(ctx, "已进入你的账号");
     } else {
-      const r = await session.wechatLogin(code);
+      // 1.8：转场包的 fast/nickname 如数转发——动作弹卡主钮出发带 fast（回来
+      // 直接开号），登录页微信键出发 ctx 无 fast（后端默认 False → 1.7 原路）
+      const r = await session.wechatLogin(code, {
+        fast: ctx.fast,
+        nickname: ctx.nickname,
+      });
       if (r === "unbound") {
         // 生面孔/没绑的老球友共用一副面孔（4.2/4.3）：现有名片卡原样，
-        // 新面孔填卡；老球友点右上角「登录」走短信/密码，验证完自动正式绑上
+        // 新面孔填卡；老球友点右上角「登录」走短信/密码，验证完自动正式绑上。
+        // 落卡来源位置 wechat-return：找回面不快进、主钮保持手填（1.8 4.7）——
+        // 必须在 signupThen 之后覆写（signupThen 开卡时复位 action）
         ui.signupThen((ctx.pending ?? {}) as SignupPending);
+        ui.signupCardFrom = "wechat-return";
         wxBack.value = ctx.back;
         ui.toast("这个微信还没绑过账号 · 填张名片建号，或点右上角登录验证");
+        return;
+      }
+      if (r === "created") {
+        // 快进建号成（1.8 4.1）：随机名的名字回执 session 已报、动作原话由
+        // 续办分支自己回——这里只落地续办+回原页，不另加话
+        await landAfterWechat(ctx);
         return;
       }
       await landAfterWechat(ctx, "欢迎回来 · 战绩都在");
@@ -524,12 +538,13 @@ async function handleWechatReturn(code: string, state: string): Promise<void> {
   }
 }
 
-/** 回跳落地：回来说去哪（转场包的 back）；占卡带来的挂起动作也在这接着办 */
+/** 回跳落地：回来说去哪（转场包的 back）；占卡带来的挂起动作也在这接着办。
+    1.8：msg 可空——快进建号支的反馈（随机名回执/动作原话）各有其主，不在这代说 */
 async function landAfterWechat(
   ctx: { back: string; pending?: SignupPending },
-  msg: string,
+  msg?: string,
 ): Promise<void> {
-  ui.toast(msg);
+  if (msg) ui.toast(msg);
   if (ctx.pending) await runPendingResume(ctx.pending);
   navToPath(ctx.back);
 }

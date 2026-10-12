@@ -4,7 +4,12 @@ import { request } from "./http";
 import type { CardBg, ChibiConfig } from "./types";
 
 export type SmsPurpose =
-  "recovery" | "takeover" | "deactivate" | "set_password" | "reset_password";
+  | "recovery"
+  | "takeover"
+  | "deactivate"
+  | "set_password"
+  | "reset_password"
+  | "bind_phone"; // 1.8：快进号补绑手机号（判定反转：有账号当场拒；API 函数批3 落位）
 
 /** 本人视图（GET /me、signup/redeem/profile 的返回） */
 export interface AccountView {
@@ -173,18 +178,30 @@ export function apiWechatUrl(
   });
 }
 
-/** 认人门回话：绑了直接进（钥匙在手），没绑发绑定凭条（转名片/验证时顺手绑） */
+/** 认人门回话：绑了直接进（钥匙在手），没绑发绑定凭条（转名片/验证时顺手绑）；
+    1.8 快进支 created：fast=True 且微信没绑过 → 后端直接开号（微信生而正式绑，
+    无凭条）——nickname_random=名字落到随机名（前端 toast 报名字的判据，4.1） */
 export type WechatLoginResult =
   | { status: "ok"; token: string; account: AccountView; bind_token: string }
-  | { status: "unbound"; bind_token: string };
+  | { status: "unbound"; bind_token: string }
+  | {
+      status: "created";
+      token: string;
+      account: AccountView;
+      nickname_random: boolean;
+    };
 
 export function apiWechatLogin(
   code: string,
   device: string,
+  fast?: boolean,
+  nickname?: string,
 ): Promise<WechatLoginResult> {
   return request("POST", "/auth/wechat/login", {
     code,
     device_marker: device,
+    // fast 不传=登录页微信键出发：后端默认 False → unbound 发凭条落卡（1.7 原路）
+    ...(fast ? { fast: true, nickname: nickname ?? null } : {}),
   });
 }
 

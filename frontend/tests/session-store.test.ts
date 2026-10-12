@@ -350,6 +350,54 @@ describe("微信钥匙（1.7）", () => {
     expect(session.wechatBindToken).toBe("bt-2");
   });
 
+  it("wechatLogin 快进建号（1.8 created·随机名）：落身份清草稿，报名字不说绑上", async () => {
+    vi.spyOn(http, "deviceMarker").mockReturnValue("dev-9");
+    const session = useSessionStore();
+    const ui = useUiStore();
+    vi.mocked(authApi.apiWechatLogin).mockResolvedValue({
+      status: "created",
+      token: "wx-new",
+      account: { ...view, name: "球友8421" },
+      nickname_random: true,
+    });
+    const r = await session.wechatLogin("wx_new", {
+      fast: true,
+      nickname: "阿强",
+    });
+    expect(r).toBe("created");
+    expect(authApi.apiWechatLogin).toHaveBeenCalledWith(
+      "wx_new",
+      "dev-9",
+      true,
+      "阿强",
+    );
+    expect(session.status).toBe("ready");
+    expect(useUserStore().me.name).toBe("球友8421");
+    expect(http.setToken).toHaveBeenCalledWith("wx-new");
+    expect(http.clearCardDraft).toHaveBeenCalled(); // 与建号同款清草稿
+    expect(ui.toastMsg).toBe("名单里你叫『球友8421』，随时可改");
+    expect(session.wechatBindToken).toBeNull(); // 快进一次完成绑定，无凭条
+  });
+
+  it("wechatLogin 快进建号·非随机名：不报任何话（动作原话由续办分支自己回）", async () => {
+    vi.spyOn(http, "deviceMarker").mockReturnValue("dev-9");
+    const session = useSessionStore();
+    const ui = useUiStore();
+    vi.mocked(authApi.apiWechatLogin).mockResolvedValue({
+      status: "created",
+      token: "wx-new",
+      account: { ...view, name: "阿强" },
+      nickname_random: false,
+    });
+    const r = await session.wechatLogin("wx_new", {
+      fast: true,
+      nickname: "阿强",
+    });
+    expect(r).toBe("created");
+    expect(session.status).toBe("ready");
+    expect(ui.toastMsg).toBe(""); // 手填名主人自己知道，不在这说
+  });
+
   it("凭条在手建号：捎带上 bind_token；绑成了说「已绑上」并清凭条", async () => {
     const session = useSessionStore();
     const ui = useUiStore();

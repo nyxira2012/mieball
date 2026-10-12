@@ -75,6 +75,23 @@ describe("转场包（跳微信往返的本机存取）", () => {
   it("genState：两次不重样", () => {
     expect(genState()).not.toBe(genState());
   });
+  it("快进位（1.8）：fast/nickname 随包存取；新鲜度只看记号+时刻，与快进位无关", () => {
+    const ctx = {
+      state: "s1",
+      back: "/pages/detail/detail?id=5",
+      fast: true,
+      nickname: "阿强",
+      ts: Date.now(),
+    };
+    saveWechatCtx(ctx);
+    expect(readWechatCtx()).toEqual(ctx);
+    expect(ctxFresh(readWechatCtx(), "s1")).toBe(true); // 带快进位的包照常过双闸
+    expect(ctxFresh({ ...ctx, ts: Date.now() - 11 * 60_000 }, "s1")).toBe(
+      false,
+    ); // 超十分钟照旧不认
+    clearWechatCtx();
+    expect(readWechatCtx()).toBeNull();
+  });
 });
 
 describe("落点（backPathForAuth / navToPath）", () => {
@@ -187,6 +204,47 @@ describe("beginWechatAuth（出发编排）", () => {
     expect(ctx?.phone).toBeUndefined();
     expect(ctx?.pending).toEqual({ pendingJoin: { gameId: 9, bring: 0 } });
     expect(ctx?.back).toBe("/pages/detail/detail?id=9");
+  });
+
+  it("在微信里（动作弹卡主钮·快进出发 1.8）：fast+卡上手填昵称进转场包、不带手机号", async () => {
+    vi.stubGlobal("navigator", { userAgent: "MicroMessenger/8.0" });
+    vi.stubGlobal(
+      "getCurrentPages",
+      () =>
+        [
+          { route: "pages/meet/meet", options: {} },
+          { route: "pages/detail/detail", options: { id: "9" } },
+        ] as never[],
+    );
+    authApi.apiWechatUrl.mockResolvedValue({
+      url: "https://open.weixin.qq.com/xxx",
+    });
+    await beginWechatAuth({
+      fast: true,
+      nickname: "阿强",
+      pending: { pendingJoin: { gameId: 9, bring: 0 } },
+      toast: vi.fn(),
+    });
+    const ctx = readWechatCtx();
+    expect(ctx?.fast).toBe(true);
+    expect(ctx?.nickname).toBe("阿强");
+    expect(ctx?.phone).toBeUndefined(); // 快进建号不看卡上手机号
+    expect(ctx?.back).toBe("/pages/detail/detail?id=9");
+  });
+
+  it("登录页微信键出发（不传 fast）：转场包不带快进位（回跳走 1.7 原路，4.7 护栏）", async () => {
+    vi.stubGlobal("navigator", { userAgent: "MicroMessenger/8.0" });
+    vi.stubGlobal(
+      "getCurrentPages",
+      () => [{ route: "pages/mine/login" }] as never[],
+    );
+    authApi.apiWechatUrl.mockResolvedValue({
+      url: "https://open.weixin.qq.com/xxx",
+    });
+    await beginWechatAuth({ toast: vi.fn() });
+    const ctx = readWechatCtx();
+    expect(ctx?.fast).toBeUndefined();
+    expect(ctx?.nickname).toBeUndefined();
   });
 
   it("要地址失败（通道没开）：转场包清掉、错误文案透给 toast", async () => {

@@ -51,16 +51,37 @@
         >
       </AppField>
 
-      <AppButton variant="pri" block :disabled="busy" @click="onSubmitCard">
+      <!-- 1.8 A1 环境分流：微信内+动作弹出 → 主钮=微信授权登录（两下快进建号，
+           零输入）、手填退次级；主钮下小字给误入的老球友留看得见的正路（规格逐字） -->
+      <AppButton v-if="wxFastMain" variant="pri" block @click="onWechatFast">
+        微信授权登录
+      </AppButton>
+      <view v-if="wxFastMain" class="fast-note"
+        >新朋友点这里两下进场 · 注册过的老朋友用下面手机号报名</view
+      >
+      <!-- 手填「确定」：快进态退次级（仍验手机号——有微信身份的账号才可无手机号，
+           手填路必须手机号）；微信外/登录页找回落下（4.7）保持主钮 -->
+      <AppButton
+        :variant="wxFastMain ? 'ghost' : 'pri'"
+        block
+        :disabled="busy"
+        @click="onSubmitCard"
+      >
         {{ busy ? "提交中…" : actionLabel }}
       </AppButton>
 
-      <!-- 微信一键登录（1.7 §8 修订·认人门）：老球友换设备/微信重装的最短路——绑过的
-           微信两下进门、挂起动作接着办；没绑过回来还是这张卡（草稿与凭条都在手里）。
-           note 文案指路防新面孔误点（误点多绕一趟授权往返，草稿不丢） -->
-      <view class="wx-row cardwx" @click="onWechatLogin">
-        <text>微信一键登录</text>
-        <text class="wx-note">换过手机/微信重装过？点两下找回</text>
+      <!-- 微信行：动作弹出+微信内由主钮顶替（1.8 不再重复出现）；登录页找回落下
+           =1.7 次级行原样（4.7 找回面不快进）；微信外=说明行（点了告知在微信里
+           打开才能用，4.6——1.7 的「点两下找回」文案在微信外会说谎，故改口） -->
+      <view v-if="!wxFastMain" class="wx-row cardwx" @click="onWechatLogin">
+        <template v-if="fromWechatReturn">
+          <text>微信一键登录</text>
+          <text class="wx-note">换过手机/微信重装过？点两下找回</text>
+        </template>
+        <template v-else>
+          <text>微信授权登录</text>
+          <text class="wx-note">在微信里打开本页才能用</text>
+        </template>
       </view>
     </template>
 
@@ -171,7 +192,7 @@ import {
 } from "@/api/http";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
 import { isValidPhone } from "@/utils/validate";
-import { beginWechatAuth } from "@/utils/wechat";
+import { beginWechatAuth, isWeChatBrowser } from "@/utils/wechat";
 import { goLogin } from "@/utils/nav";
 import type { ChibiConfig, PublishGameInput } from "@/api/types";
 
@@ -234,6 +255,12 @@ const actionLabel = computed(() =>
         ? "确定留下意向"
         : "确定",
 );
+
+/* ---- 1.8 A1 环境分流：微信内+动作弹出 → 主钮=微信授权登录（快进建号）；
+     微信外主钮手填（4.6，微信授权入口只做说明行）；登录页找回落下的卡
+     不分环境一律手填主钮（4.7 防老球友在找回面被快进岔成临时账号） ---- */
+const fromWechatReturn = computed(() => ui.signupCardFrom === "wechat-return");
+const wxFastMain = computed(() => isWeChatBrowser() && !fromWechatReturn.value);
 
 /* ---- 草稿：本机持久化（断网重进内容还在）。
      打字密集场景，300ms 防抖再落存储，卸载/提交前 flush 补一次，防丢语义不变 ---- */
@@ -303,9 +330,28 @@ function goLoginWithDraft(): void {
   goLogin();
 }
 
-/** 填卡态「微信一键登录」（1.7 §8 修订）：同款先存后跳，但不带手机号——走认人门
-    而非占卡验证。绑过的微信回来直接进（挂起动作接着办）；没绑过落回这张名片卡
-    （绑定凭条在 session store 攥着，填完提交/任一验证即顺手绑）。 */
+/** 微信内主钮「微信授权登录」（1.8 4.1 快进建号）：带 fast+卡上手填昵称出发——
+    授权回来后端直接开号（微信生而正式绑、零输入），挂起动作由登录页回跳接续。
+    手机号不看（快进号手机号留空）；转场包不存 phone——那是占卡验证路复填用的。 */
+async function onWechatFast(): Promise<void> {
+  flushDraft();
+  try {
+    const url = await beginWechatAuth({
+      fast: true,
+      nickname: nickname.value.trim() || undefined,
+      pending: pendingSnapshot(),
+      toast: (m) => ui.toast(m),
+    });
+    location.href = url;
+  } catch {
+    /* 已 toast：通道没开 / 要地址失败 */
+  }
+}
+
+/** 填卡态微信行（1.7 §8 修订，1.8 后只服务非快进态：登录页找回落下的次级行、
+    微信外的说明行）：同款先存后跳，但不带手机号也不带 fast——走认人门且永不
+    快进（4.7 找回面护栏）。绑过的微信回来直接进（挂起动作接着办）；没绑过
+    落回这张名片卡（绑定凭条在 session store 攥着，填完提交/任一验证即顺手绑）。 */
 async function onWechatLogin(): Promise<void> {
   flushDraft();
   try {
@@ -484,6 +530,14 @@ function afterSuccess(msg: string): void {
 /* 填卡态微信行：紧随确定钮补间距（占卡态在 .exits 的 gap 里，不吃这条） */
 .cardwx {
   margin-top: 14px;
+}
+/* 微信内主钮下的小字（1.8 A1）：给误入的老球友留看得见的正路 */
+.fast-note {
+  font-size: 11px;
+  color: var(--dim);
+  text-align: center;
+  line-height: 1.5;
+  margin: 8px 0 10px;
 }
 .wx-note {
   font-family: var(--mono);
