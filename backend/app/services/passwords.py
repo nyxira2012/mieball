@@ -10,6 +10,8 @@ _active_by_phone / _merge_card 等）。四把钥匙裁决全部内聚在下列�
   改密码验旧密是已登录语境，不计锁（4.11）；短信端点永不互波及。
 - 微信挂点（1.7）：login/reset/redeem 三路都是验明正身时刻——顺手绑档解开、
   凭条在手正式绑上；绑定逻辑本体在 WechatMixin（services/wechat.py）。
+- 验证收编（1.8 §4.5）：reset 同挂 _adopt_binding——它也是「用短信证明自己是
+  老账号主人」的路；login_password 不挂（密码验证非短信，指路话术只提短信）。
 """
 
 from __future__ import annotations
@@ -74,10 +76,13 @@ class PasswordMixin:
         password: str,
         device_marker: str,
         bind_token: str | None = None,
+        adopt_from: Account | None = None,
     ) -> tuple[dict, str, bool]:
         """忘记密码重置（4.10）：短信验明正身 → 换锁（所有设备钥匙作废只留当前台）
         → 落新密码。换锁即新锁：旧密码连同旧连错计数一并清场。
-        微信挂点（1.7 C3）：换锁不清正式绑（本人多条活路），顺手绑档随验明正身解开。"""
+        微信挂点（1.7 C3）：换锁不清正式绑（本人多条活路），顺手绑档随验明正身解开。
+        验证收编（1.8 §4.5）：这也是「用短信证明自己是老账号主人」的路——当前设备
+        登着的快进号上的微信自动迁绑到本账号（凭条先执行、收编后且幂等）。"""
         self._check_phone(phone)
         account = self._active_by_phone(phone)
         if account is None:
@@ -92,6 +97,7 @@ class PasswordMixin:
         self._sweep_weak_binding(account)
         self.db.commit()
         bound = self._try_bind(account, bind_token, verified=True)
+        bound = self._adopt_binding(account, adopt_from) or bound
         token = self.keys.issue(account.id, device_marker, verified=True)
         return self.view(account.id, viewer="self"), token, bound
 

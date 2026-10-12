@@ -11,6 +11,9 @@
 - 微信钥匙（1.7）：逻辑全在 WechatMixin（services/wechat.py），本文件只留
   建号/验明正身/接管/注销四个挂点——建号顺手绑（弱档）、验明正身绑（正式档，
   顺手档同刻解开）、接管/注销清位；绑定失败静默跳过不拖主流程；
+- 快进号补手机号（1.8）：send_code 按 purpose 分支（bind_phone 判定反转——
+  有账号当场拒、指路登录页走短信验证）+ bind_phone 动作（收码才落号翻真）；
+  redeem 找回复挂验证收编（当前设备登着的快进号上的微信自动迁绑回来）；
 - 隐私出口：对外只有昵称+小人；同局加尾号 4 位；本人见全号；已注销统一占位。
   全产品展示他人一律经 view()，别处不得直读 Account。
 """
@@ -28,6 +31,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..core import clock, errors
+from ..core.logs import audit
 from ..db.models import Account
 from .keys import KeyVault
 from .passwords import PasswordMixin
@@ -136,11 +140,15 @@ class AccountBook(PasswordMixin, WechatMixin):
         device_marker: str,
         card: dict[str, Any] | None = None,
         bind_token: str | None = None,
+        adopt_from: Account | None = None,
     ) -> tuple[dict, str, bool]:
         """验证通过后发"已验证钥匙"。D4：杀未验证钥匙；接管另杀全部+密码作废。
         D5：接管合并名片。两路都留设密宽限窗（4.8：刚验完短信，设密码不重复发码）。
         微信挂点（1.7 §4.3）：验明正身=正式绑的好时机——凭条在手顺手绑上（顶替换绑）；
-        D4 微信面：顺手绑档同刻解开（真主人验证，冒填者的微信即死）。"""
+        D4 微信面：顺手绑档同刻解开（真主人验证，冒填者的微信即死）。
+        验证收编（1.8 §4.5，仅 recovery 支）：adopt_from=当前设备登着的账号（调用方
+        静默传 None 可选），它绑着的微信在验证成功后自动迁绑到本账号——凭条先执行、
+        收编后且幂等。takeover 不挂：接管语义是清场（1.7），微信登记位一并清。"""
         self._check_phone(phone)
         account = self._active_by_phone(phone)
         if account is None:
@@ -163,6 +171,9 @@ class AccountBook(PasswordMixin, WechatMixin):
         self.db.commit()
 
         bound = self._try_bind(account, bind_token, verified=True)
+        if purpose == "recovery":
+            # 收编只挂找回支：接管是清场语义（1.7），微信登记位一并清、不迁绑
+            bound = self._adopt_binding(account, adopt_from) or bound
         token = self.keys.issue(account.id, device_marker, verified=True)
         return self.view(account.id, viewer="self"), token, bound
 
@@ -190,13 +201,51 @@ class AccountBook(PasswordMixin, WechatMixin):
         account.deactivated_at = clock.now()
         self.db.commit()
 
-    # ---- 发码（三个用途都要求号码已有在册账号：查无账号不发码，§4.4） ----
+    # ---- 发码（发码前先判归属：五用途要号码已有在册账号，bind_phone 相反） ----
 
-    def send_code(self, phone: str, purpose: str, ip: str) -> None:
+    def send_code(
+        self, phone: str, purpose: str, ip: str, *, account_id: int | None = None
+    ) -> None:
+        """bind_phone（1.8 §4.4 快进号补绑）判定反转：既有主路「查无账号不发码」，
+        它相反「有账号当场拒」——不透露对方账号，指路登录页走短信验证（验证收编
+        会把微信自动绑回老账号）。占用拒照审计账本落一笔（account_id=发码请求者，
+        让「要不要立合并功能」有数可查）。"""
         self._check_phone(phone)
-        if self._active_by_phone(phone) is None:
+        if purpose == "bind_phone":
+            if self._active_by_phone(phone) is not None:
+                audit(
+                    "wechat_bind_phone_taken",
+                    account_id=account_id,
+                    detail="补绑手机号撞已有账号，指路登录页",
+                )
+                raise errors.phone_taken_redirect()
+        elif self._active_by_phone(phone) is None:
             raise errors.no_account()
         self.sms.send(phone, purpose, ip)
+
+    # ---- 补绑手机号（1.8 §4.4：快进号随时补上手机号，必须收码验证） ----
+
+    def bind_phone(self, *, account_id: int, phone: str, code: str) -> dict:
+        """核销 purpose=bind_phone 验证码 → phone 落库 + phone_verified=True（绑定
+        记录翻真=既有这一格记号）。发码端已把占用挡在发码时刻；这里只防两步之间
+        被人抢注（唯一索引兜底，同判占用指路）。已有手机号的账号核销前即拒——
+        换号走 1.6 A1 人工口径。返回最新本人视图。"""
+        account = self._require_active(account_id)
+        self._check_phone(phone)
+        if account.phone is not None:
+            # 核销前先挡：已绑号账号凭一张新号验证码自助换根号 = 原号被静默顶掉
+            # 释放，被劫持会话 + 攻击者手机号即可持久接管——必须拒
+            raise errors.phone_already_bound()
+        self.sms.verify(phone, "bind_phone", code)
+        account.phone = phone
+        account.phone_verified = True
+        try:
+            self.db.commit()
+        except IntegrityError:
+            # 发码到确认之间号码被注册：与发码时刻同款占用指路
+            self.db.rollback()
+            raise errors.phone_taken_redirect() from None
+        return self.view(account_id, viewer="self")
 
     # ---- 认人 / 退出 / 名片 ----
 

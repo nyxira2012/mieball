@@ -27,7 +27,16 @@ PHONE_DAILY_LIMIT = 10
 IP_DAILY_LIMIT = 20
 CODE_TTL_SECONDS = 5 * 60
 MAX_ATTEMPTS = 5
-PURPOSES = ("recovery", "takeover", "deactivate", "set_password", "reset_password")
+# bind_phone（1.8 §4.4 快进号补绑）与其余五用途判定相反：无账号才发码（见
+# AccountBook.send_code 分支），三处镜像的另两处 = routes/auth.py Literal / 前端 SmsPurpose
+PURPOSES = (
+    "recovery",
+    "takeover",
+    "deactivate",
+    "set_password",
+    "reset_password",
+    "bind_phone",
+)
 
 
 class SmsSender(Protocol):

@@ -163,6 +163,33 @@ def wechat_binding_weak() -> ApiError:
     )
 
 
+def wechat_fast_failed() -> ApiError:
+    # 快进建号半路失败（1.8 §4.9-3）：整体不生效不留半个账号，重点一次即走通
+    return ApiError(503, "wechat_fast_failed", "没办成，请再点一次微信授权")
+
+
+def phone_taken_redirect() -> ApiError:
+    # 补绑手机号撞占用（1.8 §4.4-2）：不透露那个账号是谁，指路登录页走短信验证
+    # ——验证收编那一刻微信会自动绑回老账号（话术已把记录留守说清）
+    return ApiError(
+        409,
+        "phone_taken_redirect",
+        "这个手机号注册过。如果你就是号主，去登录页用短信验证进入那个账号，"
+        "微信会自动绑回那个账号；你最近在临时号上的报名会留在那边，不会搬过来",
+    )
+
+
+def phone_already_bound() -> ApiError:
+    # bind_phone 前置守卫（1.8 §4.4）：账号已有手机号时，凭一张新号验证码自助换绑
+    # = 原根号被静默顶掉释放（被劫持会话 + 攻击者手机号 = 可短信重置密码的持久
+    # 接管），核销验证码前一律拒；换号对齐 1.6 A1 人工口径（联系平台客服）
+    return ApiError(
+        409,
+        "phone_already_bound",
+        "这个账号已有手机号，手机号是账号的根，换号先联系平台客服",
+    )
+
+
 # ---- 球局域（docs/1.2 技术设计 §2.3；账号域旧码一律不动） ----
 
 

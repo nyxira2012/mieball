@@ -11,6 +11,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
+from ...core import errors
 from ...db.models import Account
 from ...services.accounts import AccountBook
 from ..deps import (
@@ -44,8 +45,20 @@ class SignupIn(BaseModel):
 class SmsIn(BaseModel):
     phone: str
     purpose: Literal[
-        "recovery", "takeover", "deactivate", "set_password", "reset_password"
+        "recovery",
+        "takeover",
+        "deactivate",
+        "set_password",
+        "reset_password",
+        "bind_phone",  # 1.8：快进号补绑（判定反转：无账号才发码）
     ]
+
+
+class PhoneBindIn(BaseModel):
+    """补绑确认（1.8 §4.4）：输码绑上，必须收码验证。"""
+
+    phone: str
+    code: str
 
 
 class RedeemIn(BaseModel):
@@ -111,6 +124,10 @@ class WechatUrlIn(BaseModel):
 class WechatLoginIn(BaseModel):
     code: str
     device_marker: str
+    # 1.8 快进建号：动作弹的卡（微信内）传 fast=True（+卡上手填昵称，可空）；
+    # 登录页不传——unbound 仍走 1.7 原路发凭条落卡（4.7 防误快进护栏）
+    fast: bool = False
+    nickname: str | None = None
 
 
 class WechatRedeemIn(BaseModel):
@@ -187,18 +204,41 @@ def logout(
 def send_sms(
     body: SmsIn,
     request: Request,
+    account: Account | None = Depends(current_account),
     book: AccountBook = Depends(get_account_book),
 ):
-    # 查无账号不发码、所有限频都在 book.send_code 这一条路径上
-    book.send_code(body.phone, body.purpose, client_ip(request))
+    # 五用途查无账号不发码；bind_phone（1.8）判定反转且必须登录态发（快进号补绑）
+    if body.purpose == "bind_phone" and account is None:
+        raise errors.no_identity()
+    book.send_code(
+        body.phone,
+        body.purpose,
+        client_ip(request),
+        account_id=account.id if account else None,
+    )
     return {"ok": True}
+
+
+@router.post("/phone/bind")
+def phone_bind(
+    body: PhoneBindIn,
+    account: Account = Depends(require_account),
+    book: AccountBook = Depends(get_account_book),
+):
+    return {
+        "account": book.bind_phone(
+            account_id=account.id, phone=body.phone, code=body.code
+        )
+    }
 
 
 @router.post("/redeem")
 def redeem(
     body: RedeemIn,
+    current: Account | None = Depends(current_account),
     book: AccountBook = Depends(get_account_book),
 ):
+    # adopt_from（1.8 验证收编）：本机若登着绑微信的快进号，验证成功即迁绑回老账号
     view, token, wechat_bound = book.redeem(
         phone=body.phone,
         code=body.code,
@@ -206,6 +246,7 @@ def redeem(
         device_marker=body.device_marker,
         card=body.card.model_dump(exclude_none=False) if body.card else None,
         bind_token=body.bind_token,
+        adopt_from=current,
     )
     return _session_out(view, token, wechat_bound)
 
@@ -250,14 +291,17 @@ def password_login(
 @router.post("/password/reset")
 def password_reset(
     body: PasswordResetIn,
+    current: Account | None = Depends(current_account),
     book: AccountBook = Depends(get_account_book),
 ):
+    # adopt_from（1.8 验证收编）：reset 也是「短信证明老账号主人」的路
     view, token, wechat_bound = book.reset_password(
         phone=body.phone,
         code=body.code,
         password=body.password,
         device_marker=body.device_marker,
         bind_token=body.bind_token,
+        adopt_from=current,
     )
     return _session_out(view, token, wechat_bound)
 
@@ -303,11 +347,22 @@ def wechat_login(
     body: WechatLoginIn,
     book: AccountBook = Depends(get_account_book),
 ):
-    status, first, second, bind_token = book.wechat_login(
-        code=body.code, device_marker=body.device_marker
+    status, first, second, bind_token, nickname_random = book.wechat_login(
+        code=body.code,
+        device_marker=body.device_marker,
+        fast=body.fast,
+        nickname=body.nickname,
     )
     if status == "unbound":
         return {"status": "unbound", "bind_token": first}
+    if status == "created":
+        # 快进建号一次完成绑定：不发凭条；随机名旗=前端 toast 报名字的判据（4.1）
+        return {
+            "status": "created",
+            "token": first,
+            "account": second,
+            "nickname_random": nickname_random,
+        }
     return {
         "status": "ok",
         "token": first,

@@ -1,18 +1,24 @@
-"""微信钥匙（docs/1.7）——通道、两扇门、绑定挂点、清场镜像，全矩阵锁。
+"""微信钥匙（docs/1.7 + 1.8）——通道、两扇门、绑定挂点、清场镜像，全矩阵锁。
 
 假通道（provider 默认 fake）：授权凭证即身份号——code 直接当 openid 用，
-与短信 console 假发送器同一先例，开发零资质全链可测。
+「|」后可带测试昵称（1.8 快进建号矩阵用），与短信 console 假发送器同一先例，
+开发零资质全链可测。
 
 跑法：cd backend && python -m pytest tests/test_wechat.py -q
 """
 
 from __future__ import annotations
 
+import re
+
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from app.core import clock
 from app.core.config import Settings
+from app.db.models import Account, DeviceKey
 
-from .conftest import code_of, me, redeem, send_code, signup
+from .conftest import code_of, me, password_set, redeem, send_code, signup
 
 # ---- 帮手 ----
 
@@ -431,3 +437,333 @@ def test_column_migration_on_legacy_db(tmp_path, fake, sent):
             sms_daily_budget=200,
         )
     )
+
+
+# ---- 1.8 快进建号 / 补绑手机号 / 验证收编 ----
+
+RANDOM_NAME_RE = re.compile(r"球友\d{4}")
+
+
+def wechat_fast(
+    client: TestClient, code: str, device: str = "d-fast", nickname: str | None = None
+) -> dict:
+    body = {"code": code, "device_marker": device, "fast": True}
+    if nickname is not None:
+        body["nickname"] = nickname
+    r = client.post("/api/auth/wechat/login", json=body)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def auth(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def account_row(client: TestClient, **filt) -> Account:
+    s = client.app.state.session_factory()
+    try:
+        return s.execute(select(Account).filter_by(**filt)).scalar_one()
+    finally:
+        s.close()
+
+
+def test_fast_manual_nickname_wins(client: TestClient):
+    """4.3：卡上亲手填的胜出，微信昵称让位；快进不发凭条（绑定一次完成）。"""
+    res = wechat_fast(client, "wx_m1|微信名叫小王", nickname="阿强")
+    assert res["status"] == "created" and res["nickname_random"] is False
+    assert res["account"]["name"] == "阿强"
+    assert "bind_token" not in res
+
+
+def test_fast_manual_invalid_nickname_rejected(client: TestClient):
+    """手填不合格如实报（与 signup 手填一致），不静默改名。"""
+    r = client.post(
+        "/api/auth/wechat/login",
+        json={
+            "code": "wx_m2",
+            "device_marker": "d1",
+            "fast": True,
+            "nickname": "超" * 17,
+        },
+    )
+    assert r.status_code == 422 and r.json()["error"]["code"] == "nickname_invalid"
+
+
+def test_fast_uses_wx_nickname(client: TestClient):
+    """无手填 → 吃微信昵称（过清洗规矩）。"""
+    res = wechat_fast(client, "wx_m3|球友小王")
+    assert res["status"] == "created" and res["nickname_random"] is False
+    assert res["account"]["name"] == "球友小王"
+
+
+def test_fast_falls_back_to_random_name(client: TestClient):
+    """4.2：微信昵称没给/不合格（超 16 字、保留名）→ 随机名 + 随机名旗；
+    手填空白视同没填。"""
+    res = wechat_fast(client, "wx_m4")  # 没给
+    assert res["nickname_random"] is True
+    assert RANDOM_NAME_RE.fullmatch(res["account"]["name"])
+    res = wechat_fast(client, "wx_m5|" + "超" * 17)  # 超 16 字不合格
+    assert res["nickname_random"] is True
+    assert RANDOM_NAME_RE.fullmatch(res["account"]["name"])
+    res = wechat_fast(client, "wx_m6|平台客服")  # 保留名不合格
+    assert res["nickname_random"] is True
+    assert RANDOM_NAME_RE.fullmatch(res["account"]["name"])
+    res = wechat_fast(client, "wx_m7|微信名", nickname="   ")  # 手填空白=没填
+    assert res["account"]["name"] == "微信名" and res["nickname_random"] is False
+
+
+def test_fast_account_shape_and_relogin(client: TestClient):
+    """落库形态：phone=None、phone_verified=False、微信生而正式绑、钥匙已验证；
+    再点一键直接进（1.7 老规矩照旧）。"""
+    res = wechat_fast(client, "wx_shape|阿形", device="d-shape")
+    acc = account_row(client, device_marker="d-shape")
+    assert acc.phone is None and acc.phone_verified is False
+    assert acc.wechat_openid == "wx_shape" and acc.wechat_verified is True
+    s = client.app.state.session_factory()
+    try:
+        key = s.execute(
+            select(DeviceKey).filter_by(account_id=acc.id).order_by(DeviceKey.id.desc())
+        ).scalar_one()
+    finally:
+        s.close()
+    assert key.verified is True
+    # 无号即无 phone/phone_tail（前端据此显「未绑手机」，不回落假尾号）
+    v = me(client, res["token"])
+    assert "phone" not in v and "phone_tail" not in v
+    res2 = wechat_login(client, "wx_shape|阿形")
+    assert res2["status"] == "ok"
+    assert me(client, res2["token"])["name"] == "阿形"
+
+
+def test_fast_false_keeps_1_7_unbound_path(client: TestClient):
+    """4.7 护栏：不传 fast（登录页找回面）——unbound 仍发凭条，1.7 原路。"""
+    r = client.post(
+        "/api/auth/wechat/login",
+        json={"code": "wx_m8", "device_marker": "d1", "fast": False},
+    )
+    res = r.json()
+    assert res["status"] == "unbound" and res["bind_token"]
+
+
+def test_fast_conflict_leaves_no_half_account(client: TestClient):
+    """4.9-3：建号半路失败（openid 撞唯一索引）→ wechat_fast_failed、无残留。"""
+    s = client.app.state.session_factory()
+    s.add(
+        Account(
+            phone=None,
+            nickname="占位壳",
+            chibi='{"skin":0}',
+            status="deactivated",
+            device_marker="d-ghost",
+            created_at=clock.now(),
+            wechat_openid="wx_clash",
+            wechat_verified=True,
+        )
+    )
+    s.commit()
+    s.close()
+    r = client.post(
+        "/api/auth/wechat/login",
+        json={"code": "wx_clash", "device_marker": "d-fail", "fast": True},
+    )
+    assert r.status_code == 503
+    err = r.json()["error"]
+    assert err["code"] == "wechat_fast_failed"
+    assert err["message"] == "没办成，请再点一次微信授权"
+    s2 = client.app.state.session_factory()
+    try:
+        rows = (
+            s2.execute(select(Account).filter_by(device_marker="d-fail"))
+            .scalars()
+            .all()
+        )
+    finally:
+        s2.close()
+    assert rows == []
+
+
+def test_bind_phone_taken_rejected_with_audit(
+    client: TestClient, sent: list, monkeypatch
+):
+    """4.4-2：占用当场拒（话术逐字、不透露对方账号）+ 审计落账 + 不发码。"""
+    calls: list = []
+    monkeypatch.setattr(
+        "app.services.accounts.audit", lambda *a, **k: calls.append((a, k))
+    )
+    fast = wechat_fast(client, "wx_bt")
+    signup(client, "13800000021", "d1")  # 老账号占着这个号
+    r = client.post(
+        "/api/auth/sms",
+        json={"phone": "13800000021", "purpose": "bind_phone"},
+        headers=auth(fast["token"]),
+    )
+    assert r.status_code == 409
+    err = r.json()["error"]
+    assert err["code"] == "phone_taken_redirect"
+    assert err["message"] == (
+        "这个手机号注册过。如果你就是号主，去登录页用短信验证进入那个账号，"
+        "微信会自动绑回那个账号；你最近在临时号上的报名会留在那边，不会搬过来"
+    )
+    assert calls == [
+        (
+            ("wechat_bind_phone_taken",),
+            {
+                "account_id": fast["account"]["id"],
+                "detail": "补绑手机号撞已有账号，指路登录页",
+            },
+        )
+    ]
+    assert not [c for c in sent if c[2] == "bind_phone"]
+
+
+def test_bind_phone_requires_login(client: TestClient):
+    """补绑发码必须登录态（快进号的钥匙在手上才谈补绑）。"""
+    r = client.post(
+        "/api/auth/sms", json={"phone": "13800000022", "purpose": "bind_phone"}
+    )
+    assert r.status_code == 401 and r.json()["error"]["code"] == "no_identity"
+
+
+def test_bind_phone_happy_path(client: TestClient, sent: list):
+    """4.4-1：无人用的号 → 发码 → 输码绑上、绑定记录翻真；没码绑不上。"""
+    fast = wechat_fast(client, "wx_bp")
+    r = client.post(
+        "/api/auth/sms",
+        json={"phone": "13800000023", "purpose": "bind_phone"},
+        headers=auth(fast["token"]),
+    )
+    assert r.status_code == 200, r.text
+    # 安全：码不对不落号
+    r = client.post(
+        "/api/auth/phone/bind",
+        json={"phone": "13800000023", "code": "000000"},
+        headers=auth(fast["token"]),
+    )
+    assert r.status_code == 400
+    code = code_of(sent, "13800000023", "bind_phone")
+    r = client.post(
+        "/api/auth/phone/bind",
+        json={"phone": "13800000023", "code": code},
+        headers=auth(fast["token"]),
+    )
+    assert r.status_code == 200, r.text
+    v = r.json()["account"]
+    assert v["phone"] == "13800000023" and v["phone_tail"] == "0023"
+    acc = account_row(client, id=v["id"])
+    assert acc.phone == "13800000023" and acc.phone_verified is True
+
+
+def test_bind_phone_rejected_when_already_bound(client: TestClient, sent: list):
+    """安全守卫（批1 修 #1）：已有手机号的账号，凭一张新号验证码也换不了根号
+    ——核销前 409 挡下，原号原样（换号走 1.6 A1 人工口径联系平台客服）。"""
+    old = signup(client, "13800000024", "d1")  # 已绑号账号
+    r = client.post(
+        "/api/auth/sms",
+        json={"phone": "13800000025", "purpose": "bind_phone"},
+        headers=auth(old["token"]),
+    )
+    assert r.status_code == 200, r.text  # 新号无人用，发码端放行
+    r = client.post(
+        "/api/auth/phone/bind",
+        json={
+            "phone": "13800000025",
+            "code": code_of(sent, "13800000025", "bind_phone"),
+        },
+        headers=auth(old["token"]),
+    )
+    assert r.status_code == 409
+    err = r.json()["error"]
+    assert err["code"] == "phone_already_bound"
+    assert err["message"] == "这个账号已有手机号，手机号是账号的根，换号先联系平台客服"
+    # 原根号没被顶掉、也没被释放
+    acc = account_row(client, id=old["account"]["id"])
+    assert acc.phone == "13800000024"
+
+
+def test_adopt_moves_binding_on_recovery(client: TestClient, sent: list):
+    """4.5：快进号登着，登录页短信验证进老账号 → 微信自动迁回（不再授权一次）、
+    快进号就地解绑搁置、记录留守。"""
+    old = signup(client, "13800000031", "d-old")
+    fast = wechat_fast(client, "wx_adopt", device="d-fast3")
+    send_code(client, "13800000031", "recovery")
+    r = client.post(
+        "/api/auth/redeem",
+        json={
+            "phone": "13800000031",
+            "code": code_of(sent, "13800000031"),
+            "purpose": "recovery",
+            "device_marker": "d-old",
+        },
+        headers=auth(fast["token"]),
+    )
+    assert r.status_code == 200 and r.json().get("wechat_bound") is True
+    # 下次微信一键进的是老账号
+    res = wechat_login(client, "wx_adopt")
+    assert res["status"] == "ok"
+    assert me(client, res["token"])["phone"] == "13800000031"
+    # 快进号：解绑搁置、账号与记录留守
+    fast_acc = account_row(client, id=fast["account"]["id"])
+    assert fast_acc.wechat_openid is None and fast_acc.status == "active"
+    old_acc = account_row(client, id=old["account"]["id"])
+    assert old_acc.wechat_openid == "wx_adopt" and old_acc.wechat_verified is True
+
+
+def test_adopt_after_bind_token_is_noop(client: TestClient, sent: list):
+    """凭条先执行、收编后且幂等：凭条已把同一微信绑走时，收编自然空转不炸。"""
+    old = signup(client, "13800000032", "d-old")
+    fast = wechat_fast(client, "wx_duo", device="d-fast4")
+    ok = wechat_login(client, "wx_duo")  # 绑着 → ok，凭条照发（换绑种子）
+    assert ok["status"] == "ok"
+    send_code(client, "13800000032", "recovery")
+    r = client.post(
+        "/api/auth/redeem",
+        json={
+            "phone": "13800000032",
+            "code": code_of(sent, "13800000032"),
+            "purpose": "recovery",
+            "device_marker": "d-old",
+            "bind_token": ok["bind_token"],
+        },
+        headers=auth(fast["token"]),
+    )
+    assert r.status_code == 200 and r.json().get("wechat_bound") is True
+    assert account_row(client, id=old["account"]["id"]).wechat_openid == "wx_duo"
+    assert account_row(client, id=fast["account"]["id"]).wechat_openid is None
+
+
+def test_adopt_via_password_reset(client: TestClient, fake, sent: list):
+    """reset 同挂收编（也是「短信证明自己是老账号主人」的路）。"""
+    old = signup(client, "13800000033", "d-old")
+    send_code(client, "13800000033", "set_password")
+    password_set(client, old["token"], code_of(sent, "13800000033", "set_password"))
+    fast = wechat_fast(client, "wx_pr", device="d-fast5")
+    resend(client, fake, "13800000033", "reset_password")
+    r = client.post(
+        "/api/auth/password/reset",
+        json={
+            "phone": "13800000033",
+            "code": code_of(sent, "13800000033", "reset_password"),
+            "password": "newpass1",
+            "device_marker": "d-old",
+        },
+        headers=auth(fast["token"]),
+    )
+    assert r.status_code == 200 and r.json().get("wechat_bound") is True
+    assert account_row(client, id=old["account"]["id"]).wechat_openid == "wx_pr"
+    assert account_row(client, id=fast["account"]["id"]).wechat_openid is None
+
+
+def test_login_password_does_not_adopt(client: TestClient, sent: list):
+    """login_password 不挂收编：密码验证非短信（4.5 指路话术只提短信）。"""
+    old = signup(client, "13800000034", "d-old")
+    send_code(client, "13800000034", "set_password")
+    password_set(client, old["token"], code_of(sent, "13800000034", "set_password"))
+    fast = wechat_fast(client, "wx_np", device="d-fast6")
+    r = client.post(
+        "/api/auth/password/login",
+        json={"phone": "13800000034", "password": "123456", "device_marker": "d-old"},
+        headers=auth(fast["token"]),
+    )
+    assert r.status_code == 200, r.text
+    assert account_row(client, id=old["account"]["id"]).wechat_openid is None
+    assert account_row(client, id=fast["account"]["id"]).wechat_openid == "wx_np"
