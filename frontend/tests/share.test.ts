@@ -47,38 +47,38 @@ describe("shareLink（分享分层：系统面板优先，复制兜底）", () =
     expect(clipboard.copyWithToast).not.toHaveBeenCalled();
   });
 
-  it("share 拒绝非取消错误：降级复制链接（成功 toast 文案单一源）", async () => {
+  it("share 拒绝非取消错误：降级复制链接（默认句带「访客可看」知情小字）", async () => {
     vi.stubGlobal("navigator", {
       share: vi.fn().mockRejectedValue(new TypeError("不在支持的环境")),
     });
     await shareLink("https://x.y/r?id=1", "t");
     expect(clipboard.copyWithToast).toHaveBeenCalledWith(
       "https://x.y/r?id=1",
-      "链接已复制 · 去微信群里粘贴",
+      "链接已复制 · 访客可看",
     );
   });
 
-  it("无 navigator.share：直接复制兜底", async () => {
+  it("无 navigator.share：直接复制兜底（默认句同上）", async () => {
     vi.stubGlobal("navigator", {});
     await shareLink("https://x.y/r?id=1", "t");
     expect(clipboard.copyWithToast).toHaveBeenCalledTimes(1);
     expect(clipboard.copyWithToast).toHaveBeenCalledWith(
       "https://x.y/r?id=1",
-      "链接已复制 · 去微信群里粘贴",
+      "链接已复制 · 访客可看",
     );
   });
 
-  it("copyMsg 定制：战报分享带「任何人可看」知情小字（2026-10-12 修订）", async () => {
+  it("copyMsg 定制：仍可换兜底句（2026-10-12 三处统一后默认即知情句，定制口留存）", async () => {
     vi.stubGlobal("navigator", {});
     await shareLink(
-      "https://x.y/live?id=1",
-      "球局战报",
+      "https://x.y/detail?id=1",
+      "球局详情",
       undefined,
-      "链接已复制 · 任何人可看 · 去微信粘贴",
+      "链接已复制 · 去微信群里粘贴",
     );
     expect(clipboard.copyWithToast).toHaveBeenCalledWith(
-      "https://x.y/live?id=1",
-      "链接已复制 · 任何人可看 · 去微信粘贴",
+      "https://x.y/detail?id=1",
+      "链接已复制 · 去微信群里粘贴",
     );
   });
 });

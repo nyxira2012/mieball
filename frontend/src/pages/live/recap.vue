@@ -73,8 +73,8 @@ import { apiLiveView, toLiveView } from "@/api/live";
 import { apiGameDetail } from "@/api/games";
 import type { LiveView } from "@/api/types";
 import { shareLink } from "@/utils/share";
-import { liveShareUrl } from "@/utils/deeplink";
-import { DEAD_LINK_MSG, RECAP_COPY_MSG } from "@/utils/recap";
+import { gameShareUrl } from "@/utils/deeplink";
+import { DEAD_LINK_MSG } from "@/utils/recap";
 import { goBackOrMeet, goMeet } from "@/utils/nav";
 
 const view = ref<LiveView | null>(null);
@@ -126,10 +126,11 @@ function goBack(): void {
   goBackOrMeet();
 }
 
-/** 分享（§4.3 链接任何人可看）：链接落点=现场页回看态；兜底提示带知情小字 */
+/** 分享（§4.3，2026-10-12 三处统一）：发详情链接（详情+「查看战报」一跳可达）；
+    兜底提示走 shareLink 默认句「链接已复制 · 访客可看」 */
 function onShare(): void {
   if (!view.value) return;
-  void shareLink(liveShareUrl(gameId), "球局战报", undefined, RECAP_COPY_MSG);
+  void shareLink(gameShareUrl(gameId), "球局战报");
 }
 </script>
 

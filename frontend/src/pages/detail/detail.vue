@@ -82,9 +82,17 @@
         </view>
         <!-- 人均口径（后端定值：订场后按实际人数摊）/ 截止判局提示 -->
         <view v-if="perNote" class="sub hero-note">{{ perNote }}</view>
+        <!-- 分享行（2026-10-12 三处统一后的主分享口，唯一发链处=详情页）：文案两态——
+             赛前拉人「分享组局详情」、散场后晒账「分享战报详情」（ended 锚，与查看战报
+             同一把尺）；散场后换柠檬主钮（这页此时的亮动作就是它），赛前描边安静不抢
+             底部的加入/开始打球；有锁定 chip 时同行分享让位收窄 -->
         <view class="row act2">
-          <AppButton variant="ghost" size="sm" @click="onShare"
-            >⤴ 分享到群</AppButton
+          <AppButton
+            :variant="game.ended ? 'pri' : 'ghost'"
+            size="sm"
+            class="share-btn"
+            @click="onShare"
+            >{{ game.ended ? "分享战报详情" : "分享组局详情" }}</AppButton
           >
           <AppChip v-if="game.status === 'locked' && !game.unlocked" kind="full"
             >已到截止 · 名单锁定</AppChip
@@ -463,8 +471,9 @@ const ruleName = computed(() => {
 /** 响应式「我」id（名单行高亮） */
 const meId = computed(() => useUserStore().me.id);
 
-/** 分享（系统面板→复制兜底的降级链在 utils/share 单一源，2.6 消重；微信自定义卡片
-    维持挂起待服务号资质） */
+/** 分享（2026-10-12 三处统一：详情页/战报子页/现场散场门牌都发这一条详情链接，
+    兜底提示走 shareLink 默认句「链接已复制 · 访客可看」；系统面板→复制兜底的
+    降级链在 utils/share 单一源，微信自定义卡片维持挂起待服务号资质） */
 const onShare = () => {
   if (!game.value) return; // 按钮只在 game 态渲染，这里防异步窗口错位
   void shareLink(gameShareUrl(game.value.id), game.value.name);
@@ -545,6 +554,10 @@ const onPlayer = (uid: number) => {
 }
 .row.act2 {
   margin-top: 10px; /* alpha:1417 style="margin-top:10px" */
+}
+/* 分享钮占满行（有锁定 chip 时让位收窄）；文案两态见模板注释 */
+.share-btn {
+  flex: 1;
 }
 .kv {
   border: 1px solid rgba(245, 241, 232, 0.1);

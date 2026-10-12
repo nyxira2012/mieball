@@ -5,8 +5,8 @@ import type { MatchReport } from "@/api/types";
 /** 去向提示行（recapHint 两分支退役：路人中性句与子页语境都是绕圈话；显不显示归组件 door+is_my_game） */
 export const RECAP_HINT = "赛后可在 我的-打球记录 翻看";
 
-/** 分享复制兜底提示语带「任何人可看」知情小字（2.6 §6 让分享者知情；系统面板路无处安放，接受） */
-export const RECAP_COPY_MSG = "链接已复制 · 任何人可看 · 去微信粘贴";
+/* 分享复制兜底提示随三处分享统一（2026-10-12）移居 utils/share 默认句，
+   RECAP_COPY_MSG 退役——战报/详情/现场门牌同一句「链接已复制 · 访客可看」 */
 
 /** 链接死局统一句（§4.6 链接场景不说「已结束」——散场恰是翻得回战报的状态）：四表面共用 */
 export const DEAD_LINK_MSG = "找不到这个球局，可能已被撤销";

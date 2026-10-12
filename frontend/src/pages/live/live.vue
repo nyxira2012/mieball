@@ -192,8 +192,8 @@ import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import { goMeet } from "@/utils/nav";
 import { shareLink } from "@/utils/share";
-import { liveShareUrl } from "@/utils/deeplink";
-import { DEAD_LINK_MSG, RECAP_COPY_MSG } from "@/utils/recap";
+import { gameShareUrl } from "@/utils/deeplink";
+import { DEAD_LINK_MSG } from "@/utils/recap";
 
 /** 本地弹层槽（单槽替换语义：开新的自动顶旧的；与全局 SheetPayload 互不相干）。
     confirm=危险动作确认（A3）：后果句 + 执行动作，确认后才跑 */
@@ -448,16 +448,12 @@ function onRecapComplete(): void {
   const next = gameStore.liveGame;
   if (next) connectLive(next.id);
 }
-/** 分享（§4.1）：系统面板→复制兜底（兜底提示带知情小字）；链接落点=现场页回看态；局名有就带 */
+/** 分享（§4.1，2026-10-12 三处统一）：发详情链接（收链接的人详情+「查看战报」
+    一跳可达）；兜底提示走 shareLink 默认句「链接已复制 · 访客可看」；局名有就带 */
 function onRecapShare(): void {
   const id = liveStore.recap?.gameId;
   if (id == null) return;
-  void shareLink(
-    liveShareUrl(id),
-    liveStore.live?.g.name ?? "球局战报",
-    undefined,
-    RECAP_COPY_MSG,
-  );
+  void shareLink(gameShareUrl(id), liveStore.live?.g.name ?? "球局战报");
 }
 /** 页面隐藏（切 tab/进退页面）清本地弹层，避免残留到别的页；轮询随之停（§4.8 对表只在看现场时发生） */
 onHide(() => {

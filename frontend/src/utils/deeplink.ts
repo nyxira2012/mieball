@@ -7,11 +7,14 @@
 export const deepUrl = (path: string): string =>
   typeof location === "undefined" ? path : location.origin + "/#" + path;
 
-/** 现场页分享链接（2.6 §4.3：分享落点=现场页回看态，散场局照回 200 回看视图）：
-    「页面路径→完整 URL」单一源——现场门牌（签到码）与战报子页两处 shareLink 共用，防字面量漂移。 */
+/** 现场页深链（2.1·选项A 扫码签到用）：二维码编码 {origin}/#/pages/live/live?id=<球局id>。
+    2026-10-12 三处分享统一发详情链接后，战报分享不再走这条——本函数只服务签到码
+    （QrOverlay 单一消费方；散场局照回 200 回看视图的老口径仍在，扫码进旧局=回看） */
 export const liveShareUrl = (id: number): string =>
   deepUrl(`/pages/live/live?id=${id}`);
 
-/** 局详情页分享链接：与 nav.goGame 同一条页面路径契约的单源出口（detail 分享用）。 */
+/** 局详情页分享链接（2026-10-12 三处统一单一源：详情页/战报子页/现场散场门牌
+    都发这条——收链接的人详情+「查看战报」一跳可达）；与 nav.goGame 同一条页面
+    路径契约的单源出口。 */
 export const gameShareUrl = (id: number): string =>
   deepUrl(`/pages/detail/detail?id=${id}`);
