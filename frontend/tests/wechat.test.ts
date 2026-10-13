@@ -75,12 +75,11 @@ describe("转场包（跳微信往返的本机存取）", () => {
   it("genState：两次不重样", () => {
     expect(genState()).not.toBe(genState());
   });
-  it("快进位（1.8）：fast/nickname 随包存取；新鲜度只看记号+时刻，与快进位无关", () => {
+  it("快进位（1.8）：fast 随包存取；新鲜度只看记号+时刻，与快进位无关", () => {
     const ctx = {
       state: "s1",
       back: "/pages/detail/detail?id=5",
       fast: true,
-      nickname: "阿强",
       ts: Date.now(),
     };
     saveWechatCtx(ctx);
@@ -221,13 +220,11 @@ describe("beginWechatAuth（出发编排）", () => {
     });
     await beginWechatAuth({
       fast: true,
-      nickname: "阿强",
       pending: { pendingJoin: { gameId: 9, bring: 0 } },
       toast: vi.fn(),
     });
     const ctx = readWechatCtx();
     expect(ctx?.fast).toBe(true);
-    expect(ctx?.nickname).toBe("阿强");
     expect(ctx?.phone).toBeUndefined(); // 快进建号不看卡上手机号
     expect(ctx?.back).toBe("/pages/detail/detail?id=9");
   });
@@ -244,7 +241,6 @@ describe("beginWechatAuth（出发编排）", () => {
     await beginWechatAuth({ toast: vi.fn() });
     const ctx = readWechatCtx();
     expect(ctx?.fast).toBeUndefined();
-    expect(ctx?.nickname).toBeUndefined();
   });
 
   it("要地址失败（通道没开）：转场包清掉、错误文案透给 toast", async () => {

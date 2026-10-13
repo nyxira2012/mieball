@@ -7,7 +7,7 @@
 
 <script setup lang="ts">
 import { onUnmounted, ref, watch } from 'vue';
-import { useUiStore } from '@/stores/ui';
+import { TOAST_VISIBLE_MS, useUiStore } from '@/stores/ui';
 import AppToast from '@/components/ui/AppToast.vue';
 
 const ui = useUiStore();
@@ -22,7 +22,7 @@ watch(
     timer = setTimeout(() => {
       visible.value = false;
       timer = null;
-    }, 2200);
+    }, TOAST_VISIBLE_MS);
   },
 );
 

@@ -12,3 +12,12 @@ export const newPwdError = (p1: string, p2: string): string | null => {
   if (p1 !== p2) return "两次输入的密码不一样";
   return null;
 };
+
+/** 手机号快提示（发码/登录/补绑各面板共用）：不合法返回文案，合法返回 null
+    ——文案单一源，改口不用逐面板追 */
+export const phoneInputError = (p: string): string | null =>
+  isValidPhone(p) ? null : "请输入 11 位手机号";
+
+/** 6 位短信验证码快提示（各收码面板共用）：位数不对返回文案，通过返回 null */
+export const smsCodeError = (c: string): string | null =>
+  c.trim().length === 6 ? null : "请输入 6 位验证码";

@@ -70,9 +70,8 @@ export const useSessionStore = defineStore("session", () => {
     try {
       const { account: view } = await apiMe();
       if (view) {
-        account.value = view;
+        applySelfView(view);
         status.value = "ready";
-        useUserStore().applyAccount(view);
       } else {
         resetToGuest(); // 钥匙已作废（被接管/注销/退出）→ 静默降级游客
       }
@@ -82,17 +81,14 @@ export const useSessionStore = defineStore("session", () => {
   }
 
   /** 名片建号（4.2）：成功落钥匙+档案并清草稿；手机号被占抛 ApiError('phone_taken') 由弹层接。
-      1.7：微信凭条在手则捎带——建号顺手绑（弱档），绑成了提示不说谎（没绑上不说）；
-      捎带过的凭条服务端已一次性核销，成功后清空防死凭条乱捎（失败不动、留着重试） */
+      1.7：微信凭条在手则捎带——建号顺手绑（弱档），绑成了提示不说谎（没绑上不说） */
   async function signupWithCard(card: CardPayload): Promise<AccountView> {
     const res = await apiSignup(
       card,
       deviceMarker(),
       wechatBindToken.value ?? undefined,
     );
-    const out = admitSession(res, true);
-    wechatBindToken.value = null;
-    return out;
+    return settleKeys(res, true);
   }
 
   /** 发验证码（60 秒冷却/一天上限等错误原样抛，弹层按 code 提示） */
@@ -119,9 +115,7 @@ export const useSessionStore = defineStore("session", () => {
       card,
       wechatBindToken.value ?? undefined,
     );
-    const out = admitSession(res, true);
-    wechatBindToken.value = null;
-    return out;
+    return settleKeys(res, true);
   }
 
   /* ---- 微信钥匙（1.7 第四把）：认人门 + 占卡微信验证 ---- */
@@ -134,17 +128,12 @@ export const useSessionStore = defineStore("session", () => {
       排队，动作句说完再报名字（4.1 结果 2）。 */
   async function wechatLogin(
     code: string,
-    opts?: { fast?: boolean; nickname?: string },
+    opts?: { fast?: boolean },
   ): Promise<{ status: "ok" | "unbound" | "created"; randomName: boolean }> {
-    const res = await apiWechatLogin(
-      code,
-      deviceMarker(),
-      opts?.fast,
-      opts?.nickname,
-    );
+    const res = await apiWechatLogin(code, deviceMarker(), opts?.fast);
     if (res.status === "created") {
       admitSession({ token: res.token, account: res.account }, true);
-      // 名字句让动作句先说——单槽 toast 顶替，randomName 交调用方 2400ms 后补报
+      // 名字句让动作句先说——单槽 toast 顶替，randomName 交调用方排队补报
       return { status: "created", randomName: res.nickname_random };
     }
     wechatBindToken.value = res.bind_token;
@@ -181,9 +170,7 @@ export const useSessionStore = defineStore("session", () => {
       deviceMarker(),
       wechatBindToken.value ?? undefined,
     );
-    const out = admitSession(res, false);
-    wechatBindToken.value = null;
-    return out;
+    return settleKeys(res, false);
   }
 
   async function passwordReset(
@@ -198,9 +185,7 @@ export const useSessionStore = defineStore("session", () => {
       deviceMarker(),
       wechatBindToken.value ?? undefined,
     );
-    const out = admitSession(res, false);
-    wechatBindToken.value = null;
-    return out;
+    return settleKeys(res, false);
   }
 
   /** 占卡「用密码进入」（4.5 三出口之二）：密码接管，名片已并入账号 → 与 redeemCode 同款清草稿 */
@@ -216,9 +201,7 @@ export const useSessionStore = defineStore("session", () => {
       card,
       wechatBindToken.value ?? undefined,
     );
-    const out = admitSession(res, true);
-    wechatBindToken.value = null;
-    return out;
+    return settleKeys(res, true);
   }
 
   /** 首设密码（4.8）：短信码或宽限窗验身后落锁；成功文案单一源在这 */
@@ -247,8 +230,7 @@ export const useSessionStore = defineStore("session", () => {
   /** 确认绑上：核销后用返回的最新本人视图原位换装（改名片同款），尾号/微信行立即翻真 */
   async function bindPhoneConfirm(phone: string, code: string): Promise<void> {
     const { account: view } = await apiPhoneBind(phone, code);
-    account.value = view;
-    useUserStore().applyAccount(view);
+    applySelfView(view);
     ui.toast("手机号已绑定");
   }
 
@@ -284,14 +266,29 @@ export const useSessionStore = defineStore("session", () => {
       1.7：绑成了才说「已绑上」（wechat_bound 后端定值，一个字不编）并清凭条 */
   function admitSession(res: SessionPayload, clearDraft: boolean): AccountView {
     setToken(res.token);
-    account.value = res.account;
+    applySelfView(res.account);
     status.value = "ready";
-    useUserStore().applyAccount(res.account);
     if (res.wechat_bound) {
       ui.toast("微信号已绑上 · 下次微信一键直接进");
     }
     if (clearDraft) clearCardDraft();
     return res.account;
+  }
+
+  /** 本人视图原位换装：档案镜像位与全局身份位（user store me）同步——
+      init/admitSession/改名片/补绑确认四路共用，换装要多带一步时只改这里 */
+  function applySelfView(view: AccountView): void {
+    account.value = view;
+    useUserStore().applyAccount(view);
+  }
+
+  /** 捎带微信凭条的验明正身收尾（建号/短信/密码五路共用）：入会 + 成功即烧凭条
+      （捎带过的凭条服务端已一次性核销，不清会死凭条乱捎；失败不动、留着重试）。
+      不折进 admitSession——wechatLogin 的 unbound 路要保住凭条等下一个动作 */
+  function settleKeys(res: SessionPayload, clearDraft: boolean): AccountView {
+    const out = admitSession(res, clearDraft);
+    wechatBindToken.value = null;
+    return out;
   }
 
   /** 改名片（A3）：昵称/小人/卡背随时可改。游客态走本地演示保存（不接后端） */
@@ -317,8 +314,7 @@ export const useSessionStore = defineStore("session", () => {
       chibi: patch.chibi,
       card_bg: patch.card_bg,
     });
-    account.value = view;
-    useUserStore().applyAccount(view);
+    applySelfView(view);
     const msg = "已保存 · 全局同步换新";
     ui.toast(msg);
     return msg;

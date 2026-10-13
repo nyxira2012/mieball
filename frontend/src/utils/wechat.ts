@@ -1,11 +1,12 @@
 /* wechat —— 微信钥匙的浏览器侧工具（1.7）：环境探测 / 授权跳转编排 / 转场包。
    「跳微信授权页」是整页跳转，SPA 内存态全丢——出发前把回跳要用的东西
    （占卡手机号、挂起动作、原页面位置、防伪记号）存进本机，回来在登录页消费。
-   uni 全局不 import（nav.ts 同款例外注记）；存储走 uni.setStorageSync。 */
+   引 ui store（toast，函数内取——clipboard.ts 先例）与 nav 的 TAB_ROUTES（无环）。 */
 import { apiWechatUrl } from "@/api/auth";
 import { errText } from "@/api/http";
+import { useUiStore } from "@/stores/ui";
 import type { SignupPending } from "@/stores/ui";
-import { deepUrl } from "@/utils/deeplink";
+import { TAB_ROUTES } from "@/utils/nav";
 
 /** 微信内置浏览器探测（UA 带 MicroMessenger）——只有微信里才弹得出授权确认页 */
 export function isWeChatBrowser(): boolean {
@@ -26,8 +27,6 @@ export interface WechatAuthCtx {
   /** 占卡「微信验证进入」带着的手机号（登录页一键登录没有它）。
       1.8：快进建号不看手机号——此字段只有占卡验证路消费，created 支不碰 */
   phone?: string;
-  /** 卡上「叫什么」手填值（1.8 快进建号昵称第一优先级）；空手填不存 */
-  nickname?: string;
   /** 动作弹卡主钮出发=true（1.8 快进建号）；登录页微信键出发不存——
       回跳后端默认 False，unbound 仍发凭条落卡（4.7 找回面不快进护栏） */
   fast?: boolean;
@@ -97,17 +96,11 @@ export function backPathForAuth(): string {
   return "/pages/meet/meet";
 }
 
-const TAB_PATHS = [
-  "/pages/live/live",
-  "/pages/meet/meet",
-  "/pages/power/power",
-  "/pages/mine/mine",
-];
-
-/** 回跳落点导航：tab 页切 tab（redirectTo 进不了 tabbar），普通页重定向顶掉登录页 */
+/** 回跳落点导航：tab 页切 tab（redirectTo 进不了 tabbar），普通页重定向顶掉登录页。
+    tab 路径契约单一源在 nav.ts TAB_ROUTES（TabBar 渲染同源） */
 export function navToPath(path: string): void {
   const pure = path.split("?")[0];
-  if (TAB_PATHS.includes(pure)) {
+  if (Object.values(TAB_ROUTES).includes(pure)) {
     uni.switchTab({ url: pure });
     return;
   }
@@ -134,8 +127,6 @@ export async function beginWechatAuth(opts: {
   phone?: string;
   /** 1.8 快进建号：动作弹卡主钮（微信内）出发才带——授权回来直接开号 */
   fast?: boolean;
-  /** 卡上「叫什么」手填值（快进建号昵称第一优先级；空手填不传） */
-  nickname?: string;
   pending?: SignupPending;
   toast: (msg: string) => void;
 }): Promise<string> {
@@ -151,7 +142,6 @@ export async function beginWechatAuth(opts: {
     back: backPathForAuth(),
     phone: opts.phone,
     fast: opts.fast,
-    nickname: opts.nickname,
     pending: opts.pending,
     ts: Date.now(),
   });
@@ -166,4 +156,33 @@ export async function beginWechatAuth(opts: {
     opts.toast(errText(e)); // wechat_off 的文案即占位说明（4.7），配置一填自动点亮
     throw e;
   }
+}
+
+/** 出发编排全套（宿主只管传参）：toast 接线 + 整页跳授权页 + 接住已说清的短路。
+    与 beginWechatAuth 分层：后者留 toast 注入给测试，本函数是三处微信键共用的生产入口 */
+export async function goWechatAuth(
+  opts: {
+    phone?: string;
+    fast?: boolean;
+    pending?: SignupPending;
+  } = {},
+): Promise<void> {
+  try {
+    const url = await beginWechatAuth({
+      ...opts,
+      toast: (m) => useUiStore().toast(m), // 函数内取：避免模块顶层 Pinia 未装（clipboard.ts 先例）
+    });
+    location.href = url; // 整页跳去微信授权确认页，回来走登录页 onLoad 的 code 消费
+  } catch {
+    /* 已 toast：不在微信里 / 通道未开 / 要地址失败 */
+  }
+}
+
+/** 微信回跳凭证读取（App.vue 壳与登录页 onLoad 共用）：微信整页跳回不带 # 的地址，
+    code/state 落在 search 上；没有 code 即不是授权回跳 */
+export function readOauthReturn(): { code: string; state: string } {
+  if (typeof window === "undefined" || !window.location?.search)
+    return { code: "", state: "" };
+  const params = new URLSearchParams(window.location.search);
+  return { code: params.get("code") || "", state: params.get("state") || "" };
 }

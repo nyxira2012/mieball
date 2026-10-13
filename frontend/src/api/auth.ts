@@ -1,6 +1,7 @@
 /* 账号域 API（1.1 基础 + 1.6 密码钥匙）—— 只做类型化取数与错误透传，业务态在 stores/session。
    响应里的 account 是后端"隐私出口"视图：本人视图含 phone/phone_tail。 */
 import { request } from "./http";
+import { CHIBI_PRESETS } from "./dict";
 import type { CardBg, ChibiConfig } from "./types";
 
 export type SmsPurpose =
@@ -37,6 +38,22 @@ export interface CardPayload {
   nickname_set?: boolean;
   chibi?: ChibiConfig;
   chibi_set?: boolean;
+}
+
+/** 名片草稿 → CardPayload（D5 显式旗标单一源）：SignupSheet 表单路与 login.vue
+    微信回跳重建路共用——「明确填过的才置位」与预设下标映射只此一份，防两处漂移 */
+export function cardPayloadOf(
+  phone: string,
+  nickname: string,
+  picked: number | null,
+): CardPayload {
+  return {
+    phone,
+    nickname,
+    nickname_set: !!nickname.trim(),
+    chibi: picked != null ? CHIBI_PRESETS[picked].c : undefined,
+    chibi_set: picked != null,
+  };
 }
 
 export interface SessionPayload {
@@ -211,13 +228,12 @@ export function apiWechatLogin(
   code: string,
   device: string,
   fast?: boolean,
-  nickname?: string,
 ): Promise<WechatLoginResult> {
   return request("POST", "/auth/wechat/login", {
     code,
     device_marker: device,
-    // fast 不传=登录页微信键出发：后端默认 False → unbound 发凭条落卡（1.7 原路）
-    ...(fast ? { fast: true, nickname: nickname ?? null } : {}),
+    // fast=false/不传同义（后端默认 False）=登录页微信键出发 → unbound 发凭条落卡（1.7 原路）
+    fast,
   });
 }
 

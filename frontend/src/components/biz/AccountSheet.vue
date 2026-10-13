@@ -133,6 +133,7 @@ import { useSessionStore } from "@/stores/session";
 import { useBillStore } from "@/stores/bill";
 import { useUiStore } from "@/stores/ui";
 import { errText } from "@/api/http";
+import { smsCodeError } from "@/utils/validate";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
 
 defineProps({
@@ -214,8 +215,9 @@ async function onLogout(): Promise<void> {
 }
 
 async function onDelete(): Promise<void> {
-  if (code.value.trim().length !== 6) {
-    ui.toast("请输入 6 位验证码");
+  const cerr = smsCodeError(code.value);
+  if (cerr) {
+    ui.toast(cerr);
     return;
   }
   busy.value = true;

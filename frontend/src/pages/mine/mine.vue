@@ -290,7 +290,7 @@ import { ApiError, errText } from "@/api/http";
 import { PHONE_USE_NOTE } from "@/api/dict";
 import { duprOf, duprTier } from "@/utils/elo";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
-import { isValidPhone, newPwdError } from "@/utils/validate";
+import { newPwdError, phoneInputError, smsCodeError } from "@/utils/validate";
 import { goLogin } from "@/utils/nav";
 
 const user = useUserStore();
@@ -405,8 +405,9 @@ async function onSetSend(): Promise<void> {
 
 async function onSetSubmit(): Promise<void> {
   setHint.value = "";
-  if (setCode.value.trim().length !== 6) {
-    setHint.value = "请输入 6 位验证码";
+  const cerr = smsCodeError(setCode.value);
+  if (cerr) {
+    setHint.value = cerr;
     return;
   }
   const msg = newPwdError(setP1.value, setP2.value); // 5 位前端先拦，后端真闸兜底
@@ -481,16 +482,11 @@ const { countdown: bindCountdown, start: startBindCountdown } =
    （倒计时 useSmsCountdown 自管，不用手动清） */
 watch([() => session.isGuest, () => session.maskedPhone], () => {
   bindPanel.value = false;
-  bindPhone.value = "";
-  bindCode.value = "";
-  bindHint.value = "";
-  bindTaken.value = false;
-  bindSent.value = false;
+  resetBindForm();
 });
 
-/** 行点击开合面板；开合都清残留输入（密码面板 toggle 同款） */
-function toggleBindPanel(): void {
-  bindPanel.value = !bindPanel.value;
+/** 输入/错误/占用指路/已发旗一次清空：开合、身份切换、绑定成功三路共用 */
+function resetBindForm(): void {
   bindPhone.value = "";
   bindCode.value = "";
   bindHint.value = "";
@@ -498,9 +494,21 @@ function toggleBindPanel(): void {
   bindSent.value = false;
 }
 
+/** 占用拒才亮「去登录页」出口——发码与确认两路同吃这一把尺 */
+function isTakenRedirect(e: unknown): boolean {
+  return e instanceof ApiError && e.code === "phone_taken_redirect";
+}
+
+/** 行点击开合面板；开合都清残留输入（密码面板 toggle 同款） */
+function toggleBindPanel(): void {
+  bindPanel.value = !bindPanel.value;
+  resetBindForm();
+}
+
 async function onBindSend(): Promise<void> {
-  if (!isValidPhone(bindPhone.value)) {
-    ui.toast("请输入 11 位手机号");
+  const perr = phoneInputError(bindPhone.value);
+  if (perr) {
+    ui.toast(perr);
     return;
   }
   bindBusy.value = true;
@@ -513,8 +521,7 @@ async function onBindSend(): Promise<void> {
     ui.toast("验证码已发送");
   } catch (e) {
     bindHint.value = errText(e);
-    bindTaken.value =
-      e instanceof ApiError && e.code === "phone_taken_redirect";
+    bindTaken.value = isTakenRedirect(e);
   } finally {
     bindBusy.value = false;
   }
@@ -523,12 +530,14 @@ async function onBindSend(): Promise<void> {
 async function onBindConfirm(): Promise<void> {
   bindHint.value = "";
   bindTaken.value = false;
-  if (!isValidPhone(bindPhone.value)) {
-    bindHint.value = "请输入 11 位手机号";
+  const perr = phoneInputError(bindPhone.value);
+  if (perr) {
+    bindHint.value = perr;
     return;
   }
-  if (bindCode.value.trim().length !== 6) {
-    bindHint.value = "请输入 6 位验证码";
+  const cerr = smsCodeError(bindCode.value);
+  if (cerr) {
+    bindHint.value = cerr;
     return;
   }
   bindBusy.value = true;
@@ -538,13 +547,10 @@ async function onBindConfirm(): Promise<void> {
       bindCode.value.trim(),
     ); // toast 在 store
     bindPanel.value = false;
-    bindPhone.value = "";
-    bindCode.value = "";
-    bindSent.value = false;
+    resetBindForm();
   } catch (e) {
     bindHint.value = errText(e);
-    bindTaken.value =
-      e instanceof ApiError && e.code === "phone_taken_redirect";
+    bindTaken.value = isTakenRedirect(e);
   } finally {
     bindBusy.value = false;
   }

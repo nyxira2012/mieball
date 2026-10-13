@@ -421,16 +421,12 @@ describe("微信钥匙（1.7）", () => {
       account: { ...view, name: "球友8421" },
       nickname_random: true,
     });
-    const r = await session.wechatLogin("wx_new", {
-      fast: true,
-      nickname: "阿强",
-    });
+    const r = await session.wechatLogin("wx_new", { fast: true });
     expect(r).toEqual({ status: "created", randomName: true });
     expect(authApi.apiWechatLogin).toHaveBeenCalledWith(
       "wx_new",
       "dev-9",
       true,
-      "阿强",
     );
     expect(session.status).toBe("ready");
     expect(useUserStore().me.name).toBe("球友8421");
@@ -450,10 +446,7 @@ describe("微信钥匙（1.7）", () => {
       account: { ...view, name: "阿强" },
       nickname_random: false,
     });
-    const r = await session.wechatLogin("wx_new", {
-      fast: true,
-      nickname: "阿强",
-    });
+    const r = await session.wechatLogin("wx_new", { fast: true });
     expect(r).toEqual({ status: "created", randomName: false });
     expect(session.status).toBe("ready");
     expect(ui.toastMsg).toBe(""); // 手填名主人自己知道，不在这说

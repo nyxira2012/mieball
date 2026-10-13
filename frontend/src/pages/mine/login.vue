@@ -1,7 +1,7 @@
 <template>
   <!-- 登录页（1.6 A1 四钥匙明门）：双栏「收验证码」（默认，1.1 两步原样）｜「用密码」
        （手机号+密码直进，锁一刻钟只锁此路）；栏内带忘记密码三步（4.10 换锁）。
-       微信位只给说明不放死按钮（4.12）；页底客服出口写死（6.1 修订口径：群主/反馈群）。
+       微信位微信内才渲染（2026-10-13 环境收口，WechatButton 公共件）；页底客服出口写死（6.1 修订口径：群主/反馈群）。
        点空白收键盘是本页唯一的「放弃辅助」——不加常驻取消按钮（进入即想登录，想走有返回行/右滑）；
        原生监听直挂包裹层（uni 内建 view 的 @click 在 slot 根节点位不落地，机制见 blurOnBlank.ts）。 -->
   <PageShell>
@@ -188,11 +188,14 @@
         </view>
       </template>
 
-      <!-- 微信一键登录（1.7 点亮）：微信里跳授权页两下进门；不在微信里/通道没开
-           点了只说明（占位语义照旧，配置一填自动变真——静态角标删了防点亮后说谎） -->
-      <view class="wx-row" @click="onWechat">
-        <text>微信一键登录</text>
-        <text class="wx-note">微信里点两下进门</text>
+      <!-- 微信一键登录（1.7 点亮；2026-10-13 环境收口）：微信内才渲染（WechatButton
+           公共件），点了跳授权页两下进门；微信外不出现——不再摆「点了弹说明」的死入口 -->
+      <view class="wx-slot">
+        <WechatButton
+          label="微信一键登录"
+          note="微信里点两下进门"
+          @press="onWechat"
+        />
       </view>
 
       <!-- 客服出口写死在页底（6.1 修订口径：群主=开发者本人，不虚构客服微信号） -->
@@ -212,6 +215,7 @@ import { ref, watch, onMounted, onUnmounted } from "vue";
 import { onLoad, onUnload } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import BackRow from "@/components/biz/BackRow.vue";
+import WechatButton from "@/components/biz/WechatButton.vue";
 import AppField from "@/components/ui/AppField.vue";
 import AppInput from "@/components/ui/AppInput.vue";
 import AppButton from "@/components/ui/AppButton.vue";
@@ -220,18 +224,19 @@ import { useUiStore } from "@/stores/ui";
 import { runPendingResume } from "@/composables/pendingResume";
 import { bindBlurOnBlank, unbindBlurOnBlank } from "@/composables/blurOnBlank";
 import { ApiError, clearCardDraft, errText, readCardDraft } from "@/api/http";
-import { CHIBI_PRESETS } from "@/api/dict";
+import { cardPayloadOf } from "@/api/auth";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
-import { isValidPhone, newPwdError } from "@/utils/validate";
+import { newPwdError, phoneInputError, smsCodeError } from "@/utils/validate";
 import {
-  beginWechatAuth,
   clearWechatCtx,
   ctxFresh,
   navToPath,
+  readOauthReturn,
   readWechatCtx,
+  goWechatAuth,
 } from "@/utils/wechat";
-import type { CardPayload } from "@/api/auth";
 import type { SignupPending } from "@/stores/ui";
+import { hasPending, TOAST_VISIBLE_MS } from "@/stores/ui";
 
 const session = useSessionStore();
 const ui = useUiStore();
@@ -276,8 +281,9 @@ const { countdown, start: startCountdown } = useSmsCountdown();
 async function onNext(): Promise<void> {
   hint.value = "";
   const p = phone.value.trim();
-  if (!isValidPhone(p)) {
-    hint.value = "请输入 11 位手机号";
+  const perr = phoneInputError(p);
+  if (perr) {
+    hint.value = perr;
     return;
   }
   busy.value = true;
@@ -311,8 +317,9 @@ async function onResend(): Promise<void> {
 
 async function onVerify(): Promise<void> {
   hint.value = "";
-  if (code.value.trim().length !== 6) {
-    hint.value = "请输入 6 位验证码";
+  const cerr = smsCodeError(code.value);
+  if (cerr) {
+    hint.value = cerr;
     return;
   }
   busy.value = true;
@@ -339,8 +346,9 @@ async function onPwdLogin(): Promise<void> {
   pwdHint.value = "";
   locked.value = false;
   const p = pwdPhone.value.trim();
-  if (!isValidPhone(p)) {
-    pwdHint.value = "请输入 11 位手机号";
+  const perr = phoneInputError(p);
+  if (perr) {
+    pwdHint.value = perr;
     return;
   }
   if (!pwd.value) {
@@ -397,8 +405,9 @@ function startForgot(): void {
 async function onForgotSend(): Promise<void> {
   fpHint.value = "";
   const p = fpPhone.value.trim();
-  if (!isValidPhone(p)) {
-    fpHint.value = "请输入 11 位手机号";
+  const perr = phoneInputError(p);
+  if (perr) {
+    fpHint.value = perr;
     return;
   }
   fpBusy.value = true;
@@ -428,8 +437,9 @@ async function onForgotResend(): Promise<void> {
 
 function onForgotCode(): void {
   fpHint.value = "";
-  if (fpCode.value.trim().length !== 6) {
-    fpHint.value = "请输入 6 位验证码";
+  const cerr = smsCodeError(fpCode.value);
+  if (cerr) {
+    fpHint.value = cerr;
     return;
   }
   forgot.value = "newpwd";
@@ -459,32 +469,22 @@ async function onForgotReset(): Promise<void> {
   }
 }
 
-/** 微信一键登录（1.7 §4.1/4.2）：微信里=真按钮跳授权页；不在微信里/通道没开=
-    说明占位（beginWechatAuth 已把话说完，这里只接住短路）。 */
-async function onWechat(): Promise<void> {
-  try {
-    const url = await beginWechatAuth({ toast: (m) => ui.toast(m) });
-    location.href = url; // 整页跳去微信授权确认页，回来走 onLoad 的 code 消费
-  } catch {
-    /* 已 toast：不在微信里 / 通道未开 / 要地址失败 */
-  }
+/** 微信一键登录（1.7 §4.1/4.2）：入口只在微信内渲染（WechatButton 环境门），
+    点了跳授权页；toast/整页跳/接短路全套在 goWechatAuth 单一源 */
+function onWechat(): void {
+  void goWechatAuth();
 }
 
 /* —— 微信授权回跳收尾（1.7）：登录页是回跳落点，onLoad 收授权凭证。
    整页跳转后 SPA 重启、内存态全丢——出发前的转场包在本机（utils/wechat 存）。
    分流：有占卡手机号=占卡微信验证（正式绑才放行，接管级）；没有=认人门
    （绑了直进；没绑落现有名片卡，凭条在 session store 攥着，提交/验证即顺手绑）。 */
-const wxBusy = ref(false);
 const wxBack = ref<string | null>(null);
 
 onLoad((options) => {
   let code = options?.code ? String(options.code) : "";
   let state = options?.state ? String(options.state) : "";
-  if (!code && typeof window !== "undefined" && window.location?.search) {
-    const params = new URLSearchParams(window.location.search);
-    code = params.get("code") || "";
-    state = params.get("state") || "";
-  }
+  if (!code) ({ code, state } = readOauthReturn());
   if (!code) return;
   void handleWechatReturn(code, state);
 });
@@ -500,25 +500,19 @@ async function handleWechatReturn(code: string, state: string): Promise<void> {
     ui.toast("微信授权已失效，请再点一次");
     return;
   }
-  wxBusy.value = true;
   try {
     if (ctx.phone) {
       await session.wechatRedeem(code, ctx.phone, cardFromDraft(ctx.phone));
       await landAfterWechat(ctx, "已进入你的账号");
     } else {
-      // 1.8：转场包的 fast/nickname 如数转发——动作弹卡主钮出发带 fast（回来
-      // 直接开号），登录页微信键出发 ctx 无 fast（后端默认 False → 1.7 原路）
-      const r = await session.wechatLogin(code, {
-        fast: ctx.fast,
-        nickname: ctx.nickname,
-      });
+      // 1.8：转场包的 fast 如数转发——动作弹卡主钮出发带 fast（回来直接开号），
+      // 登录页微信键出发 ctx 无 fast（后端默认 False → 1.7 原路）
+      const r = await session.wechatLogin(code, { fast: ctx.fast });
       if (r.status === "unbound") {
         // 生面孔/没绑的老球友共用一副面孔（4.2/4.3）：现有名片卡原样，
         // 新面孔填卡；老球友点右上角「登录」走短信/密码，验证完自动正式绑上。
-        // 落卡来源位置 wechat-return：找回面不快进、主钮保持手填（1.8 4.7）——
-        // 必须在 signupThen 之后覆写（signupThen 开卡时复位 action）
-        ui.signupThen((ctx.pending ?? {}) as SignupPending);
-        ui.signupCardFrom = "wechat-return";
+        // 落卡来源位随参置 wechat-return：找回面不快进、主钮保持手填（1.8 4.7）
+        ui.signupThen((ctx.pending ?? {}) as SignupPending, "wechat-return");
         wxBack.value = ctx.back;
         ui.toast("这个微信还没绑过账号 · 填张名片建号，或点右上角登录验证");
         return;
@@ -526,17 +520,12 @@ async function handleWechatReturn(code: string, state: string): Promise<void> {
       if (r.status === "created") {
         // 快进建号成（1.8 4.1）：动作原话由续办分支自己回；随机名主人不知道
         // 自己叫什么——名字句让动作句先说（单槽 toast 谁后到谁顶掉），有挂起
-        // 动作时等 AppToast 2200ms 展示完再补报，无动作立即说
+        // 动作时等动作句展示完（TOAST_VISIBLE_MS）再补报，无动作立即说
         if (r.randomName && session.account) {
           const sayName = () =>
             ui.toast(`名单里你叫『${session.account?.name}』，随时可改`);
-          const hasPendingAction =
-            ctx.pending &&
-            (ctx.pending.pendingJoin ||
-              ctx.pending.pendingLaunch ||
-              ctx.pending.pendingCheckin ||
-              ctx.pending.pendingIntent);
-          if (hasPendingAction) setTimeout(sayName, 2400);
+          if (hasPending((ctx.pending ?? {}) as SignupPending))
+            setTimeout(sayName, TOAST_VISIBLE_MS + 200);
           else sayName();
         }
         await landAfterWechat(ctx);
@@ -546,8 +535,6 @@ async function handleWechatReturn(code: string, state: string): Promise<void> {
     }
   } catch (e) {
     ui.toast(errText(e)); // wechat_unbound/bound_other/binding_weak 指路文案后端给全
-  } finally {
-    wxBusy.value = false;
   }
 }
 
@@ -563,18 +550,11 @@ async function landAfterWechat(
 }
 
 /** 占卡微信验证带的名片重建（D5 同规：明确填过的才覆盖）——草稿是出发前
-    SignupSheet flush 进本机的，picked 下标映射同一份预设组（dict 单一源） */
-function cardFromDraft(phone: string): CardPayload | undefined {
+    SignupSheet flush 进本机的，picked 下标映射同一份预设组（cardPayloadOf 单一源） */
+function cardFromDraft(phone: string) {
   const draft = readCardDraft<{ nickname?: string; picked?: number | null }>();
   if (!draft) return undefined;
-  const picked = draft.picked ?? null;
-  return {
-    phone,
-    nickname: draft.nickname ?? "",
-    nickname_set: !!draft.nickname?.trim(),
-    chibi: picked != null ? CHIBI_PRESETS[picked].c : undefined,
-    chibi_set: picked != null,
-  };
+  return cardPayloadOf(phone, draft.nickname ?? "", draft.picked ?? null);
 }
 
 /* —— 微信回跳的落地导航：signupThen 路成功后 isGuest 翻 ready 时回 back
@@ -680,25 +660,9 @@ watch(
   margin: 2px 2px 14px;
 }
 
-/* 微信位（4.12）：占位说明行，点了 toast */
-.wx-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border: 1px dashed var(--line);
-  border-radius: var(--r-md);
-  padding: 12px 14px;
+/* 微信位（4.12；2026-10-13 环境收口）：公共件自带环境门，微信外整行不渲染 */
+.wx-slot {
   margin-top: 22px;
-  font-size: 13px;
-  cursor: pointer;
-}
-.wx-row:active {
-  border-color: rgba(255, 212, 0, 0.4);
-}
-.wx-note {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--dim);
 }
 
 .kefu {

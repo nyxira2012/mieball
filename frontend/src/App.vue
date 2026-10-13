@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onLaunch, onShow } from '@dcloudio/uni-app'
 import { useSessionStore } from '@/stores/session'
+import { readOauthReturn } from '@/utils/wechat'
 
 const session = useSessionStore()
 
@@ -11,16 +12,12 @@ onLaunch(() => {
   void session.init()
 
   // 微信网页授权回跳（1.7）：微信跳回不带 # 的地址，code 和 state 落在 search
-  if (typeof window !== 'undefined' && window.location?.search) {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    const state = params.get('state');
-    if (code) {
+  const { code, state } = readOauthReturn()
+  if (code) {
       uni.reLaunch({
         url: `/pages/mine/login?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state || '')}`
       });
     }
-  }
 })
 onShow(() => {
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch { /* 同上 */ }
