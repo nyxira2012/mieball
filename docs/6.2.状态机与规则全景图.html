@@ -1,0 +1,1530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mieball · 球局状态机与规则全景图 (文档 6.2 交互视窗)</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --bg-card: rgba(30, 41, 59, 0.75);
+      --bg-card-hover: rgba(51, 65, 85, 0.85);
+      --border: rgba(148, 163, 184, 0.12);
+      --border-bright: rgba(148, 163, 184, 0.35);
+      --text-main: #f8fafc;
+      --text-sub: #94a3b8;
+      --text-dim: #64748b;
+      
+      /* 通路色彩 */
+      --path-a: #10b981; /* 顺风主线 - 翡翠绿 */
+      --path-b: #f59e0b; /* 死局救活 - 琥珀金 */
+      --path-c: #8b5cf6; /* 订场必开 - 紫罗兰 */
+      --path-d: #3b82f6; /* 改约解锁 - 蔚蓝 */
+      --path-e: #06b6d4; /* 现场空降 - 青绿 */
+      --path-f: #f43f5e; /* 撤局终结 - 玫瑰红 */
+      
+      --accent: #10b981;
+      --glow-a: rgba(16, 185, 129, 0.35);
+      --glow-b: rgba(245, 158, 11, 0.35);
+      --glow-c: rgba(139, 92, 246, 0.35);
+      --glow-d: rgba(59, 130, 246, 0.35);
+      --glow-e: rgba(6, 182, 212, 0.35);
+      --glow-f: rgba(244, 63, 94, 0.35);
+      
+      --transition-smooth: all 0.32s cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      line-height: 1.6;
+      padding-bottom: 80px;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(59, 130, 246, 0.06) 0px, transparent 50%);
+      background-attachment: fixed;
+    }
+
+    /* 顶导与控制器 */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(11, 17, 32, 0.88);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .title-group h1 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge-doc {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      font-weight: 600;
+    }
+
+    .header-subtitle {
+      font-size: 13px;
+      color: var(--text-sub);
+      margin-top: 2px;
+    }
+
+    .quick-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--text-sub);
+    }
+    .quick-meta span {
+      background: rgba(255,255,255,0.04);
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    /* 通路过滤栏 (核心控制按钮) */
+    .pathway-selector-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      background: rgba(15, 23, 42, 0.6);
+      padding: 6px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+
+    .path-label {
+      font-size: 12px;
+      color: var(--text-dim);
+      font-weight: 600;
+      padding-left: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .path-btn {
+      appearance: none;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-sub);
+      padding: 6px 14px;
+      border-radius: 7px;
+      font-size: 12.5px;
+      cursor: pointer;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      transition: var(--transition-smooth);
+      user-select: none;
+    }
+
+    .path-btn .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    .path-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+      transform: translateY(-1px);
+    }
+
+    .path-btn.active, .path-btn:focus-visible {
+      color: #fff;
+      font-weight: 600;
+    }
+    .path-btn[data-path="all"].active { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.3); }
+    .path-btn[data-path="path-a"].active { background: rgba(16, 185, 129, 0.2); border-color: var(--path-a); color: #6ee7b7; }
+    .path-btn[data-path="path-b"].active { background: rgba(245, 158, 11, 0.2); border-color: var(--path-b); color: #fcd34d; }
+    .path-btn[data-path="path-c"].active { background: rgba(139, 92, 246, 0.2); border-color: var(--path-c); color: #c4b5fd; }
+    .path-btn[data-path="path-d"].active { background: rgba(59, 130, 246, 0.2); border-color: var(--path-d); color: #93c5fd; }
+    .path-btn[data-path="path-e"].active { background: rgba(6, 182, 212, 0.2); border-color: var(--path-e); color: #67e8f9; }
+    .path-btn[data-path="path-f"].active { background: rgba(244, 63, 94, 0.2); border-color: var(--path-f); color: #fda4af; }
+
+    .role-pills {
+      margin-left: auto;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .role-pill {
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: var(--transition-smooth);
+    }
+    .role-pill:hover, .role-pill.active {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+
+    /* 主要容器 */
+    .main-container {
+      max-width: 1540px;
+      margin: 0 auto;
+      padding: 24px 32px;
+    }
+
+    /* 核心视觉：状态流动走廊 (Flow Highway) */
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-title::before {
+      content: "";
+      width: 4px;
+      height: 16px;
+      border-radius: 2px;
+      background: var(--accent);
+    }
+
+    .flow-highway {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 14px;
+      margin-bottom: 32px;
+      position: relative;
+    }
+
+    @media (max-width: 1400px) {
+      .flow-highway {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+    @media (max-width: 800px) {
+      .flow-highway {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    /* 阶段卡片 */
+    .stage-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      position: relative;
+      cursor: pointer;
+      transition: var(--transition-smooth);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 220px;
+    }
+
+    .stage-number {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .stage-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 8px;
+    }
+
+    .stage-state-tag {
+      display: inline-block;
+      font-size: 11px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      padding: 2px 7px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      border: 1px solid transparent;
+    }
+    .state-open { background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.25); }
+    .state-locked { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.25); }
+    .state-pending { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border-color: rgba(245, 158, 11, 0.25); }
+    .state-terminated { background: rgba(100, 116, 139, 0.2); color: #94a3b8; border-color: rgba(100, 116, 139, 0.3); }
+    .state-live { background: rgba(139, 92, 246, 0.18); color: #c084fc; border-color: rgba(139, 92, 246, 0.3); }
+    .state-done { background: rgba(16, 185, 129, 0.12); color: #a7f3d0; border-color: rgba(16, 185, 129, 0.25); }
+
+    .stage-desc {
+      font-size: 12px;
+      color: var(--text-sub);
+      line-height: 1.5;
+      margin-bottom: 12px;
+      flex-grow: 1;
+    }
+
+    .stage-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: auto;
+    }
+
+    .rule-chip {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-sub);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      cursor: pointer;
+      transition: var(--transition-smooth);
+    }
+    .rule-chip:hover {
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.4);
+      transform: scale(1.05);
+    }
+
+    /* 核心交互：高亮与模糊/减淡样式 */
+    /* 当激活高亮模式时 */
+    .highlight-active .item-target {
+      opacity: 0.18 !important;
+      filter: blur(2.5px) grayscale(40%) !important;
+      transform: scale(0.98) !important;
+      transition: var(--transition-smooth) !important;
+      pointer-events: auto;
+    }
+
+    .highlight-active .item-target.is-highlighted {
+      opacity: 1 !important;
+      filter: blur(0px) grayscale(0%) !important;
+      transform: scale(1.025) !important;
+      z-index: 10 !important;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      border-color: var(--target-color, var(--accent)) !important;
+    }
+
+    /* 通路特定发光边框 */
+    .is-highlighted[data-primary-path="path-a"] { border-color: var(--path-a) !important; box-shadow: 0 8px 30px var(--glow-a) !important; }
+    .is-highlighted[data-primary-path="path-b"] { border-color: var(--path-b) !important; box-shadow: 0 8px 30px var(--glow-b) !important; }
+    .is-highlighted[data-primary-path="path-c"] { border-color: var(--path-c) !important; box-shadow: 0 8px 30px var(--glow-c) !important; }
+    .is-highlighted[data-primary-path="path-d"] { border-color: var(--path-d) !important; box-shadow: 0 8px 30px var(--glow-d) !important; }
+    .is-highlighted[data-primary-path="path-e"] { border-color: var(--path-e) !important; box-shadow: 0 8px 30px var(--glow-e) !important; }
+    .is-highlighted[data-primary-path="path-f"] { border-color: var(--path-f) !important; box-shadow: 0 8px 30px var(--glow-f) !important; }
+
+    /* 下半部：叙事故事与规则账本并列双栏 */
+    .dual-workspace {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 1100px) {
+      .dual-workspace {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* 故事流卡片 */
+    .story-section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .story-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      transition: var(--transition-smooth);
+      position: relative;
+    }
+    .story-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-bright);
+    }
+
+    .story-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .story-card-title {
+      font-size: 15.5px;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .story-actors {
+      font-size: 11.5px;
+      color: var(--text-dim);
+      background: rgba(255, 255, 255, 0.04);
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    .story-content {
+      font-size: 13.5px;
+      color: #cbd5e1;
+      line-height: 1.7;
+      margin-bottom: 14px;
+    }
+    .story-content p {
+      margin-bottom: 8px;
+    }
+    .story-content p:last-child {
+      margin-bottom: 0;
+    }
+
+    .story-highlight-tag {
+      font-weight: 600;
+      color: #fff;
+      padding: 0 3px;
+      border-radius: 3px;
+    }
+
+    .story-footer-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .story-hint {
+      font-size: 11.5px;
+      color: var(--text-dim);
+      margin-right: 4px;
+    }
+
+    /* 规则总表与执法账面板 */
+    .rules-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .rules-filter-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .rules-search {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      color: #fff;
+      font-size: 13px;
+      width: 100%;
+      outline: none;
+    }
+    .rules-search:focus {
+      border-color: var(--accent);
+    }
+
+    .rules-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: calc(100vh - 220px);
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .rules-list::-webkit-scrollbar {
+      width: 5px;
+    }
+    .rules-list::-webkit-scrollbar-thumb {
+      background: var(--border-bright);
+      border-radius: 3px;
+    }
+
+    .rule-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: var(--transition-smooth);
+    }
+    .rule-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-bright);
+    }
+
+    .rule-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .rule-id {
+      font-size: 12px;
+      font-weight: 700;
+      color: #38bdf8;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+    .rule-action-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-left: 6px;
+    }
+
+    .rule-actor-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-sub);
+    }
+
+    .rule-grid-summary {
+      font-size: 12px;
+      color: var(--text-sub);
+      display: grid;
+      grid-template-columns: 80px 1fr;
+      gap: 4px 8px;
+      line-height: 1.5;
+      margin-top: 6px;
+    }
+    .rule-k {
+      color: var(--text-dim);
+    }
+    .rule-v {
+      color: #cbd5e1;
+    }
+
+    /* 抽屉浮窗 (Detail Modal / Drawer) */
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(8px);
+      z-index: 200;
+      display: none;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+    .drawer-overlay.open {
+      display: flex;
+      justify-content: flex-end;
+      opacity: 1;
+    }
+
+    .drawer {
+      background: #0f172a;
+      width: 100%;
+      max-width: 520px;
+      height: 100%;
+      border-left: 1px solid var(--border-bright);
+      padding: 28px;
+      overflow-y: auto;
+      box-shadow: -10px 0 40px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      transform: translateX(100%);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .drawer-overlay.open .drawer {
+      transform: translateX(0);
+    }
+
+    .drawer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+    }
+    .drawer-title-group h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .drawer-close {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-sub);
+      border-radius: 6px;
+      width: 32px;
+      height: 32px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+    .drawer-close:hover {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+    }
+
+    .drawer-section {
+      background: rgba(30, 41, 59, 0.5);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .drawer-section h3 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+    .drawer-section p {
+      font-size: 13.5px;
+      color: #e2e8f0;
+      line-height: 1.6;
+    }
+
+    .code-tag {
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      background: rgba(0,0,0,0.3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #38bdf8;
+      font-size: 12px;
+    }
+
+    /* 底部图例与提示 */
+    .toast-indicator {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid var(--border-bright);
+      color: var(--text-main);
+      padding: 8px 18px;
+      border-radius: 30px;
+      font-size: 12.5px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+      z-index: 90;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶导与通路过滤器 -->
+  <header>
+    <div class="header-top">
+      <div class="title-group">
+        <h1>
+          <span>mieball · 球局状态机与规则全景</span>
+          <span class="badge-doc">文档 6.2 成文法</span>
+        </h1>
+        <div class="header-subtitle">鼠标悬停任意通路，即刻点亮全景因果链；其他不相关阶段将自动模糊与减淡</div>
+      </div>
+      <div class="quick-meta">
+        <span>📖 8 幕生命周期</span>
+        <span>⚖️ 30 行执法成文账</span>
+        <span>🎯 显示 7 态 vs 锚位 4 旗</span>
+      </div>
+    </div>
+
+    <!-- 关键交互控制器：通路选择 -->
+    <div class="pathway-selector-bar">
+      <span class="path-label">通路聚焦:</span>
+      <button class="path-btn active" data-path="all">
+        <span class="dot" style="background: #94a3b8;"></span>全部通路 (恢复默认)
+      </button>
+      <button class="path-btn" data-path="path-a">
+        <span class="dot" style="background: var(--path-a);"></span>A. 顺风成局主线
+      </button>
+      <button class="path-btn" data-path="path-b">
+        <span class="dot" style="background: var(--path-b);"></span>B. 死局救活 (待处置)
+      </button>
+      <button class="path-btn" data-path="path-c">
+        <span class="dot" style="background: var(--path-c);"></span>C. 订场变卦 (必开)
+      </button>
+      <button class="path-btn" data-path="path-d">
+        <span class="dot" style="background: var(--path-d);"></span>D. 改约解锁退局
+      </button>
+      <button class="path-btn" data-path="path-e">
+        <span class="dot" style="background: var(--path-e);"></span>E. 现场空降与访客
+      </button>
+      <button class="path-btn" data-path="path-f">
+        <span class="dot" style="background: var(--path-f);"></span>F. 撤局安乐死
+      </button>
+
+      <div class="role-pills">
+        <span class="path-label" style="font-size:11px;">角色视角:</span>
+        <button class="role-pill active" data-role="all">全部</button>
+        <button class="role-pill" data-role="organizer">老王 (组织者)</button>
+        <button class="role-pill" data-role="member">阿珍 (正式报名)</button>
+        <button class="role-pill" data-role="waitlist">小马 (候补/扫码)</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="main-container" id="app-container">
+
+    <!-- 1. 状态流动走廊 (Flow Highway - 8大节点) -->
+    <div class="section-title">一个局的一生 · 阶段流转走廊 (鼠标移上高亮整条通路)</div>
+    <div class="flow-highway">
+
+      <!-- 节点 1: 立局 -->
+      <div class="stage-card item-target" 
+           data-pathways="path-a path-b path-c path-d path-e path-f" 
+           data-primary-path="path-a"
+           data-roles="organizer member">
+        <div class="stage-number"><span>STAGE 01</span><span>周二</span></div>
+        <div class="stage-title">一、立局</div>
+        <div class="stage-state-tag state-open">显示态: open (报名中)</div>
+        <div class="stage-desc">
+          老王发局，自占第 1 坑。可见性三档（链接即门票）。可翻意向簿邀人。阿珍整行 3 人报名。
+        </div>
+        <div class="stage-chips">
+          <span class="rule-chip" data-rule="局1">〔局1 发局〕</span>
+          <span class="rule-chip" data-rule="局2">〔局2 报名〕</span>
+          <span class="rule-chip" data-rule="局10">〔局10 邀请〕</span>
+          <span class="rule-chip" data-rule="局12">〔局12 意向〕</span>
+        </div>
+      </div>
+
+      <!-- 节点 2: 截止时刻 -->
+      <div class="stage-card item-target" 
+           data-pathways="path-a path-b path-f" 
+           data-primary-path="path-a"
+           data-roles="organizer member">
+        <div class="stage-number"><span>STAGE 02</span><span>周四 17:00</span></div>
+        <div class="stage-title">二、截止时刻 (懒判)</div>
+        <div class="stage-state-tag state-locked">判定点 (无定时器)</div>
+        <div class="stage-desc">
+          首位访客触发懒判：满 4 人或必开则成局；不足 4 人变 terminated (死局)。
+        </div>
+        <div class="stage-chips">
+          <span class="rule-chip" data-rule="系1">〔系① 懒判定〕</span>
+          <span class="rule-chip" data-rule="局3">〔局3 截止锁退出〕</span>
+        </div>
+      </div>
+
+      <!-- 节点 3: 救活与待处置 (支线) -->
+      <div class="stage-card item-target" 
+           data-pathways="path-b path-f" 
+           data-primary-path="path-b"
+           data-roles="organizer">
+        <div class="stage-number"><span>STAGE 03 (支线)</span><span>开打前</span></div>
+        <div class="stage-title">三、救活待处置</div>
+        <div class="stage-state-tag state-pending">显示态: pending (仅老王)</div>
+        <div class="stage-desc">
+          人数不够死局，老王点恢复救回。外人眼里已终止（观察者差异）。老王可锁必打或安乐死撤局。
+        </div>
+        <div class="stage-chips">
+          <span class="rule-chip" data-rule="局9">〔局9 恢复〕</span>
+          <span class="rule-chip" data-rule="局5">〔局5 空锁必打〕</span>
+          <span class="rule-chip" data-rule="局8">〔局8 撤局〕</span>
+          <span class="rule-chip" data-rule="系2">〔系② 观察者差异〕</span>
+        </div>
+      </div>
+
+      <!-- 节点 4: 变卦与必开 -->
+      <div class="stage-card item-target" 
+           data-pathways="path-c path-d" 
+           data-primary-path="path-c"
+           data-roles="organizer member">
+        <div class="stage-number"><span>STAGE 04</span><span>随时可能插进</span></div>
+        <div class="stage-title">四、变卦与必开</div>
+        <div class="stage-state-tag state-locked">锚位旗: forced=true</div>
+        <div class="stage-desc">
+          老王订场填场地费用 ➔ 锁必打；改动时间地点 ➔ 自动触发 unlocked_at 解锁退出窗，防坑球友。
+        </div>
+        <div class="stage-chips">
+          <span class="rule-chip" data-rule="局6">〔局6 订场〕</span>
+          <span class="rule-chip" data-rule="局7">〔局7 清空订场〕</span>
+          <span class="rule-chip" data-rule="局4">〔局4 改局解锁〕</span>
+        </div>
+      </div>
+
+      <!-- 节点 5: 开场握手 -->
+      <div class="stage-card item-target" 
+           data-pathways="path-a path-c path-e" 
+           data-primary-path="path-a"
+           data-roles="organizer member waitlist">
+        <div class="stage-number"><span>STAGE 05</span><span>17:00 ~ 19:00</span></div>
+        <div class="stage-title">五、开场握手</div>
+        <div class="stage-state-tag state-live">锚位旗: live_opened=true</div>
+        <div class="stage-desc">
+          必开局老王随时开，成员两小时内进，到点谁先进谁开。局簿展开为现场 absentee 名册。小马无按钮。
+        </div>
+        <div class="stage-chips">
+          <span class="rule-chip" data-rule="现1">〔现1 开账三道闸〕</span>
+          <span class="rule-chip" data-rule="衔1">〔衔① 开账即桥〕</span>
+          <span class="rule-chip" data-rule="衔3">〔衔③ 单向补册〕</span>
+        </div>
+      </div>
+
+      <!-- 节点 6: 现场运转 -->
+      <div class="stage-card item-target" 
+           data-pathways="path-a path-e" 
+           data-primary-path="path-a"
+           data-roles="organizer member waitlist">
+        <div class="stage-number"><span>STAGE 06</span><span>19:00 ~ 21:00</span></div>
+        <div class="stage-title">六、现场运转与打球</div>
+        <div class="stage-state-tag state-live">状态: live (运转中)</div>
+        <div class="stage-desc">
+          阿珍到场签到。首签者自动临时管理员。小马扫码空降入册。本地记分零延迟，上传结算落战报与双轨积分。
+        </div>
+        <div class="stage-chips">
+          <span class="rule-chip" data-rule="现2">〔现2 签到四态〕</span>
+          <span class="rule-chip" data-rule="现3">〔现3 空降入册〕</span>
+          <span class="rule-chip" data-rule="现4">〔现4 带访客〕</span>
+          <span class="rule-chip" data-rule="现5">〔现5 发牌顺位〕</span>
+          <span class="rule-chip" data-rule="现6">〔现6 本地记分〕</span>
+          <span class="rule-chip" data-rule="现7">〔现7 结算双写〕</span>
+          <span class="rule-chip" data-rule="现8">〔现8 覆写改判〕</span>
+        </div>
+      </div>
+
+      <!-- 节点 7: 收摊散场 -->
+      <div class="stage-card item-target" 
+           data-pathways="path-a path-e" 
+           data-primary-path="path-a"
+           data-roles="organizer">
+        <div class="stage-number"><span>STAGE 07</span><span>21:00</span></div>
+        <div class="stage-title">七、收摊三件事</div>
+        <div class="stage-state-tag state-done">终态锚: ended_at</div>
+        <div class="stage-desc">
+          清残局放行 ➔ 落 ended_at（唯一终态） ➔ 考勤定格 ➔ 出账（向下抹零组织者兜底，缺席空降照摊）。
+        </div>
+        <div class="stage-chips">
+          <span class="rule-chip" data-rule="现16">〔现16 散场定格〕</span>
+          <span class="rule-chip" data-rule="现10">〔现10 清扫残局〕</span>
+          <span class="rule-chip" data-rule="衔2">〔衔② 散场即锚〕</span>
+          <span class="rule-chip" data-rule="系3">〔系③ 散场只读〕</span>
+        </div>
+      </div>
+
+      <!-- 节点 8: 事后双轨结账 -->
+      <div class="stage-card item-target" 
+           data-pathways="path-a path-e" 
+           data-primary-path="path-a"
+           data-roles="organizer member">
+        <div class="stage-number"><span>STAGE 08</span><span>事后</span></div>
+        <div class="stage-title">八、事后两清</div>
+        <div class="stage-state-tag state-done">显示态: done</div>
+        <div class="stage-desc">
+          战报回看（任何持链人可见）。阿珍点「结算」，老王点「已收」。双轨灰字互见，不可逆。累计场次+1。
+        </div>
+        <div class="stage-chips">
+          <span class="rule-chip" data-rule="账1">〔账1 付款结算〕</span>
+          <span class="rule-chip" data-rule="账2">〔账2 组织者已收〕</span>
+          <span class="rule-chip" data-rule="局11">〔局11 补填总价〕</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 2. 下半部：故事叙事与规则账本并列双栏 -->
+    <div class="dual-workspace">
+
+      <!-- 左栏：故事叙事面 (情景细节) -->
+      <div class="story-section">
+        <div class="section-title">上半部 · 一个局的一生 (跟着真实情景走)</div>
+
+        <!-- 故事卡 1 -->
+        <div class="story-card item-target" 
+             data-pathways="path-a path-b path-c path-d path-e path-f" 
+             data-primary-path="path-a"
+             data-roles="organizer member">
+          <div class="story-card-header">
+            <span class="story-card-title">一、立局：从一句话到一个局</span>
+            <span class="story-actors">老王、阿珍、路人</span>
+          </div>
+          <div class="story-content">
+            <p>老王周二约周四晚上的球（19:00–21:00），截止默认开打前 2 小时（17:00）。发出去后局是「报名中」，老王自己占第 1 坑。</p>
+            <p><strong>看球权：</strong>选「任何人」公开；选「跟我打过」熟人见；选「仅邀请」藏起来——但无论哪档，<span class="story-highlight-tag" style="background:rgba(16,185,129,0.25);">拿到分享链接点开都能看能报，链接即门票</span>。</p>
+            <p>阿珍报名顺手带俩朋友：整行 3 人一起算坑。坑够全员正式；装不下则整行落候补，绝不拆散朋友。</p>
+          </div>
+          <div class="story-footer-chips">
+            <span class="story-hint">涉及守卫:</span>
+            <span class="rule-chip" data-rule="局1">局1 发局</span>
+            <span class="rule-chip" data-rule="局2">局2 报名整行</span>
+            <span class="rule-chip" data-rule="局10">局10 邀请</span>
+            <span class="rule-chip" data-rule="局12">局12 意向</span>
+          </div>
+        </div>
+
+        <!-- 故事卡 2 -->
+        <div class="story-card item-target" 
+             data-pathways="path-a path-b path-f" 
+             data-primary-path="path-a"
+             data-roles="organizer member">
+          <div class="story-card-header">
+            <span class="story-card-title">二、截止时刻：没有闹钟，谁先看谁判</span>
+            <span class="story-actors">阿珍、老王、机器</span>
+          </div>
+          <div class="story-content">
+            <p>周四 17:00 过了。<strong>没有任何系统后台定时器</strong>——第一个打开约球页的人触发懒判判定：够 4 人名单锁定「成局」；不够 4 人且没订场，当场转为「已终止」。</p>
+            <p><strong>防鸽原则：</strong>成局之后，锁的是退出，不是进入！阿珍退不了了，但新球友照样能报一直到打完。</p>
+            <p><strong>死局恢复分支：</strong>不够人死了，老王开打前点「恢复」救进「待处置」（仅他可见，其他人眼里已终止）。老王可锁必打开活，或撤局彻底清场。</p>
+          </div>
+          <div class="story-footer-chips">
+            <span class="story-hint">涉及守卫:</span>
+            <span class="rule-chip" data-rule="系1">系① 懒判定</span>
+            <span class="rule-chip" data-rule="局3">局3 退局守卫</span>
+            <span class="rule-chip" data-rule="局9">局9 恢复死局</span>
+            <span class="rule-chip" data-rule="局8">局8 撤局</span>
+            <span class="rule-chip" data-rule="系2">系② 观察者差异</span>
+          </div>
+        </div>
+
+        <!-- 故事卡 3 -->
+        <div class="story-card item-target" 
+             data-pathways="path-c path-d" 
+             data-primary-path="path-c"
+             data-roles="organizer member">
+          <div class="story-card-header">
+            <span class="story-card-title">三、变卦与必开：随时可能插进来</span>
+            <span class="story-actors">老王、全员</span>
+          </div>
+          <div class="story-content">
+            <p><strong>订场即必开：</strong>老王在管理面板填了场地和费用，这局从此标为「必开」，哪怕人不够也照常开打。</p>
+            <p><strong>改约不坑人：</strong>老王开打前改时间或地点，成局状态下会自动触发 <span class="code-tag">unlocked_at</span>，大家获得一次反悔退出权！</p>
+          </div>
+          <div class="story-footer-chips">
+            <span class="story-hint">涉及守卫:</span>
+            <span class="rule-chip" data-rule="局6">局6 订场</span>
+            <span class="rule-chip" data-rule="局5">局5 空锁必打</span>
+            <span class="rule-chip" data-rule="局4">局4 改局解锁</span>
+          </div>
+        </div>
+
+        <!-- 故事卡 4 -->
+        <div class="story-card item-target" 
+             data-pathways="path-a path-c path-e" 
+             data-primary-path="path-a"
+             data-roles="organizer member waitlist">
+          <div class="story-card-header">
+            <span class="story-card-title">四、开场：两本账握手的时刻</span>
+            <span class="story-actors">老王、阿珍、候补小马</span>
+          </div>
+          <div class="story-content">
+            <p>必开局老王随时可点「开始打球」；阿珍大李在开打前 2 小时窗口打开后可点「进入现场」；<strong>候补小马在 app 里永远没有进场按钮，必须到现场扫码空降</strong>。</p>
+            <p><strong>两本账交接：</strong>开账一刻，报名名单展开成现场名册，初始全员「未到」。开账后线上若有新报名，单向补进行，现场从不回改局簿。</p>
+          </div>
+          <div class="story-footer-chips">
+            <span class="story-hint">涉及守卫:</span>
+            <span class="rule-chip" data-rule="现1">现1 开账闸门</span>
+            <span class="rule-chip" data-rule="衔1">衔① 开账即桥</span>
+            <span class="rule-chip" data-rule="衔3">衔③ 单向补册</span>
+          </div>
+        </div>
+
+        <!-- 故事卡 5 & 6 -->
+        <div class="story-card item-target" 
+             data-pathways="path-a path-e" 
+             data-primary-path="path-a"
+             data-roles="organizer member waitlist">
+          <div class="story-card-header">
+            <span class="story-card-title">五 & 六、现场运转与轮转打球</span>
+            <span class="story-actors">阿珍、小马、临时管理员</span>
+          </div>
+          <div class="story-content">
+            <p><strong>签到与管理员：</strong>阿珍点「我到了」入候场队尾。第一个签到的普通球友自动成为临时管理员（全场广播）。大李有事先走标「早退」，离场钱照摊。</p>
+            <p><strong>小马空降：</strong>小马扫现场码，带 dropin 标进名册。阿珍朋友带访客挂阿珍名下（不记战力分）。</p>
+            <p><strong>发牌与记分：</strong>算法在手机上算，按队头顺位上场。比分记在各自手机上零延迟。打完先传先落，双轨（Elo+DUPR）落账。下一场落账前全权可改分重落。</p>
+          </div>
+          <div class="story-footer-chips">
+            <span class="story-hint">涉及守卫:</span>
+            <span class="rule-chip" data-rule="现2">现2 签到</span>
+            <span class="rule-chip" data-rule="现3">现3 空降</span>
+            <span class="rule-chip" data-rule="现4">现4 访客</span>
+            <span class="rule-chip" data-rule="现6">现6 本地记分</span>
+            <span class="rule-chip" data-rule="现7">现7 上传双轨</span>
+            <span class="rule-chip" data-rule="现8">现8 改分覆写</span>
+          </div>
+        </div>
+
+        <!-- 故事卡 7 & 8 -->
+        <div class="story-card item-target" 
+             data-pathways="path-a path-e" 
+             data-primary-path="path-a"
+             data-roles="organizer member">
+          <div class="story-card-header">
+            <span class="story-card-title">七 & 八、收摊散场与事后两清</span>
+            <span class="story-actors">老王、阿珍、系统</span>
+          </div>
+          <div class="story-content">
+            <p><strong>散场三件事：</strong>清完在打的片 ➔ 落 <span class="code-tag">ended_at</span> 终态锚（现场页永久变只读回看） ➔ 考勤定格 ➔ 摊账（向下抹零组织者补差额；缺席空降照摊、访客份额归担保人）。</p>
+            <p><strong>事后两清：</strong>阿珍微信转钱后点「结算」，老王点「已收」。双向灰字各记各的时间，不可逆。</p>
+          </div>
+          <div class="story-footer-chips">
+            <span class="story-hint">涉及守卫:</span>
+            <span class="rule-chip" data-rule="现16">现16 散场</span>
+            <span class="rule-chip" data-rule="衔2">衔② 散场即锚</span>
+            <span class="rule-chip" data-rule="账1">账1 结算</span>
+            <span class="rule-chip" data-rule="账2">账2 已收</span>
+            <span class="rule-chip" data-rule="局11">局11 补填总价</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 右栏：规则执法账本 (30条速查) -->
+      <div class="rules-panel">
+        <div class="section-title">下半部 · 规则总表 (机器守卫与执法账)</div>
+
+        <div class="rules-filter-box">
+          <input type="text" class="rules-search" id="rules-search-input" placeholder="🔍 快速搜索规则、动作名称或守卫关键词...">
+        </div>
+
+        <div class="rules-list" id="rules-container">
+
+          <!-- 局簿机规则 -->
+          <div class="rule-card item-target" data-rule-id="局1" data-pathways="path-a path-b path-c path-d path-e path-f" data-primary-path="path-a">
+            <div class="rule-card-top">
+              <div><span class="rule-id">局1</span><span class="rule-action-name">发局 publish</span></div>
+              <span class="rule-actor-badge">任意已登录账号</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">无限制，表单校验合法</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">建 open 局，组织者占第 1 坑，费用未定</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="局2" data-pathways="path-a path-c path-d" data-primary-path="path-a">
+            <div class="rule-card-top">
+              <div><span class="rule-id">局2</span><span class="rule-action-name">报名 join</span></div>
+              <span class="rule-actor-badge">任意账号 (持票)</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">显示态 open/locked/live (截止后照常可加到打完)</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">整行算坑；装不下落候补；若账已开则现场补册</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="局3" data-pathways="path-a path-d" data-primary-path="path-d">
+            <div class="rule-card-top">
+              <div><span class="rule-id">局3</span><span class="rule-action-name">退局 quit</span></div>
+              <span class="rule-actor-badge">报名者本人</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">open 随便退；locked 仅在改约解锁窗内</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">删整行，候补整行按序递补；组织者无退出口</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="局4" data-pathways="path-d" data-primary-path="path-d">
+            <div class="rule-card-top">
+              <div><span class="rule-id">局4</span><span class="rule-action-name">改局 edit</span></div>
+              <span class="rule-actor-badge">组织者独占</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">open/locked；截止时刻永不可改</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">动了时间/地点置 unlocked_at 解锁退出；调人数递补</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="局5" data-pathways="path-b path-c" data-primary-path="path-c">
+            <div class="rule-card-top">
+              <div><span class="rule-id">局5</span><span class="rule-action-name">空锁必打 lock</span></div>
+              <span class="rule-actor-badge">组织者独占</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">开打前三态 (open/locked/pending)</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">manual_lock=true 一锁不撤；救活待处置局回 locked</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="局6" data-pathways="path-c" data-primary-path="path-c">
+            <div class="rule-card-top">
+              <div><span class="rule-id">局6</span><span class="rule-action-name">订场登记 book</span></div>
+              <span class="rule-actor-badge">组织者独占</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">锚散场确认：ended 空 ∧ 非终态</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">courts + fee_total 落定；订场即必开；可反复改</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="局8" data-pathways="path-b path-f" data-primary-path="path-f">
+            <div class="rule-card-top">
+              <div><span class="rule-id">局8</span><span class="rule-action-name">撤局 cancel</span></div>
+              <span class="rule-actor-badge">组织者独占</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">开打前三态 (terminated 需先点恢复)</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">state=cancelled；组织者永不回见，参加者次日收走</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="局9" data-pathways="path-b" data-primary-path="path-b">
+            <div class="rule-card-top">
+              <div><span class="rule-id">局9</span><span class="rule-action-name">恢复 restore</span></div>
+              <span class="rule-actor-badge">组织者独占</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">terminated (死局) ∧ 未到开打时刻</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">state=pending (仅老王可见，不再被懒判定判死)</span>
+            </div>
+          </div>
+
+          <!-- 现场机规则 -->
+          <div class="rule-card item-target" data-rule-id="现1" data-pathways="path-a path-c path-e" data-primary-path="path-a">
+            <div class="rule-card-top">
+              <div><span class="rule-id">现1</span><span class="rule-action-name">开账 start</span></div>
+              <span class="rule-actor-badge">老王随时 / 成员两小时</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">三道闸：非死局 ∧ (必开 ∨ 已成局) ∧ 角色窗口</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">LiveState 行建立，展开 absentee 名册与场地片</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="现2" data-pathways="path-a path-e" data-primary-path="path-a">
+            <div class="rule-card-top">
+              <div><span class="rule-id">现2</span><span class="rule-action-name">签到 check</span></div>
+              <span class="rule-actor-badge">本人 / 全权代办</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">名册有本人行 ∧ 人不在场上</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">ok/late 入候场队尾；首签球友自动升临时管理员</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="现3" data-pathways="path-e" data-primary-path="path-e">
+            <div class="rule-card-top">
+              <div><span class="rule-id">现3</span><span class="rule-action-name">空降 dropin</span></div>
+              <span class="rule-actor-badge">任意扫码者</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">名册无本人行 (超限亦放行)</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">插名册行 (dropin标) + 队尾，照摊钱，参与首签判定</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="现4" data-pathways="path-e" data-primary-path="path-e">
+            <div class="rule-card-top">
+              <div><span class="rule-id">现4</span><span class="rule-action-name">带访客 guests</span></div>
+              <span class="rule-actor-badge">全权 (组织者/管理员)</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">担保人须为已在册账号</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">插访客名册行，挂担保人名下，排队尾，不记积分</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="现6" data-pathways="path-a" data-primary-path="path-a">
+            <div class="rule-card-top">
+              <div><span class="rule-id">现6</span><span class="rule-action-name">记分点分/撤回</span></div>
+              <span class="rule-actor-badge">任意到场者</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">无服务器守卫 (记分本地化设计，故意的)</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">只改本机本地账，零网络延迟</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="现7" data-pathways="path-a" data-primary-path="path-a">
+            <div class="rule-card-top">
+              <div><span class="rule-id">现7</span><span class="rule-action-name">上传结算 settle</span></div>
+              <span class="rule-actor-badge">到场者 (先传先落)</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">片在打 ∧ 胜方=分高方；失配 409 携已记分</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">一本账原子：战报 + Elo/DUPR 双写 + 回流重排</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="现8" data-pathways="path-a" data-primary-path="path-a">
+            <div class="rule-card-top">
+              <div><span class="rule-id">现8</span><span class="rule-action-name">改分重落 overwrite</span></div>
+              <span class="rule-actor-badge">全权 (组织者/管理员)</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">目标必须是该片最新一场 (下一场落账即出窗)</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">战报改判 + Elo/DUPR 反算重落；物理面人流不回头</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="现16" data-pathways="path-a" data-primary-path="path-a">
+            <div class="rule-card-top">
+              <div><span class="rule-id">现16</span><span class="rule-action-name">散场 end</span></div>
+              <span class="rule-actor-badge">组织者独占 (早退代收除外)</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">场上无在打残局 (需全部结算或取消)</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">ended_at 落库 (唯一终态) ➔ 考勤定格 ➔ 现场出账</span>
+            </div>
+          </div>
+
+          <!-- 账单机规则 -->
+          <div class="rule-card item-target" data-rule-id="账1" data-pathways="path-a" data-primary-path="path-a">
+            <div class="rule-card-top">
+              <div><span class="rule-id">账1</span><span class="rule-action-name">付款结算 settle</span></div>
+              <span class="rule-actor-badge">本人 (待付行)</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">前端二次确认；不可逆终态</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">待付清零，双向灰字显示给对方看</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="账2" data-pathways="path-a" data-primary-path="path-a">
+            <div class="rule-card-top">
+              <div><span class="rule-id">账2</span><span class="rule-action-name">收款确认 receive</span></div>
+              <span class="rule-actor-badge">组织者独占</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">何时能按:</span><span class="rule-v">前端二次确认；逐人不可逆</span>
+              <span class="rule-k">改变什么:</span><span class="rule-v">应收消减，全部收齐全单翻已收</span>
+            </div>
+          </div>
+
+          <!-- 系统规则 -->
+          <div class="rule-card item-target" data-rule-id="系1" data-pathways="path-a path-b" data-primary-path="path-a">
+            <div class="rule-card-top">
+              <div><span class="rule-id">系①</span><span class="rule-action-name">懒判定</span></div>
+              <span class="rule-actor-badge">系统机制 (谁读谁判)</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">机制原理:</span><span class="rule-v">无服务端后台闹钟，首个 GET 请求触发判定写库</span>
+              <span class="rule-k">规则:</span><span class="rule-v">满4人/必开翻 locked，不足翻 terminated</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="系2" data-pathways="path-b path-f" data-primary-path="path-b">
+            <div class="rule-card-top">
+              <div><span class="rule-id">系②</span><span class="rule-action-name">观察者差异</span></div>
+              <span class="rule-actor-badge">视角掩蔽 masked</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">机制原理:</span><span class="rule-v">同一个局的状态，根据看的人不同而不同</span>
+              <span class="rule-k">规则:</span><span class="rule-v">pending 仅组织者可见；其他球友眼里恒为 terminated</span>
+            </div>
+          </div>
+
+          <div class="rule-card item-target" data-rule-id="系3" data-pathways="path-a" data-primary-path="path-a">
+            <div class="rule-card-top">
+              <div><span class="rule-id">系③</span><span class="rule-action-name">散场只读</span></div>
+              <span class="rule-actor-badge">全局铁律</span>
+            </div>
+            <div class="rule-grid-summary">
+              <span class="rule-k">机制原理:</span><span class="rule-v">ended_at 存在后，现场总账拒绝一切写操作</span>
+              <span class="rule-k">表现:</span><span class="rule-v">现场页与战报页切入只读回看态，任何人无法再动记分</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- 抽屉详情弹窗 -->
+  <div class="drawer-overlay" id="drawer-overlay">
+    <div class="drawer" id="drawer-content">
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <span class="rule-id" id="drawer-rule-id" style="font-size:14px;">局1</span>
+          <h2 id="drawer-rule-title" style="margin-top:6px;">动作名称</h2>
+        </div>
+        <button class="drawer-close" id="drawer-close-btn">&times;</button>
+      </div>
+
+      <div class="drawer-section">
+        <h3>谁能按 (操作角色)</h3>
+        <p id="drawer-actor">任意已登录账号</p>
+      </div>
+
+      <div class="drawer-section">
+        <h3>什么时候能按 (守卫条件)</h3>
+        <p id="drawer-guard">开打前三态...</p>
+      </div>
+
+      <div class="drawer-section">
+        <h3>按下去改变什么 (状态与事实变更)</h3>
+        <p id="drawer-effect">写数据库状态...</p>
+      </div>
+
+      <div class="drawer-section">
+        <h3>代码定位与溯源</h3>
+        <p id="drawer-source">后端：app/services/games.py · 规格溯源：1.2 §4.1</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部交互提示指示器 -->
+  <div class="toast-indicator" id="toast-hint">
+    <span>💡 提示：鼠标滑过上方任一通路或卡片，其他元素将自动模糊减淡；点击规则徽章可查看守卫详情。</span>
+  </div>
+
+  <script>
+    // 规则详细字典库
+    const RULES_DB = {
+      "局1": { title: "发局 publish", actor: "任意已登录账号", guard: "无特殊前置守卫，填写合法时段、人数、场馆即可", effect: "生成 open 状态球局，老王自身作为首行 formal 占第 1 坑，费用此时未定。", source: "app/services/games.py -> publish_game · 1.2 §4.1 / S07" },
+      "局2": { title: "报名 join", actor: "任意账号（在公开档或持邀请链接者）", guard: "显示态 open / locked / live（即使截止甚至已开打，只要没散场均可报名）；带人 0~3 整行算坑。", effect: "名额够则 formal 占坑；装不下整行进候补，绝不拆分。若现场账已开且落入 formal，单向调用现场补册 absorb_join。", source: "app/services/games.py -> join_game · 1.2 §4.3 / S08, S09" },
+      "局3": { title: "退局 quit", actor: "报名者本人（组织者无退局出口）", guard: "open 状态随便退；成局 locked 后仅在改约解锁窗内允许退；开场后不可退。", effect: "整行移除（所带朋友随同退出）；后面候补按整行递补。", source: "app/services/games.py -> quit_game · 1.2 §4.4 / S10-S12" },
+      "局4": { title: "改局 edit", actor: "组织者独占", guard: "显示态 open / locked；截止时刻永不可改。", effect: "修改时间/地点若在成局后，自动置位 unlocked_at 开启全员防坑反悔退局窗；人数上限调小降候补，改大促递补。", source: "app/services/games.py -> update_game · 1.2 §4.6 / S12" },
+      "局5": { title: "空锁必打 lock", actor: "组织者独占", guard: "开打前三态（open / locked / pending）", effect: "置 manual_lock = true，一锁不可逆；若在待处置 pending 状态下点锁，直接救活回 locked 成局。", source: "app/services/games.py -> lock_game · 1.2 §4.7 / S13, S15" },
+      "局6": { title: "订场登记 book", actor: "组织者独占", guard: "散场确认之前（ended 空且非 cancelled 终态，开打中亦可改）", effect: "记录场号 courts 与总价 fee_total。订场登记即代表必开（forced=true）。最后一次写赢，可反复修改。", source: "app/services/games.py -> book_courts · 1.2 §4.7 / 1.3 §4.5 / S13" },
+      "局7": { title: "清空订场 clear_booking", actor: "组织者独占", guard: "同订场窗", effect: "清空场号与总价，但之前若有手动锁必打 manual_lock 不会松开。", source: "app/services/games.py -> clear_booking · S13" },
+      "局8": { title: "撤局 cancel", actor: "组织者独占", guard: "开打前在办三态（open / locked / pending；死局 terminated 必须先点恢复才能撤）", effect: "state = cancelled，记录 cancelled_at；老王列表中彻底消失，报名者当日留灰字次日收走。", source: "app/services/games.py -> cancel_game · 1.2 §4.10 / S15" },
+      "局9": { title: "恢复 restore", actor: "组织者独占", guard: "已终止 terminated 且当前未到开打时刻", effect: "state = pending（待处置），仅老王可见，不再被懒判定判死。", source: "app/services/games.py -> restore_game · 1.2 §4.9 / S15" },
+      "局10": { title: "邀请 invite", actor: "组织者独占", guard: "显示态 open / locked / live", effect: "在被邀人【我的局】长出该局卡片，点开有快捷加入按钮。", source: "app/services/games.py -> invite_player · 1.2 §4.11 / S16" },
+      "局11": { title: "补填总价 fill_fee", actor: "组织者独占", guard: "散场已发生 且 从未填过价格（未曾订场出资）", effect: "总价落定，账单系统当场补算人均并出账，记账日期依旧记录为散场当日。", source: "app/services/games.py -> fill_fee · 1.3 §4.5 / S44" },
+      "局12": { title: "意向 save/delete", actor: "任意登录账号", guard: "时段非空、频率合法", effect: "意向簿写入一人一份时段愿望；组织者可去意向簿翻人发邀请。", source: "app/services/intents.py · 1.2 §4.13 / S16" },
+      "现1": { title: "开账 start", actor: "组织者随时；正式成员开打前2小时内；候补无权限", guard: "三道闸：①非死局 ②必开或已成局 ③角色时间窗。开打到点谁先进谁顺手开账。", effect: "LiveState 行建立，场地片初始化为 idle，报名名单平铺展开为 absentee（未到）名册。", source: "app/services/live.py -> start_live · 2.5 §4.4 / S18, S21" },
+      "现2": { title: "签到 check (四态)", actor: "本人操作；全权者可代办", guard: "名册有本人行 且 人不在场上对局中", effect: "ok/late 到场进入候场队尾（不许插队）；首个签到的球友自动晋升为临时管理员；left 离场清出队列但钱照摊。", source: "app/services/live.py -> check_in · 2.2 §4.2 / S19, S20, S24" },
+      "现3": { title: "空降 dropin", actor: "任意现场扫码者", guard: "名册无本人行（就算超过报名人数上限也放行）", effect: "新插入名册行并打上 dropin 标记，直接排入候场队尾，照摊钱，享有首签管理员同等竞争权。", source: "app/services/live.py -> drop_in · 2.2 §4.4 / S22, S23" },
+      "现4": { title: "带访客 guests", actor: "全权者（组织者/管理员）", guard: "担保人必须为在册的真实球友账号", effect: "名册追加访客行，注明担保人，排入候场队；打球照常，但不结算战力积分，分摊账算在担保人头下。", source: "app/services/live.py -> add_guests · 2.2 §4.13 / 1.3 §5 / S24" },
+      "现5": { title: "发牌 deal", actor: "任意到场者", guard: "各片 A/B 组必须严格是候场队头顺位（算法由前端跑，后端只核实事实）", effect: "场地片翻为 playing，代次 seq+1，上场人员移出候场队。", source: "app/services/live.py -> deal · 2.4 §4.3 / S27" },
+      "现6": { title: "本地记分 (点分/撤回/清零)", actor: "现场任意球友", guard: "无服务器守卫（记分本地化设计，零网络阻碍）", effect: "纯本地响应，毫秒级点分撤回；打完才向服务器汇总结算。", source: "前端 localScores · 2.3 §4.1 / S25, S30" },
+      "现7": { title: "上传结算 settle_confirm", actor: "到场者（先传先落）", guard: "场地在打 且 胜方比分高于败方；失配 409 携已记比分", effect: "一个事务落定：战报生成 + Elo/DUPR 积分双写 + 胜负人员按规则回流重新排队。", source: "app/services/live.py -> settle_confirm · 2.3 §4.6 / S33, S36" },
+      "现8": { title: "改分重落 settle_overwrite", actor: "全权者（组织者/管理员）", guard: "目标场次必须仍为该片最新一场（下一场落账即出窗，不可再改）", effect: "修正战报胜负，Elo/DUPR 撤销原分数并重新按新比分注入；但物理已排好的人流不回头。", source: "app/services/live.py -> settle_overwrite · 2.3 §8 / S33" },
+      "现10": { title: "清扫残局 sweep_cancel_all", actor: "全权者", guard: "存在在打对局片", effect: "一键取消全部在打残局，人员原样回流候场队首，不留废战报，不计分。", source: "app/services/live_sweep.py · 2.3 §4.9 / S37" },
+      "现16": { title: "散场 end", actor: "组织者独占（早退代收例外）", guard: "场上全部片为空闲 idle（残局必须清扫完才放行）", effect: "写入 ended_at 终态锚；定格考勤；若总价已定当场算出人均并出账；open 局强制翻 locked。", source: "app/services/live_sweep.py -> end_live · 2.2 §4.14 / 2.3 §4.9 / S37, S38" },
+      "账1": { title: "付款结算 settle", actor: "账单有自身待付行的球友", guard: "前端二次确认；不可逆终态", effect: "待付清零，系统向组织者展示双向灰字确认标记。", source: "app/services/bills.py -> settle · 1.3 §4.3 / S45" },
+      "账2": { title: "收款确认 receive", actor: "组织者独占", guard: "前端二次确认；逐人消账，不可逆", effect: "应收款减少；当全部人均付清后整单翻为已收完成态。", source: "app/services/bills.py -> receive · 1.3 §4.4 / S46" },
+      "系1": { title: "系① 懒判定机制", actor: "系统机制（无闹钟）", guard: "球局过期且仍处于 open 状态", effect: "第一个打开请求的人触发：人数足或必开则成局 locked；人数不足则直接变终止 terminated。", source: "app/services/games.py -> _evaluate · 1.2 §4.8 / S14" },
+      "系2": { title: "系② 观察者差异", actor: "视角掩蔽 masked", guard: "状态为 pending 时", effect: "组织者看得到「待处置」，其他所有人查询均掩蔽成 terminated。", source: "app/services/game_views.py -> derive · 1.2 §4.9" },
+      "系3": { title: "系③ 散场只读", actor: "全局守护", guard: "ended_at 字段非空时", effect: "拒绝一切现场机写操作（抛 live_ended 错误），全站自动降级为回看视图。", source: "app/services/live.py -> _open_write · 2.3 §4.10 / S39" },
+      "衔1": { title: "衔① 开账即桥", actor: "两机衔接", guard: "LiveState 记录存在", effect: "现场机正式开始运转；允许局簿暂时仍为 open，散场时再行对齐。", source: "docs/6.2 衔接章" },
+      "衔2": { title: "衔② 散场即锚", actor: "两机终点", guard: "ended_at 写入 games 表", effect: "作为两本账共用的唯一终态，不可逆，任何界面不再接受写入。", source: "docs/6.2 衔接章" },
+      "衔3": { title: "衔③ 单向补册", actor: "局簿 -> 现场", guard: "开账后线上又有新 formal 报名", effect: "单向调用 absorb_join 插入现场名册；现场从不回写局簿。", source: "app/services/games.py -> join_game" }
+    };
+
+    const container = document.getElementById('app-container');
+    const toast = document.getElementById('toast-hint');
+    const allTargets = document.querySelectorAll('.item-target');
+    const pathBtns = document.querySelectorAll('.path-btn');
+    const rolePills = document.querySelectorAll('.role-pill');
+
+    let currentPathway = 'all';
+    let currentRole = 'all';
+    let isPinned = false;
+
+    // 通路高亮与减淡模糊核心函数
+    function applyPathwayFocus(pathwayKey) {
+      if (!pathwayKey || pathwayKey === 'all') {
+        container.classList.remove('highlight-active');
+        allTargets.forEach(el => {
+          el.classList.remove('is-highlighted');
+        });
+        toast.innerHTML = '<span>💡 提示：恢复全览视角。悬停任一通路即可高亮聚焦对应流程。</span>';
+        return;
+      }
+
+      container.classList.add('highlight-active');
+      let count = 0;
+
+      allTargets.forEach(el => {
+        const pathways = (el.dataset.pathways || '').split(' ');
+        const roles = (el.dataset.roles || '').split(' ');
+
+        const matchPath = pathways.includes(pathwayKey);
+        const matchRole = currentRole === 'all' || roles.includes(currentRole);
+
+        if (matchPath && matchRole) {
+          el.classList.add('is-highlighted');
+          count++;
+        } else {
+          el.classList.remove('is-highlighted');
+        }
+      });
+
+      const pathNames = {
+        'path-a': '【A. 顺风成局主线】：发局 → 正常满员 → 提前开账 → 现场记分双轨上传 → 散场出账',
+        'path-b': '【B. 死局救活线】：人数不够终止 → 待处置(仅老王) → 锁必打开活 → 重新成局',
+        'path-c': '【C. 订场变卦必开线】：发局 → 订场登记/空锁必打 → 必开(forced) → 随时开账',
+        'path-d': '【D. 改约解锁退局线】：成局 → 动时间地点 → 自动解锁退局窗(防坑) → 重新稳定',
+        'path-e': '【E. 现场空降与访客线】：开账名册展开 → 扫码空降/带访客 → 本地记分 → 担保人摊账',
+        'path-f': '【F. 撤局安乐死线】：开打前任意在办态 → 老王撤局 → 抹去消失'
+      };
+
+      toast.innerHTML = `<span>🎯 聚焦通路：<strong>${pathNames[pathwayKey] || pathwayKey}</strong>（已点亮 ${count} 个关键关联节点）</span>`;
+    }
+
+    // 绑定顶部通路按钮
+    pathBtns.forEach(btn => {
+      btn.addEventListener('mouseenter', () => {
+        const path = btn.dataset.path;
+        pathBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentPathway = path;
+        applyPathwayFocus(path);
+      });
+
+      btn.addEventListener('click', () => {
+        const path = btn.dataset.path;
+        currentPathway = path;
+        pathBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        applyPathwayFocus(path);
+      });
+    });
+
+    // 鼠标离开控制器如果没固定，可以保持当前选择
+    document.querySelector('.pathway-selector-bar').addEventListener('mouseleave', () => {
+      if (currentPathway !== 'all') {
+        applyPathwayFocus(currentPathway);
+      }
+    });
+
+    // 绑定卡片 hover 交互：直接悬停在卡片上也能触发该卡片主通路的高亮
+    allTargets.forEach(card => {
+      card.addEventListener('mouseenter', (e) => {
+        if (currentPathway !== 'all') return; // 用户已指定过滤则优先
+        const primaryPath = card.dataset.primaryPath || (card.dataset.pathways || '').split(' ')[0];
+        if (primaryPath) {
+          applyPathwayFocus(primaryPath);
+          const activeBtn = document.querySelector(`.path-btn[data-path="${primaryPath}"]`);
+          if (activeBtn) {
+            pathBtns.forEach(b => b.classList.remove('active'));
+            activeBtn.classList.add('active');
+          }
+        }
+      });
+
+      card.addEventListener('mouseleave', () => {
+        if (currentPathway === 'all') {
+          applyPathwayFocus('all');
+          document.querySelector('.path-btn[data-path="all"]').classList.add('active');
+        }
+      });
+    });
+
+    // 角色切换器
+    rolePills.forEach(pill => {
+      pill.addEventListener('click', () => {
+        rolePills.forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        currentRole = pill.dataset.role;
+        applyPathwayFocus(currentPathway);
+      });
+    });
+
+    // 规则搜索过滤
+    const searchInput = document.getElementById('rules-search-input');
+    searchInput.addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      const ruleCards = document.querySelectorAll('.rule-card');
+      ruleCards.forEach(card => {
+        const text = card.innerText.toLowerCase();
+        if (!q || text.includes(q)) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    });
+
+    // 抽屉详情弹层
+    const drawerOverlay = document.getElementById('drawer-overlay');
+    const drawerCloseBtn = document.getElementById('drawer-close-btn');
+
+    function openRuleDrawer(ruleId) {
+      const rule = RULES_DB[ruleId];
+      if (!rule) return;
+
+      document.getElementById('drawer-rule-id').innerText = ruleId;
+      document.getElementById('drawer-rule-title').innerText = rule.title;
+      document.getElementById('drawer-actor').innerText = rule.actor;
+      document.getElementById('drawer-guard').innerText = rule.guard;
+      document.getElementById('drawer-effect').innerText = rule.effect;
+      document.getElementById('drawer-source').innerText = rule.source;
+
+      drawerOverlay.classList.add('open');
+    }
+
+    document.querySelectorAll('.rule-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const ruleId = chip.dataset.rule;
+        openRuleDrawer(ruleId);
+      });
+    });
+
+    document.querySelectorAll('.rule-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const ruleId = card.dataset.ruleId;
+        openRuleDrawer(ruleId);
+      });
+    });
+
+    drawerCloseBtn.addEventListener('click', () => {
+      drawerOverlay.classList.remove('open');
+    });
+
+    drawerOverlay.addEventListener('click', (e) => {
+      if (e.target === drawerOverlay) {
+        drawerOverlay.classList.remove('open');
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        drawerOverlay.classList.remove('open');
+      }
+    });
+  </script>
+</body>
+</html>
