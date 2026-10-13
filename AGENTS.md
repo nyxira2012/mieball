@@ -2,6 +2,7 @@
 
 > 开工前先读 `docs/项目地图.md` 对齐；新增模块 / 文档 / 决策后跑 naofu 补足登记。
 要求，与用户商议功能设计时，少说代码多说方法，说人话。代码实现要克制，最小化原则；不要破坏原有架构逻辑；修复bug探讨时把补丁修复和全面重构方法让用户选择。
+写注释时解释为什么这么做，列代码看不出来的跨模块契约和口径。不要引用文档。
 
 - 端口：前端 12543 · 后端 16588
 
@@ -13,6 +14,7 @@
 ./start.sh be     # 仅后端
 cd frontend && npm run test         # vitest
 cd frontend && npm run type-check   # vue-tsc
+cd backend && python -m pytest -n auto   # 后端测试，并行约 8 秒（需 pytest-xdist；单测排查时去掉 -n auto）
 ```
 
 ## 质量工具（已全局装在本机，直接命令可用）

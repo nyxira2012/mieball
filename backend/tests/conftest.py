@@ -1,6 +1,6 @@
 """测试基建：假时钟（限频/过期不用真等）+ 假发送器捕获（验证码从日志侧截获）+ 独立 app。
 
-跑法：cd backend && python -m pytest
+跑法：cd backend && python -m pytest -n auto（并行，需 pytest-xdist；排查单测时去掉 -n auto）
 """
 
 from __future__ import annotations
