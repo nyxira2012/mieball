@@ -3,69 +3,74 @@
        游客点报名/建局/留意向时弹出（或从约球页游客入口直开），成功后自动接着完成挂起动作
        （D3：用户看一步，系统拆两步）。草稿落本机：断网/中断后已填内容不丢（§5 出错条目）。
        右上角【登录】全天候亮（1.6 §4.2）：点了落挂起快照进信号位、直达登录页，登完回来动作接着办。
-       2026-10-13 环境收口（1.8 修订节）：微信内动作弹出=一颗微信授权钮（快进建号，表单不出现）；
-       浏览器=名片表单+一颗确定钮；微信入口微信外一律不渲染（WechatButton 公共件同规）。 -->
+       2026-10-13 环境收口（1.8 修订节）+ 同日修订二（用户裁决）：表单两环境同貌、只换按钮——
+       微信内=一颗微信授权登录（快进，卡上填过的都算数）；浏览器=一颗确定（原有手填路）；
+       微信键微信外一律不渲染（WechatButton 公共件同规）。 -->
   <view class="ss">
-    <!-- ===== 态一：名片卡（两形态） ===== -->
+    <!-- ===== 态一：名片卡（表单同貌，按环境换钮） ===== -->
     <template v-if="mode === 'card'">
       <view class="trow">
         <view class="sheet-t">{{ title }}</view>
         <view class="login-link" @click="goLoginWithDraft">登录 ▸</view>
       </view>
 
-      <!-- 微信内·动作弹出：一颗微信授权钮走快进建号（零输入），底部出路小字
-           给不用微信登录的人（去手机浏览器走表单路）；表单不出现 -->
-      <template v-if="wxFastCard">
-        <view class="wx-go">
-          <WechatButton
-            variant="pri"
-            label="微信授权登录"
-            @press="onWechatFast"
-          />
-        </view>
-        <view class="wx-out">不使用微信登录？使用手机浏览器打开本程序</view>
-      </template>
+      <!-- 表单两环境同貌（修订二）：栏名让位占位字；填过的都算数——
+           微信内快进与浏览器手填同消费这张卡 -->
+      <AppField>
+        <AppInput
+          v-model="nickname"
+          placeholder="常用球友名，如 海淀反手王（可跳过）"
+          :maxlength="16"
+        />
+      </AppField>
 
-      <!-- 浏览器 / 微信找回面（4.7 护栏：找回卡不快进）：名片表单一颗确定钮，
-           栏名让位占位字，微信字样不出现 -->
-      <template v-else>
-        <AppField>
-          <AppInput
-            v-model="nickname"
-            placeholder="常用球友名，如 海淀反手王（可跳过）"
-            :maxlength="16"
-          />
-        </AppField>
-
-        <AppField label="选个头像">
-          <view class="presets">
-            <view
-              v-for="(p, i) in CHIBI_PRESETS"
-              :key="i"
-              class="ptile"
-              :class="{ on: picked === i }"
-              @click="pick(i)"
-            >
-              <ChibiAvatar :chibi="p.c" :size="44" />
-            </view>
+      <AppField label="选个头像">
+        <view class="presets">
+          <view
+            v-for="(p, i) in CHIBI_PRESETS"
+            :key="i"
+            class="ptile"
+            :class="{ on: picked === i }"
+            @click="pick(i)"
+          >
+            <ChibiAvatar :chibi="p.c" :size="44" />
           </view>
-        </AppField>
+        </view>
+      </AppField>
 
-        <AppField>
-          <AppInput
-            v-model="phone"
-            type="number"
-            placeholder="11 位手机号"
-            :maxlength="11"
-          />
-          <!-- 用途说明原文单一源在 api/dict（1.8 批3：我的页补绑面板同消费） -->
-          <view class="pnote">{{ PHONE_USE_NOTE }}</view>
-        </AppField>
+      <AppField>
+        <AppInput
+          v-model="phone"
+          type="number"
+          placeholder="11 位手机号"
+          :maxlength="11"
+        />
+        <!-- 用途说明原文单一源在 api/dict（1.8 批3：我的页补绑面板同消费） -->
+        <view class="pnote">{{ PHONE_USE_NOTE }}</view>
+      </AppField>
 
-        <AppButton variant="pri" block :disabled="busy" @click="onSubmitCard">
-          {{ busy ? "提交中…" : actionLabel }}
-        </AppButton>
-      </template>
+      <!-- 按环境换钮（修订二）：微信内·动作弹出=授权钮（快进建号，吃全卡字段）；
+           浏览器/微信找回面（4.7 护栏：找回卡不快进）=手填确定钮 -->
+      <view v-if="wxFastCard" class="wx-go">
+        <WechatButton
+          variant="pri"
+          label="微信授权登录"
+          @press="onWechatFast"
+        />
+      </view>
+      <AppButton
+        v-else
+        variant="pri"
+        block
+        :disabled="busy"
+        @click="onSubmitCard"
+      >
+        {{ busy ? "提交中…" : actionLabel }}
+      </AppButton>
+      <!-- 微信内底部出路小字：给不用微信登录的人（去手机浏览器走手填路） -->
+      <view v-if="wxFastCard" class="wx-out"
+        >不使用微信登录？使用手机浏览器打开本程序</view
+      >
     </template>
 
     <!-- ===== 态二：手机号已被占用（1.6 §4.5 三证明出口） ===== -->
@@ -241,9 +246,10 @@ const actionLabel = computed(() =>
         : "确定",
 );
 
-/* ---- 卡形态（2026-10-13 环境收口，1.8 修订节）：微信内+动作弹出 → 整卡只有
-     一颗微信授权钮（快进建号，表单不出现）；浏览器 → 名片表单+一颗确定钮；
-     登录页微信键落下的找回卡不分环境一律表单（4.7 防老球友被快进岔成临时账号） ---- */
+/* ---- 卡形态（2026-10-13 修订二，用户裁决）：表单两环境同貌、只换按钮——
+     微信内+动作弹出 → 一颗微信授权登录（快进建号，吃全卡字段：昵称/头像/手机号
+     填了就算、没填走各自兜底）；浏览器/微信找回面（4.7 护栏：找回卡不快进）→
+     名片表单+一颗确定（手填路）。微信键微信外不渲染（WechatButton 环境门） ---- */
 const fromWechatReturn = computed(() => ui.signupCardFrom === "wechat-return");
 const wxFastCard = computed(() => isWeChatBrowser() && !fromWechatReturn.value);
 
@@ -258,6 +264,13 @@ if (draft) {
   nickname.value = draft.nickname ?? "";
   phone.value = draft.phone ?? "";
   picked.value = draft.picked ?? null;
+}
+/* 修订二：快进带号撞占用回跳——login 页 phone_taken 分支落的一次性信号：
+   重开卡直接落占卡三出口、phone 复位为撞的号（消费即清；openSheet 开新卡兜清） */
+if (ui.signupOccupiedPhone) {
+  phone.value = ui.signupOccupiedPhone;
+  ui.signupOccupiedPhone = "";
+  mode.value = "occupied";
 }
 let draftTimer: ReturnType<typeof setTimeout> | null = null;
 let draftDirty = false;
@@ -310,11 +323,27 @@ function goLoginWithDraft(): void {
   goLogin();
 }
 
-/** 微信内「微信授权登录」（1.8 4.1 快进建号；2026-10-13 修订后微信内卡无表单）：
-    只带 fast+挂起动作出发——授权回来后端直接开号（微信生而正式绑、零输入），
-    昵称由后端按「微信昵称 → 随机名」安。toast/整页跳/接短路全套在 goWechatAuth */
+/** 微信内「微信授权登录」（1.8 4.1 快进；修订二：卡上填过的都算数）——昵称/头像/
+    手机号与手填路同一份 cardPayload 拼装（单一源）：号没人用直接建带号账号（微信
+    同时正式绑）、被占由回跳收尾落占卡三出口（login.vue）。号填了但格式不对拦在
+    出发前（toast），不静默丢——用户以为给了号。 */
 function onWechatFast(): void {
-  void goWechatAuth({ fast: true, pending: pendingSnapshot() });
+  if (phone.value.trim()) {
+    const perr = phoneInputError(phone.value);
+    if (perr) {
+      ui.toast(perr);
+      return;
+    }
+  }
+  const card = cardPayload();
+  flushDraft();
+  void goWechatAuth({
+    fast: true,
+    nickname: card.nickname?.trim() || undefined,
+    chibi: card.chibi,
+    phone: card.phone || undefined,
+    pending: pendingSnapshot(),
+  });
 }
 
 /* ---- 提交名片 ---- */

@@ -224,16 +224,29 @@ export type WechatLoginResult =
       nickname_random: boolean;
     };
 
+/** 认人门可带的快进卡字段（修订二「填了就算」）：api / session store / utils
+ *  wechat 出发编排三层同形，共用这一份声明 */
+export type WechatCardFields = {
+  /** fast=false/不传同义（后端默认 False）=登录页微信键出发 → unbound 发凭条落卡（1.7 原路） */
+  fast?: boolean;
+  /** 卡上手填昵称（手填优先于微信昵称） */
+  nickname?: string;
+  /** 卡上手机号——没人用建带号账号、撞占用后端拒 phone_taken */
+  phone?: string;
+  /** 卡上选中的预设小人；不传=默认小人 */
+  chibi?: ChibiConfig;
+};
+
 export function apiWechatLogin(
   code: string,
   device: string,
-  fast?: boolean,
+  opts?: WechatCardFields,
 ): Promise<WechatLoginResult> {
   return request("POST", "/auth/wechat/login", {
     code,
     device_marker: device,
-    // fast=false/不传同义（后端默认 False）=登录页微信键出发 → unbound 发凭条落卡（1.7 原路）
-    fast,
+    ...opts,
+    chibi_set: opts?.chibi != null,
   });
 }
 

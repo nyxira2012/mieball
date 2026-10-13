@@ -205,7 +205,7 @@ describe("beginWechatAuth（出发编排）", () => {
     expect(ctx?.back).toBe("/pages/detail/detail?id=9");
   });
 
-  it("在微信里（动作弹卡主钮·快进出发 1.8）：fast+卡上手填昵称进转场包、不带手机号", async () => {
+  it("在微信里（动作弹卡主钮·快进出发 1.8）：fast 进转场包；手填没带的字段不落位", async () => {
     vi.stubGlobal("navigator", { userAgent: "MicroMessenger/8.0" });
     vi.stubGlobal(
       "getCurrentPages",
@@ -225,8 +225,35 @@ describe("beginWechatAuth（出发编排）", () => {
     });
     const ctx = readWechatCtx();
     expect(ctx?.fast).toBe(true);
-    expect(ctx?.phone).toBeUndefined(); // 快进建号不看卡上手机号
+    expect(ctx?.phone).toBeUndefined(); // 没填不落位（修订二：填了才带）
+    expect(ctx?.nickname).toBeUndefined();
+    expect(ctx?.chibi).toBeUndefined();
     expect(ctx?.back).toBe("/pages/detail/detail?id=9");
+  });
+
+  it("快进出发带全卡字段（修订二：填了就算）：昵称/头像/手机号如数进转场包", async () => {
+    vi.stubGlobal("navigator", { userAgent: "MicroMessenger/8.0" });
+    vi.stubGlobal(
+      "getCurrentPages",
+      () => [{ route: "pages/meet/meet" }] as never[],
+    );
+    authApi.apiWechatUrl.mockResolvedValue({
+      url: "https://open.weixin.qq.com/xxx",
+    });
+    const chibi = { skin: 1, hair: 2, hc: 0, shirt: 3, face: 0, acc: 0 };
+    await beginWechatAuth({
+      fast: true,
+      nickname: "阿强",
+      chibi,
+      phone: "13800001234",
+      pending: { pendingJoin: { gameId: 9, bring: 0 } },
+      toast: vi.fn(),
+    });
+    const ctx = readWechatCtx();
+    expect(ctx?.fast).toBe(true);
+    expect(ctx?.nickname).toBe("阿强");
+    expect(ctx?.chibi).toEqual(chibi);
+    expect(ctx?.phone).toBe("13800001234");
   });
 
   it("登录页微信键出发（不传 fast）：转场包不带快进位（回跳走 1.7 原路，4.7 护栏）", async () => {

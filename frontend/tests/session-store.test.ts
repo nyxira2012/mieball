@@ -421,13 +421,20 @@ describe("微信钥匙（1.7）", () => {
       account: { ...view, name: "球友8421" },
       nickname_random: true,
     });
-    const r = await session.wechatLogin("wx_new", { fast: true });
+    const r = await session.wechatLogin("wx_new", {
+      fast: true,
+      nickname: "阿强",
+      phone: "13800001234",
+      chibi: { skin: 1, hair: 2, hc: 0, shirt: 3, face: 0, acc: 0 },
+    });
     expect(r).toEqual({ status: "created", randomName: true });
-    expect(authApi.apiWechatLogin).toHaveBeenCalledWith(
-      "wx_new",
-      "dev-9",
-      true,
-    );
+    // 修订二：卡上手填字段（昵称/手机号/头像）如数透传 API 层
+    expect(authApi.apiWechatLogin).toHaveBeenCalledWith("wx_new", "dev-9", {
+      fast: true,
+      nickname: "阿强",
+      phone: "13800001234",
+      chibi: { skin: 1, hair: 2, hc: 0, shirt: 3, face: 0, acc: 0 },
+    });
     expect(session.status).toBe("ready");
     expect(useUserStore().me.name).toBe("球友8421");
     expect(http.setToken).toHaveBeenCalledWith("wx-new");

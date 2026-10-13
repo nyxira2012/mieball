@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 
 from fastapi.testclient import TestClient
@@ -445,11 +446,21 @@ RANDOM_NAME_RE = re.compile(r"球友\d{4}")
 
 
 def wechat_fast(
-    client: TestClient, code: str, device: str = "d-fast", nickname: str | None = None
+    client: TestClient,
+    code: str,
+    device: str = "d-fast",
+    nickname: str | None = None,
+    phone: str | None = None,
+    chibi: dict | None = None,
 ) -> dict:
     body = {"code": code, "device_marker": device, "fast": True}
     if nickname is not None:
         body["nickname"] = nickname
+    if phone is not None:
+        body["phone"] = phone
+    if chibi is not None:
+        body["chibi"] = chibi
+        body["chibi_set"] = True
     r = client.post("/api/auth/wechat/login", json=body)
     assert r.status_code == 200, r.text
     return r.json()
@@ -544,6 +555,77 @@ def test_fast_false_keeps_1_7_unbound_path(client: TestClient):
     )
     res = r.json()
     assert res["status"] == "unbound" and res["bind_token"]
+
+
+def test_fast_with_free_phone_creates_phone_account(client: TestClient):
+    """修订二「卡上填过的都算数」：手机号没人用 → 带号建号（微信同时正式绑，
+    两把钥匙一步到位）；头像选了落档。"""
+    res = wechat_fast(
+        client,
+        "wx_p1|阿号",
+        device="d-p1",
+        phone="13900001111",
+        chibi={"skin": 1, "hair": 2, "hc": 0, "shirt": 3, "face": 0, "acc": 0},
+    )
+    assert res["status"] == "created"
+    acc = account_row(client, device_marker="d-p1")
+    assert acc.phone == "13900001111"
+    assert acc.wechat_openid == "wx_p1" and acc.wechat_verified is True
+    assert json.loads(acc.chibi)["skin"] == 1  # 选了落档，不吃默认小人
+    v = me(client, res["token"])
+    assert v.get("phone_tail") == "1111"  # 有号即有尾号（与无号支互为镜像）
+
+
+def test_fast_with_taken_phone_other_device_rejected(client: TestClient):
+    """修订二：撞在册账号且异机 → phone_taken、整体不生效（不建号、微信不绑，
+    前端凭此落占卡三出口）。"""
+    signup(client, "13900002222", "d-owner")
+    r = client.post(
+        "/api/auth/wechat/login",
+        json={
+            "code": "wx_p2",
+            "device_marker": "d-fast7",
+            "fast": True,
+            "phone": "13900002222",
+        },
+    )
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "phone_taken"
+    s = client.app.state.session_factory()
+    try:
+        holder = s.execute(
+            select(Account).filter_by(wechat_openid="wx_p2")
+        ).scalar_one_or_none()
+        assert holder is None  # 不留半个账号：openid 没绑到任何号
+    finally:
+        s.close()
+
+
+def test_fast_with_taken_phone_same_device_resumes(client: TestClient):
+    """修订二：同机续接窗内撞自己在册号 → 直接进既有账号（与手填建号续接分支
+    同规），微信正式绑上、不发凭条。"""
+    old = signup(client, "13900003333", "d-same")
+    res = wechat_fast(client, "wx_p3|阿三", device="d-same", phone="13900003333")
+    assert res["status"] == "ok"
+    assert res["account"]["id"] == old["account"]["id"]
+    acc = account_row(client, id=old["account"]["id"])
+    assert acc.wechat_openid == "wx_p3" and acc.wechat_verified is True
+    assert "bind_token" not in res or res.get("bind_token") is None
+
+
+def test_fast_invalid_phone_rejected(client: TestClient):
+    """修订二：号填了但格式不对 → 与手填建号同款 phone_invalid（不静默丢）。"""
+    r = client.post(
+        "/api/auth/wechat/login",
+        json={
+            "code": "wx_p4",
+            "device_marker": "d-fast8",
+            "fast": True,
+            "phone": "1390000111",  # 10 位
+        },
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "phone_invalid"
 
 
 def test_fast_conflict_leaves_no_half_account(client: TestClient):

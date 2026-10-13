@@ -124,10 +124,15 @@ class WechatUrlIn(BaseModel):
 class WechatLoginIn(BaseModel):
     code: str
     device_marker: str
-    # 1.8 快进建号：动作弹的卡（微信内）传 fast=True（+卡上手填昵称，可空）；
-    # 登录页不传——unbound 仍走 1.7 原路发凭条落卡（4.7 防误快进护栏）
+    # 1.8 快进建号：动作弹的卡（微信内）传 fast=True；登录页不传——unbound 仍走
+    # 1.7 原路发凭条落卡（4.7 防误快进护栏）。修订二：卡上表单两环境同貌，快进
+    # 带的手填字段如数收——昵称手填优先、头像选了落档、手机号没人用建带号账号
+    # （撞占用同机续接窗内直接进既有账号，否则 phone_taken 整体不生效）
     fast: bool = False
     nickname: str | None = None
+    phone: str | None = None
+    chibi: dict[str, Any] | None = None
+    chibi_set: bool = False
 
 
 class WechatRedeemIn(BaseModel):
@@ -352,6 +357,9 @@ def wechat_login(
         device_marker=body.device_marker,
         fast=body.fast,
         nickname=body.nickname,
+        phone=body.phone,
+        chibi=body.chibi,
+        chibi_set=body.chibi_set,
     )
     if out.status == "unbound":
         return {"status": "unbound", "bind_token": out.bind_token}

@@ -206,12 +206,18 @@ class WechatMixin:
         device_marker: str,
         fast: bool = False,
         nickname: str | None = None,
+        phone: str | None = None,
+        chibi: dict[str, Any] | None = None,
+        chibi_set: bool = False,
     ) -> WechatLoginOut:
-        """认人门（1.7 §4.1/4.2 + 1.8 §4.1~4.3）。回话字段义见 WechatLoginOut：
+        """认人门（1.7 §4.1/4.2 + 1.8 §4.1~§4.3 + 修订二）。
+        回话字段义见 WechatLoginOut：
         - "ok"：绑过直进（牢靠绑=验明正身，杀未验证钥匙；凭条照发——换绑顶替的种子）；
+          修订二新增一支：快进带号撞在册账号且同机续接窗内 → 进既有账号+微信正式绑；
         - "unbound"：fast=False 的 1.7 原路（登录页找回面落卡分支，4.7 防误快进护栏）；
-        - "created"：fast=True 的快进建号（1.8）——手机号欠着、微信生而正式绑、
-          不发凭条（绑定一次完成）。"""
+        - "created"：fast=True 的快进建号（1.8）——微信生而正式绑、不发凭条（绑定一次
+          完成）；修订二：卡上手机号没人用则建带号账号，选了头像落档。
+        - 快进带号撞占用（异机/过窗）：抛 phone_taken，整体不生效（凭据作废，重点走三出口）。"""
         # 昵称只在快进路要（fast+未绑才消费）；已绑+fast 的 ok 支多抓一趟就多抓——
         # 换它一分支的简明，不值拆两段通道调用
         openid, wx_nickname = self.wechat.exchange(code, want_profile=fast)
@@ -241,7 +247,13 @@ class WechatMixin:
                 nickname_random=False,
             )
         return self._fast_create(
-            openid, wx_nickname, nickname=nickname, device_marker=device_marker
+            openid,
+            wx_nickname,
+            nickname=nickname,
+            device_marker=device_marker,
+            phone=phone,
+            chibi=chibi,
+            chibi_set=chibi_set,
         )
 
     def _fast_create(
@@ -251,14 +263,42 @@ class WechatMixin:
         *,
         nickname: str | None,
         device_marker: str,
+        phone: str | None = None,
+        chibi: dict[str, Any] | None = None,
+        chibi_set: bool = False,
     ) -> WechatLoginOut:
-        """快进建号（1.8 §4.1~4.3）：授权那一刻即本人——生而正式绑（§8 裁决 A），
-        手机号欠着（phone=None，注销预留的空位）。昵称三优先级：卡上手填（strip 空
-        视同没填）→ 微信昵称过清洗规矩（不合格视同拿不到，§4.2）→ 随机名。
-        原子性（§4.9-3）：账号行 flush（openid 唯一索引撞在此暴露）后由 keys.issue
-        的 commit 一并落账，任何失败整体回滚不留半个账号。"""
+        """快进建号（1.8 §4.1~§4.3 + 修订二「卡上填过的都算数」）：授权那一刻即
+        本人——生而正式绑（§8 裁决 A）。手机号两支：没填→无号快进号（phone=None，
+        注销预留的空位）；填了没人用→带号建号（两把钥匙一步到位）。昵称三优先级：
+        卡上手填（strip 空视同没填）→ 微信昵称过清洗规矩（不合格视同拿不到，§4.2）
+        → 随机名；头像选了落档、没选默认小人（与手填建号同一条 D2 规矩）。
+        原子性（§4.9-3）：账号行 flush（openid/phone 唯一索引撞在此暴露）后由
+        keys.issue 的 commit 一并落账，任何失败整体回滚不留半个账号。"""
         # 循环导入（accounts 先 import 本模块）：混入方运行时取用建号模块级件
-        from .accounts import DEFAULT_CHIBI, _resolve_nickname, resolve_nickname_report
+        from .accounts import (
+            DEFAULT_CHIBI,
+            _resolve_nickname,
+            _validate_chibi,
+            resolve_nickname_report,
+        )
+
+        phone = (phone or "").strip() or None
+        if phone:
+            # 修订二：撞在册账号——同机续接窗内直接进既有账号并把微信正式绑上
+            # （授权即本人；与手填建号的续接分支同规），异机/过窗 phone_taken
+            # 落三出口（凭据整体作废，不半建）
+            self._check_phone(phone)
+            existing = self._active_by_phone(phone)
+            if existing is not None:
+                token = self._resume_or_taken(existing, device_marker)
+                self._rebind(existing, openid, verified=True)
+                return WechatLoginOut(
+                    status="ok",
+                    token=token,
+                    view=self.view(existing.id, viewer="self"),
+                    bind_token=None,
+                    nickname_random=False,
+                )
 
         manual = (nickname or "").strip()
         if manual:
@@ -268,10 +308,11 @@ class WechatMixin:
         else:
             # 微信昵称空/清洗不合格 → 落随机名并如实报（判据单一源在 accounts）
             final_name, nickname_random = resolve_nickname_report(wx_nickname)
+        chibi_json = json.dumps(_validate_chibi(chibi) if chibi_set else DEFAULT_CHIBI)
         account = Account(
-            phone=None,
+            phone=phone,
             nickname=final_name,
-            chibi=json.dumps(DEFAULT_CHIBI),
+            chibi=chibi_json,
             status="active",
             device_marker=device_marker,
             created_at=clock.now(),
@@ -284,7 +325,8 @@ class WechatMixin:
             self.db.flush()
             token = self.keys.issue(account.id, device_marker, verified=True)
         except IntegrityError:
-            # openid 撞唯一索引（并发双授权等）：整体不生效，重点一次即走通
+            # openid/phone 并发撞唯一索引：整体不生效，重点一次即走通
+            # （撞号的重试自然落上方占用分支，不在此另设一支）
             self.db.rollback()
             raise errors.wechat_fast_failed() from None
         return WechatLoginOut(

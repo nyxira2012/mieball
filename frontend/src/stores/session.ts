@@ -27,6 +27,7 @@ import {
   type CardPayload,
   type SessionPayload,
   type SmsPurpose,
+  type WechatCardFields,
 } from "@/api/auth";
 import { clearCardDraft, deviceMarker, getToken, setToken } from "@/api/http";
 import type { CardBg, ChibiConfig } from "@/api/types";
@@ -128,9 +129,9 @@ export const useSessionStore = defineStore("session", () => {
       排队，动作句说完再报名字（4.1 结果 2）。 */
   async function wechatLogin(
     code: string,
-    opts?: { fast?: boolean },
+    opts?: WechatCardFields,
   ): Promise<{ status: "ok" | "unbound" | "created"; randomName: boolean }> {
-    const res = await apiWechatLogin(code, deviceMarker(), opts?.fast);
+    const res = await apiWechatLogin(code, deviceMarker(), opts);
     if (res.status === "created") {
       admitSession({ token: res.token, account: res.account }, true);
       // 名字句让动作句先说——单槽 toast 顶替，randomName 交调用方排队补报

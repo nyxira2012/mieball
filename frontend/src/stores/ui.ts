@@ -42,7 +42,10 @@ export const useUiStore = defineStore("ui", () => {
     sheet.value = p;
     // 1.8 名片卡来源位：经 signupThen 开卡的由其 from 参数落位；约球页绕过
     // signupThen 直开 signup-card 时在此复位 action 兜底
-    if (p.type === "signup-card") signupCardFrom.value = "action";
+    if (p.type === "signup-card") {
+      signupCardFrom.value = "action";
+      signupOccupiedPhone.value = ""; // 开新卡即清占卡直达信号（一次性）
+    }
   }
   function closeSheet(): void {
     sheet.value = null;
@@ -77,6 +80,11 @@ export const useUiStore = defineStore("ui", () => {
      绕过 signupThen 的直开卡由 openSheet 复位 action 兜底。 */
   const signupCardFrom = ref<"action" | "wechat-return">("action");
 
+  /* —— 1.8 修订二：快进带号撞占用回跳的直达信号（一次性）：login 页 phone_taken
+     分支落位（signupThen 之后落——openSheet 会清），SignupSheet 挂载即消费：
+     卡直接开在占卡三出口、phone 复位为撞的号。内存非持久，消费/开新卡即清。 */
+  const signupOccupiedPhone = ref("");
+
   /* —— P3 纯增量：全局撒花触发器（alpha:839-845 confetti(n) 的状态层入口）——
      Confetti.vue（P1）是纯展示件，只接受 trigger 计数 + count 粒数两个 props，
      因此除 confettiKey 计数器外需附带 confettiN 携带本波粒数（14=开下一轮 / 56=收局，P8a/P8b 用）。
@@ -96,6 +104,7 @@ export const useUiStore = defineStore("ui", () => {
     confettiN,
     pendingAfterLogin,
     signupCardFrom,
+    signupOccupiedPhone,
     openSheet,
     closeSheet,
     signupThen,

@@ -501,39 +501,62 @@ async function handleWechatReturn(code: string, state: string): Promise<void> {
     return;
   }
   try {
-    if (ctx.phone) {
+    if (ctx.phone && !ctx.fast) {
+      // 占卡「微信验证进入」（1.7 原路）：正式绑才放行，接管级
       await session.wechatRedeem(code, ctx.phone, cardFromDraft(ctx.phone));
       await landAfterWechat(ctx, "已进入你的账号");
-    } else {
-      // 1.8：转场包的 fast 如数转发——动作弹卡主钮出发带 fast（回来直接开号），
-      // 登录页微信键出发 ctx 无 fast（后端默认 False → 1.7 原路）
-      const r = await session.wechatLogin(code, { fast: ctx.fast });
-      if (r.status === "unbound") {
-        // 生面孔/没绑的老球友共用一副面孔（4.2/4.3）：现有名片卡原样，
-        // 新面孔填卡；老球友点右上角「登录」走短信/密码，验证完自动正式绑上。
-        // 落卡来源位随参置 wechat-return：找回面不快进、主钮保持手填（1.8 4.7）
-        ui.signupThen((ctx.pending ?? {}) as SignupPending, "wechat-return");
-        wxBack.value = ctx.back;
-        ui.toast("这个微信还没绑过账号 · 填张名片建号，或点右上角登录验证");
-        return;
-      }
-      if (r.status === "created") {
-        // 快进建号成（1.8 4.1）：动作原话由续办分支自己回；随机名主人不知道
-        // 自己叫什么——名字句让动作句先说（单槽 toast 谁后到谁顶掉），有挂起
-        // 动作时等动作句展示完（TOAST_VISIBLE_MS）再补报，无动作立即说
-        if (r.randomName && session.account) {
-          const sayName = () =>
-            ui.toast(`名单里你叫『${session.account?.name}』，随时可改`);
-          if (hasPending((ctx.pending ?? {}) as SignupPending))
-            setTimeout(sayName, TOAST_VISIBLE_MS + 200);
-          else sayName();
-        }
-        await landAfterWechat(ctx);
-        return;
-      }
-      await landAfterWechat(ctx, "欢迎回来 · 战绩都在");
+      return;
     }
+    // 认人门：fast=快进卡出发（修订二带全卡字段——号撞在册且同机续接窗内，后端
+    // 直接 ok 进既有账号；异机/过窗 phone_taken 由下方 catch 落占卡三出口）；
+    // 无 fast=登录页微信键，1.7 原路
+    const r = await session.wechatLogin(
+      code,
+      ctx.fast
+        ? {
+            fast: true,
+            nickname: ctx.nickname,
+            chibi: ctx.chibi,
+            phone: ctx.phone,
+          }
+        : undefined,
+    );
+    if (r.status === "unbound") {
+      // 生面孔/没绑的老球友共用一副面孔（4.2/4.3）：现有名片卡原样，新面孔填卡；
+      // 老球友点右上角「登录」走短信或密码，验证完自动正式绑上。落卡来源位置
+      // wechat-return：找回面不快进、保持手填（4.7 护栏；fast 时后端不回此态）
+      ui.signupThen((ctx.pending ?? {}) as SignupPending, "wechat-return");
+      wxBack.value = ctx.back;
+      ui.toast("这个微信还没绑过账号 · 填张名片建号，或点右上角登录验证");
+      return;
+    }
+    if (r.status === "created") {
+      // 快进建号成（1.8 4.1）：动作原话由续办分支自己回；随机名主人不知道自己
+      // 叫什么——名字句让动作句先说（单槽 toast 谁后到谁顶掉），有挂起动作时等
+      // 动作句展示完（TOAST_VISIBLE_MS）再补报，无动作立即说
+      if (r.randomName && session.account) {
+        const sayName = () =>
+          ui.toast(`名单里你叫『${session.account?.name}』，随时可改`);
+        if (hasPending((ctx.pending ?? {}) as SignupPending))
+          setTimeout(sayName, TOAST_VISIBLE_MS + 200);
+        else sayName();
+      }
+      await landAfterWechat(ctx);
+      return;
+    }
+    await landAfterWechat(ctx, "欢迎回来 · 战绩都在");
   } catch (e) {
+    if (e instanceof ApiError && e.code === "phone_taken" && ctx.fast) {
+      // 快进带号撞占用（修订二）：后端整体不生效（不留半个账号），重开名片卡直接
+      // 落占卡三出口——短信/密码/微信验证进入任选（微信验证=再授权一轮，1.7 机器）。
+      // 信号位在 signupThen 之后落（openSheet 会清）；wxBack 挂上，验证成功后
+      // isGuest 翻 ready 由下方 watch 带回宿主页
+      ui.signupThen((ctx.pending ?? {}) as SignupPending);
+      ui.signupOccupiedPhone = ctx.phone ?? "";
+      wxBack.value = ctx.back;
+      ui.toast("这个手机号已经有人用了");
+      return;
+    }
     ui.toast(errText(e)); // wechat_unbound/bound_other/binding_weak 指路文案后端给全
   }
 }

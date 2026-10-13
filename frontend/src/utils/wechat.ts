@@ -2,11 +2,15 @@
    「跳微信授权页」是整页跳转，SPA 内存态全丢——出发前把回跳要用的东西
    （占卡手机号、挂起动作、原页面位置、防伪记号）存进本机，回来在登录页消费。
    引 ui store（toast，函数内取——clipboard.ts 先例）与 nav 的 TAB_ROUTES（无环）。 */
-import { apiWechatUrl } from "@/api/auth";
+import { apiWechatUrl, type WechatCardFields } from "@/api/auth";
 import { errText } from "@/api/http";
 import { useUiStore } from "@/stores/ui";
 import type { SignupPending } from "@/stores/ui";
 import { TAB_ROUTES } from "@/utils/nav";
+import type { ChibiConfig } from "@/api/types";
+
+/** 出发去授权可带的字段（快进卡三件 + 挂起动作）——begin/go 两入口同形 */
+type WechatAuthOpts = WechatCardFields & { pending?: SignupPending };
 
 /** 微信内置浏览器探测（UA 带 MicroMessenger）——只有微信里才弹得出授权确认页 */
 export function isWeChatBrowser(): boolean {
@@ -24,9 +28,14 @@ export interface WechatAuthCtx {
   state: string;
   /** 回跳落点（hash 路径含查询串，如 /pages/detail/detail?id=5） */
   back: string;
-  /** 占卡「微信验证进入」带着的手机号（登录页一键登录没有它）。
-      1.8：快进建号不看手机号——此字段只有占卡验证路消费，created 支不碰 */
+  /** 手机号两义（修订二后按 fast 分流）：占卡「微信验证进入」带（fast 空）→
+      回跳走 wechatRedeem 接管路；快进卡带（fast=true）→ 回跳走快进建号路
+      （号没人用建带号账号，撞占用后端拒 phone_taken 落三出口） */
   phone?: string;
+  /** 快进卡「叫什么」手填值（修订二随表单回归）：空手填不存 */
+  nickname?: string;
+  /** 快进卡选中的预设小人（修订二随表单回归）：没选不存（后端落默认小人） */
+  chibi?: ChibiConfig;
   /** 动作弹卡主钮出发=true（1.8 快进建号）；登录页微信键出发不存——
       回跳后端默认 False，unbound 仍发凭条落卡（4.7 找回面不快进护栏） */
   fast?: boolean;
@@ -123,13 +132,9 @@ export function authRedirectUrl(path: string): string {
  * toast 说明并抛出短路（调用方无需分支——本函数已把话说完）。
  * 错误语义：短路时不抛（已 toast）；要地址失败抛 ApiError（wechat_off 等文案后端给全）。
  */
-export async function beginWechatAuth(opts: {
-  phone?: string;
-  /** 1.8 快进建号：动作弹卡主钮（微信内）出发才带——授权回来直接开号 */
-  fast?: boolean;
-  pending?: SignupPending;
-  toast: (msg: string) => void;
-}): Promise<string> {
+export async function beginWechatAuth(
+  opts: WechatAuthOpts & { toast: (msg: string) => void },
+): Promise<string> {
   if (!isWeChatBrowser()) {
     opts.toast(
       "请在微信里打开本页（把链接发到微信里再点开）才能用微信登录，或直接用短信/密码",
@@ -142,6 +147,8 @@ export async function beginWechatAuth(opts: {
     back: backPathForAuth(),
     phone: opts.phone,
     fast: opts.fast,
+    nickname: opts.nickname,
+    chibi: opts.chibi,
     pending: opts.pending,
     ts: Date.now(),
   });
@@ -160,13 +167,7 @@ export async function beginWechatAuth(opts: {
 
 /** 出发编排全套（宿主只管传参）：toast 接线 + 整页跳授权页 + 接住已说清的短路。
     与 beginWechatAuth 分层：后者留 toast 注入给测试，本函数是三处微信键共用的生产入口 */
-export async function goWechatAuth(
-  opts: {
-    phone?: string;
-    fast?: boolean;
-    pending?: SignupPending;
-  } = {},
-): Promise<void> {
+export async function goWechatAuth(opts: WechatAuthOpts = {}): Promise<void> {
   try {
     const url = await beginWechatAuth({
       ...opts,
