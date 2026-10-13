@@ -1,16 +1,15 @@
 <template>
   <PageShell tab="power">
     <view>
-      <!-- 标题区 + 分数切换胶囊（alpha.html:1831-1843。胶囊换 DUPR/Elo 新对——
-           原 Elo/NTRP 对里的 NTRP 已随 1.4 双轨制废除，默认 DUPR） -->
+      <!-- 标题区 + 分数切换胶囊（默认 DUPR） -->
       <view class="stag">
         <view class="head">
           <view>
             <view class="kicker">Power Rating</view>
-            <!-- alpha:1835 <h1 class="brand" style="margin-bottom:0">战<em>力</em>榜（em 用 text 承载，避堵小程序） -->
+            <!-- 战<em>力</em>榜（em 用 text 承载，避堵小程序） -->
             <view class="brand">战<text class="em">力</text>榜</view>
           </view>
-          <!-- alpha:1837-1840 sw-capsule：DUPR=榜单正式口径 / Elo=按 Elo 重排的娱乐视图 -->
+          <!-- sw-capsule：DUPR=榜单正式口径 / Elo=按 Elo 重排的娱乐视图 -->
           <view class="sw-capsule">
             <text
               class="sw-opt"
@@ -26,23 +25,23 @@
             >
           </view>
         </view>
-        <!-- alpha:1842 副标题随视图换文案：介绍当前那套积分 -->
+        <!-- 副标题随视图换文案：介绍当前那套积分 -->
         <view class="sub sub-mt">{{ subLine }}</view>
       </view>
 
-      <!-- 我的战力卡（alpha:1844-1861）：点卡开我的档案，卡内头像去「我的」页 -->
+      <!-- 我的战力卡：点卡开我的档案，卡内头像去「我的」页 -->
       <MyPowerCard
         :rank="myRank"
         :mode="mode"
         @profile="openProfile(userStore.me.id)"
       />
 
-      <!-- 前三打架图（alpha:1862-1870）：点人开档案。区头「奶茶三分糖」为
-           用户定稿（前三＝三分糖，取自用户原话；卡内 TOP 3 · BRAWL 兜底语义） -->
+      <!-- 前三打架图：点人开档案。区头「奶茶三分糖」为用户定稿
+           （前三＝三分糖；卡内 TOP 3 · BRAWL 兜底语义） -->
       <SectionTitle title="奶茶三分糖" />
       <BrawlStage :top3="t3" @profile="openProfile" />
 
-      <!-- 评分排行（alpha:1871-1875）：前三高亮 · 懒加载每批 5 条 · 满 5 场才入榜（DUPR 视图，1.4 §6） -->
+      <!-- 评分排行：前三高亮 · 懒加载每批 5 条 · 满 5 场才入榜（DUPR 视图，1.4 §6） -->
       <SectionTitle title="评分排行" />
       <view class="rank-frame">
         <view class="rank-list">
@@ -58,8 +57,7 @@
           <!-- 空榜/加载/失败三态：0 圈员=空榜句；在途=加载句；失败=点击重试 -->
           <EmptyBox v-if="!rows.length" :text="boardTxt" @click="retryBoard" />
         </view>
-        <!-- alpha:1874/1774-1784 尾部：上滑/点尾行加载；全部加载完显示完毕文案。
-             2026-10-11 删「(x/y) · 点击亦可加载」——计数与说明书双病（同约球页意向区头） -->
+        <!-- 尾部：上滑/点尾行加载；全部加载完显示完毕文案 -->
         <view class="rank-tail" @click="loadMoreRank">
           <template v-if="done">
             <text class="tl-dim"
@@ -93,8 +91,8 @@
         </view>
       </template>
 
-      <!-- 规则折叠（alpha:1876-1885 结构。文案先说两套分是什么、再说机制，
-           一条一行——引擎参数（K 值/地板）不入文案：调参不该牵动文案） -->
+      <!-- 规则折叠。文案先说两套分是什么、再说机制，一条一行
+           ——引擎参数（K 值/地板）不入文案：调参不该牵动文案 -->
       <view class="rulefold" :class="{ open: rOpen }">
         <view class="rfhead" @click="rOpen = !rOpen">
           <text>积分怎么算的？</text>
@@ -121,19 +119,17 @@
         </view>
       </view>
 
-      <!-- alpha:1886 <div style="height:10px"> -->
       <view class="tailpad" />
     </view>
   </PageShell>
 </template>
 
 <script setup lang="ts">
-/* 战力页（alpha.html:1824-1889 renderPower · P9）。榜单数据后端化：
+/* 战力页（P9）。榜单数据后端化：
    /stats/leaderboard 单一源（user store 缓存与灌 people，行带 elo_rating 供
    娱乐视图——Elo 视图前端按 Elo 重排，榜单端点排序口径仍只吃 DUPR，1.4 §11）。
-   榜单懒加载 = alpha:1774-1822 的滚动通道（§2.4：IntersectionObserver →
-   onPageScroll 距底 160px）；榜单/打架图/我的卡点击 →
-   ui.openSheet({type:'profile',userId})。 */
+   榜单懒加载走 §2.4 裁决的通道：IntersectionObserver → onPageScroll 距底
+   160px；榜单/打架图/我的卡点击 → ui.openSheet({type:'profile',userId})。 */
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { onPageScroll, onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
@@ -164,8 +160,8 @@ function setMode(m: ScoreMode): void {
   nextTick(() => measure()); // 换榜=换页高，重测保 160px 触发线
 }
 
-/** 副标题随视图介绍两套积分（alpha:1842 副标题随模式换文案的形；
-    文案用户定稿逐字——一句一行，全名细节归底部折叠区） */
+/** 副标题随视图介绍两套积分
+    （文案用户定稿逐字——一句一行，全名细节归底部折叠区） */
 const subLine = computed(() =>
   mode.value === "dupr"
     ? "DUPR（DU Pickleball Rating）丢per，匹克球通用评分"
@@ -189,25 +185,21 @@ const refs = computed(() =>
     ? playedList.value.filter((u) => u.play < RATED_PLAY)
     : [],
 );
-/** alpha:1826 myRank = rows.findIndex(u=>u.id===me.id)+1（游客 id 0 恒不在榜 → 0） */
+/** 我的位次=findIndex+1（游客 id 0 恒不在榜 → 0） */
 const myRank = computed(
   () => rows.value.findIndex((u) => u.id === userStore.me.id) + 1,
 );
-/** alpha:1827 t3 = rows.slice(0,3) */
 const t3 = computed(() => rows.value.slice(0, 3));
 
-/** alpha:1763 RANK_PAGE=5（框架最多 5 行，懒加载） */
+/** 懒加载每批 5 行 */
 const RANK_PAGE = 5;
-/** alpha:1764 rankLimit */
 const rankLimit = ref(RANK_PAGE);
-/** 本批懒加载起始位次：≥ 此位的行带 lazy-in 入场（alpha:1768 isLazy，初始 5 行不带） */
+/** 本批懒加载起始位次：≥ 此位的行带 lazy-in 入场（初始 5 行不带） */
 const lazyFrom = ref(RANK_PAGE);
-/** alpha:1873 rows.slice(0,rankLimit) */
 const shown = computed(() => rows.value.slice(0, rankLimit.value));
-/** alpha:1777 done = rankLimit>=total */
 const done = computed(() => rankLimit.value >= rows.value.length);
 
-/** 规则折叠展开态（alpha:1877 classList.toggle('open')） */
+/** 规则折叠展开态 */
 const rOpen = ref(false);
 
 /** 拉榜失败旗（空榜三态分派用）；重试=再拉一次 */
@@ -230,16 +222,16 @@ function retryBoard(): void {
   if (boardFailed.value) loadBoard();
 }
 
-/** alpha:1768/1755 openProfileById → openSheet profile */
+/** 点人 → 名片弹层 */
 function openProfile(id: number): void {
   ui.openSheet({ type: "profile", userId: id });
 }
 
-/* —— 懒加载（alpha:1774-1822 语义；容器滚动 → 页面 onPageScroll） —— */
+/* —— 懒加载 —— */
 const winH = ref(0);
 let lastTop = 0; // 最近一次 onPageScroll 的 scrollTop
 let pageH = 0; // 页面总内容高（=.page 的 bottom + 当时 scrollTop 折算）
-let measuring = false; // Vue DOM 更新异步：本批量完页高前禁止连发（alpha 同步 innerHTML 无此问题）
+let measuring = false; // Vue DOM 更新异步：本批量完页高前禁止连发
 
 /** 量 .page（PageShell 容器，含底部 nav 预留 padding）得到页面总高 */
 function measure(after?: () => void): void {
@@ -254,7 +246,7 @@ function measure(after?: () => void): void {
     });
 }
 
-/** alpha:1785-1800 loadMoreRank：+RANK_PAGE，全部加载完即止 */
+/** 加一批；全部加载完即止 */
 function loadMoreRank(): void {
   if (measuring || rankLimit.value >= rows.value.length) return;
   lazyFrom.value = rankLimit.value;
@@ -263,7 +255,7 @@ function loadMoreRank(): void {
   nextTick(() => measure(() => (measuring = false)));
 }
 
-/** alpha:1808-1813 距底 160px 自动加载 */
+/** 距底 160px 自动加载 */
 onPageScroll((e) => {
   lastTop = e.scrollTop;
   if (!pageH || done.value) return;
@@ -275,7 +267,7 @@ onMounted(() => {
   nextTick(() => measure());
 });
 
-/** alpha:874 go('power')：每次进页 rankLimit 归 5 并回顶；榜单未在册就拉一次 */
+/** 每次进页 rankLimit 归 5 并回顶；榜单未在册就拉一次 */
 onShow(() => {
   rankLimit.value = RANK_PAGE;
   lazyFrom.value = RANK_PAGE;
@@ -289,18 +281,17 @@ watch(rOpen, () => nextTick(() => measure()));
 </script>
 
 <style lang="scss" scoped>
-/* alpha:1832 头行 flex 两端 · 底对齐 */
 .head {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
 }
-/* alpha:1835 power 大字 margin-bottom:0（其余 brand/em 版式走全局 .brand 类） */
+/* 其余 brand/em 版式走全局 .brand 类 */
 .brand {
   margin: 6px 0 0;
 }
-/* alpha.html:194-200 sw-capsule 分数切换胶囊（样式逐字搬原型；只在战力页用，
-   不入 ui 组件库；AppSeg 是表单大分段控件，形态不同不共用） */
+/* sw-capsule 分数切换胶囊：只在战力页用，不入 ui 组件库；
+   AppSeg 是表单大分段控件，形态不同不共用 */
 .sw-capsule {
   display: inline-flex;
   align-items: center;
@@ -334,11 +325,9 @@ watch(rOpen, () => nextTick(() => measure()));
   color: var(--ink);
   box-shadow: 0 0 10px rgba(255, 212, 0, 0.25);
 }
-/* alpha:1842 sub margin-top:6px */
 .sub-mt {
   margin-top: 6px;
 }
-/* alpha.html:493-494 .rank-frame */
 .rank-frame {
   border: 1px solid rgba(245, 241, 232, 0.12);
   border-radius: var(--r-lg);
@@ -347,7 +336,6 @@ watch(rOpen, () => nextTick(() => measure()));
   margin-bottom: 12px;
   position: relative;
 }
-/* alpha.html:516-518 .rank-tail */
 .rank-tail {
   text-align: center;
   font-family: var(--mono);
@@ -365,7 +353,6 @@ watch(rOpen, () => nextTick(() => measure()));
   color: var(--lemon);
   background: rgba(255, 212, 0, 0.05);
 }
-/* alpha:1779/1782 尾部两态配色（2026-10-11 只剩上滑/完毕两态，tl-gap 随计数行删） */
 .tl-dim {
   color: var(--dim);
 }
@@ -373,14 +360,12 @@ watch(rOpen, () => nextTick(() => measure()));
   color: var(--lemon);
   font-weight: 700;
 }
-/* alpha.html:532 .rulefold */
 .rulefold {
   border: 1px dashed rgba(245, 241, 232, 0.16);
   border-radius: var(--r-md);
   margin-top: 10px;
   overflow: hidden;
 }
-/* alpha.html:533-534 .rfhead */
 .rfhead {
   width: 100%;
   display: flex;
@@ -394,7 +379,6 @@ watch(rOpen, () => nextTick(() => measure()));
   cursor: pointer;
   font-family: var(--sans);
 }
-/* alpha.html:535-536 .q */
 .q {
   width: 18px;
   height: 18px;
@@ -407,7 +391,6 @@ watch(rOpen, () => nextTick(() => measure()));
   font-family: var(--mono);
   flex: none;
 }
-/* alpha.html:537-538 .rfbody 默认收起 */
 .rfbody {
   display: none;
   padding: 0 14px 12px;
@@ -418,11 +401,9 @@ watch(rOpen, () => nextTick(() => measure()));
 .rulefold.open .rfbody {
   display: block;
 }
-/* alpha.html:539 .rfbody b */
 .rfbody .b {
   color: var(--lemon);
 }
-/* alpha:1886 页尾 10px 垫高 */
 .tailpad {
   height: 10px;
 }

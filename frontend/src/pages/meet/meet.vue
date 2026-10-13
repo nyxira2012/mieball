@@ -1,6 +1,6 @@
 <template>
   <PageShell tab="meet">
-    <!-- alpha:1069-1073 头部（.stag 入场 stagger，类在全局 base.scss） -->
+    <!-- 头部（.stag 入场 stagger，类在全局 base.scss） -->
     <view class="stag">
       <view class="kicker">Meet Up</view>
       <view class="brand">约<text class="bem">球</text></view>
@@ -15,7 +15,7 @@
       </view>
     </view>
 
-    <!-- alpha:1074 跑马灯：被邀请条目 + NEXT 最近参局倒计时（×2 无缝循环由 Ticker 内部负责） -->
+    <!-- 跑马灯：被邀请条目 + NEXT 最近参局倒计时（×2 无缝循环由 Ticker 内部负责） -->
     <Ticker :items="tickerItems" />
 
     <!-- 组织者远程散场入口（2.3 §4.9）：我组织的进行中的局——点「散场收工」进现场
@@ -30,7 +30,7 @@
       <view class="sweep-btn">散场收工 ▸</view>
     </view>
 
-    <!-- alpha:1075-1080 球局区吸顶头（CSS sticky）· 筛选▾ / 收起 两钮 -->
+    <!-- 球局区吸顶头（CSS sticky）· 筛选▾ / 收起 两钮 -->
     <view class="msec-head">
       <text class="mh-t">球局</text>
       <text class="mh-n">{{ flt.length }} 个 · 我参加 / 组织的置顶</text>
@@ -102,7 +102,7 @@
       >
     </template>
 
-    <!-- alpha:1091-1097 意向区头：CSS 吸顶 + 贴底钉位；整头点击切换焦点（无提示文案，纯加成交互），
+    <!-- 意向区头：CSS 吸顶 + 贴底钉位；整头点击切换焦点（无提示文案，纯加成交互），
          scope 两钮 stopPropagation；当前档位看按钮亮态，不出统计行 -->
     <view class="isec-head" :style="dockStyle" @click="focusIntent">
       <text class="mh-t">意向</text>
@@ -121,7 +121,7 @@
       >
     </view>
 
-    <!-- alpha:1098-1102 意向区内容：我的意向条（改/删）或 留意向入口 + IntentCard 列表
+    <!-- 意向区内容：我的意向条（改/删）或 留意向入口 + IntentCard 列表
          （自己的意向只在顶部条，不进卡列表） -->
     <view class="intent-sec">
       <view v-if="game.myIntent" class="idock-my">
@@ -153,7 +153,7 @@
 </template>
 
 <script setup lang="ts">
-/* 约球页（alpha.html:952-1105 · P7）。1.2 接线修订面：
+/* 约球页（P7）。1.2 接线修订面：
    - 数据走 game store 真接口（loadGames/loadMine/loadIntents/loadMyIntent），onShow 重拉；
    - 列表只按时间筛（档位可见性后端已滤；done 局不上找局打——裁决⑧，历史归我的局/详情）；
    - 置顶/跑马灯/点卡分支全读 my 块定值（A4 画面不自算）。 */
@@ -216,20 +216,20 @@ function onRemoteSweep(g: Game): void {
   goLive(g.id);
 }
 
-/* ---- 头部（alpha:1072 日期行）：北京墙钟单一源 isoParts——同页卡片「今天/明天」
+/* ---- 头部日期行：北京墙钟单一源 isoParts——同页卡片「今天/明天」
      标签也走它，非东八区设备上头部日期才不会与卡片错位（走查#1 同族收口） ---- */
 const dateLine = computed(() => {
   const p = isoParts(new Date());
   return `${p.m} 月 ${p.d} 日 · 星期${WD_CN[p.wd]}`;
 });
 
-/* ---- 状态（alpha:956） ---- */
+/* ---- 状态 ---- */
 const fTime = ref<string | number>("all");
 const intentScope = ref<"known" | "all">("known");
 const filtersOpen = ref(false);
 const gamesFold = ref(false);
 
-/* alpha:1082 时间筛选 chips（逐字；地区档随 mock 退役） */
+/* 时间筛选 chips（地区档随 mock 退役） */
 const TIME_OPTS = [
   { value: "all", label: "全部时间" },
   { value: "tonight", label: "今晚" },
@@ -238,7 +238,7 @@ const TIME_OPTS = [
   { value: "week", label: "本周" },
 ];
 
-/* alpha:1082-1085 桶判定：与旧 tb 推导同口径（今天/明天/周末/其余未来），从 startAt 现算
+/* 桶判定：与旧 tb 推导同口径（今天/明天/周末/其余未来），从 startAt 现算
    （走查#1 收口：ISO 筛选也按北京墙钟取数，不再吃设备本地 getDay） */
 function inBucket(g: Game, b: string): boolean {
   if (b === "all") return true;
@@ -250,7 +250,7 @@ function inBucket(g: Game, b: string): boolean {
   return p.wd !== 0 && p.wd !== 6;
 }
 
-/* ---- 跑马灯（alpha:983-994）：被邀条目吃 myGames 的 my.invited 定值；
+/* ---- 跑马灯：被邀条目吃 myGames 的 my.invited 定值；
      NEXT = 我的在办局里最近一场开打倒计时 ---- */
 const tickerItems = computed<TickerItem[]>(() => {
   const bits: TickerItem[] = [];
@@ -279,7 +279,7 @@ const tickerItems = computed<TickerItem[]>(() => {
   return bits;
 });
 
-/* ---- 球局区（alpha:1054-1057）：done 局不上找局打（裁决⑧，历史归我的局/详情）；
+/* ---- 球局区：done 局不上找局打（裁决⑧，历史归我的局/详情）；
      排序先 map 缓存时间值再比（比较器里反复 new Date 是 O(n log n) 次） ---- */
 const ftv = computed(() => String(fTime.value));
 const flt = computed(() =>
@@ -289,7 +289,7 @@ const flt = computed(() =>
     .sort((a, b) => a.t - b.t)
     .map((x) => x.g),
 );
-/* alpha:1056/1088 pinned = 我参加/组织/被邀的置顶（my 块定值）；卡面模型同拍算好——
+/* pinned = 我参加/组织/被邀的置顶（my 块定值）；卡面模型同拍算好——
    模板 v-for 里直调 newGameCard 会随滚动（dockY 变值触发整页重渲）逐卡重建对象 */
 const ordered = computed(() => {
   const mine = (g: Game): boolean =>
@@ -313,7 +313,7 @@ const grayMine = computed(() =>
 /* ---- A2 加载：等待提示，超 2 秒提示网络问题（useSlowHint 单一源，detail 同款） ---- */
 const { slow } = useSlowHint(() => game.loading);
 
-/* ---- 意向区（alpha:1058-1061/1093）：scope 熟人=同局打过（intent.known 后端定值，裁决②）。
+/* ---- 意向区：scope 熟人=同局打过（intent.known 后端定值，裁决②）。
      后端列表是全量意向簿（组织者翻的主场景），自己的意向在顶部「我的意向」条已有——
      卡列表只放别人的（user.me 身份位单一源，游客 id=0 天然无碰撞） ---- */
 const others = computed(() =>
@@ -328,15 +328,14 @@ const intentEmptyText = computed(() =>
     ? "打过的人还没留意向 · 切到「所有人」看看"
     : "告诉球友留下意向吧",
 );
-/* alpha:1061 我的意向摘要：slots 以「 / 」相连 */
 const myIntentLine = computed(() =>
   game.myIntent ? game.myIntent.slots.map(slotName).join(" / ") : "",
 );
 
 /* ---- 点击分支 ---- */
-/* alpha:907 点球局卡分支（判定在 utils/format 的 gameTapAction 单一源）：
+/* 点球局卡分支（判定在 utils/format 的 gameTapAction 单一源）：
    被邀请未加入 → joinSheet；其余 → 详情页。
-   2.5 批2：卡片亮「进入现场」（enter 按钮或整卡点）→ goLive 直进现场——
+   卡片亮「进入现场」（enter 按钮或整卡点）→ goLive 直进现场——
    组织者成员同路，开账在后端幂等（spec §4.8）。 */
 function onGameTap(g: Game, card?: GameCardModel): void {
   if (card?.liveEnter) {
@@ -352,18 +351,17 @@ function onGameTap(g: Game, card?: GameCardModel): void {
 function openIntentForm(): void {
   ui.openSheet({ type: "intent-form" });
 }
-/* alpha:1029 点意向卡 → 球友名片弹层 */
 function onIntentTap(i: Intent): void {
   ui.openSheet({ type: "profile", userId: i.account.id });
 }
-/* alpha:927 恢复 / 删意向：失败 toast 人话，不打断浏览 */
+/* 恢复 / 删意向：失败 toast 人话，不打断浏览 */
 function onRestore(g: Game): void {
   game.restoreGame(g.id).catch((e) => ui.toast(errText(e)));
 }
 function onDelIntent(): void {
   game.delIntent().catch((e) => ui.toast(errText(e)));
 }
-/* alpha:928 撤局 → cancel-confirm 弹层（已订场局带退订提醒，ConfirmSheet 分叉） */
+/* 撤局 → cancel-confirm 弹层（已订场局带退订提醒，ConfirmSheet 分叉） */
 function onCancel(g: Game): void {
   ui.openSheet({ type: "cancel-confirm", gameId: g.id });
 }
@@ -372,12 +370,12 @@ function onLock(g: Game): void {
   ui.openSheet({ type: "booking", gameId: g.id });
 }
 
-/* —— 意向头贴底钉位 + 焦点切换（alpha:996-1016 同构，§2.3 取数换 uni API） —— */
-const NAV_H = 64; // tokens.scss --nav-h=64px（alpha:1007 读不出时同样兜底 64）
+/* —— 意向头贴底钉位 + 焦点切换（§2.3：取数换 uni API） —— */
+const NAV_H = 64; // tokens.scss --nav-h=64px
 let curScroll = 0; // onPageScroll 最近 scrollTop
 let headTop = 0; // .isec-head 文档自然位（head.offsetTop 等价）
 let headH = 0; // .isec-head 高
-let winH = 0; // 视口高（alpha 的 box.clientHeight 等价）
+let winH = 0; // 视口高
 const dockY = ref(0);
 const dockStyle = computed(() =>
   dockY.value ? { transform: `translateY(${dockY.value}px)` } : {},
@@ -395,18 +393,18 @@ function measureHead(): void {
         const r = res && res[0];
         if (!r || typeof r.top !== "number") return;
         headH = r.height ?? 0;
-        headTop = r.top + curScroll; // 视口坐标 + 已滚距离 = 文档自然位（alpha:1008）
+        headTop = r.top + curScroll; // 视口坐标 + 已滚距离 = 文档自然位
         dockHead();
       });
   });
 }
 
-/** alpha:1005-1011 dockIntentHead：自然位置沉到 nav 之下时拉到 nav 上方贴底；进入视口后释放 */
+/** 自然位置沉到 nav 之下时拉到 nav 上方贴底；进入视口后释放 */
 function dockHead(): void {
   if (!headH || !winH) return;
-  const natural = headTop - curScroll; // alpha:1008
-  const stickAt = winH - NAV_H - headH; // alpha:1009 头底紧贴底部导航条上沿
-  dockY.value = natural > stickAt ? stickAt - natural : 0; // alpha:1010
+  const natural = headTop - curScroll;
+  const stickAt = winH - NAV_H - headH; // 头底紧贴底部导航条上沿
+  dockY.value = natural > stickAt ? stickAt - natural : 0;
 }
 
 onPageScroll((e) => {
@@ -414,9 +412,9 @@ onPageScroll((e) => {
   dockHead();
 });
 
-/* alpha:996-1002 focusIntent：意向已焦点（头自然位距吸顶位 < 120px）→ 回球局；否则上升到球局头下方 */
+/* 意向已焦点（头自然位距吸顶位 < 120px）→ 回球局；否则上升到球局头下方 */
 function focusIntent(): void {
-  const stickTop = 57; // alpha:998 = .isec-head 的 sticky top
+  const stickTop = 57; // = .isec-head 的 sticky top
   if (headTop - stickTop - curScroll < 120) {
     uni.pageScrollTo({ scrollTop: 0, duration: 300 });
   } else {
@@ -457,7 +455,7 @@ watch(
 </script>
 
 <style lang="scss" scoped>
-/* alpha:1070 头部 brand 走全局 .brand/.bem 类（base.scss） */
+/* 头部 brand 走全局 .brand/.bem 类（base.scss） */
 
 /* 游客注册/登录入口（.useentry 同族的柠檬虚线主行 + dim 副行） */
 .guestgate {
@@ -478,7 +476,7 @@ watch(
   background: rgba(255, 212, 0, 0.1);
 }
 
-/* alpha:370-372 分区头：球局 · 悬浮置顶（CSS sticky） */
+/* 分区头：球局 · 悬浮置顶（CSS sticky） */
 .msec-head {
   position: sticky;
   top: calc(env(safe-area-inset-top, 0px) + 6px);
@@ -491,7 +489,6 @@ watch(
   background: rgba(20, 20, 26, 0.94);
   backdrop-filter: blur(6px);
 }
-/* alpha:373-374 */
 .mh-t {
   font-family: var(--disp);
   font-size: 18px;
@@ -502,7 +499,6 @@ watch(
   font-size: 10px;
   color: var(--dim);
 }
-/* alpha:375-378 mhbtn（+on 态） */
 .mhbtn {
   padding: 6px 10px;
   border-radius: 9px;
@@ -522,7 +518,7 @@ watch(
   color: var(--lemon);
   border-color: var(--lemon);
 }
-/* alpha:380-381 折叠筛选项（fadeUp 在全局 animations.scss） */
+/* 折叠筛选项（fadeUp 在全局 animations.scss） */
 .fchips-wrap {
   display: none;
 }
@@ -530,7 +526,6 @@ watch(
   display: block;
   animation: fadeUp 0.25s ease;
 }
-/* alpha:383-385 折叠列表的占位行 */
 .foldrow {
   border: 1px dashed rgba(245, 241, 232, 0.16);
   border-radius: 12px;
@@ -585,7 +580,7 @@ watch(
   padding: 5px 9px;
 }
 
-/* alpha:387-389 意向区头：CSS 吸顶 + JS 贴底钉位双通道 */
+/* 意向区头：CSS 吸顶 + JS 贴底钉位双通道 */
 .isec-head {
   position: sticky;
   top: calc(env(safe-area-inset-top, 0px) + 57px);
@@ -600,7 +595,6 @@ watch(
   cursor: pointer;
   user-select: none;
 }
-/* alpha:356-358 留我的意向入口 */
 .useentry {
   border: 1px dashed rgba(255, 212, 0, 0.34);
   border-radius: var(--r-md);
@@ -615,7 +609,6 @@ watch(
 .useentry:active {
   background: rgba(255, 212, 0, 0.1);
 }
-/* alpha:390-391 我的意向条（idock-my） */
 .idock-my {
   display: flex;
   align-items: center;

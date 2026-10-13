@@ -1,5 +1,5 @@
 <template>
-  <!-- 我的战力卡（alpha.html:1844-1861）：rank 位 #N / 未开局 — · ChibiAvatar 76
+  <!-- 我的战力卡：rank 位 #N / 未开局 — · ChibiAvatar 76
        （点卡开我的档案、点头像去「我的」页）· 主数字随视图：DUPR 分层三位小数+
        段位徽章 / Elo 整数无段位 · 底部数据行带本月涨跌。 -->
   <view
@@ -8,16 +8,15 @@
     @click="emit('profile')"
   >
     <view class="top-row">
-      <!-- alpha:1846 rkbox：#N 或 —（未开局/未入榜参考区；Elo 视图名次跟 Elo 榜走） -->
+      <!-- rkbox：#N 或 —（未开局/未入榜参考区；Elo 视图名次跟 Elo 榜走） -->
       <view class="rkbox">
         <view class="rk">{{ played && rank > 0 ? "#" + rank : "—" }}</view>
         <view class="rl">MY RANK</view>
       </view>
-      <!-- alpha:1847 av：event.stopPropagation();go('mine') → goTab 切我的页（nav 单一源） -->
+      <!-- av：点头像切我的页，stopPropagation 防误触卡身的档案事件（goTab=nav 单一源） -->
       <view class="av" @click.stop="goTab('mine')">
         <ChibiAvatar :chibi="me.chibi" :size="76" />
       </view>
-      <!-- alpha:1848 -->
       <view class="info">
         <view class="nrow">
           <text class="ttl">{{ cardTitle }}</text>
@@ -28,7 +27,7 @@
             <text v-if="played && me.provisional" class="prov">未定级</text>
           </template>
         </view>
-        <!-- alpha:1852-1855 myscore：DUPR 未定级 dim（起步分不作数）、Elo 未开局 dim -->
+        <!-- myscore：DUPR 未定级 dim（起步分不作数）、Elo 未开局 dim -->
         <view class="myscore">
           <template v-if="mode === 'elo'">
             <text class="big" :class="{ dim: !played }">{{ myElo }}</text>
@@ -48,15 +47,15 @@
       </view>
     </view>
     <!-- 数据行：已开局「N 胜 N 负 · 本月 ±N」（dupr_wins/games + 月净胜，mock
-         的小时/大卡无后端真值随演示数字退役）；未开局「待第一局校准 · 起步 2.5」 -->
+         的小时/大卡无后端真值随演示数字退役）；未开局「开启巅峰赛之旅吧」 -->
     <view class="telemetry">{{ telemetry }}</view>
   </view>
 </template>
 
 <script setup lang="ts">
-/* 我的战力卡（alpha.html:1844-1861 · P9）。business 件：组合 ui 件
-   （ChibiAvatar/TierBadge/DuprScore）+ 业务数据。rank 位由 power 页按当前
-   视图的榜算好传入（0=不在榜：未开局或 DUPR 视图未满 5 场的参考区）。 */
+/* 我的战力卡。business 件：组合 ui 件（ChibiAvatar/TierBadge/DuprScore）+
+   业务数据。rank 位由 power 页按当前视图的榜算好传入
+   （0=不在榜：未开局或 DUPR 视图未满 5 场的参考区）。 */
 import { computed } from "vue";
 import type { PropType } from "vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
@@ -69,7 +68,7 @@ import { ELO_INIT, duprOf, duprTier } from "@/utils/elo";
 import { goTab } from "@/utils/nav";
 
 defineProps({
-  /** 我的排名（alpha:1826 myRank=rows.findIndex(...)+1；未开局时组件内不展示） */
+  /** 我的排名；0=不在榜，名次框显示「—」（未开局/参考区） */
   rank: { type: Number, default: 0 },
   /** 分数视图（power 页胶囊）：'dupr'=分层三位小数+段位；'elo'=整数+无段位 */
   mode: { type: String as PropType<ScoreMode>, default: "dupr" },
@@ -81,7 +80,6 @@ const userStore = useUserStore();
 const session = useSessionStore();
 const me = userStore.me;
 
-/** alpha:1828 played = me.play>0 */
 const played = computed(() => me.play > 0);
 /** 游客态卡片名称为「访客」，登录态按是否开局区分「我的战力卡」/「我的起步分」 */
 const cardTitle = computed(() => {
@@ -96,12 +94,11 @@ const myElo = computed(
 const telemetry = computed(() =>
   played.value
     ? `${me.win} 胜 ${me.play - me.win} 负 · 本月 ${me.month >= 0 ? "+" : ""}${me.month}`
-    : "待第一局校准 · 起步 2.5",
+    : "开启巅峰赛之旅吧",
 );
 </script>
 
 <style lang="scss" scoped>
-/* alpha.html:410-413 .mycardp（margin-top:14px 来自 alpha:1844 内联样式） */
 .mycardp {
   margin-top: 14px;
   border: 1px solid var(--line);
@@ -118,7 +115,6 @@ const telemetry = computed(() =>
 .mycardp:active {
   border-color: rgba(255, 212, 0, 0.4);
 }
-/* alpha.html:414-420 bg-neon */
 .mycardp.bg-neon {
   background:
     radial-gradient(
@@ -135,7 +131,6 @@ const telemetry = computed(() =>
   border-color: rgba(255, 212, 0, 0.35);
   box-shadow: inset 0 0 24px rgba(255, 212, 0, 0.04);
 }
-/* alpha.html:421-426 bg-gold */
 .mycardp.bg-gold {
   background:
     radial-gradient(
@@ -147,7 +142,6 @@ const telemetry = computed(() =>
   border-color: rgba(255, 212, 0, 0.5);
   box-shadow: inset 0 0 30px rgba(255, 212, 0, 0.08);
 }
-/* alpha.html:427-433 bg-cyber */
 .mycardp.bg-cyber {
   background:
     radial-gradient(
@@ -164,7 +158,6 @@ const telemetry = computed(() =>
   border-color: rgba(255, 90, 54, 0.4);
   box-shadow: inset 0 0 26px rgba(255, 90, 54, 0.06);
 }
-/* alpha.html:434-440 bg-aurora */
 .mycardp.bg-aurora {
   background:
     radial-gradient(
@@ -181,7 +174,6 @@ const telemetry = computed(() =>
   border-color: rgba(111, 231, 255, 0.45);
   box-shadow: inset 0 0 26px rgba(111, 231, 255, 0.06);
 }
-/* alpha.html:441-445 .top-row/.rkbox/.rk/.rl/.av */
 .top-row {
   display: flex;
   gap: 14px;
@@ -211,24 +203,21 @@ const telemetry = computed(() =>
   height: 76px;
   flex: none;
 }
-/* alpha:1848 右列 flex:1;min-width:0 */
 .info {
   flex: 1;
   min-width: 0;
 }
-/* alpha:1849 nrow：flex · gap 8 · wrap */
 .nrow {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
-/* alpha:1850 <b style="font-size:16px"> */
 .ttl {
   font-size: 16px;
   font-weight: 700;
 }
-/* alpha:1851 未开局 ? 徽章（.tierb 基础形 alpha:408-409 + 内联底色字色） */
+/* 未开局 ? 徽章 */
 .tierb-fb {
   display: inline-grid;
   place-items: center;
@@ -253,7 +242,6 @@ const telemetry = computed(() =>
   background: rgba(184, 169, 255, 0.15);
   color: var(--lilac);
 }
-/* alpha.html:446-448 .myscore/.big/.unit */
 .myscore {
   display: flex;
   align-items: baseline;
@@ -268,14 +256,13 @@ const telemetry = computed(() =>
   line-height: 1;
 }
 .big.dim {
-  color: var(--dim); /* alpha:1853 未开局大分数 color:var(--dim) */
+  color: var(--dim);
 }
 .unit {
   font-family: var(--mono);
   font-size: 10px;
   color: var(--dim);
 }
-/* alpha.html:1858 运动数据行（mono 11px 居中 · 上分隔线 · 超出省略） */
 .telemetry {
   margin-top: 12px;
   padding-top: 10px;

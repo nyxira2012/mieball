@@ -1,9 +1,9 @@
 <template>
   <!-- 我的页（P10）· 5.1 重做：形象区（点形象进装扮页）/ 账单卡（全量三数）/ 记录双卡 / 账号区。
-       版式承袭 alpha:644-673 的 stag/mecard/acc-row；旧「本期账本」卡、换装行、我的球局列表
+       旧「本期账本」卡、换装行、我的球局列表
        分别由账单页（bills）、装扮页（dress）、登记/记录页（signup/logs）接管。 -->
   <PageShell tab="mine">
-    <!-- alpha:645-648 头部：kicker + brand（「的」字黄色） -->
+    <!-- 头部：kicker + brand（「的」字黄色） -->
     <view class="stag">
       <view class="kicker">Player Card</view>
       <view class="brand">我<text class="bem">的</text>球场</view>
@@ -18,7 +18,7 @@
         <view class="mname">{{ meName }}</view>
         <view class="mrecord">{{ record }}</view>
         <view class="mchips">
-          <!-- alpha:1939 me-elo 位：tierB 徽章 + DUPR 分 + 档名（chip ok） -->
+          <!-- DUPR 位：tierB 徽章 + DUPR 分 + 档名（chip ok） -->
           <AppChip kind="ok">
             <TierBadge :tier="meTier" /> DUPR <DuprScore :d="duprOf(me)" /> ·
             {{ meTier }}
@@ -266,7 +266,7 @@
 
 <script setup lang="ts">
 /* 我的页（P10）· 5.1 我的页主页面：底账入口聚合（账单/登记/记录）+ 账号区。
-   alpha:1931-1976 的 meName/战绩/ELO 段位口径保留，其余换装与账本逻辑退场。 */
+   meName/战绩/ELO 段位口径保留，其余换装与账本逻辑退场。 */
 import { computed, ref, watch } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
@@ -317,13 +317,13 @@ const meName = computed(() => {
     ? "访客"
     : me.value.name;
 });
-/** alpha:1938 战绩行：N 场 · N 胜 · 胜率 N%（0 场人话守卫） */
+/** 战绩行：N 场 · N 胜 · 胜率 N%（0 场人话守卫） */
 const record = computed(() =>
   me.value.play === 0
     ? "还没开张"
     : `${me.value.play} 场 · ${me.value.win} 胜 · 胜率 ${Math.round((me.value.win / me.value.play) * 100)}%`,
 );
-/** DUPR chip 的档名（utils/elo.ts duprTier；未填按 3.0 起步档） */
+/** DUPR chip 的档名（utils/elo.ts duprTier；未填按 2.5 起步档） */
 const meTier = computed(() => duprTier(duprOf(me.value)));
 
 /* —— 导航（uni 路由集中在页面层，store 不碰 uni.*；路由在模板处直读） —— */
@@ -410,7 +410,7 @@ async function onSetSubmit(): Promise<void> {
     setHint.value = cerr;
     return;
   }
-  const msg = newPwdError(setP1.value, setP2.value); // 5 位前端先拦，后端真闸兜底
+  const msg = newPwdError(setP1.value, setP2.value); // 前端先拦（≥6 位），后端真闸兜底
   if (msg) {
     setHint.value = msg;
     return;
@@ -558,12 +558,12 @@ async function onBindConfirm(): Promise<void> {
 </script>
 
 <style lang="scss" scoped>
-/* ---------- 头部 brand：版式走全局 .brand 类，此处只补 alpha h1 的 UA 默认加粗 ---------- */
+/* ---------- 头部 brand：版式走全局 .brand 类，此处只补 h1 的 UA 默认加粗 ---------- */
 .brand {
   font-weight: 700;
 }
 
-/* ---------- mecard（alpha:394-397 · 结构 alpha:649-659） ---------- */
+/* ---------- mecard ---------- */
 .mecard {
   display: flex;
   gap: 16px;
@@ -583,24 +583,21 @@ async function onBindConfirm(): Promise<void> {
 .mecard .av:active {
   transform: scale(0.92) rotate(-6deg);
 }
-/* alpha:651 flex:1 信息列 */
 .minfo {
   flex: 1;
   min-width: 0;
 }
-/* alpha:652 名字 */
 .mname {
   font-size: 20px;
   font-weight: 800;
 }
-/* alpha:653 战绩行 */
 .mrecord {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--dim);
   margin: 3px 0 8px;
 }
-/* alpha:654 chips 行（4 枚起换行兜底） */
+/* chips 行（4 枚起换行兜底） */
 .mchips {
   display: flex;
   gap: 8px;
@@ -720,7 +717,6 @@ async function onBindConfirm(): Promise<void> {
 .flex1 {
   flex: 1;
 }
-/* alpha:669 flex + 按钮 flex:1 */
 .acc-row {
   display: flex;
   gap: 10px;

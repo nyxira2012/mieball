@@ -8,7 +8,7 @@
          （又常是微信分享卡落地页）——放 v-if 外，加载失败态也有出口；长页滚动吸附见 BackRow -->
     <BackRow />
     <view v-if="game" class="stag">
-      <!-- alpha:1403-1407 页头：kicker + 局名（首个 ' · ' 断行，其余保留） -->
+      <!-- 页头：kicker + 局名（首个 ' · ' 断行，其余保留） -->
       <view class="kicker"
         >Game #{{ game.id }} · {{ tDay }} ·
         {{ game.organizer.nickname }} 发起</view
@@ -18,7 +18,7 @@
         <text v-if="brandB" class="brand-line">{{ brandB }}</text>
       </view>
 
-      <!-- alpha:1408-1424 hero：大时间 · 日段·时长·场馆 · kv 行 · 人均口径 · 分享行 -->
+      <!-- hero：大时间 · 日段·时长·场馆 · kv 行 · 人均口径 · 分享行 -->
       <view class="hero">
         <view class="big">{{ tBig }}</view>
         <view class="sub hero-sub"
@@ -100,7 +100,7 @@
         </view>
       </view>
 
-      <!-- alpha:1425-1428 steps 进度条：报名/候补/进行中/战报（status 线性推进） -->
+      <!-- steps 进度条：报名/候补/进行中/战报（status 线性推进） -->
       <view class="steps">
         <text class="s" :class="{ on: started }">报名</text>
         <view class="i" :class="{ on: started }" />
@@ -208,7 +208,7 @@
              2026-10-10 用户定稿：按钮独占一行、文案只按「有没有场地信息」二分，不带货
              （场地号/总价头部信息卡已有）：无场地=输入已预定场地（未锁/空锁/live 未登记
              同句——登记即锁）；有场地非 live=已订场待开局；live 中=加场/改总价。
-             旧三态长文案（🔒锁定必打·可登记订场 等）退役，必打判定逻辑不动（面板内照旧）。
+             必打判定逻辑不动（面板内照旧）。
              2026-10-08 债清偿：此前拿派生 status 拼 open|locked|live，到点未散场的
              派生 done 把钮收走（后端窗其实开着）——四份窗口拷贝就此归一 -->
         <template v-if="!!game.my?.canBook">
@@ -311,7 +311,7 @@
 </template>
 
 <script setup lang="ts">
-/* 球局详情（alpha.html:1400-1467 · 1.2 接线修订面）。数据源 = game store 的 loadDetail/current；
+/* 球局详情（1.2 接线修订面）。数据源 = game store 的 loadDetail/current；
    分享 = 系统分享面板优先、复制链接兜底（微信自定义卡片待服务号资质）；
    「到截止判定」手动按钮退役（懒判定归后端）。 */
 import { computed, ref } from "vue";
@@ -425,7 +425,7 @@ const durText = computed(() => {
 const tBig = computed(() => (game.value ? isoHm(game.value.startAt) : ""));
 const tDay = computed(() => (game.value ? isoDay(game.value.startAt) : ""));
 
-/* alpha:1405 局名首个 ' · ' 断行 */
+/* 局名首个 ' · ' 断行 */
 const brandA = computed(() => {
   if (!game.value) return "";
   const i = game.value.name.indexOf(" · ");
@@ -481,13 +481,11 @@ const onShare = () => {
 const onRecap = () => {
   if (game.value) goRecap(game.value.id);
 };
-/** joinSheet → JoinSheet 弹层 */
 const onJoin = () => {
   if (game.value) ui.openSheet({ type: "join", gameId: game.value.id });
 };
 /** 加人位双角色分流：组织者开邀请抽屉、其他人开报名抽屉 */
 const onSeat = () => (org.value ? onInvite() : onJoin());
-/** quitSheet → ConfirmSheet(kind=quit) */
 const onQuit = () => {
   if (game.value) ui.openSheet({ type: "quit-confirm", gameId: game.value.id });
 };
@@ -500,16 +498,13 @@ const onBookingFee = () => {
   if (game.value)
     ui.openSheet({ type: "booking", gameId: game.value.id, feeOnly: true });
 };
-/** editSheet → openLaunch(id)：LaunchSheet 编辑态 */
 const onEdit = () => {
   if (game.value) ui.openSheet({ type: "launch", gameId: game.value.id });
 };
-/** cancelSheet → ConfirmSheet(kind=cancel) */
 const onCancel = () => {
   if (game.value)
     ui.openSheet({ type: "cancel-confirm", gameId: game.value.id });
 };
-/** inviteFromGame → InviteSheet(mode=to-game) */
 const onInvite = () => {
   if (game.value)
     ui.openSheet({ type: "invite-to-game", gameId: game.value.id });
@@ -518,16 +513,14 @@ const onInvite = () => {
 const onLive = () => {
   if (game.value) goLive(game.value.id);
 };
-/** 名单球员卡 → 球友名片弹层（真局成员可能不在 mock U，档案页自兜底） */
+/** 名单球员卡 → 球友名片弹层 */
 const onPlayer = (uid: number) => {
   ui.openSheet({ type: "profile", userId: uid });
 };
 </script>
 
 <style lang="scss" scoped>
-/* 页面专属类（alpha:226-245 hero/kv/steps/grid-p/pcard/avatar + openDetail 内联样式）。 */
-
-/* ---------- hero / kv / steps（alpha:226-230） ---------- */
+/* ---------- hero / kv / steps ---------- */
 .hero {
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
@@ -552,7 +545,7 @@ const onPlayer = (uid: number) => {
   margin-top: 14px;
 }
 .row.act2 {
-  margin-top: 10px; /* alpha:1417 style="margin-top:10px" */
+  margin-top: 10px;
 }
 /* 分享钮占满行（有锁定 chip 时让位收窄）；文案两态见模板注释 */
 .share-btn {
@@ -619,7 +612,7 @@ const onPlayer = (uid: number) => {
   color: var(--lemon);
 }
 
-/* ---------- 球员网格（alpha:231-243） ---------- */
+/* ---------- 球员网格 ---------- */
 .grid-p {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
@@ -681,7 +674,7 @@ const onPlayer = (uid: number) => {
   padding-top: 18px;
 }
 
-/* ---------- 动作区（openDetail 内联样式；组织者按钮行 .org-row 已随邀请并入加人位退役） ---------- */
+/* ---------- 动作区（组织者按钮行 .org-row 已并入加人位） ---------- */
 .actions {
   display: flex;
   gap: 10px;
