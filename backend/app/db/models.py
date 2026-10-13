@@ -421,12 +421,17 @@ class LiveMatch(Base):
     elo_rows: Mapped[list] = mapped_column(JSON, nullable=False)
 
 
+# Elo 娱乐轨初始分（1.4 裁决 8：初始 1200、地板 800，访客代入同值）：
+# 建行默认值与 services（live 积分账 / 战力榜展示兜底）共用此一处——
+# 前端 utils/elo.ts 的 ELO_INIT 同值仅作展示镜像，不担公式
+ELO_RATING_INIT = 1200
+
+
 class EloRating(Base):
     """Elo 娱乐轨积分账（2.3 落地基，1.4 §3 调参为娱乐轨）：一人一行。
 
-    rating 默认 1200 = 初始分单一源（1.4 裁决 8：初始 1200、地板 800，访客代入
-    同值参与期望计算但访客不入行——只有正式球友有行）。仅 2.3 确认时写；读/榜
-    归战力域册（4.1）。
+    rating 默认 ELO_RATING_INIT；访客代入同值参与期望计算但访客不入行——
+    只有正式球友有行。仅 2.3 确认时写；读/榜归战力域册（4.1）。
     """
 
     __tablename__ = "elo_ratings"
@@ -435,7 +440,9 @@ class EloRating(Base):
     account_id: Mapped[int] = mapped_column(
         ForeignKey("accounts.id"), unique=True, nullable=False
     )
-    rating: Mapped[int] = mapped_column(Integer, default=1200, nullable=False)
+    rating: Mapped[int] = mapped_column(
+        Integer, default=ELO_RATING_INIT, nullable=False
+    )
     play: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     win: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 

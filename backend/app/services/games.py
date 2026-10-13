@@ -28,7 +28,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
 from ..core import clock, errors
-from ..db.models import Account, Bill, BillRow, Entry, Game, Intent, Invite
+from ..db.models import (
+    Account,
+    Bill,
+    BillRow,
+    Entry,
+    Game,
+    Intent,
+    Invite,
+    LiveState,
+)
 from .game_views import (
     JOINABLE_STATUSES,
     TOOLBOX_STATUSES,
@@ -132,7 +141,18 @@ class GameBook:
     def list_for(self, *, viewer_id: int | None) -> list[dict]:
         self._evaluate()
         now = clock.now()
-        games = self.db.execute(select(Game).order_by(Game.id.desc())).scalars().all()
+        # 库存态预筛：留下口径（open/locked/live/done）与 Game.state ∈ (open, locked)
+        # 严格等价（pending→pending/terminated、终态原样，全在口径外）——死局不再
+        # 进批量预取与 Python 过滤；masked 循环内复核保留（口径单一源不改两处）
+        games = (
+            self.db.execute(
+                select(Game)
+                .where(Game.state.in_(("open", "locked")))
+                .order_by(Game.id.desc())
+            )
+            .scalars()
+            .all()
+        )
         entry_ids, invite_ids = self._viewer_game_ids(viewer_id)
         mates = self.played_mates(
             viewer_id
@@ -273,18 +293,14 @@ class GameBook:
                         row.wait_seq = self._next_wait_seq(game_id)
                     self.db.commit()
                     entry = row
-            # 开账后 formal 落定即补进名册：幂等重放/竞态重查/新写三个来路同走这
-            # 一口（新出口漏不了桥）；没开账/已有本人行 absorb_join 自判不动
+            # 开账后 formal 落定即补进名册（join → 现场总账的桥，2026-10-10 修复批）：
+            # 幂等重放/竞态重查/新写三个来路同走这一口（新出口漏不了桥）；
+            # 没开账/已有本人行 absorb_join 自判不动——语义、锁序与自判条款在其 docstring
             if entry is not None and entry.standing == "formal":
-                self._absorb_live(game_id, account_id, entry.bring)
+                LiveBook(self.db).absorb_join(
+                    game_id=game_id, account_id=account_id, bring=entry.bring
+                )
             return self._view(game, viewer_id=account_id, with_entries=True)
-
-    def _absorb_live(self, game_id: int, account_id: int, bring: int) -> None:
-        """join → 现场总账的桥（2026-10-10 修复批）：语义、锁序与自判不动条款见
-        LiveBook.absorb_join；formal 与否由调用方把关。"""
-        LiveBook(self.db).absorb_join(
-            game_id=game_id, account_id=account_id, bring=bring
-        )
 
     # ---- 退局（4.4：截止锁的是"防鸽退出"；改约解锁窗例外；带的人整行跟着退） ----
 
@@ -617,8 +633,8 @@ class GameBook:
 
     def _list_batch(self, games: list[Game], viewer_id: int | None) -> dict:
         """列表读的批量预取（找局打/我的局一页几十局 × 逐局五六查会叠成 N+1）：
-        人头（GROUP BY 一把尺同口径）/账本/我的账行/报名与邀请/组织者账号一次查齐，
-        game_view 逐字段消费；单局路径不传 batch 照旧现查。"""
+        人头（GROUP BY 一把尺同口径）/账本/我的账行/报名与邀请/组织者账号/开账标志
+        一次查齐，game_view 逐字段消费；单局路径不传 batch 照旧现查。"""
         ids = [g.id for g in games]
         batch: dict = {
             "heads": {},
@@ -627,9 +643,15 @@ class GameBook:
             "my_entries": {},
             "invited": set(),
             "accounts": {},
+            "live_opened": set(),
         }
         if not ids:
             return batch
+        batch["live_opened"] = set(
+            self.db.execute(
+                select(LiveState.game_id).where(LiveState.game_id.in_(ids))
+            ).scalars()
+        )
         batch["heads"] = dict(
             self.db.execute(
                 select(Entry.game_id, func.coalesce(func.sum(1 + Entry.bring), 0))

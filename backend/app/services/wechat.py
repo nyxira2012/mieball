@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlencode
 
 import httpx
@@ -70,10 +70,12 @@ class WeChatGate:
         )
         return f"{WX_AUTH_URL}?{params}#wechat_redirect"
 
-    def exchange(self, code: str) -> tuple[str, str | None]:
+    def exchange(self, code: str, want_profile: bool = False) -> tuple[str, str | None]:
         """授权凭证换 (openid, 微信昵称|None)。凭证侧 5 分钟一次性：过期/用过报
         可自愈的 wechat_code_invalid，其余（服务不通/配置错）报 wechat_unavailable。
-        昵称抓取（1.8 §4.1 snsapi_userinfo 一步）任何失败只回 None 不拦路（§4.2）。"""
+        昵称只在快进建号路要（want_profile，1.8 §4.1 snsapi_userinfo 一步）——
+        直进/落卡/占卡验证三支拿到即扔，不白付一趟 userinfo 往返；任何抓取失败
+        只回 None 不拦路（§4.2）。"""
         if not self.real:
             # 假通道：凭证即身份号；「|」后可选携带测试昵称（1.8 快进测试矩阵用）
             openid, _, nick = code.partition("|")
@@ -81,6 +83,7 @@ class WeChatGate:
         if not self._configured():
             raise errors.wechat_off()
         try:
+            # 一条连接跑完 token+userinfo 两趟（同主机，省一次 TLS 握手）
             with httpx.Client(timeout=5.0) as client:
                 resp = client.get(
                     WX_TOKEN_URL,
@@ -91,37 +94,48 @@ class WeChatGate:
                         "grant_type": "authorization_code",
                     },
                 )
-            data = resp.json()
+                data = resp.json()
+                errcode = data.get("errcode")
+                # 40029=凭证无效 40163=凭证已用过 → 重点一次即走通；其余按不可用
+                if errcode in (40029, 40163):
+                    raise errors.wechat_code_invalid()
+                if errcode:
+                    raise errors.wechat_unavailable()
+                openid = data.get("openid")
+                if not openid:
+                    raise errors.wechat_unavailable()
+                nick = (
+                    self._fetch_nickname(
+                        client,
+                        str(data.get("access_token") or ""),
+                        str(openid),
+                    )
+                    if want_profile
+                    else None
+                )
+        except errors.ApiError:
+            raise
         except Exception:  # noqa: BLE001 - 网络/解析故障统一明示，不静默
             raise errors.wechat_unavailable() from None
-        errcode = data.get("errcode")
-        if errcode:
-            # 40029=凭证无效 40163=凭证已用过 → 重点一次即走通；其余按不可用
-            if errcode in (40029, 40163):
-                raise errors.wechat_code_invalid()
-            raise errors.wechat_unavailable()
-        openid = data.get("openid")
-        if not openid:
-            raise errors.wechat_unavailable()
-        return str(openid), self._fetch_nickname(
-            str(data.get("access_token") or ""), str(openid)
-        )
+        return str(openid), nick
 
-    def _fetch_nickname(self, access_token: str, openid: str) -> str | None:
+    def _fetch_nickname(
+        self, client: httpx.Client, access_token: str, openid: str
+    ) -> str | None:
         """snsapi_userinfo 抓微信昵称（scope 已具备）：拿不到/没给一律 None，
-        建号路自会走随机名兜底（1.8 §4.2），绝不拖垮授权本身。"""
+        建号路自会走随机名兜底（1.8 §4.2），绝不拖垮授权本身。
+        client 由 exchange 传入——与 token 调用共用一条连接。"""
         if not access_token:
             return None
         try:
-            with httpx.Client(timeout=5.0) as client:
-                resp = client.get(
-                    WX_USERINFO_URL,
-                    params={
-                        "access_token": access_token,
-                        "openid": openid,
-                        "lang": "zh_CN",
-                    },
-                )
+            resp = client.get(
+                WX_USERINFO_URL,
+                params={
+                    "access_token": access_token,
+                    "openid": openid,
+                    "lang": "zh_CN",
+                },
+            )
             data = resp.json()
         except Exception:  # noqa: BLE001 - 昵称是锦上添花，任何故障静默放弃
             return None
@@ -165,6 +179,20 @@ class WeChatGate:
         return openid
 
 
+class WechatLoginOut(NamedTuple):
+    """认人门回话（定名字段，位置不随分支变义）：
+    - status："ok"（绑过直进）|"unbound"（落卡发凭条）|"created"（快进建号）
+    - token/view：ok/created 的会话钥匙与本人视图；unbound 均为 None
+    - bind_token：ok/unbound 的绑定凭条；created 不发（绑定一次完成）→ None
+    - nickname_random：created 的随机名旗（前端 toast 报名字的判据）；其余 False"""
+
+    status: str
+    token: str | None
+    view: dict | None
+    bind_token: str | None
+    nickname_random: bool
+
+
 class WechatMixin:
     """微信钥匙节：向 AccountBook 只暴露认人门、占卡微信验证与绑定清场钩子。"""
 
@@ -178,14 +206,15 @@ class WechatMixin:
         device_marker: str,
         fast: bool = False,
         nickname: str | None = None,
-    ) -> tuple[str, str, dict | None, str | None, bool]:
-        """认人门（1.7 §4.1/4.2 + 1.8 §4.1~4.3）。返回
-        (status, 钥匙|凭条, 本人视图|None, 绑定凭条|None, 随机名旗)：
+    ) -> WechatLoginOut:
+        """认人门（1.7 §4.1/4.2 + 1.8 §4.1~4.3）。回话字段义见 WechatLoginOut：
         - "ok"：绑过直进（牢靠绑=验明正身，杀未验证钥匙；凭条照发——换绑顶替的种子）；
         - "unbound"：fast=False 的 1.7 原路（登录页找回面落卡分支，4.7 防误快进护栏）；
         - "created"：fast=True 的快进建号（1.8）——手机号欠着、微信生而正式绑、
-          不发凭条（绑定一次完成）；随机名旗=前端 toast 报名字的判据（§4.1 结果 2）。"""
-        openid, wx_nickname = self.wechat.exchange(code)
+          不发凭条（绑定一次完成）。"""
+        # 昵称只在快进路要（fast+未绑才消费）；已绑+fast 的 ok 支多抓一趟就多抓——
+        # 换它一分支的简明，不值拆两段通道调用
+        openid, wx_nickname = self.wechat.exchange(code, want_profile=fast)
         account = self._active_by_openid(openid)
         if account is not None:
             bind_token = self.wechat.issue_bind_token(openid)
@@ -195,10 +224,22 @@ class WechatMixin:
             token = self.keys.issue(
                 account.id, device_marker, verified=account.wechat_verified
             )
-            return "ok", token, self.view(account.id, viewer="self"), bind_token, False
+            return WechatLoginOut(
+                status="ok",
+                token=token,
+                view=self.view(account.id, viewer="self"),
+                bind_token=bind_token,
+                nickname_random=False,
+            )
         if not fast:
             bind_token = self.wechat.issue_bind_token(openid)
-            return "unbound", bind_token, None, bind_token, False
+            return WechatLoginOut(
+                status="unbound",
+                token=None,
+                view=None,
+                bind_token=bind_token,
+                nickname_random=False,
+            )
         return self._fast_create(
             openid, wx_nickname, nickname=nickname, device_marker=device_marker
         )
@@ -210,14 +251,14 @@ class WechatMixin:
         *,
         nickname: str | None,
         device_marker: str,
-    ) -> tuple[str, str, dict, None, bool]:
+    ) -> WechatLoginOut:
         """快进建号（1.8 §4.1~4.3）：授权那一刻即本人——生而正式绑（§8 裁决 A），
         手机号欠着（phone=None，注销预留的空位）。昵称三优先级：卡上手填（strip 空
         视同没填）→ 微信昵称过清洗规矩（不合格视同拿不到，§4.2）→ 随机名。
         原子性（§4.9-3）：账号行 flush（openid 唯一索引撞在此暴露）后由 keys.issue
         的 commit 一并落账，任何失败整体回滚不留半个账号。"""
         # 循环导入（accounts 先 import 本模块）：混入方运行时取用建号模块级件
-        from .accounts import DEFAULT_CHIBI, _resolve_nickname
+        from .accounts import DEFAULT_CHIBI, _resolve_nickname, resolve_nickname_report
 
         manual = (nickname or "").strip()
         if manual:
@@ -225,11 +266,8 @@ class WechatMixin:
             final_name = _resolve_nickname(manual)
             nickname_random = False
         else:
-            try:
-                final_name = _resolve_nickname(wx_nickname)
-                nickname_random = not (wx_nickname or "").strip()
-            except errors.ApiError:
-                final_name, nickname_random = _resolve_nickname(None), True
+            # 微信昵称空/清洗不合格 → 落随机名并如实报（判据单一源在 accounts）
+            final_name, nickname_random = resolve_nickname_report(wx_nickname)
         account = Account(
             phone=None,
             nickname=final_name,
@@ -249,12 +287,12 @@ class WechatMixin:
             # openid 撞唯一索引（并发双授权等）：整体不生效，重点一次即走通
             self.db.rollback()
             raise errors.wechat_fast_failed() from None
-        return (
-            "created",
-            token,
-            self.view(account.id, viewer="self"),
-            None,
-            nickname_random,
+        return WechatLoginOut(
+            status="created",
+            token=token,
+            view=self.view(account.id, viewer="self"),
+            bind_token=None,
+            nickname_random=nickname_random,
         )
 
     def _adopt_binding(self, target: Account, current: Account | None) -> bool:

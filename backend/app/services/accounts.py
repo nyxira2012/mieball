@@ -374,6 +374,18 @@ def _resolve_nickname(raw: str | None) -> str:
     return name
 
 
+def resolve_nickname_report(raw: str | None) -> tuple[str, bool]:
+    """落名并回报是否落了随机名（空昵称与清洗不合格都算）——是否随机由真正
+    落名的这一侧说出，调用方不再自己重推一遍判据（wechat._fast_create 消费，
+    前端随机名回执 toast 拿的就是这面旗）。"""
+    if not (raw or "").strip():
+        return _resolve_nickname(None), True
+    try:
+        return _resolve_nickname(raw), False
+    except errors.ApiError:
+        return _resolve_nickname(None), True
+
+
 def _validate_chibi(chibi: Any) -> dict[str, int]:
     if not isinstance(chibi, dict):
         raise errors.chibi_invalid()

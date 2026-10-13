@@ -166,12 +166,16 @@ def game_view(
         ),
         # 必开标志（is_forced 单一源：后端开账闸与 A4 卡片同源）
         "forced": is_forced(game),
-        # 账开标志（2.5 B1「账开没开」新记）：现场账头行存在即开过——列表页逐局一查，
-        # SQLite 十人规模可接受（2.5 技术设计 §game_view）
-        "live_opened": db.execute(
-            select(LiveState.id).where(LiveState.game_id == game.id)
-        ).first()
-        is not None,
+        # 账开标志（2.5 B1「账开没开」新记）：现场账头行存在即开过——列表路走 batch
+        # 预取一把查齐（N+1 债清偿）；单局路径逐局一查，SQLite 十人规模可接受
+        "live_opened": (
+            game.id in batch["live_opened"]
+            if batch is not None
+            else db.execute(
+                select(LiveState.id).where(LiveState.game_id == game.id)
+            ).first()
+            is not None
+        ),
         # 散场确认锚（与 live 视图 ended 同名同义）：流程态 done 与派生显示态 done
         # 不是一回事——到点未散场的局派生出 done 但 ended 仍 false，现场回口/补填
         # 都要锚它（2.3 §4.9）
@@ -217,7 +221,8 @@ def bill_block(
 
 
 def entry_rows(db: Session, game_id: int) -> list[dict]:
-    """正式名单按报名先后，候补按次序跟在后面（detail 全量）。"""
+    """正式名单按报名先后，候补按次序跟在后面（detail 全量）。账号一次 in 查齐
+    （intents 同款防 N+1 手法；.get 对缺行回 None，与 db.get 同语义）。"""
     formal = (
         db.execute(
             select(Entry)
@@ -236,14 +241,21 @@ def entry_rows(db: Session, game_id: int) -> list[dict]:
         .scalars()
         .all()
     )
+    rows = (*formal, *waiting)
+    accounts = {
+        a.id: a
+        for a in db.execute(
+            select(Account).where(Account.id.in_({e.account_id for e in rows}))
+        ).scalars()
+    }
     return [
         {
-            "account": person_view(db.get(Account, e.account_id)),
+            "account": person_view(accounts.get(e.account_id)),
             "bring": e.bring,
             "standing": e.standing,
             "wait_seq": e.wait_seq,
         }
-        for e in (*formal, *waiting)
+        for e in rows
     ]
 
 

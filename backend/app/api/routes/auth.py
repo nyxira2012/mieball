@@ -347,27 +347,27 @@ def wechat_login(
     body: WechatLoginIn,
     book: AccountBook = Depends(get_account_book),
 ):
-    status, first, second, bind_token, nickname_random = book.wechat_login(
+    out = book.wechat_login(
         code=body.code,
         device_marker=body.device_marker,
         fast=body.fast,
         nickname=body.nickname,
     )
-    if status == "unbound":
-        return {"status": "unbound", "bind_token": first}
-    if status == "created":
+    if out.status == "unbound":
+        return {"status": "unbound", "bind_token": out.bind_token}
+    if out.status == "created":
         # 快进建号一次完成绑定：不发凭条；随机名旗=前端 toast 报名字的判据（4.1）
         return {
             "status": "created",
-            "token": first,
-            "account": second,
-            "nickname_random": nickname_random,
+            "token": out.token,
+            "account": out.view,
+            "nickname_random": out.nickname_random,
         }
     return {
         "status": "ok",
-        "token": first,
-        "account": second,
-        "bind_token": bind_token,
+        "token": out.token,
+        "account": out.view,
+        "bind_token": out.bind_token,
     }
 
 

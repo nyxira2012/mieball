@@ -14,7 +14,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..core import clock
-from ..db.models import Account, DuprDetail, DuprRating, EloRating
+from ..db.models import (
+    ELO_RATING_INIT,
+    Account,
+    DuprDetail,
+    DuprRating,
+    EloRating,
+)
 from . import dupr
 
 
@@ -143,7 +149,7 @@ class StatsLedger:
                     "dupr_wins": c["wins"],
                     "dupr_last5": c["last5"],
                     "dupr_month_net": c["month_net"],
-                    "elo_rating": elo_map.get(a.id, 1200),
+                    "elo_rating": elo_map.get(a.id, ELO_RATING_INIT),
                 }
             )
         out.sort(key=lambda r: (-r["dupr_rating"], r["id"]))

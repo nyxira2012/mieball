@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from ..core import clock, errors, logs
 from ..db.models import (
+    ELO_RATING_INIT,
     Account,
     DuprDetail,
     EloRating,
@@ -48,9 +49,8 @@ from .stats import StatsLedger
 # 开账起笔的 rules 快照默认值（镜像前端 startLive 起笔，2.2 批2 §4.1）：
 # 双打 / 谁下挂 all 占位（推荐重算在前端）/ 按候场队序 / 连庄上限 3
 _DEFAULT_RULES = {"doubles": True, "down": "all", "pairing": "queue", "streak_max": 3}
-# Elo 娱乐轨初始分（1.4 §3：初始 1200、访客代入同值；前端 utils/elo.ts 的
-# ELO_INIT 同值仅作展示兜底位，不担公式）
-RATING_INIT = 1200
+# Elo 娱乐轨初始分单一源在 models.ELO_RATING_INIT（建行默认值同源）
+RATING_INIT = ELO_RATING_INIT
 
 # Elo 公式与常量唯一源（2026-10-08 收归后端）：K=24、地板 800、败方只扣胜方涨分
 # 六成；访客按 1200 代入当正常玩家算——去半折（2.3 修订②；1.4 §3 调参收窄波动
@@ -675,46 +675,60 @@ class LiveBook(LiveSweepMixin):
     ) -> dict:
         """封管理员（2.2 §4.6 组织者独占——管理员不能再封别人）：靶行须是正式
         球友；已封再封当没事（幂等不进号）。feed 留痕全场可见。"""
-        with self._write(game_id=game_id, actor_id=actor_id):
-            state, game = self._open_write(game_id)
-            if game.organizer_id != actor_id:
-                raise errors.organizer_only("只有组织者能封管理员")
-            self._check_total(state, base_total_seq)
-            row = self._roster_row(game_id, player_id)
-            if row.account_id is None:
-                raise errors.live_invalid("访客不能当管理员")
-            if row.account_id not in (state.admins or []):
-                state.admins = [*(state.admins or []), row.account_id]
-                self._feed_push(
-                    state,
-                    {
-                        "kind": "set_admin",
-                        "actor": self._actor_name(game_id, actor_id),
-                        "target": row.display_name,
-                        "at": clock.iso(clock.now()),
-                    },
-                )
-                self._bump_total(state)
-                self.db.commit()
-        return self.view(game_id=game_id, viewer_id=actor_id)
+        return self._toggle_admin(
+            game_id=game_id,
+            actor_id=actor_id,
+            player_id=player_id,
+            base_total_seq=base_total_seq,
+            grant=True,
+        )
 
     def unset_admin(
         self, *, game_id: int, actor_id: int, player_id: int, base_total_seq: int
     ) -> dict:
         """撤管理员（2.2 §4.6 组织者独占）：不在册当没事（幂等不进号）；撤留痕
         feed——「组织者收回了管理员身份」的事件句。"""
+        return self._toggle_admin(
+            game_id=game_id,
+            actor_id=actor_id,
+            player_id=player_id,
+            base_total_seq=base_total_seq,
+            grant=False,
+        )
+
+    def _toggle_admin(
+        self,
+        *,
+        game_id: int,
+        actor_id: int,
+        player_id: int,
+        base_total_seq: int,
+        grant: bool,
+    ) -> dict:
+        """封/撤管理员共用骨架（2.2 §4.6 组织者独占）：身份 → 号对表 → 靶行 →
+        翻转才留痕进号（幂等不进号）；封有「访客不能当管理员」前置，撤对访客恒空转。"""
         with self._write(game_id=game_id, actor_id=actor_id):
             state, game = self._open_write(game_id)
             if game.organizer_id != actor_id:
-                raise errors.organizer_only("只有组织者能撤管理员")
+                raise errors.organizer_only(
+                    f"只有组织者能{'封' if grant else '撤'}管理员"
+                )
             self._check_total(state, base_total_seq)
             row = self._roster_row(game_id, player_id)
-            if row.account_id in (state.admins or []):
-                state.admins = [a for a in state.admins if a != row.account_id]
+            if grant and row.account_id is None:
+                raise errors.live_invalid("访客不能当管理员")
+            hit = row.account_id is not None and row.account_id in (state.admins or [])
+            if hit != grant:
+                if grant:
+                    state.admins = [*(state.admins or []), row.account_id]
+                else:
+                    state.admins = [
+                        a for a in (state.admins or []) if a != row.account_id
+                    ]
                 self._feed_push(
                     state,
                     {
-                        "kind": "unset_admin",
+                        "kind": "set_admin" if grant else "unset_admin",
                         "actor": self._actor_name(game_id, actor_id),
                         "target": row.display_name,
                         "at": clock.iso(clock.now()),
@@ -1293,17 +1307,15 @@ class LiveBook(LiveSweepMixin):
         快照参与期望、自身不落账（§4）；注册球员每人一行明细、随后窗口重放。"""
         self.db.flush()  # 战报行先取 id（明细锚点，同事务）
         stats = StatsLedger(self.db)
-
-        def side(players: list[LivePlayer]) -> list[tuple[int | None, float]]:
-            # 访客 account_id=None：pairing_rating 对 None 出 3.0（恒定标准分）
-            return [(p.account_id, stats.pairing_rating(p.account_id)) for p in players]
-
+        # 双方代位分一次查齐（pairing_ratings 批量版，免逐人点查）：
+        # 访客 account_id=None → 3.0 恒定标准分，语义与单发版逐条同
+        rates = stats.pairing_ratings([p.account_id for p in winners + losers])
         stats.settle(
             game_id=match.game_id,
             match_id=match.id,
             ended_at=ended_at,
-            winner_side=side(winners),
-            loser_side=side(losers),
+            winner_side=[(p.account_id, rates[p.account_id]) for p in winners],
+            loser_side=[(p.account_id, rates[p.account_id]) for p in losers],
             score_w=score_w,
             score_l=score_l,
         )
