@@ -44,21 +44,6 @@
       </view>
     </template>
 
-    <!-- 无 live 空态（alpha:1532-1535 版式；bare 壳下自补边距）。按钮文案 2026-10-11 改——
-         没球打的去向是约球页的两个低门槛动作（找局/留意向），不再预设用户当组织者 -->
-    <template v-else-if="!liveStore.hasLive">
-      <view class="empty-wrap">
-        <view class="kicker kt30">Court</view>
-        <view class="brand">现<text class="bem">场</text></view>
-        <EmptyBox class="et20">
-          <view>还没有进行中的球局</view>
-          <AppButton variant="pri" size="sm" class="go-btn" @click="goMeet"
-            >先约球或留下意向 ▸</AppButton
-          >
-        </EmptyBox>
-      </view>
-    </template>
-
     <!-- 只读回看（2.3 §4.10，批6）：散场后扫码/从我的局点进=回看态——LiveRecap 替代
          现场编排（零写按钮；写动作 sealGate 拒收兜底）。recap 由 ensureLive endedAt
          分流与 endGame 响应两路落地（散场即回看）。2.6 门牌：完成=收摊编排、
@@ -70,6 +55,17 @@
         @share="onRecapShare"
         @meet="goMeet"
       />
+    </template>
+
+    <!-- 教学态（2.7 批2 骨架）：sandbox store 全屏接管（分支在真局之前——自动态永不
+         截胡，§4.7；onLoad 冷启动分发与 onShow 接局照旧，这里只拦渲染）。批3 换
+         SandboxStage；本批先保 exit 通路（切 tab 散场在 onHide，这里先给小字钮） -->
+    <template v-else-if="sandbox.mode !== 'pick'">
+      <view class="sb-root">
+        <SandboxBanner />
+        <view class="sb-hold">教学中…</view>
+        <view class="sb-exit" @click="sandbox.exit()">退出教学</view>
+      </view>
     </template>
 
     <template v-else-if="L">
@@ -163,6 +159,12 @@
       </AppSheet>
       <QrOverlay :visible="qrOpen" @close="qrOpen = false" />
     </template>
+
+    <!-- 无局空态=选卡屏（2.7 §4.1）：两张体验卡+随便逛逛+常驻横幅接替 2.1 的
+         「还没有进行中的球局」一句话空态（2.1 文档已挂指针空态由 2.7 接替） -->
+    <template v-else>
+      <SandboxPicker />
+    </template>
   </PageShell>
 </template>
 
@@ -187,10 +189,13 @@ import EndSettleModal from "@/components/biz/EndSettleModal.vue";
 import SweepSheet from "@/components/biz/SweepSheet.vue";
 import LiveRecap from "@/components/biz/LiveRecap.vue";
 import QrOverlay from "@/components/biz/QrOverlay.vue";
+import SandboxPicker from "@/components/sandbox/SandboxPicker.vue";
+import SandboxBanner from "@/components/sandbox/SandboxBanner.vue";
 import { useLiveStore } from "@/stores/live";
 import { useGameStore } from "@/stores/game";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
+import { useSandboxStore } from "@/stores/sandbox";
 import { goMeet } from "@/utils/nav";
 import { shareLink } from "@/utils/share";
 import { gameShareUrl } from "@/utils/deeplink";
@@ -210,6 +215,8 @@ const liveStore = useLiveStore();
 const gameStore = useGameStore();
 const session = useSessionStore();
 const ui = useUiStore();
+/** 教学沙盒（2.7）：模式路由的渲染分支与 onHide 散场在这，编排全在 sandbox store */
+const sandbox = useSandboxStore();
 
 const L = computed(() => liveStore.live);
 /** 现场权限单一源在 store（组织者 ∨ 管理员，2.2 §4.7）：页面只消费，不再内联 isOrganizer */
@@ -407,6 +414,10 @@ onLoad((options) => {
   }
 });
 onShow(() => {
+  /* 教学态（2.7）：示例局接管画面期间不接真局不重启轮询（切回 tab 保持教学局面，
+     真局 store 原样等着——退出教学后分支次序自然恢复真局画面）；mode 回 pick 后
+     下次 onShow 走原路 */
+  if (sandbox.mode !== "pick") return;
   if (liveStore.hasLive) {
     liveStore.pendingLiveId = null; // 已开分支不接新局，信号位一并兜底清（残留不跨状态）
     // 回前台续轮询（onHide 停的；同局幂等不重开）；回看态是定格视图，轮询无意义（2.6）
@@ -449,8 +460,8 @@ function retryDead(): void {
 
 /* ---------- 战报门牌（2.6 §4.1/§4.3） ---------- */
 /** 完成=收摊（合同 4.1-3：只清本机画面，账一点不动；不弹确认）：还有别的在办局
-    原地接最近开打的（liveGame 口径在 game store，同 tab 不跳页），无则空态
-    「还没有进行中的球局」自然显出。深链残留 id 一并清（§4.3-4 收摊语义）：
+    原地接最近开打的（liveGame 口径在 game store，同 tab 不跳页），无则落
+    2.7 选卡屏。深链残留 id 一并清（§4.3-4 收摊语义）：
     不清则切走再切回 onShow `liveId ?? …` 仍拿它重接刚收掉的局，战报复活 */
 function onRecapComplete(): void {
   liveStore.dismissRecap();
@@ -465,8 +476,11 @@ function onRecapShare(): void {
   if (id == null) return;
   void shareLink(gameShareUrl(id), liveStore.live?.g.name ?? "球局战报");
 }
-/** 页面隐藏（切 tab/进退页面）清本地弹层，避免残留到别的页；轮询随之停（§4.8 对表只在看现场时发生） */
+/** 页面隐藏（切 tab/进退页面）清本地弹层，避免残留到别的页；轮询随之停（§4.8 对表只在看现场时发生）。
+    教学局面随之散（2.7 §4.5「退出即散」：卡标记之外不落任何东西——切 tab 一律 exit；
+    从真局入口进的教学，真局画面靠分支次序自然恢复，live store 没动过） */
 onHide(() => {
+  sandbox.exit();
   liveSheet.value = null;
   qrOpen.value = false;
   liveStore.stopPolling();
@@ -506,8 +520,29 @@ onUnload(() => liveStore.stopPolling());
 .et20 {
   margin-top: 20px;
 }
-.go-btn {
-  margin-top: 20px;
+
+/* 教学态骨架（2.7 批2 占位：批3 换 SandboxStage）——只保「认得出接管+能退出」 */
+.sb-root {
+  height: calc(100vh - var(--nav-total-h));
+  height: calc(100dvh - var(--nav-total-h));
+  display: flex;
+  flex-direction: column;
+  padding: calc(env(safe-area-inset-top) + 18px) 18px 8px;
+  box-sizing: border-box;
+}
+.sb-hold {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+  font-size: 13px;
+}
+.sb-exit {
+  text-align: center;
+  padding: 10px;
+  font-size: 12px;
+  color: var(--dim);
 }
 
 /* 危险动作确认槽：叠在所有本地弹层之上（EndSettleModal z-110 也在其下；confetti 115 / toast 120 仍在上） */
