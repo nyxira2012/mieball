@@ -484,17 +484,23 @@ def test_two_level_seq_mechanism(client: TestClient, fake):
 
 
 # ---- 回流纯逻辑（live_rotation，四件套按 2.4 真值；纯函数不带 app 夹具） ----
+# 取队本体（歇/连战/考勤）与补片矩阵在 test_live_rotation 册；这里只锁四件套的去留格局
 
 
 def _p(
-    pid: int, side: str | None = None, *, tenure: int = 0, rating: int | None = None
+    pid: int,
+    side: str | None = None,
+    *,
+    mark: int | None = None,
+    rating: int | None = None,
 ) -> dict:
+    """喂行契约最小行（2.8）：check=ok 可发；mark=上场章（小=先上=先下，None=最新）。"""
     row = {
         "id": pid,
         "court_no": 1 if side else None,
         "court_side": side,
-        "tenure": tenure,
-        "court_seq": 0,
+        "check": "ok",
+        "court_mark": mark,
     }
     if rating is not None:
         row["rating"] = rating
@@ -516,9 +522,9 @@ def test_requeue_loser_mode_winners_stay():
 
 def test_requeue_all_mode_queue_pairing():
     players = [
-        _p(1, "a", tenure=2),
-        _p(2, "b", tenure=3),
-        _p(3, "a", tenure=1),
+        _p(1, "a", mark=2),
+        _p(2, "b", mark=1),
+        _p(3, "a", mark=3),
         _p(4, "b"),
         _p(5),
         _p(6),
@@ -529,7 +535,7 @@ def test_requeue_all_mode_queue_pairing():
     live_rotation.requeue_after_confirm(
         players, 1, "a", {"down": "all", "pairing": "queue", "doubles": True}, queue
     )
-    # 全场按资历序下（先下的排前面）、候场首补全新一队：第 1、2 位一队
+    # 全场按资历序下（上场章小的先下、没章的最后）、候场首补全新一队：第 1、2 位一队
     assert queue == [2, 1, 3, 4]
     assert all(p["court_side"] is None for p in players[:4])
     assert [p["id"] for p in players if p["court_side"] == "a"] == [5, 6]
@@ -558,9 +564,9 @@ def test_requeue_all_mode_balance_snakes_by_rating():
 
 def test_requeue_n2_replaces_in_place():
     players = [
-        _p(1, "a", tenure=1),
+        _p(1, "a", mark=2),
         _p(2, "a"),
-        _p(3, "b", tenure=2),
+        _p(3, "b", mark=1),
         _p(4, "b"),
         _p(5),
         _p(6),
@@ -569,7 +575,7 @@ def test_requeue_n2_replaces_in_place():
     live_rotation.requeue_after_confirm(
         players, 1, "b", {"down": "n2", "pairing": "queue", "doubles": True}, queue
     )
-    # 资历最久的 2 人下（p3、p1）、候场首逐个原位顶坑：留下的保住半边
+    # 上场章最小的 2 人下（p3、p1）、候场首原位顶坑：留下的保住半边
     assert queue == [3, 1]
     assert players[0]["court_side"] is None and players[2]["court_side"] is None
     assert players[1]["court_side"] == "a" and players[3]["court_side"] == "b"

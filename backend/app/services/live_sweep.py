@@ -19,9 +19,9 @@ from ..core import clock, errors
 from ..db.models import Game, LiveMatch, LivePlayer, LiveState
 from .bills import BillBook
 
-# 算到场口径（2.2 §4.2）：absent 未到 / left 早退不算在场——live.py 与本模块共用，
-# 定义在此处是因为 live 已 import 本模块（反向会循环）
-ARRIVED = ("ok", "late", "join")
+# 算到场口径单一源住纯函数层 live_rotation（2.8 批1 搬家：取队的可发判定要同一把尺，
+# 纯函数层不许反向依赖带 sqlalchemy 的本模块）；这里只消费不再自定义
+from .live_rotation import ARRIVED
 
 
 class LiveSweepMixin:

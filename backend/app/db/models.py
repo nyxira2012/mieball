@@ -366,6 +366,10 @@ class LivePlayer(Base):
     fire: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # 候场序（升序即队列序）；null = 场上或不在队
     queue_pos: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 上场章（2.8 §4.1）：落位时刻的总号 total_seq，小=先上=「待得最久」先下；
+    # 只盖不清——下场行留残值无害（court_no 已空）；null=没盖过章的存量行，
+    # 资历序里按最新并列（live_rotation._by_tenure）
+    court_mark: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class LiveCourt(Base):

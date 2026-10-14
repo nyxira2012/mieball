@@ -39,6 +39,10 @@ _NEW_COLUMNS = {
     "live_courts": {
         "scoring": "INTEGER NOT NULL DEFAULT 11",
     },
+    # 2.8 批1：上场章（落位时刻的总号；存量行 NULL=没盖过章、资历序按最新并列）
+    "live_players": {
+        "court_mark": "INTEGER",
+    },
     # 1.6 批1：密码钥匙四列（暗记/连错计数/锁/设密宽限窗，存量行不带密码）
     "accounts": {
         "password_hash": "VARCHAR(128)",

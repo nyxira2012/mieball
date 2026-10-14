@@ -960,3 +960,128 @@ def test_overwrite_single_sided_match_keeps_accounts_clean(client: TestClient):
         assert db.execute(select(DuprDetail)).scalar_one_or_none() is None
     finally:
         db.close()
+
+
+# ---- 2.8 §4.1 取队单一真值：结算回流吃歇/连战/资历（验收 1/4/5）与上场章 ----
+
+
+def player(view: dict, player_id: int) -> dict:
+    return next(r for r in view["players"] if r["id"] == player_id)
+
+
+def court_marks(client: TestClient, game_id: int) -> dict[int, int | None]:
+    """上场章不进视图（内部资历键），直查名册行。"""
+    db = client.app.state.session_factory()
+    try:
+        rows = (
+            db.execute(select(LivePlayer).where(LivePlayer.game_id == game_id))
+            .scalars()
+            .all()
+        )
+        return {r.id: r.court_mark for r in rows}
+    finally:
+        db.close()
+
+
+def set_court_marks(client: TestClient, marks: dict[int, int]) -> None:
+    db = client.app.state.session_factory()
+    try:
+        for pid, mark in marks.items():
+            db.get(LivePlayer, pid).court_mark = mark
+        db.commit()
+    finally:
+        db.close()
+
+
+def tempo(client: TestClient, token: str, game_id: int, view: dict, pid: int, action):
+    r = live_call(
+        client,
+        token,
+        game_id,
+        "tempo",
+        {"player_id": pid, "action": action, "base_total_seq": view["total_seq"]},
+    )
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_settle_skips_on_court_skipper_and_next_game_first(client: TestClient):
+    """验收 1（歇·结算路）：在打的人设歇 → 结算 → 补位轮到他跳过、坑由下位顶、
+    skip 减一、保位回队首；下一场第一个轮到。"""
+    env = open_live(client, seed=81, players=5)
+    gid, tok = env["game_id"], env["org"]["token"]
+    ids = [r["id"] for r in env["view"]["players"]]
+    v = deal_one(client, env)  # 0-3 上场、4 候场
+    v = tempo(client, tok, gid, v, ids[2], "skip")
+    assert player(v, ids[2])["skip"] == 1
+
+    r = confirm(client, tok, gid, v)  # 全上全下：四人回队尾成 [4,0,1,2,3]，取 4
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert side_ids(v, 1, "a") == {ids[4], ids[0]}
+    assert side_ids(v, 1, "b") == {ids[1], ids[3]}  # 轮到 2 跳过、3 顶坑
+    assert v["queue"] == [ids[2]] and player(v, ids[2])["skip"] == 0
+
+    r = confirm(client, tok, gid, v, score_b=8)  # 下一场：2 在队首且歇已清
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert side_ids(v, 1, "a") == {ids[2], ids[0]}
+    assert side_ids(v, 1, "b") == {ids[1], ids[3]}
+    assert v["queue"] == [ids[4]]  # 全下按上场章：4 最新资历排队尾
+
+
+def test_n_down_by_court_mark_not_roster_order(client: TestClient):
+    """验收 4（资历）：N 人下按上场章先上先下——deal 落位盖章、结算补位盖章、
+    留场/下场不动章；章序与名册序相反时按章下人。"""
+    env = open_live(client, seed=82, players=6, rules={"down": "n2"})
+    gid, tok = env["game_id"], env["org"]["token"]
+    ids = [r["id"] for r in env["view"]["players"]]
+    v = deal_one(client, env)
+    marks = court_marks(client, gid)
+    assert [marks[i] for i in ids] == [1, 1, 1, 1, None, None]  # 章=落位时刻总号
+    set_court_marks(client, {ids[0]: 9, ids[1]: 9})  # 把 0、1 改成最晚上场
+
+    r = confirm(client, tok, gid, v)
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert v["queue"] == [ids[2], ids[3]]  # 章小的先下（按名册序会下 0、1）
+    assert side_ids(v, 1, "a") == {ids[0], ids[1]}
+    assert side_ids(v, 1, "b") == {ids[4], ids[5]}  # 候场首原位顶坑
+    marks = court_marks(client, gid)
+    assert marks[ids[4]] == marks[ids[5]] == 2  # 补位落位盖章=结算时总号
+    assert [marks[i] for i in ids[:4]] == [9, 9, 1, 1]  # 留场不改、下场不清
+
+
+def test_settle_fire_on_court_taken_first_next_game(client: TestClient):
+    """验收 5（连战）：场上设连战（队列不动）→ 打完结算补位他排最前被取。"""
+    env = open_live(client, seed=83, players=6)
+    gid, tok = env["game_id"], env["org"]["token"]
+    ids = [r["id"] for r in env["view"]["players"]]
+    v = deal_one(client, env)
+    v = tempo(client, tok, gid, v, ids[3], "fire")
+    assert v["queue"] == [ids[4], ids[5]]
+
+    r = confirm(client, tok, gid, v)  # 全下后队 [4,5,0,1,2,3]：3 越过所有人先收
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert side_ids(v, 1, "a") == {ids[3], ids[4]}
+    assert side_ids(v, 1, "b") == {ids[5], ids[0]}
+    assert v["queue"] == [ids[1], ids[2]]
+
+
+def test_swap_in_stamps_court_mark_out_keeps(client: TestClient):
+    env = open_live(client, seed=84, players=6)
+    gid, tok = env["game_id"], env["org"]["token"]
+    ids = [r["id"] for r in env["view"]["players"]]
+    v = deal_one(client, env)
+    r = live_call(
+        client,
+        tok,
+        gid,
+        "swap",
+        {"out_id": ids[0], "in_id": ids[4], "base_total_seq": v["total_seq"]},
+    )
+    assert r.status_code == 200, r.text
+    marks = court_marks(client, gid)
+    assert marks[ids[4]] == v["total_seq"]  # 换上即落位盖章
+    assert marks[ids[0]] == 1  # 被换下的章不清（只盖不清）

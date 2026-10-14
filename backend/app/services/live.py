@@ -43,7 +43,8 @@ from . import live_rotation
 from .accounts import person_view
 from .bills import bill_heads
 from .game_views import derive, is_forced
-from .live_sweep import ARRIVED, LiveSweepMixin
+from .live_rotation import ARRIVED
+from .live_sweep import LiveSweepMixin
 from .playlog import is_my_game_at
 from .stats import StatsLedger
 
@@ -69,6 +70,41 @@ _VIEW_CODES = frozenset(
 def _snapshot(p: LivePlayer) -> dict:
     """战报名单快照（LiveMatch.winners/losers 元素）：id 是名册行 id。"""
     return {"id": p.id, "name": p.display_name, "guest": p.guest}
+
+
+def _rotation_rows(rows: list[LivePlayer], rates: dict) -> list[dict]:
+    """轮换纯函数（live_rotation）的喂行单一源——全键契约 id/court_no/court_side/
+    check/skip/fire/court_mark/rating，结算回流与补片共用。2.8 收编前结算路手拼
+    dict 只带四键，歇与资历两条规矩在后端从未被喂到（歇白歇、「待得最久」退化成
+    名册序）——病根是喂行散写漏键，此后喂行只许走这里。"""
+    return [
+        {
+            "id": r.id,
+            "court_no": r.court_no,
+            "court_side": r.court_side,
+            "check": r.check,
+            "skip": r.skip,
+            "fire": r.fire,
+            "court_mark": r.court_mark,
+            # 均衡配对换源吃 DUPR（1.4 §6）：rating 键恒喂当前派生分
+            "rating": rates[r.account_id],
+        }
+        for r in rows
+    ]
+
+
+def _apply_rotation(by_id: dict[int, LivePlayer], dicts: list[dict], mark: int) -> None:
+    """纯函数改完的行落回 ORM（_rotation_rows 的逆向，两端键对）：去向
+    court_no/court_side、取队时「轮到即消耗」扣掉的 skip；这次从候场新落位的行
+    盖上场章 mark（落位时刻的总号——只盖不清：留场的章不动，全下全上又回来的
+    算没离开过）；候场序 queue_pos 不在此处（归 _place_queue）。"""
+    for d in dicts:
+        r = by_id[d["id"]]
+        if d["court_no"] is not None and r.court_no is None:
+            r.court_mark = mark
+        r.court_no = d["court_no"]
+        r.court_side = d["court_side"]
+        r.skip = d["skip"]
 
 
 def _guest_display_name(
@@ -245,6 +281,7 @@ class LiveBook(LiveSweepMixin):
                     r = by_id[pid]
                     r.court_no = court.court_no
                     r.court_side = "a" if pid in c["a"] else "b"
+                    r.court_mark = state.total_seq  # 上场章：落位时刻的总号（bump 前）
                     r.queue_pos = None
             self._place_queue(by_id, rest)
             self._bump_total(state)
@@ -271,7 +308,9 @@ class LiveBook(LiveSweepMixin):
         胜方必须分高方（平分双方均可）；幂等：重复上传同分同位（断网重发）回
         当前视图 200 不重落；号旧且你看的那场已被别人先落 → 409 settle_recorded
         携已记比分（不当并发冲突吵，纠纷引给组织者）。no_redeal（散场清扫态）：
-        回流定格、不排下一场不补位（§4.9-1）。"""
+        回流定格、不排下一场不补位（§4.9-1）。回流补位走 live_rotation 取队真值
+        （2.8 §4.1）：歇轮跳过并消耗、连战优先、未到不发、资历按上场章——喂行与
+        写回经 _rotation_rows/_apply_rotation 一对口。"""
         with self._write(game_id=game_id, actor_id=actor_id):
             state, game = self._open_write(game_id)
             self._require_arrived(game_id, actor_id)
@@ -341,16 +380,7 @@ class LiveBook(LiveSweepMixin):
             else:
                 stats = StatsLedger(self.db)
                 rates = stats.pairing_ratings([r.account_id for r in rows])
-                dicts = [
-                    {
-                        "id": r.id,
-                        "court_no": r.court_no,
-                        "court_side": r.court_side,
-                        # 均衡配对换源吃 DUPR（1.4 §6）：rating 键恒喂当前派生分
-                        "rating": rates[r.account_id],
-                    }
-                    for r in rows
-                ]
+                dicts = _rotation_rows(rows, rates)
                 live_rotation.requeue_after_confirm(
                     dicts,
                     court_no,
@@ -362,10 +392,7 @@ class LiveBook(LiveSweepMixin):
                     },
                     queue,
                 )
-                for d in dicts:
-                    r = by_id[d["id"]]
-                    r.court_no = d["court_no"]
-                    r.court_side = d["court_side"]
+                _apply_rotation(by_id, dicts, state.total_seq)
                 court.status = "playing"
                 court.seq += 1
                 # 分制快照续场同刷新（2.6 机制A）：确认即开的下一场也是"新开片"
@@ -588,6 +615,7 @@ class LiveBook(LiveSweepMixin):
             queue.append(out.id)  # 被换下排队尾（§4.9-3）
             inn.court_no = court.court_no
             inn.court_side = out.court_side
+            inn.court_mark = state.total_seq  # 换上即落位：盖上场章（资历从此刻起算）
             inn.queue_pos = None
             out.court_no = None
             out.court_side = None
@@ -616,7 +644,8 @@ class LiveBook(LiveSweepMixin):
         base_total_seq: int,
     ) -> dict:
         """歇/连（2.2 §4.10）：给自己随时、给他人需全权。skip 按一次 +1 可叠加
-        （轮到发牌时由前端引擎消耗）；fire 互斥清 skip 且把候场里的人排到队首
+        （轮到取队那一刻消耗——live_rotation.take_from_queue，结算回流路已兑现；
+        2.8 批2 补片路同源）；fire 互斥清 skip 且把候场里的人排到队首
         （场上的人无从排起）；unskip 清零；fire 再按一次=取消连战（队列不动）。"""
         with self._write(game_id=game_id, actor_id=actor_id):
             state, game = self._open_write(game_id)
