@@ -254,3 +254,22 @@ h1.brand em,
     opacity: 0.4;
   }
 }
+
+/* 教学聚光光圈（2.7）：锚 key 协议（steps.spot → 组件挂 .sb-glow）的呈现端。
+   全局类的理由同 .sk 族——沙盒域多个组件（对局卡比分/头像、候场条我到了、顶条格）
+   都要挂，scoped 样式无处共享这份呼吸动画。呼吸 outline 不占布局、不改圆角
+   （跟随元素自身），光圈目标不在（弹层没开等）class 不挂、自然不显示 */
+.sb-glow {
+  outline: 2px solid var(--lemon);
+  outline-offset: 2px;
+  animation: sbGlow 1.6s ease-in-out infinite;
+}
+@keyframes sbGlow {
+  0%,
+  100% {
+    outline-color: rgba(255, 212, 0, 0.95);
+  }
+  50% {
+    outline-color: rgba(255, 212, 0, 0.15);
+  }
+}

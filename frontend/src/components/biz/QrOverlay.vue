@@ -10,7 +10,12 @@
     <view class="qr-card" @click.stop="emit('close')">
       <!-- 码不销毁（§4.9-4：散场转只读回看，同一张码扫出来就是回看） -->
       <view class="qr-box">
-        <view v-if="svg" class="qr-svg" v-html="svg" />
+        <!-- 教学沙盒示意模式（2.7 §4.4）：不出真码（示例局的码扫了是死链、更不能外传），
+             码位换明显示意占位图；真局用法零变化（demo 缺省 false 走原路） -->
+        <view v-if="demo" class="qr-demo">
+          <view class="qr-demo-slash" /><text class="qr-demo-t">示意</text>
+        </view>
+        <view v-else-if="svg" class="qr-svg" v-html="svg" />
         <!-- stub 局（id<=0）不编废链接，占位等真局落地 -->
         <view v-else class="qr-empty">码未就绪</view>
       </view>
@@ -25,9 +30,14 @@
       </template>
       <template v-else>
         <view class="s">已到场 {{ arrived }} 人 · LIVE</view>
-        <view class="hint"
-          >扫码签到进场 · <text class="hi">没报名的空降也扫这码</text></view
-        >
+        <!-- 示意模式的亮码说明句由调用方传入（demoNote）——文案口径归沙盒域，biz 零沙盒依赖 -->
+        <view class="hint">
+          <template v-if="demo && demoNote">{{ demoNote }}</template>
+          <template v-else
+            >扫码签到进场 ·
+            <text class="hi">没报名的空降也扫这码</text></template
+          >
+        </view>
       </template>
     </view>
   </view>
@@ -36,14 +46,24 @@
 <script setup lang="ts">
 /* 二维码浮层（2.1 §2 扫码签到）：无本地态——已到场人数实时读 roster。
    码芯换真：deepUrl 拼现场深链 → qrSvg 编码成 SVG（明文无私密信息，
-   前端直接做——推翻旧「后端接码」口径，2026-10-10 用户定稿）。 */
+   前端直接做——推翻旧「后端接码」口径，2026-10-10 用户定稿）。
+   demo（2.7）：教学沙盒示意模式——码位不编真码、外壳吃沙盒假数据 props；
+   缺省 false 时一切照旧（真局调用方零改动）。 */
 import { computed } from "vue";
 import { useLiveStore, isArrived } from "@/stores/live";
 import { qrSvg } from "@/utils/qr";
 import { liveShareUrl } from "@/utils/deeplink";
 
-defineProps({
+const props = defineProps({
   visible: { type: Boolean, default: false },
+  /** 示意模式：不出真码，码位换占位图+亮码说明句 */
+  demo: { type: Boolean, default: false },
+  /** 示意外壳假数据（局名/场馆/已到场人数=engine 在场数）；空串/缺省回真局数据源 */
+  demoName: { type: String, default: "" },
+  demoVenue: { type: String, default: "" },
+  demoArrived: { type: Number, default: 0 },
+  /** 示意亮码说明句（调用方传入，缺省不显示——demo 唯一消费方是教学沙盒） */
+  demoNote: { type: String, default: "" },
 });
 const emit = defineEmits<{ (e: "close"): void }>();
 
@@ -51,18 +71,27 @@ const liveStore = useLiveStore();
 
 /** 局名 + 场馆 */
 const metaName = computed(() => {
+  if (props.demo)
+    return props.demoVenue
+      ? `${props.demoName} ${props.demoVenue}`
+      : props.demoName;
   const g = liveStore.live?.g;
   if (!g) return "";
   return g.venueName ? `${g.name} ${g.venueName}` : g.name;
 });
-const arrived = computed(
-  () => (liveStore.live?.roster ?? []).filter((p) => isArrived(p.check)).length,
+const arrived = computed(() =>
+  props.demo
+    ? props.demoArrived
+    : (liveStore.live?.roster ?? []).filter((p) => isArrived(p.check)).length,
 );
-/** 散场回看态（§4.10）：endedAt 有值=码转只读回看入口（同一张码，扫出来是回看） */
-const ended = computed(() => !!liveStore.live?.endedAt);
+/** 散场回看态（§4.10）：endedAt 有值=码转只读回看入口（同一张码，扫出来是回看）。
+    示意局没有散场面——恒 false 走 LIVE 文案 */
+const ended = computed(() => !props.demo && !!liveStore.live?.endedAt);
 
-/** 码芯内容：进现场的深链（id>0 才编——stub 局没有真 id，不编废链接） */
+/** 码芯内容：进现场的深链（id>0 才编——stub 局没有真 id，不编废链接）。
+    demo 恒空串=永不编真码 */
 const qrText = computed(() => {
+  if (props.demo) return "";
   const id = liveStore.liveView?.gameId ?? liveStore.live?.g.id ?? 0;
   return id > 0 ? liveShareUrl(id) : "";
 });
@@ -152,6 +181,35 @@ const svg = computed(() => (qrText.value ? qrSvg(qrText.value) : ""));
   font-size: 10px;
   color: var(--dim);
   letter-spacing: 0.12em;
+}
+/* 示意占位码（demo）：虚线框+对角斜杠+「示意」——一眼是假的、扫无可扫 */
+.qr-demo {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed rgba(0, 0, 0, 0.35);
+  border-radius: 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.qr-demo-slash {
+  position: absolute;
+  left: -18%;
+  top: 50%;
+  width: 136%;
+  height: 2px;
+  background: rgba(0, 0, 0, 0.3);
+  transform: rotate(-33deg);
+}
+.qr-demo-t {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  color: rgba(0, 0, 0, 0.55);
 }
 .qr-meta {
   text-align: center;

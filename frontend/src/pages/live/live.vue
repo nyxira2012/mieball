@@ -57,15 +57,11 @@
       />
     </template>
 
-    <!-- 教学态（2.7 批2 骨架）：sandbox store 全屏接管（分支在真局之前——自动态永不
-         截胡，§4.7；onLoad 冷启动分发与 onShow 接局照旧，这里只拦渲染）。批3 换
-         SandboxStage；本批先保 exit 通路（切 tab 散场在 onHide，这里先给小字钮） -->
+    <!-- 教学态（2.7 批3）：sandbox store 全屏接管（分支在真局之前——自动态永不
+         截胡，§4.7；onLoad 冷启动分发与 onShow 接局照旧，这里只拦渲染）。
+         退出教学后 origin 判定（真局入口原路返回）批4 再说，本批 exit 一律回选卡屏 -->
     <template v-else-if="sandbox.mode !== 'pick'">
-      <view class="sb-root">
-        <SandboxBanner />
-        <view class="sb-hold">教学中…</view>
-        <view class="sb-exit" @click="sandbox.exit()">退出教学</view>
-      </view>
+      <SandboxStage />
     </template>
 
     <template v-else-if="L">
@@ -190,7 +186,7 @@ import SweepSheet from "@/components/biz/SweepSheet.vue";
 import LiveRecap from "@/components/biz/LiveRecap.vue";
 import QrOverlay from "@/components/biz/QrOverlay.vue";
 import SandboxPicker from "@/components/sandbox/SandboxPicker.vue";
-import SandboxBanner from "@/components/sandbox/SandboxBanner.vue";
+import SandboxStage from "@/components/sandbox/SandboxStage.vue";
 import { useLiveStore } from "@/stores/live";
 import { useGameStore } from "@/stores/game";
 import { useSessionStore } from "@/stores/session";
@@ -519,30 +515,6 @@ onUnload(() => liveStore.stopPolling());
 }
 .et20 {
   margin-top: 20px;
-}
-
-/* 教学态骨架（2.7 批2 占位：批3 换 SandboxStage）——只保「认得出接管+能退出」 */
-.sb-root {
-  height: calc(100vh - var(--nav-total-h));
-  height: calc(100dvh - var(--nav-total-h));
-  display: flex;
-  flex-direction: column;
-  padding: calc(env(safe-area-inset-top) + 18px) 18px 8px;
-  box-sizing: border-box;
-}
-.sb-hold {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--dim);
-  font-size: 13px;
-}
-.sb-exit {
-  text-align: center;
-  padding: 10px;
-  font-size: 12px;
-  color: var(--dim);
 }
 
 /* 危险动作确认槽：叠在所有本地弹层之上（EndSettleModal z-110 也在其下；confetti 115 / toast 120 仍在上） */

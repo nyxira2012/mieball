@@ -29,6 +29,10 @@ export const SANDBOX_GAME = {
   pairing: "queue" as const, // 按候场队序
 };
 
+/** 教学局每片人数单源：沙盒锁双打 4 人制（规格一片场双打；engine 发牌补片与
+    组件候场预演同吃这份，别再写第二份 4） */
+export const COURT_SIZE = 4;
+
 /** 参与卡名册 6 人（含你；规格 A4）：阿豪=组织者、老周开场在等；你签到第三位；
     球球你签到约 2 秒后到（第 4 人、触发自动开赛）；老金小鹿随你打球时前后脚到。 */
 export const PARTICIPATE_ROSTER: SandSeed[] = [
@@ -164,6 +168,9 @@ export const BANNER_LOGGED_IN = "你还没有进行中的球局 · 下面是示�
 /** 二维码示意浮层说明句（占位码下的一句，不出真码） */
 export const QR_DEMO_NOTE =
   "真局里，已到场的人都能亮这张码收人——朋友扫了填个称呼就能进场打球";
+
+/** 顶条剩余时间：定格的假数，不走表（规格 A4） */
+export const TIME_LEFT_FROZEN = "1:28:00";
 
 /** 教学走完的常驻尾巴（两卡同款） */
 export const TUTOR_TAIL = "✓ 教学走完了";

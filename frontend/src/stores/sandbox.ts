@@ -56,8 +56,16 @@ export const useSandboxStore = defineStore("sandbox", () => {
   const step = computed<TutorStep | null>(
     () => curSteps.value?.[stepIdx.value] ?? null,
   );
-  /** 光圈锚 key（steps→组件私有协议：组件挂 :class="{glow: sandbox.spot===锚}"） */
+  /** 光圈锚 key（steps→组件私有协议：组件挂 :class="{ 'sb-glow': sandbox.spot===锚 }"） */
   const spot = computed(() => step.value?.spot ?? null);
+  /** 当前步已解析的句子（函数步吃状态快照——第 7 条歇没歇两句）：解析单点在这，
+      TutorBar 与测试都吃现成串，别各写一份 typeof 分支 */
+  const stepText = computed(() => {
+    const cur = step.value;
+    const s = state.value;
+    if (!cur || !s) return "";
+    return typeof cur.text === "function" ? cur.text(s) : cur.text;
+  });
 
   /* ---- 卡标记（storage 不在响应系内：写入后靠 rev 通知 computed 重读，
       选卡屏 ✓ 与教学横幅才能即时点亮） ---- */
@@ -138,7 +146,7 @@ export const useSandboxStore = defineStore("sandbox", () => {
     if (!steps || !s) return;
     for (;;) {
       const cur = steps[stepIdx.value];
-      // final 行不翻（收尾行整行可点跳约球页，几秒后收尾巴——归组件，批3）
+      // final 行不翻（收尾行整行可点跳约球页——final 行 autoAfterMs 由 store autoTimer 推过末条成尾巴态）
       if (!cur || cur.final || !cur.done?.(s, ev)) return;
       stepIdx.value++;
       ev = undefined;
@@ -302,6 +310,7 @@ export const useSandboxStore = defineStore("sandbox", () => {
     state,
     stepIdx,
     step,
+    stepText,
     spot,
     doneCards,
     localScores,

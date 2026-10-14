@@ -3,7 +3,9 @@
    uni 全局（黑匣子测试同惯例），node 环境可跑。每例全新 pinia + 假定时器。 */
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
+import * as engine from "@/sandbox/engine";
 import type { SandState } from "@/sandbox/engine";
+import { ELO_PREVIEW } from "@/sandbox/data";
 
 const storage = new Map<string, unknown>();
 vi.stubGlobal("uni", {
@@ -114,5 +116,78 @@ describe("本地记分与结算编排（§4.2 幕三/幕四）", () => {
     h.confirmSettle(1, "b", 11, 0); // 窗没开着：什么都不发生
     expect(h.state!.matches.length).toBe(0);
     expect(h.stepIdx).toBe(3); // 没有判据推进（记 1 分那面已翻过）
+  });
+
+  it("涨跌预览纯查表（§6 界面一个数不自算）：结算全链不碰 ELO_PREVIEW，改比分预览值不动", async () => {
+    // 预览组装在 SandboxSettle 组件内按名查这张表——store 层锁得住的真源是
+    // 「表纯」：记分/直录写回/确认结算全链走完，表不被改写、查表值逐字定格，
+    // 涨跌预览就与比分无关（形状覆盖与量级另锁在 sandbox-engine.test.ts）
+    const h = await load();
+    h.enter("participate");
+    h.checkInMe();
+    vi.advanceTimersByTime(2000); // 球球到（第 4 人）自动开赛
+    for (let i = 0; i < 11; i++) h.point(1, "b"); // 打到 11:0 自动开窗
+    expect(h.settleWindow).toEqual({ courtNo: 1 });
+    const frozen = JSON.parse(JSON.stringify(ELO_PREVIEW)); // 开窗时刻快照
+    h.localScores[1] = { sa: 15, sb: 13, history: [] }; // 窗内直录改比分（writeBack 同路）
+    h.confirmSettle(1, "b", 15, 13);
+    expect(ELO_PREVIEW).toEqual(frozen); // 全链没碰表：涨跌与比分无关
+    expect(ELO_PREVIEW["你"]).toEqual({ win: 21, lose: -13 }); // 查表值逐字定格
+    expect(ELO_PREVIEW["朋友"]).toEqual({ win: 20, lose: -12 }); // 访客行也有展示值
+  });
+});
+
+describe("参与卡六幕串联（§4.2：幕三老金小鹿条件触发→幕六收尾 final 行）", () => {
+  /** 从进卡推到「第一次结算确认完」（幕四完）：返回 store 与「你」的行 */
+  async function toFirstSettle() {
+    const h = await load();
+    h.enter("participate");
+    h.checkInMe(); // 幕一：候场出现你
+    vi.advanceTimersByTime(2000); // 幕二：球球到（第 4 人）自动开赛、你上场
+    h.point(1, "b"); // 幕三：你记 1 分（武装老金小鹿条件线索）
+    vi.advanceTimersByTime(600 + 2000); // 老金、小鹿前后脚到
+    expect(qNames(h.state!)).toEqual(["老金", "小鹿"]); // 不弹提示、不打断
+    for (let i = 0; i < 11; i++) h.point(1, "b"); // 幕四：打到 11:0 自动开窗
+    h.confirmSettle(1, "b", 11, 0);
+    return { h, you: h.state!.players.find((p) => p.you)! };
+  }
+
+  it("幕五歇轮+幕六第二场：你不下→设歇翻面→第二场结算你下场、歇了句、4 秒进 final、5 秒收尾巴", async () => {
+    const { h, you } = await toFirstSettle();
+    expect(h.stepIdx).toBe(4); // 幕四完：先上的先下——你不下（第 5 步等着）
+    expect(h.state!.courts[0]!.b).toContain(you.id); // 你留场接着打
+
+    engine.tempo(h.state!, you.id, "skip"); // 幕五「休息一轮」（点人抽屉批4 挂同一编排）
+    h.point(1, "b"); // 任意动作出口带一次步进判定
+    expect(h.stepIdx).toBe(5); // 设了歇即翻面
+    expect(you.skip).toBe(1); // 歇记在名下——不是马上离场
+
+    for (let i = 0; i < 11; i++) h.point(1, "b"); // 幕六：第二场打到 11
+    h.confirmSettle(1, "b", 11, 0);
+    expect(qNames(h.state!)).toEqual(["你", "球球"]); // 连打两场的你球球下场排队
+    expect(
+      h.state!.courts[0]!.b.map(
+        (i) => h.state!.players.find((p) => p.id === i)!.name,
+      ),
+    ).toEqual(["阿豪", "老周"]); // 阿豪老周顶上
+    expect(h.stepIdx).toBe(6); // 幕五/幕六两步判据同拍级联翻完
+    expect(h.stepText).toBe(
+      "你下场了，歇的那一轮也记上了——现场就是这么转起来的",
+    );
+    vi.advanceTimersByTime(4000); // 第 7 条停 4 秒自动进
+    expect(h.step?.final).toBe(true);
+    expect(h.stepText).toBe("想打真的？去约球页找个真局 ▸");
+    vi.advanceTimersByTime(5000); // final 行几秒后收成尾部小条
+    expect(h.step).toBeNull(); // 提示槽收窄成尾巴（✓ 教学走完了），不消失
+  });
+
+  it("幕五不歇也放行：第二场结算直接连翻，第 7 条换「先歇」句（A3 双分支另一边）", async () => {
+    const { h } = await toFirstSettle();
+    for (let i = 0; i < 11; i++) h.point(1, "b");
+    h.confirmSettle(1, "b", 11, 0);
+    expect(h.stepIdx).toBe(6); // 不歇：两步判据同拍翻完，一样放行
+    expect(h.stepText).toBe(
+      "下次累了可以先歇——点自己的头像就行。现场就是这么转起来的",
+    );
   });
 });

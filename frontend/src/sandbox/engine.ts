@@ -10,6 +10,7 @@
    确认窗定死的终局比分。 */
 import type { ChibiConfig } from "@/utils/chibi";
 import {
+  COURT_SIZE,
   ORGANIZE_ROSTER,
   PARTICIPATE_ROSTER,
   SANDBOX_GAME,
@@ -123,8 +124,8 @@ function fillIdle(s: SandState): void {
       const p = pOf(s, pid);
       return arrived(p) && !p.skip;
     }).length;
-    if (issuable < 4) continue; // 双打教学局锁 4（courtSize 同值）
-    const ids = takeFromQueue(s, 4);
+    if (issuable < COURT_SIZE) continue; // 教学局锁双打 4 人制
+    const ids = takeFromQueue(s, COURT_SIZE);
     const half = (ids.length + 1) >> 1; // 按候场队序对半：第 1、2 位一队
     c.a.splice(0, c.a.length, ...ids.slice(0, half));
     c.b.splice(0, c.b.length, ...ids.slice(half));

@@ -1,9 +1,11 @@
 /* 两张卡步进表单一源（2.7 批1）——提示行文案+光圈锚+完成判据+自动步超时。
    文案逐字抄规格 §7 A3 步进表（含参与卡第 7 条双分支）；锚 key 是 steps→组件
-   的私有协议（组件挂 :class="{glow: curSpot===锚}"，目标不在自然不显示）。
+   的私有协议（组件挂 :class="{ 'sb-glow': curSpot===锚 }"，目标不在自然不显示）。
    完成判据吃 SandState 快照，两类快照看不出的走 TutorEv：记 1 分（本地记分
    账不进 engine）、一次换人（状态无痕）。「约一拍自动进下一条」的停顿节奏归
-   store 编排层（本表只记状态判据与第 7 条的 4 秒）。 */
+   store 编排层（本表只记状态判据与两条定时步：第 7 条 4 秒、final 收尾 5 秒
+   ——批3 定形：final 行的「几秒后收成尾巴」也走 autoAfterMs，store autoTimer
+   推过末条即尾巴态，不另设机制）。 */
 import type { SandState } from "./engine";
 import { arrived } from "./engine";
 
@@ -17,7 +19,7 @@ export interface TutorStep {
   text: string | ((s: SandState) => string); // 函数形=随状态换句（第 7 条歇没歇两句/组织卡收尾句）
   spot?: string; // 光圈锚 key（缺省=无光圈；final 行整行可点）
   done?: (s: SandState, ev?: TutorEv) => boolean; // 缺省=不由状态推进（自动步/收尾行归 store）
-  autoAfterMs?: number; // 停 N 毫秒自动进下一条（规格明说的只有参与卡第 7 条停 4 秒）
+  autoAfterMs?: number; // 停 N 毫秒自动进下一条（规格明说的只有参与卡第 7 条停 4 秒，与 final 收尾的几秒收尾巴——5000ms）
   final?: boolean; // 收尾行：点击跳约球页、几秒后收成尾部小条
 }
 
@@ -73,7 +75,8 @@ export const PARTICIPATE_STEPS: TutorStep[] = [
   },
   {
     text: "想打真的？去约球页找个真局 ▸",
-    final: true, // 整行可点：跳约球页（真出口）
+    autoAfterMs: 5000, // 整行可点跳约球页；不点几秒后收成尾部小条（store autoTimer 推过末条=尾巴态）
+    final: true, // 收尾行：点击跳约球页（真出口）
   },
 ];
 
