@@ -3,8 +3,10 @@
    （base 号取 liveView）→ api → 响应视图 applyLiveView 落地」；409 stale 携视图对表
    （toast「现场已更新」）；断网/他错走 errText（网络错文案「网络不给力，请稍后再试」）
    并把本地预变回滚成所持视图。
-   发牌算法仍在前端 rotate.ts（总账把关）：到场/取消/开账后够人的空片本地算完
-   apiLiveDeal 上报；「排下一场」由确认响应视图驱动（回流补位真值在后端）。
+   发牌/补片真值单一源在后端（2.8 收编，live_rotation 取队）：前端不自算牌——
+   所有写动作的响应视图即排好（后端出口落账时空片顺手补满）；写触发点不再补发
+   请求，唯二手动「一键排阵」直调空载荷 apiLiveDeal、清扫取消以 no_redeal 透传
+   豁免补片。
    记分本地化（2026-10-09 拍板，批2）：点比分不联网——各手机各记各的本地账
    （localScores，per court {sa,sb,history} 内存态，刷新即失）；到分 reachedLocal 命中
    自动开 settleWindow（upload 模式），打完 uploadSettle 先传先落（后端
@@ -62,7 +64,6 @@ import {
 import type {
   CheckInAction,
   CheckStatus,
-  DealCourt,
   FeedEvent,
   Game,
   LiveCourt,
@@ -79,7 +80,6 @@ import {
   courtCount,
   courtOfPerson,
   courtSize,
-  fillAllCourts,
   isArrived,
   isIdle,
   pById,
@@ -98,7 +98,7 @@ import { useUserStore } from "./user";
 export { isArrived };
 
 /** 片序换算单点（旧片序 0 起 ↔ 视图/载荷片号 1 起）：记分族动作、确认窗取数、
-    发牌载荷、视图落地共用——换算散写已在批5b 验收官 Nit 销号，新增一律走本函数 */
+    视图落地共用——换算散写已在批5b 验收官 Nit 销号，新增一律走本函数 */
 export function courtNoOf(courtId: number): number {
   return courtId + 1;
 }
@@ -317,7 +317,7 @@ export const useLiveStore = defineStore("live", () => {
     };
   }
 
-  /* ─────── 写链公共件：base 号 / 统一发送 / 发牌上报 ─────── */
+  /* ─────── 写链公共件：base 号 / 统一发送 ─────── */
 
   /** 片级写的 base 号对（动全场只带总号） */
   function seqs(courtNo?: number): {
@@ -346,7 +346,7 @@ export const useLiveStore = defineStore("live", () => {
   /** 统一发送（写动作唯一通道）：api → 响应即最新视图 → applyLiveView 落地；
       - 409 两码（live_stale_total/court）携视图 → applyStaleView 对表 + toast「现场已更新」；
       - 其余错误走 errText（断网「网络不给力，请稍后再试」/后端把关句），
-        并重放所持视图把本地预变（发牌预填等）回滚——下一拍轮询兜底。
+        并重放所持视图回滚本地预变——下一拍轮询兜底。
       返回是否成功（调用方据此决定后续编排与 toast） */
   async function writeAction(
     gameId: number,
@@ -364,26 +364,10 @@ export const useLiveStore = defineStore("live", () => {
     }
   }
 
-  /** 发牌上报（发牌算法在前端，总账把关）：本地把空片补满 → 新填的片组载荷上报；
-      无片可填返 false 不发请求。到场/取消/开账/改单双打后的自动补牌都走这里 */
-  async function maybeDeal(gid: number): Promise<boolean> {
-    const L = live.value;
-    if (!L || !liveView.value) return false;
-    const emptyBefore = new Set(L.courts.filter(isIdle).map((c) => c.id));
-    fillAllCourts(L);
-    const deals: DealCourt[] = L.courts
-      .filter((c) => emptyBefore.has(c.id) && !isIdle(c))
-      .map((c) => ({ courtNo: courtNoOf(c.id), a: [...c.A], b: [...c.B] }));
-    if (!deals.length) return false;
-    return writeAction(gid, () =>
-      apiLiveDeal(gid, deals, liveView.value!.totalSeq),
-    );
-  }
-
   /* ─────── 开账与守门 ─────── */
 
-  /** 开始打球（后端开账路）：apiLiveStart（幂等——已开账直接回视图）→ 视图落地 →
-      开场发牌（已够人的片本地算完上报；新开账全员未到通常为空拍）。
+  /** 开始打球（后端开账路）：apiLiveStart（幂等——已开账直接回视图）→ 视图落地。
+      开场排片真值在响应视图（后端出口；新开账全员未到无队可取，通常无片开）。
       签名沿旧（吃真局对象）——g 只取 id（身份旗在视图），名册展开归后端 */
   async function startLive(g: Game): Promise<string | null> {
     const msg = "球局开始 · 现场已点亮";
@@ -395,7 +379,6 @@ export const useLiveStore = defineStore("live", () => {
       handleWriteError(e);
       return null;
     }
-    await maybeDeal(g.id);
     ui.toast(msg);
     return msg;
   }
@@ -468,7 +451,7 @@ export const useLiveStore = defineStore("live", () => {
   }
 
   /** 到场操作（后端总账路）：apiLiveCheck（ok/late 归一、队尾口径全在后端镜像）→
-      响应视图落地 → 按落定态 toast → 到场支线 maybeDeal（够一片的人数本地算完上报）。
+      响应视图落地即排好（到场补片在后端出口，前端不再补发）→ 按落定态 toast。
       权限（§4.3）：代办他人收权；自己报到/早退随时可。
       （本地遗留路已随批6 切真整段退役——live 只在 applyLiveView 重建、名册行恒为
       视图行（空降/带访客也走后端建行），原 isViewRow 分支即全路径；absent 只读不写
@@ -506,7 +489,6 @@ export const useLiveStore = defineStore("live", () => {
           ? "组织者还没来 · 现场你先管着"
           : `${row.name} 已签到 · 自动加入候场队`,
       );
-      await maybeDeal(gid); // 到场驱动发牌（§4.1 够一片的人数就上片）
     }
   }
 
@@ -584,8 +566,7 @@ export const useLiveStore = defineStore("live", () => {
       );
       if (!ok) return null;
       ui.toast("空降 · 排到队尾");
-      // 空降即报到（§4.1 够一片的人数就上片）：与 setCheck 同权，别漏自动发牌
-      await maybeDeal(gameId);
+      // 空降即报到（§4.1）：够人开片同拍在后端出口办——响应视图落地即排好
       return "已签到 · 进候场区";
     }
     if (isArrived(p.check)) {
@@ -784,8 +765,9 @@ export const useLiveStore = defineStore("live", () => {
     );
   }
 
-  /** 取消对局（§4.7 出口 B，收权）：整场作废不计分，场上的人原样回流队首（后端）；
-      片腾出来由本地重新发牌（发牌在前端）——清扫态（noRedeal，§4.9）不重发。
+  /** 取消对局（§4.7 出口 B，收权）：整场作废不计分，场上的人原样回流队首（后端）。
+      noRedeal 随体透传（清扫态 true，§4.9）：非清扫后端出口已把腾出的片补满
+      （响应视图即排好，前端不再补发）；清扫态后端豁免补片——只清不补好散场（红线）。
       先确认在页面层（A3） */
   async function cancelMatch(courtId: number, noRedeal = false): Promise<void> {
     const L = live.value;
@@ -795,12 +777,11 @@ export const useLiveStore = defineStore("live", () => {
     const no = courtNoOf(courtId);
     const n = c.A.length + c.B.length; // 出发时场上人数（文案）
     const s = seqs(no);
-    const ok = await writeAction(
+    await writeAction(
       gid,
-      () => apiLiveCancel(gid, no, s.baseTotalSeq, s.baseCourtSeq),
+      () => apiLiveCancel(gid, no, s.baseTotalSeq, s.baseCourtSeq, noRedeal),
       () => ui.toast(`对局作废 · 这场不计分 · 场上 ${n} 人回到队首`),
     );
-    if (ok && !noRedeal) await maybeDeal(gid); // §4.7 该片腾出来重新发牌（清扫态除外）
   }
 
   /** 换人（§4.9 球友开放，无 guard）：场上 outId 原位顶坑给候场 inId——
@@ -833,7 +814,7 @@ export const useLiveStore = defineStore("live", () => {
   ): Promise<void> {
     const L = live.value;
     if (!L || count <= 0 || !needFull() || !liveView.value) return;
-    const ok = await writeAction(
+    await writeAction(
       L.g.id,
       () =>
         apiLiveGuests(
@@ -843,7 +824,6 @@ export const useLiveStore = defineStore("live", () => {
         ),
       () => ui.toast(`已带 ${count} 位访客 · 进候场区`),
     );
-    if (ok) await maybeDeal(L.g.id); // 访客到场即带也报到（§4.1 够人就上片）
   }
 
   /** 改分制（2.6 批2 切真：apiLiveRules 收 scoring 写局列——分制复用局列，裁决 Q1）：
@@ -860,7 +840,8 @@ export const useLiveStore = defineStore("live", () => {
   }
 
   /** 改轮换四件套（§4.7 收权，视图路）：点选即生效、在打对局照旧打完；
-      组合回落/连庄口径归总账；换单双打后空片重算发牌（§5 边界：2 人即开赛） */
+      组合回落/连庄口径归总账；换单双打后空片由后端出口按新制补（响应视图即排好，
+      §5 边界：2 人即开赛） */
   async function setRules(patch: Partial<RotationRules>): Promise<void> {
     const L = live.value;
     if (!L || !needFull() || !liveView.value) return;
@@ -869,13 +850,11 @@ export const useLiveStore = defineStore("live", () => {
     if (patch.down !== undefined) input.down = patch.down;
     if (patch.pairing !== undefined) input.pairing = patch.pairing;
     if (patch.champCap !== undefined) input.streakMax = patch.champCap;
-    const gid = L.g.id;
-    const ok = await writeAction(
-      gid,
-      () => apiLiveRules(gid, input, seqs().baseTotalSeq),
+    await writeAction(
+      L.g.id,
+      () => apiLiveRules(L.g.id, input, seqs().baseTotalSeq),
       () => ui.toast("规则已更新 · 下一场起按新规"),
     );
-    if (ok && patch.singles !== undefined) await maybeDeal(gid);
   }
 
   /** 场地输入（2.1 顶条）：本地解析校验（至少 1 片且 ≥ 非空片数）→ 片数上报
@@ -912,16 +891,21 @@ export const useLiveStore = defineStore("live", () => {
     return true;
   }
 
-  /** 自动排阵（收权）：补所有空片（多片同时要人按片号先后）——发牌算法在前端。
-      只有真发出并落账才报「牌已发」：maybeDeal 返 false 是「人还没凑够一片」
-      （差人卡本身常驻提示，无需再报）或「上报失败」（writeAction 已 toast
-      报错）——此前无视返回值一律 toast「牌已发」，失败时假成功话术把报错
-      toast 顶掉，用户看着「排好又消失」却不知败在哪（2026-10-10 事故修复） */
+  /** 一键排阵（全权，2.8 §4.5）：空载荷直调——按下=让后端补满所有空片（多片同时
+      要人按片号先后），取队真值在 live_rotation 单一源；needFull 前端闸保留，
+      后端全权闸兜底。只有响应视图真开出片才报「牌已发」（对比请求前后空片数）：
+      人没凑够一片回 200 空手视图、不报成功话术（差人卡常驻提示，无需再报）；
+      请求失败 writeAction 已 toast 报错——此前无视返回值一律 toast「牌已发」，
+      失败时假成功话术把报错 toast 顶掉（2026-10-10 事故修复，语义沿旧） */
   async function autoDeal(): Promise<void> {
     const L = live.value;
     if (!L || !needFull() || !liveView.value) return;
-    const ok = await maybeDeal(L.g.id);
-    if (ok) ui.toast("牌已发 · 按当前规则排好");
+    const idleBefore = L.courts.filter(isIdle).length;
+    const ok = await writeAction(L.g.id, () =>
+      apiLiveDeal(L.g.id, seqs().baseTotalSeq),
+    );
+    if (ok && (live.value?.courts.filter(isIdle).length ?? 0) < idleBefore)
+      ui.toast("牌已发 · 按当前规则排好");
   }
 
   /* ─────── 散场清扫链（§4.9，批6 切真） ─────── */
@@ -1072,7 +1056,7 @@ export const useLiveStore = defineStore("live", () => {
       // ensurePerson 在途去重，轮询不会打成请求风暴）
       if (p.accountId != null && p.accountId !== useUserStore().me.id)
         void userStore.ensurePerson(p.accountId);
-      u.dupr = p.dupr; // 视图行 dupr 真值直落展示位（发牌均衡配对 duprOf 消费；访客后端回 GUEST_DUPR=2.5）
+      u.dupr = p.dupr; // 视图行 dupr 真值直落展示位（访客后端回 GUEST_DUPR=2.5；均衡配对已收编后端）
       u.id = p.id; // 名册行 id（写动作靶位），与 queue/片位同键
       u.name = p.name; // 开账定格名（注销者占位名/访客编号名照显）
       u.shadow = p.guest || undefined;

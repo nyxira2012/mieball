@@ -148,7 +148,7 @@ function dropinView(): LiveViewApi {
   };
 }
 
-/** 够人版空降视图：候场 4 人全到场（组织者+球友+两位后到+我）——自动发牌支线的靶 */
+/** 够人版空降视图：候场 4 人全到场、后端出口同拍补满 1 号片——响应视图即排好 */
 function dropinDealView(): LiveViewApi {
   const base = liveStartView();
   const extra = (id: number, acc: number): LivePlayerApi => ({
@@ -160,13 +160,23 @@ function dropinDealView(): LiveViewApi {
     ...base,
     total_seq: 2,
     players: [
-      { ...plv(6, "石景山铁腰"), check: "ok" }, // 先到者已到场，进发牌池
-      { ...plv(4, "国贸截击手"), check: "ok" },
-      extra(7, 7),
-      extra(8, 8),
+      { ...plv(6, "石景山铁腰"), check: "ok", court_no: 1, court_side: "a" }, // 先到者随出口落位
+      { ...plv(4, "国贸截击手"), check: "ok", court_no: 1, court_side: "a" },
+      { ...extra(7, 7), court_no: 1, court_side: "b" },
+      { ...extra(8, 8), court_no: 1, court_side: "b" },
       myDropinRow(),
     ],
-    queue: [6, 4, 7, 42],
+    courts: [
+      {
+        court_no: 1,
+        status: "playing",
+        seq: 1,
+        court_seq: 1,
+        scoring: 11,
+        elo_preview: null,
+      },
+    ],
+    queue: [42],
   };
 }
 
@@ -259,21 +269,19 @@ describe("arriveMe（扫码签到）", () => {
     expect(live.liveView!.players.find((r) => r.id === 42)!.dropin).toBe(true); // 底账带空降标（LedgerSheet 视图行直推）
   });
 
-  it("空降报到够一片人数 → 自动发牌上片（修复批：空降支线此前漏 maybeDeal，要手点 ⚡）", async () => {
+  it("空降报到够一片人数 → 响应视图即排好（补片在后端出口：空降响应自带落位，前端零补发）", async () => {
     await seedStore(viewOf());
     const live = useLiveStore();
     await live.ensureLive(107);
     liveApi.apiLiveDropIn.mockResolvedValue(dropinDealView());
-    liveApi.apiLiveDeal.mockResolvedValue(dropinDealView());
 
     await live.arriveMe(107);
 
-    expect(liveApi.apiLiveDeal).toHaveBeenCalledTimes(1);
-    expect(liveApi.apiLiveDeal).toHaveBeenCalledWith(
-      107,
-      [{ courtNo: 1, a: [6, 4], b: [7, 42] }], // 队头一拨，queue 分边 1,2 vs 3,4
-      2, // 出发号 = 空落后的总号
-    );
+    expect(liveApi.apiLiveDeal).not.toHaveBeenCalled();
+    const L = live.live!;
+    expect(L.courts[0].A).toEqual([6, 4]); // 空降响应视图落地即排好
+    expect(L.courts[0].B).toEqual([7, 8]);
+    expect(L.queue).toEqual([42]); // 我排到队尾（够人开片吃不到我）
   });
 
   it("在册未到（正式球友）→ 走报到通道 apiLiveCheck，不重复空降", async () => {

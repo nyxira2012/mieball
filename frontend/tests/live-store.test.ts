@@ -1001,32 +1001,23 @@ describe("结算窗锚代次（批3 修复）", () => {
   });
 });
 
-describe("cancelMatch（§4.7 取消对局：回流队首归总账、片腾出来本地重发）", () => {
-  it("取消：载荷带 no_redeal=false + 两级号、toast 带出发时场上人数；回流够人 → maybeDeal 重发该片", async () => {
+describe("cancelMatch（§4.7 取消对局：回流队首归总账、片腾出来后端出口补）", () => {
+  it("取消：载荷带 no_redeal=false + 两级号、toast 带出发时场上人数；响应视图即排好（后端出口已补片，前端不再补发）", async () => {
     const { live, ui } = await inPlay();
     const back = vPlay(8, {
-      courts: [],
+      courts: [ct(1, "playing")],
       players: vPlay().players.map((p) => ({
         ...p,
-        court_no: null,
-        court_side: null,
-        queue_pos: p.id - 101,
+        queue_pos: null,
       })),
-      queue: [101, 102, 103, 104],
+      queue: [],
     });
     liveApi.apiLiveCancel.mockResolvedValue(back);
-    liveApi.apiLiveDeal.mockResolvedValue(
-      vPlay(9, { courts: [ct(1, "playing")] }),
-    );
     await live.cancelMatch(0);
-    expect(liveApi.apiLiveCancel).toHaveBeenCalledWith(900, 1, 7, 5);
+    expect(liveApi.apiLiveCancel).toHaveBeenCalledWith(900, 1, 7, 5, false);
     expect(ui.toastMsg).toBe("对局作废 · 这场不计分 · 场上 4 人回到队首");
-    expect(liveApi.apiLiveDeal).toHaveBeenCalledWith(
-      900,
-      [{ courtNo: 1, a: [101, 102], b: [103, 104] }], // 发牌算法在前端：队首四人对半分边
-      8,
-    );
-    expect(live.live!.courts[0].A).toEqual([101, 102]); // 重发落定
+    expect(liveApi.apiLiveDeal).not.toHaveBeenCalled(); // 补片在后端出口，前端零补发
+    expect(live.live!.courts[0].A).toEqual([101, 102]); // 落定即重发完
   });
   it("取消收权：球友被拒不发", async () => {
     const { live, ui } = await inPlay(vPlay(7, { admins: [] }));
@@ -1064,9 +1055,9 @@ describe("setCheck（§4.2/4.3 报到四态：归一与队位归总账，发牌�
     expect(live.live!.roster[0]!.check).toBe("late"); // 后端归一（过开球时刻）
     expect(live.live!.queue).toEqual([101]); // 排队尾
     expect(ui.toastMsg).toBe("我 已签到 · 自动加入候场队"); // 2.5 §4.7 统一句：迟到不单说
-    expect(liveApi.apiLiveDeal).not.toHaveBeenCalled(); // 1 人不够一片：不发牌
+    expect(liveApi.apiLiveDeal).not.toHaveBeenCalled(); // 1 人不够一片：前端零补发
   });
-  it("到场驱动发牌（§4.1 够一片的人数就上片）：第 4 人报到 → 本地算完 apiLiveDeal 上报", async () => {
+  it("到场驱动补片（§4.1 够一片的人数就上片）：第 4 人报到，报到响应视图已排好——补片在后端出口", async () => {
     const { live, ui } = await apply(
       vCheck({
         players: [
@@ -1078,26 +1069,45 @@ describe("setCheck（§4.2/4.3 报到四态：归一与队位归总账，发牌�
         queue: [102, 103, 104],
       }),
     );
+    // 报到响应即总账：后端出口同拍把队首 4 人排上 1 号片，视图直接带回
     liveApi.apiLiveCheck.mockResolvedValue(
       vCheck({
         total_seq: 8,
         players: [
-          pl(101, 0, { name: "我", queue_pos: 3 }),
-          pl(102, 5, { name: "亮马河快攻", queue_pos: 0 }),
-          pl(103, 8, { name: "北苑小钢炮", queue_pos: 1 }),
-          pl(104, null, { name: "亮的球友·1", queue_pos: 2 }),
+          pl(101, 0, {
+            name: "我",
+            queue_pos: null,
+            court_no: 1,
+            court_side: "b",
+          }),
+          pl(102, 5, {
+            name: "亮马河快攻",
+            queue_pos: null,
+            court_no: 1,
+            court_side: "a",
+          }),
+          pl(103, 8, {
+            name: "北苑小钢炮",
+            queue_pos: null,
+            court_no: 1,
+            court_side: "a",
+          }),
+          pl(104, null, {
+            name: "亮的球友·1",
+            queue_pos: null,
+            court_no: 1,
+            court_side: "b",
+          }),
         ],
-        queue: [102, 103, 104, 101],
+        courts: [ct(1, "playing")],
+        queue: [],
       }),
     );
-    liveApi.apiLiveDeal.mockResolvedValue(vPlay(9));
     await live.setCheck(101, "ok");
     expect(ui.toastMsg).toBe("我 已签到 · 自动加入候场队"); // 2.5 §4.7 统一句
-    expect(liveApi.apiLiveDeal).toHaveBeenCalledWith(
-      900,
-      [{ courtNo: 1, a: [102, 103], b: [104, 101] }],
-      8,
-    );
+    expect(liveApi.apiLiveDeal).not.toHaveBeenCalled(); // 前端不再补发
+    expect(live.live!.courts[0].A).toEqual([102, 103]); // 落定即排好
+    expect(live.live!.courts[0].B).toEqual([101, 104]); // 半边成员真值（半边内按名册序）
   });
   it("早退（§4.5）：toast 先走句；视图落定清队列位/片位", async () => {
     const { live, ui } = await inPlay();
@@ -1339,7 +1349,7 @@ describe("swapPlayers（§4.9 球友开放：无 guard、全场写只带总号�
   });
 });
 
-describe("setRules / setCourtsInput / autoDeal（§4.7 规则与场地 · 发牌在前端）", () => {
+describe("setRules / setCourtsInput / autoDeal（§4.7 规则与场地 · 排片真值在后端）", () => {
   it("setRules：四件套映射上报（singles→doubles 取反）+ toast「规则已更新 · 下一场起按新规」", async () => {
     const { live, ui } = await inPlay();
     liveApi.apiLiveRules.mockResolvedValue(
@@ -1353,7 +1363,7 @@ describe("setRules / setCourtsInput / autoDeal（§4.7 规则与场地 · 发牌
     );
     expect(live.live!.rules.singles).toBe(true); // 视图落定
     expect(ui.toastMsg).toBe("规则已更新 · 下一场起按新规");
-    expect(liveApi.apiLiveDeal).not.toHaveBeenCalled(); // 候场空无可补
+    expect(liveApi.apiLiveDeal).not.toHaveBeenCalled(); // 空片重排在后端出口，前端零补发
   });
   it("setCourtsInput：『3、4 / 3,4 / 3号、4号』归一 → courtsCount 上报、片名本地挂", async () => {
     const { live, ui } = await inPlay();
@@ -1394,7 +1404,7 @@ describe("setRules / setCourtsInput / autoDeal（§4.7 规则与场地 · 发牌
     expect(two.ui.toastMsg).toBe("在打 + 待开的场地不能收");
     expect(liveApi.apiLiveRules).not.toHaveBeenCalled();
   });
-  it("autoDeal：补所有空片（多片同时要人按片号先后）+ toast「牌已发 · 按当前规则排好」", async () => {
+  it("autoDeal：空载荷直调让后端补所有空片 + toast「牌已发 · 按当前规则排好」（响应视图真开出片才报）", async () => {
     const { live, ui } = await apply(
       vPlay(7, {
         courts_count: 2,
@@ -1426,11 +1436,35 @@ describe("setRules / setCourtsInput / autoDeal（§4.7 规则与场地 · 发牌
     await live.autoDeal();
     expect(liveApi.apiLiveDeal).toHaveBeenCalledWith(
       900,
-      [{ courtNo: 2, a: [105, 106], b: [107, 108] }],
-      7,
+      7, // 空载荷只带出发号；补哪些空片归后端
     );
     expect(live.live!.courts[1]!.A).toEqual([105, 106]); // 落定
     expect(ui.toastMsg).toBe("牌已发 · 按当前规则排好");
+  });
+  it("autoDeal 空手不报「牌已发」（2026-10-10 事故语义）：人没凑够一片回 200 空手视图——请求发了、toast 不出", async () => {
+    const { live, ui } = await apply(
+      vPlay(7, {
+        courts_count: 2,
+        players: [
+          ...vPlay().players,
+          pl(105, 6, { name: "老赵", queue_pos: 0 }),
+        ],
+        queue: [105],
+      }),
+    );
+    liveApi.apiLiveDeal.mockResolvedValue(
+      vPlay(8, {
+        courts_count: 2,
+        players: [
+          ...vPlay().players,
+          pl(105, 6, { name: "老赵", queue_pos: 0 }),
+        ],
+        queue: [105],
+      }),
+    );
+    await live.autoDeal();
+    expect(liveApi.apiLiveDeal).toHaveBeenCalledTimes(1); // 请求照发（后端裁决够不够）
+    expect(ui.toastMsg).toBeFalsy(); // 空片没少：不报成功话术（差人卡常驻提示）
   });
 });
 
@@ -1490,8 +1524,8 @@ describe("setAdmin / unsetAdmin（§4.6 仅组织者：留痕句由视图 feed �
   });
 });
 
-describe("startLive（批5a 后端开账路：apiLiveStart 幂等 → 视图落地 → 开场发牌）", () => {
-  it("开账：视图落地 + toast「球局开始 · 现场已点亮」返 msg；开场已够人的片本地算完上报（重新开账幂等回视图的场面）", async () => {
+describe("startLive（批5a 后端开账路：apiLiveStart 幂等 → 视图落地）", () => {
+  it("开账：视图落地 + toast「球局开始 · 现场已点亮」返 msg；开场排片在响应视图（后端出口），前端零补发", async () => {
     await seedGame(g900());
     const { live, ui } = await load();
     liveApi.apiLiveStart.mockResolvedValue(
@@ -1506,16 +1540,12 @@ describe("startLive（批5a 后端开账路：apiLiveStart 幂等 → 视图落�
         queue: [101, 102, 103, 104],
       }),
     );
-    liveApi.apiLiveDeal.mockResolvedValue(vPlay(8));
     const msg = await live.startLive(g900());
     expect(msg).toBe("球局开始 · 现场已点亮");
     expect(ui.toastMsg).toBe("球局开始 · 现场已点亮");
     expect(live.live!.g.id).toBe(900); // 名册展开归后端：视图直建
-    expect(liveApi.apiLiveDeal).toHaveBeenCalledWith(
-      900,
-      [{ courtNo: 1, a: [101, 102], b: [103, 104] }],
-      7,
-    );
+    expect(live.live!.queue).toEqual([101, 102, 103, 104]); // 落定即总账
+    expect(liveApi.apiLiveDeal).not.toHaveBeenCalled();
     live.stopPolling();
   });
   it("开账失败（非组织者被后端拒/断网）：返 null + toast，不建现场", async () => {
@@ -1782,7 +1812,7 @@ describe("散场清扫链（§4.9，批6）", () => {
       }),
     );
     await live.cancelMatch(0, true);
-    expect(liveApi.apiLiveCancel).toHaveBeenCalledWith(900, 1, 7, 5);
+    expect(liveApi.apiLiveCancel).toHaveBeenCalledWith(900, 1, 7, 5, true);
     expect(liveApi.apiLiveDeal).not.toHaveBeenCalled();
   });
   it("sweepCancelAll 一键：载荷带总号、响应视图落地（残局清单随视图清空）+ toast", async () => {

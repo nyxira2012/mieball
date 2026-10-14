@@ -7,7 +7,6 @@
 import { request } from "./http";
 import type {
   CheckInAction,
-  DealCourt,
   EloRowApi,
   LiveRulesInput,
   LiveView,
@@ -31,14 +30,12 @@ export function apiLiveStart(gameId: number): Promise<LiveViewApi> {
 
 /* ---- 记分链 ---- */
 
-/** 排阵上报（发牌算法在前端）：各片 A/B 必须正好是候场队头那拨，总账把关后落片开打 */
+/** 排阵上报：空载荷只带出发号——补哪些人上位归后端总账，前端不再自算上报各片 A/B */
 export function apiLiveDeal(
   gameId: number,
-  courts: DealCourt[],
   baseTotalSeq: number,
 ): Promise<LiveViewApi> {
   return request("POST", `/games/${gameId}/live/deal`, {
-    courts: courts.map((c) => ({ court_no: c.courtNo, a: c.a, b: c.b })),
     base_total_seq: baseTotalSeq,
   });
 }
@@ -77,17 +74,20 @@ export function apiLiveSettleOverwrite(
   });
 }
 
-/** 取消对局（全权，§4.7）：整场作废不计分，场上的人原样回流队首（取消本就不补位） */
+/** 取消对局（全权，§4.7）：整场作废不计分，场上的人原样回流队首（取消本就不补位）。
+    noRedeal=清扫态本次豁免出口补片（腾出的片不自动重发）；不传=照常由后端补位 */
 export function apiLiveCancel(
   gameId: number,
   courtNo: number,
   baseTotalSeq: number,
   baseCourtSeq: number,
+  noRedeal?: boolean,
 ): Promise<LiveViewApi> {
   return request("POST", `/games/${gameId}/live/cancel`, {
     court_no: courtNo,
     base_total_seq: baseTotalSeq,
     base_court_seq: baseCourtSeq,
+    no_redeal: noRedeal ?? false,
   });
 }
 

@@ -869,6 +869,46 @@ def test_deal_payload_retired_gate_gone(client: TestClient):
     assert after["queue"] == ids[4:]
 
 
+def test_deal_full_power_only(client: TestClient):
+    """验收 10：一键排阵收权（2.8 批3）——事件驱动补片已归写动作出口，手动 deal
+    是全权本事：到场普通球友 403；被封管理员与组织者同权 200（空手幂等）。"""
+    env = open_live(client, seed=42)
+    gid = env["game_id"]
+    v = live_get(client, gid, env["org"]["token"])
+    # 到场普通球友（check=ok，非组织者非管理员）：403
+    r = live_call(
+        client,
+        env["mate"]["token"],
+        gid,
+        "deal",
+        {"base_total_seq": v["total_seq"]},
+    )
+    assert r.status_code == 403 and r.json()["error"]["code"] == "live_forbidden"
+    # 组织者封 mate 为管理员 → 全权随授，一键排阵放行（此刻无空片：空手幂等回视图）
+    mate_row_id = next(
+        r_["id"]
+        for r_ in v["players"]
+        if r_["account_id"] == env["mate"]["account"]["id"]
+    )
+    r = live_call(
+        client,
+        env["org"]["token"],
+        gid,
+        "set-admin",
+        {"player_id": mate_row_id, "base_total_seq": v["total_seq"]},
+    )
+    assert r.status_code == 200, r.text
+    v2 = r.json()  # 封管也是一写动作：号已进，deal 吃新号
+    r = live_call(
+        client,
+        env["mate"]["token"],
+        gid,
+        "deal",
+        {"base_total_seq": v2["total_seq"]},
+    )
+    assert r.status_code == 200, r.text
+
+
 # ---- 2.8 批2：写路径出口补片（验收 2/6/8/9） ----
 
 

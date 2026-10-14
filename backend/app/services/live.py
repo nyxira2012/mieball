@@ -227,15 +227,14 @@ class LiveBook(LiveSweepMixin):
     # ---- 记分链（批2）：发牌上报 → 上传结算/改分重落 → 取消 ----
 
     def deal(self, *, game_id: int, actor_id: int, base_total_seq: int) -> dict:
-        """手动排阵（2.8 §4.5 语义重定）：按下=让后端补满所有空片——取队真值
-        收编后端（live_rotation 单一源），前端不再算牌上报；旧前端的 courts 载荷
-        退役，路由收下即丢（兼容期不报错不校验）。出口补片先填，空手幂等回最新
-        视图——旧 maybeDeal 在写动作后追发来的第二拍不留双开。原「报上来的人必须
-        正好是候场队首」的把关闸随收编删除（验收 3：422 消亡）。权限暂保持到场
-        即可（批3 才收全权——兼容期 maybeDeal 还在调）。"""
+        """手动一键排阵（2.8 §4.5）：按下=让后端补满所有空片——取队真值收编后端
+        （live_rotation 单一源），出口补片即本语义（_finish 默认档），空手幂等回
+        最新视图。全权本事（一键排阵是排批按钮；事件驱动补片已归各写动作出口，
+        普通球友无需再调）：验收 10 非全权 403。载荷只剩出发号（旧 courts 牌面
+        收下即丢的兼容面随前端薄壳批退役，DealIn 已无 courts 字段）。"""
         with self._write(game_id=game_id, actor_id=actor_id):
-            state, _game = self._open_write(game_id)
-            self._require_arrived(game_id, actor_id)
+            state, game = self._open_write(game_id)
+            self._require_full_power(state, game, actor_id)
             self._check_total(state, base_total_seq)
             self._finish(state, game_id=game_id, actor_id=actor_id)
         return self.view(game_id=game_id, viewer_id=actor_id)

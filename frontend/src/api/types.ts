@@ -41,7 +41,7 @@ export interface User {
   cardBg?: CardBg;
   check?: CheckStatus;
   skip?: number; // 剩余歇轮数：歇两轮=2（2.1 文档+原型「候场区点人可设歇两轮」）。
-  // 轮到发牌给他时递减 1（rotate.ts takeFromQueue），归 0 自动归队；0=不在歇
+  // 轮到发牌给他时递减 1（后端 live_rotation 取队消耗），归 0 自动归队；0=不在歇
   fire?: boolean; // 连战：排到队首，与歇互斥（alpha:1631-1633）
   dropin?: boolean; // 空降进场：没报名扫码直入名册（§4.4 全场看得到的标记；线上名单/候补不动）
   arriveAt?: string; // ISO · 首次到场时刻（出勤底账，time.ts toIso 落/isoHm 显）
@@ -642,13 +642,6 @@ export interface LiveView {
 }
 
 /* ---- 写动作载荷（镜像 routes/live.py 请求模型，camel 参数形；snake 线上体在 api/live.ts 逐端点内联） ---- */
-
-/** 排阵上报的一片（DealCourtIn 镜像）：a/b 是名册行 id，发牌算法在前端（rotate.ts） */
-export interface DealCourt {
-  courtNo: number; // 片号，1 起
-  a: number[]; // 非空（A 半边）
-  b: number[];
-}
 
 /** 确认结束（SettleConfirmIn 镜像）：窗内可能调过比分——最终比分与胜方由确认窗定死送来 */
 export interface SettleConfirmInput {

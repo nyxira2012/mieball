@@ -22,20 +22,10 @@ from ..deps import current_account, get_live_book, require_account
 router = APIRouter(prefix="/games/{game_id}/live", tags=["live"])
 
 
-class DealCourtIn(BaseModel):
-    """一片的排阵上报（2.8 退役中）：发牌算法已收编后端，本模型只为旧前端
-    兼容期收下载荷——约束随闸一起卸（收下即丢，不校验），批3 连类删除。"""
-
-    court_no: int
-    a: list[int]
-    b: list[int]
-
-
 class DealIn(BaseModel):
-    """排阵上报（2.8 §4.5 载荷退役）：courts 可选、收下即丢——按下=让后端补满
-    所有空片，旧前端带牌上报不报错。"""
+    """一键排阵（2.8 §4.5）：空载荷只带出发号——按下=让后端补满所有空片，
+    全权闸在 services 层。旧 courts 牌面字段已随前端薄壳批整体删除。"""
 
-    courts: list[DealCourtIn] | None = None
     base_total_seq: int
 
 
