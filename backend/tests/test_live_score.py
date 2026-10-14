@@ -1406,3 +1406,124 @@ def test_swap_in_stamps_court_mark_out_keeps(client: TestClient):
     marks = court_marks(client, gid)
     assert marks[ids[4]] == v["total_seq"]  # 换上即落位盖章
     assert marks[ids[0]] == 1  # 被换下的章不清（只盖不清）
+
+
+# ---- 2.8 批5：轮询条件拉取（验收 12 + 号跳纪律） ----
+
+
+def fee_fingerprint(view: dict) -> int:
+    """视图侧 fee.total 折线上指纹（null=未定 → -1；两向约定的服务端镜像）。"""
+    total = view["fee"]["total"]
+    return -1 if total is None else total
+
+
+def live_pull(
+    client: TestClient,
+    game_id: int,
+    *,
+    total_seq: int,
+    fee_total: int,
+    token: str | None = None,
+):
+    """带指纹的条件拉取：不代 assert 状态码——204/200/404 都是要验的结果。"""
+    return client.get(
+        f"/api/games/{game_id}/live",
+        params={"since_total_seq": total_seq, "since_fee_total": fee_total},
+        headers=auth(token),
+    )
+
+
+def test_pull_steady_204_read_never_bumps_guest_readable(client: TestClient):
+    """验收 12 稳态 + 号跳纪律（读不加号）：带当前两把指纹回 204 空体；连拍两拍
+    都 204——读端点不 bump，稳态拍恒稳态；游客（无钥匙）带指纹同样可读。"""
+    env = open_live(client, seed=91)
+    args = {
+        "total_seq": env["view"]["total_seq"],
+        "fee_total": fee_fingerprint(env["view"]),
+    }
+    r = live_pull(client, env["game_id"], token=env["org"]["token"], **args)
+    assert r.status_code == 204 and r.content == b""
+    r = live_pull(client, env["game_id"], token=env["org"]["token"], **args)
+    assert r.status_code == 204  # 上一拍读完号没跳：稳态不被读破坏
+    r = live_pull(client, env["game_id"], **args)
+    assert r.status_code == 204  # 游客读权限不回归
+
+
+def test_pull_write_returns_full_with_new_seq(client: TestClient):
+    """验收 12 有写：稳态 204 后 tempo 设歇跳号 → 旧指纹回 200 全量且新号；
+    吃新号再拍回 204（快路在新号上继续稳态）。"""
+    env = open_live(client, seed=92)
+    tok, gid = env["org"]["token"], env["game_id"]
+    v = env["view"]
+    fee = fee_fingerprint(v)
+    assert (
+        live_pull(
+            client, gid, token=tok, total_seq=v["total_seq"], fee_total=fee
+        ).status_code
+        == 204
+    )
+    target = next(
+        r["id"] for r in v["players"] if r["account_id"] == env["mate"]["account"]["id"]
+    )
+    v = tempo(client, tok, gid, v, target, "skip")
+    assert v["total_seq"] == env["view"]["total_seq"] + 1
+    r = live_pull(
+        client, gid, token=tok, total_seq=env["view"]["total_seq"], fee_total=fee
+    )
+    assert r.status_code == 200 and r.json()["total_seq"] == v["total_seq"]
+    r = live_pull(client, gid, token=tok, total_seq=v["total_seq"], fee_total=fee)
+    assert r.status_code == 204
+
+
+def test_pull_fee_change_returns_full_without_seq_bump(client: TestClient):
+    """验收 12 改价（指纹带改价的由来）：账单/局簿域直改 games.fee_total 不走
+    live 写链不 bump 号——只比号 204 会把改价闷掉，fee 指纹不同必须回全量；
+    未定价（null）只吃 -1，任意报价都算变了；吃新价再拍回 204。"""
+    env = open_live(client, seed=93)
+    tok, gid = env["org"]["token"], env["game_id"]
+    v = env["view"]
+    assert v["fee"]["total"] is None  # 开账局默认未定价：null 向的基准
+    assert (
+        live_pull(
+            client, gid, token=tok, total_seq=v["total_seq"], fee_total=-1
+        ).status_code
+        == 204
+    )
+    r = live_pull(client, gid, token=tok, total_seq=v["total_seq"], fee_total=99)
+    assert r.status_code == 200  # null ≠ 99：未定价不冒领报价指纹
+    db = client.app.state.session_factory()
+    try:
+        db.get(Game, gid).fee_total = 120  # 模拟局簿域改价：不经 live 号闸
+        db.commit()
+    finally:
+        db.close()
+    r = live_pull(client, gid, token=tok, total_seq=v["total_seq"], fee_total=-1)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["fee"]["total"] == 120
+    assert body["total_seq"] == v["total_seq"]  # 号真没动——fee 指纹兜的就是这个洞
+    r = live_pull(client, gid, token=tok, total_seq=v["total_seq"], fee_total=120)
+    assert r.status_code == 204
+
+
+def test_pull_partial_fingerprint_always_full(client: TestClient):
+    """指纹不全=全量（快路只在两参都带时走）：只带号、只带价、都不带三形照旧。"""
+    env = open_live(client, seed=94)
+    tok, gid = env["org"]["token"], env["game_id"]
+    v = env["view"]
+    base = f"/api/games/{gid}/live"
+    r = client.get(base, params={"since_total_seq": v["total_seq"]}, headers=auth(tok))
+    assert r.status_code == 200 and r.json()["total_seq"] == v["total_seq"]
+    r = client.get(
+        base, params={"since_fee_total": fee_fingerprint(v)}, headers=auth(tok)
+    )
+    assert r.status_code == 200
+    assert client.get(base, headers=auth(tok)).status_code == 200
+
+
+def test_pull_not_opened_404(client: TestClient):
+    """未开账沿现状 404：快路也先过 state 存在性（读 state 行本身完成了）。"""
+    org = signup(client, _ph(95, 1), "o")
+    g = publish(client, org["token"], visibility="public")
+    r = live_pull(client, g["id"], total_seq=0, fee_total=-1)
+    assert r.status_code == 404 and r.json()["error"]["code"] == "live_not_found"

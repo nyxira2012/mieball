@@ -980,6 +980,20 @@ class LiveBook(LiveSweepMixin):
             ],
         }
 
+    def unchanged_since(
+        self, *, game_id: int, since_total_seq: int, since_fee_total: int
+    ) -> bool:
+        """轮询条件拉取的指纹比对（2.8 §4.6）：稳态拍只做两次单行读，不组视图。
+        fee_total 进指纹是因为账单/局簿域改价不 bump live 号（号只记现场总账写）
+        ——光比号，204 会把改价闷掉；未定价（null）按 -1 对表。未开账回 False，
+        调用点落到 view 沿 404 现状；读不加号，真值由测试锁。"""
+        state = self._state_or_none(game_id)
+        if state is None:
+            return False
+        game = self.db.get(Game, game_id)
+        fee = -1 if game.fee_total is None else game.fee_total
+        return state.total_seq == since_total_seq and fee == since_fee_total
+
     # ---- 内部：写动作公共件与两级号机制（全部在 _write_lock 内调用） ----
 
     def _fee_block(self, game: Game, roster: list[LivePlayer] | None = None) -> dict:

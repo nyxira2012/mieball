@@ -1768,7 +1768,10 @@ describe("散场清扫链（§4.9，批6）", () => {
       }),
     );
     await live.startSweep();
-    expect(liveApi.apiLiveView).toHaveBeenCalledWith(900); // 残局判定吃权威数（A4 不自算）
+    expect(liveApi.apiLiveView).toHaveBeenCalledWith(900, {
+      totalSeq: 7,
+      feeTotal: null,
+    }); // 残局判定吃权威数（A4 不自算）；带指纹走条件拉取（2.8 批5）——fixture 无 fee 块折 null
     expect(live.sweepState).toBe(true);
     expect(live.sweepResidues.map((c) => c.status)).toEqual([
       "playing",

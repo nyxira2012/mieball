@@ -18,9 +18,25 @@ import type {
 
 /* ---- 读与开账 ---- */
 
-/** 总账读（可匿名；散场后同一形状=只读回看；未开账 404 live_not_found） */
-export function apiLiveView(gameId: number): Promise<LiveViewApi> {
-  return request("GET", `/games/${gameId}/live`);
+/** 总账读（可匿名；散场后同一形状=只读回看；未开账 404 live_not_found）。
+    since=手里这拍的指纹（totalSeq+改价 feeTotal，null 折 -1）：两参都带时后端
+    稳态回 204 空体、本层落 null（2.8 §4.6 轮询快路）；不带 since 恒全量，
+    故旧调用方拿到的仍非 null（重载保持原签名不变） */
+export function apiLiveView(gameId: number): Promise<LiveViewApi>;
+export function apiLiveView(
+  gameId: number,
+  since?: { totalSeq: number; feeTotal: number | null },
+): Promise<LiveViewApi | null>;
+export function apiLiveView(
+  gameId: number,
+  since?: { totalSeq: number; feeTotal: number | null },
+): Promise<LiveViewApi | null> {
+  const query = since
+    ? `?since_total_seq=${since.totalSeq}&since_fee_total=${
+        since.feeTotal ?? -1
+      }`
+    : "";
+  return request("GET", `/games/${gameId}/live${query}`);
 }
 
 /** 开账（组织者；幂等——已开账直接回视图，散场后再点也只回看不重开） */

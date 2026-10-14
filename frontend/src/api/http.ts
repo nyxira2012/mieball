@@ -181,6 +181,9 @@ export async function request<T>(
             (body as { view?: LiveViewApi })?.view,
           );
     }
+    // 条件拉取空拍（2.8 §4.6）：204 无体，回 null 哨兵——目前唯一消费方是
+    // apiLiveView 带 since 的轮询快路，其余调用不带参不会拿到 204
+    if (res.statusCode === 204) return null as unknown as T;
     trackAct(method, path, true);
     return body as T;
   } catch (e) {

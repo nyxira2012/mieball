@@ -1138,13 +1138,21 @@ export const useLiveStore = defineStore("live", () => {
     if (v.ended) stopPolling(); // 散场即回看（§4.10）：定格视图派生 recap，轮询一并停（远端散场同路）
   }
 
-  /** 拉总账读对表（§4.8）：totalSeq 没变不重建（画面零漂移），返回是否更新供上层
-      决定 toast「现场已更新」。比对拦在 toLiveView 映射之前——号没变映射结果必与
-      现值同（幂等映射），稳态拍不再白造整棵 camel 树（3s 轮询热路径的大头）。
+  /** 拉总账读对表（§4.8）：手里有本局视图就带指纹走条件拉取快路（2.8 §4.6）
+      ——后端稳态回 204 空体（null），空拍直接 false、零重建不进映射；变了回全量，
+      落地前的 totalSeq 比对留作兜底（指纹口径外的漂移不重建）。首拍无指纹恒全量。
       拉读失败静默 false——轮询下一拍再试，写链的 409 对表另走 applyStaleView */
   async function pollLiveView(gameId: number): Promise<boolean> {
     try {
-      const raw = await apiLiveView(gameId);
+      const since =
+        liveView.value?.gameId === gameId
+          ? {
+              totalSeq: liveView.value.totalSeq,
+              feeTotal: liveView.value.fee?.total ?? null,
+            }
+          : undefined;
+      const raw = await apiLiveView(gameId, since);
+      if (raw === null) return false; // 204 空拍：稳态，画面零漂移
       if (
         liveView.value?.gameId === raw.game_id &&
         raw.total_seq === liveView.value.totalSeq

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
 
 from ...core.logs import audit
@@ -132,10 +132,25 @@ class TotalWriteIn(BaseModel):
 @router.get("")
 def live_view(
     game_id: int,
+    since_total_seq: int | None = None,
+    since_fee_total: int | None = None,
     account: Account | None = Depends(current_account),
     book: LiveBook = Depends(get_live_book),
 ):
-    """总账读：游客可读（散场后同一形状即只读回看）；考勤时刻按 viewer 分权。"""
+    """总账读：游客可读（散场后同一形状即只读回看）；考勤时刻按 viewer 分权。
+    两参都带走条件拉取快路（2.8 §4.6）：稳态回 204 空体，任一不同回全量；
+    没带参/只带一个=全量（首拍与写后对表不受影响）。改价指纹必带——账单/局簿域
+    改 fee_total 不 bump live 号，只比号会把改价闷在 204 里。"""
+    if (
+        since_total_seq is not None
+        and since_fee_total is not None
+        and book.unchanged_since(
+            game_id=game_id,
+            since_total_seq=since_total_seq,
+            since_fee_total=since_fee_total,
+        )
+    ):
+        return Response(status_code=204)
     return book.view(game_id=game_id, viewer_id=account.id if account else None)
 
 
