@@ -22,8 +22,8 @@
             <ChibiAvatar :chibi="PARTICIPATE_ROSTER[3]!.chibi" :size="24" />
           </view>
         </view>
-        <view class="t">参与打球指引</view>
-        <view class="s">第一次来？跟着打一遍</view>
+        <view class="t">{{ CARD_TITLES.participate.title }}</view>
+        <view class="s">{{ CARD_TITLES.participate.sub }}</view>
       </view>
 
       <view class="tcard" @click="pick('organize')">
@@ -37,8 +37,8 @@
           </view>
           <text class="pts">⚡</text>
         </view>
-        <view class="t">组织打球指引</view>
-        <view class="s">想自己组局？跟着当一遍组织者</view>
+        <view class="t">{{ CARD_TITLES.organize.title }}</view>
+        <view class="s">{{ CARD_TITLES.organize.sub }}</view>
       </view>
     </view>
 
@@ -50,7 +50,11 @@
 /* 组件直调 store（项目惯例）：点卡=enter，教学模式切换由 live.vue 分支次序接管 */
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import SandboxBanner from "@/components/sandbox/SandboxBanner.vue";
-import { ORGANIZE_ROSTER, PARTICIPATE_ROSTER } from "@/sandbox/data";
+import {
+  CARD_TITLES,
+  ORGANIZE_ROSTER,
+  PARTICIPATE_ROSTER,
+} from "@/sandbox/data";
 import { useSandboxStore } from "@/stores/sandbox";
 
 const sandbox = useSandboxStore();

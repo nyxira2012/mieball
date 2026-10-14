@@ -4,7 +4,7 @@
        点数字加分/冒号旁撤回/长按清零——全走 sandbox store 本地账）；
        idle = 差人卡（还差 N 人 · 候场 M / 需 4 + ⚡灰钮【普通球员如实】 + 去拉人真出口）。
        与真局两处如实降级：假人无档案不显 DUPR 行；⚡ 排阵在参与卡灰着点不动（规格 4.4）。
-       点场上人 emit person——点人抽屉批4 接（教学不干预：点了没反应就是如实） -->
+       点场上人 emit person——开点人抽屉（§4.4「点任何人的头像都开点人抽屉」，权限随卡走） -->
   <view class="sb-matchcard" :class="{ idle: !playing }">
     <!-- ---------- playing：对阵区 ---------- -->
     <template v-if="playing">
@@ -84,6 +84,19 @@
           <text class="sb-nlabel">TEAM B · 记分</text>
         </view>
       </view>
+
+      <!-- 全权工具行（复刻 CourtMatchCard .match-card-tools；非 full 不渲染——
+           「本场完成＋直录」是组织者/管理员的本事，参与卡普通球员没有它）：沙盒只教
+           「本场完成」——开结算窗直录（组织卡第九步，光圈锚 quick-settle）；
+           改分/重排/取消对局不进教学（规格 §6 非目标） -->
+      <view v-if="full" class="sb-tools">
+        <text
+          class="sb-toollink"
+          :class="{ 'sb-glow': sandbox.spot === 'quick-settle' }"
+          @click="emit('settle', court.no)"
+          >本场完成</text
+        >
+      </view>
     </template>
 
     <!-- ---------- idle：差人卡 ---------- -->
@@ -138,6 +151,7 @@ const emit = defineEmits<{
   (e: "point", courtNo: number, side: "a" | "b"): void;
   (e: "undo", courtNo: number): void;
   (e: "clear", courtNo: number): void;
+  (e: "settle", courtNo: number): void;
   (e: "autodeal"): void;
   (e: "pull"): void;
   (e: "person", id: number): void;
@@ -453,6 +467,26 @@ onUnmounted(() => {
 /* 徽章形色在 base.scss 全局类（.badge.rest/.guest），这里只补位 */
 .sb-unit .badge {
   margin-top: 2px;
+}
+
+/* 全权工具行（CourtMatchCard .match-card-tools 同款） */
+.sb-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(245, 241, 232, 0.07);
+}
+.sb-toollink {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.sb-toollink:active {
+  color: var(--lemon);
 }
 
 /* 差人卡 */

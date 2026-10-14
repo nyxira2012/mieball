@@ -245,6 +245,30 @@ export function addCourt(s: SandState): void {
   fillIdle(s);
 }
 
+/** 手动补发兜底（真码 autoDeal 同位）：差人卡【⚡ 自动排阵】的出口——自动补片没成
+    （如断网）时手动补发用。沙盒里补片恒随动作出口自动跑，本函数幂等：无空片可补
+    就原样（fillIdle 对不可发片不动队列、不消耗歇）。 */
+export function autoDeal(s: SandState): void {
+  fillIdle(s);
+}
+
+/** 单片取消（真码 cancelMatch 清扫态 noRedeal 镜像）：这片作废不计分不留战报——
+    场上的人原样回流队首（保名册行序）、片转空、片号前进。豁免补片（散场清扫要
+    清出空片好收工，重发会变出残局）。 */
+export function cancelCourt(s: SandState, courtNo: number): void {
+  const c = s.courts.find((c) => c.no === courtNo);
+  if (!c || (!c.a.length && !c.b.length)) return; // 空片无可取消（重试幂等）
+  s.queue.unshift(
+    ...s.players
+      .filter((p) => c.a.includes(p.id) || c.b.includes(p.id))
+      .map((p) => p.id),
+  );
+  c.a.splice(0, c.a.length);
+  c.b.splice(0, c.b.length);
+  c.mark += 1; // 片号前进（真码 _void_court 落 _bump_court 同款）
+  s.seq += 1;
+}
+
 /** 改分制（真码 rules 账面动作）：全局生效，在打片照旧打完、续场与新片用新制
     （settle 刷新快照兑现「下一场起生效」）。账面动作豁免补片（2.8 口径）。 */
 export function setScoring(s: SandState, scoring: number): void {

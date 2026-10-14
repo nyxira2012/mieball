@@ -15,6 +15,7 @@ import {
   type TutorStep,
 } from "@/sandbox/steps";
 import { reachedLocal } from "@/utils/rotate";
+import { useUiStore } from "@/stores/ui";
 
 export type SandboxMode = "pick" | "participate" | "organize" | "freeroam";
 
@@ -56,8 +57,14 @@ export const useSandboxStore = defineStore("sandbox", () => {
   const step = computed<TutorStep | null>(
     () => curSteps.value?.[stepIdx.value] ?? null,
   );
-  /** 光圈锚 key（steps→组件私有协议：组件挂 :class="{ 'sb-glow': sandbox.spot===锚 }"） */
-  const spot = computed(() => step.value?.spot ?? null);
+  /** 光圈锚 key（steps→组件私有协议：组件挂 :class="{ 'sb-glow': sandbox.spot===锚 }"；
+      函数形随状态解析——组织卡末条 ended 后熄） */
+  const spot = computed(() => {
+    const cur = step.value;
+    const s = state.value;
+    if (!cur || !s) return null;
+    return typeof cur.spot === "function" ? cur.spot(s) : (cur.spot ?? null);
+  });
   /** 当前步已解析的句子（函数步吃状态快照——第 7 条歇没歇两句）：解析单点在这，
       TutorBar 与测试都吃现成串，别各写一份 typeof 分支 */
   const stepText = computed(() => {
@@ -161,14 +168,23 @@ export const useSandboxStore = defineStore("sandbox", () => {
     }
     armCues("step", { step: stepIdx.value + 1 });
     const cur = step.value;
-    if (cur?.autoAfterMs) {
+    const s = state.value;
+    // autoAfterMs 函数形=条件自动步（组织卡末条：ended 才计时收尾巴；进条时未到条件不武装）
+    const raw = cur?.autoAfterMs;
+    const ms =
+      raw == null || s == null
+        ? null
+        : typeof raw === "function"
+          ? raw(s)
+          : raw;
+    if (cur && ms) {
       const at = stepIdx.value;
       autoTimer = setTimeout(() => {
         autoTimer = null;
         if (mode.value === "pick" || stepIdx.value !== at) return; // 手动先做完了不抢翻
         stepIdx.value++;
         onStepEnter();
-      }, cur.autoAfterMs);
+      }, ms);
     }
   }
 
@@ -252,6 +268,179 @@ export const useSandboxStore = defineStore("sandbox", () => {
     settleWindow.value = null;
   }
 
+  /* ---- 权限闸单点（§4.4 权限随卡走）：组织卡=组织者全开；参与卡/随便逛逛=普通
+      球员——只有自己歇/退场与记分/结算，其余动作如实拦下（真局 needFull 同句）。 ---- */
+  const ui = useUiStore();
+  const isFull = computed(() => mode.value === "organize");
+  function needFull(): boolean {
+    if (isFull.value) return true;
+    ui.toast("请找组织者或管理员");
+    return false;
+  }
+  /** 手柄钮闸（歇/连/退/换）：自己随时可、给别人需全权（真局 canOperate 同式）——
+      拦下即提示，钮不隐藏（教学要的就是「点了看见真实待遇」）。
+      语义差位：needFull 是全权闸、本闸是「自己∨全权」闸；拦下分支 isFull 已为假
+      （上方放过），此时 needFull 只带同句 toast——沙盒 needFull 无真局 sealGate，行为等价 */
+  function canOperatePerson(id: number): boolean {
+    const s = state.value;
+    if (!s) return false;
+    if (isFull.value || s.players.find((p) => p.you)?.id === id) return true;
+    return needFull();
+  }
+
+  /* ---- 抽屉族（2.7 批4）：点人/签到代办/规则/散场四扇——开关单槽与点中人都在这
+      （真局 liveSheet 单槽替换同语义），SandboxSheets 直读自驱。 ---- */
+  type SheetKind = "person" | "checkin" | "rules" | "sweep";
+  const sheetKind = ref<SheetKind | null>(null);
+  const personId = ref(0);
+  const personSwap = ref(false); // 换人二段态（点人抽屉内）
+
+  function closeSheet(): void {
+    sheetKind.value = null;
+    personSwap.value = false;
+  }
+  function openPerson(id: number): void {
+    personId.value = id;
+    personSwap.value = false;
+    sheetKind.value = "person";
+  }
+  /** ＋到场：代办工具入口（§4.4 唯一入口级拦截——参与卡/随便逛逛如实拦下） */
+  function tapCheckin(): void {
+    if (!needFull()) return;
+    sheetKind.value = "checkin";
+  }
+  /** 规则抽屉两卡都可开（参与卡只读三保险之一：抽屉内罩层）；freeroam 同 */
+  function openRules(): void {
+    sheetKind.value = "rules";
+  }
+  function openSweep(): void {
+    if (!isFull.value) return; // 散场钮只组织卡渲染，闸在 store 兜底
+    sheetKind.value = "sweep";
+  }
+
+  /* ---- 组织卡编排动作（调 engine → 查表 → 推进步进，同 checkInMe 套路） ---- */
+
+  /** 代办签到（抽屉内【到场】）：到场单点复用 checkInById */
+  function checkInRow(id: number): void {
+    checkInById(id);
+  }
+
+  /** 带访客：称呼用你填的（签到前直接改行上的 name——data.ts 契约），已到场不重带 */
+  function bringGuest(name: string): void {
+    const s = state.value;
+    if (!s || !isFull.value) return;
+    const g = s.players.find((p) => p.guest);
+    if (!g || engine.arrived(g)) return;
+    g.name = name.trim() || g.name;
+    checkInById(g.id);
+  }
+
+  /** 歇/连/取消歇（点人抽屉手柄钮） */
+  function tempo(id: number, action: "skip" | "unskip" | "fire"): void {
+    const s = state.value;
+    if (!s || !canOperatePerson(id)) return;
+    engine.tempo(s, id, action);
+    advanceIf();
+  }
+
+  /** 退场：清队列清场上、关抽屉（真局 onLeave 同编排） */
+  function leavePerson(id: number): void {
+    const s = state.value;
+    if (!s || !canOperatePerson(id)) return;
+    engine.checkIn(s, id, "left");
+    closeSheet();
+    advanceIf();
+  }
+
+  /** 换人二段态开关：进二段要手柄权，返回随时 */
+  function setSwapMode(on: boolean): void {
+    if (on && !canOperatePerson(personId.value)) return;
+    personSwap.value = on;
+  }
+
+  /** 换人落子：换上落位盖章（状态无痕，判据吃事件）——落子即关抽屉（真局同） */
+  function swapWith(inId: number): void {
+    const s = state.value;
+    if (!s || !canOperatePerson(personId.value)) return;
+    engine.swap(s, personId.value, inId);
+    closeSheet();
+    advanceIf({ kind: "swap" });
+  }
+
+  /** 封管理员：只封候场正式球友（访客不行——真局口径；抽屉渲染同闸，store 兜底）。
+      封完武装 admin-set 线索（NPC 调度表：小鹿随后到，第八步的因） */
+  function setAdmin(id: number): void {
+    const s = state.value;
+    if (!s || !isFull.value) return;
+    const p = engine.pOf(s, id);
+    if (p.guest || p.admin || !s.queue.includes(id)) return;
+    engine.setAdmin(s, id);
+    armCues("admin-set");
+    advanceIf();
+  }
+
+  /** 改分制（规则抽屉，全权）：真局 setRuleScore 同句提示「下一场起生效」 */
+  function setScoring(v: number): void {
+    const s = state.value;
+    if (!s || !isFull.value) return;
+    engine.setScoring(s, v);
+    ui.toast(`分制已改为 ${v} 分 · 下一场起生效`);
+    advanceIf();
+  }
+
+  /** ⚡ 兜底钮（差人卡）：自动补片没成时手动补发——engine.autoDeal 幂等 */
+  function autoDeal(): void {
+    const s = state.value;
+    if (!s || !isFull.value) return;
+    engine.autoDeal(s);
+    advanceIf();
+  }
+
+  /** 顶条场地格直填（组织卡第八步「填 2」）：本地解析 1~9，只增不减（减片教学不教
+      ——真局减片也是散场/取消的事）；成败回传给输入框回退展示值（真局 setCourtsInput 同式） */
+  function courtsInput(raw: string): boolean {
+    const s = state.value;
+    if (!s || !isFull.value) return false;
+    const n = Number(raw.match(/\d+/)?.[0]);
+    if (!Number.isFinite(n) || n < 1 || n > 9 || n < s.courtsCount)
+      return false;
+    while (s.courtsCount < n) engine.addCourt(s); // 加片出口自动补片（engine.addCourt 内含）
+    advanceIf();
+    return true;
+  }
+
+  /** 「本场完成」（全权专属，参与卡不教不渲染）：手动开本片结算窗直录——与到分自动
+      开的是同一扇（一次一扇的闸在 settleWindow） */
+  function openSettle(courtNo: number): void {
+    const s = state.value;
+    if (!s || !isFull.value || settleWindow.value) return;
+    const c = s.courts.find((c) => c.no === courtNo);
+    if (!c || (!c.a.length && !c.b.length)) return;
+    settleWindow.value = { courtNo };
+  }
+
+  /** 残局清单行内【取消】（散场清扫）：单片作废回流队首 */
+  function sweepCancelCourt(courtNo: number): void {
+    const s = state.value;
+    if (!s || !isFull.value) return;
+    engine.cancelCourt(s, courtNo);
+  }
+  /** 「未完对局全部取消」一键（真码 sweep_cancel_all 镜像） */
+  function sweepCancelAll(): void {
+    const s = state.value;
+    if (!s || !isFull.value) return;
+    engine.sweepCancelAll(s);
+  }
+  /** 确认散场（抽屉内二次确认后调）：放行落 ended → 抽屉转账单态、提示条换收尾句；
+      重进 onStepEnter 让末条的条件自动步（收尾巴）此刻才计时 */
+  function endGame(): boolean {
+    const s = state.value;
+    if (!s || !isFull.value) return false;
+    const ok = engine.endGame(s);
+    if (ok) onStepEnter();
+    return ok;
+  }
+
   /* ---- 进出与重放 ---- */
 
   /** 自由玩态种子（§4.5/A2 快照）：走到「第一场收完」——你在 1 号场打第二场
@@ -285,6 +474,9 @@ export const useSandboxStore = defineStore("sandbox", () => {
     if (kind !== "freeroam") markCard(kind); // 随便逛逛不落卡标记（本机只落两粒）
     stepIdx.value = 0;
     settleWindow.value = null;
+    sheetKind.value = null; // 抽屉族随局面散（重放/换卡不残留上一局的开着的抽屉）
+    personId.value = 0;
+    personSwap.value = false;
     onStepEnter();
     armCues("enter");
   }
@@ -302,6 +494,9 @@ export const useSandboxStore = defineStore("sandbox", () => {
     state.value = null;
     stepIdx.value = 0;
     settleWindow.value = null;
+    sheetKind.value = null;
+    personId.value = 0;
+    personSwap.value = false;
     for (const k of Object.keys(localScores)) delete localScores[Number(k)];
   }
 
@@ -324,5 +519,29 @@ export const useSandboxStore = defineStore("sandbox", () => {
     clearScore,
     confirmSettle,
     closeSettleWindow,
+    /* 批4：权限闸 + 抽屉族 + 组织卡编排 */
+    isFull,
+    sheetKind,
+    personId,
+    personSwap,
+    closeSheet,
+    openPerson,
+    tapCheckin,
+    openRules,
+    openSweep,
+    checkInRow,
+    bringGuest,
+    tempo,
+    leavePerson,
+    setSwapMode,
+    swapWith,
+    setAdmin,
+    setScoring,
+    autoDeal,
+    courtsInput,
+    openSettle,
+    sweepCancelCourt,
+    sweepCancelAll,
+    endGame,
   };
 });

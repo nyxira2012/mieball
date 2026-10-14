@@ -165,6 +165,16 @@ export const BANNER_GUEST = "示例局 · 登录后这里就是你的现场";
 export const BANNER_GUEST_ACTION = "登录 ▸";
 export const BANNER_LOGGED_IN = "你还没有进行中的球局 · 下面是示例";
 
+/** 两张体验卡的题+副句单一源：SandboxPicker 选卡屏与真局 live.vue teach-ov
+    浮层两屏同貌同吃——改文案只动这里，两处不会劈叉 */
+export const CARD_TITLES = {
+  participate: { title: "参与打球指引", sub: "第一次来？跟着打一遍" },
+  organize: { title: "组织打球指引", sub: "想自己组局？跟着当一遍组织者" },
+};
+
+/** 真局「新手教学」浮层的 kicker 题（同示例局的防误认口径） */
+export const TEACH_OV_TITLE = "示例局 · 不记账不联网";
+
 /** 二维码示意浮层说明句（占位码下的一句，不出真码） */
 export const QR_DEMO_NOTE =
   "真局里，已到场的人都能亮这张码收人——朋友扫了填个称呼就能进场打球";

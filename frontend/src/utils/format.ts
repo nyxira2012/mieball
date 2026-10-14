@@ -43,6 +43,14 @@ export const PAIRING_NAMES: Record<PairingMode, string> = {
   balance: "均衡配对",
 };
 
+/** 局分分制三档单一源（原型 seg-score · 11 快节奏/15 标准局/21 马拉松，2.1 照旧保留）：
+    真局 RulesSheet 与沙盒 SandboxSheets 规则抽屉同吃一份，改文案只动这里 */
+export const SCORE_OPTS = [
+  { value: 11, label: "11", sub: "快节奏" },
+  { value: 15, label: "15", sub: "标准局" },
+  { value: 21, label: "21", sub: "马拉松" },
+];
+
 /** 场地显示名单一源（登记的「3号」→「3号场」；已带「场」不重复加）——
     打球页对局卡/空闲卡与终局结算弹窗 kicker 共用。
     原 courtLabel(courts, idx)（另含序号兜底语义）自诞生起零消费，随 2.4 批2 删除，「+场」语义收编至此。 */

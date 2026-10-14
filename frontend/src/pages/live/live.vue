@@ -59,12 +59,16 @@
 
     <!-- 教学态（2.7 批3）：sandbox store 全屏接管（分支在真局之前——自动态永不
          截胡，§4.7；onLoad 冷启动分发与 onShow 接局照旧，这里只拦渲染）。
-         退出教学后 origin 判定（真局入口原路返回）批4 再说，本批 exit 一律回选卡屏 -->
+         退出教学（含从真局入口进的）：exit 回 pick 后分支次序天然落回真局/选卡屏
+         ——live store 全程没动，无需恢复逻辑 -->
     <template v-else-if="sandbox.mode !== 'pick'">
       <SandboxStage />
     </template>
 
     <template v-else-if="L">
+      <!-- 新手教学入口（2.7 §4.7）：真局在打页顶部常驻一行小字——只认手动点击，
+           示例局绝不自动截胡；回看/死链分支在前面，天然不放这行 -->
+      <view class="teach-row" @click="teachOpen = true">新手教学 ▸</view>
       <view class="live-root">
         <LiveTopbar
           @qr="qrOpen = true"
@@ -98,6 +102,32 @@
           @checkin="onCheckin"
           @arrive="onArriveMe"
         />
+      </view>
+
+      <!-- 真局「新手教学」浮层（2.7 §4.7）：两张体验卡带 ✓（进过即落）；选卡即进
+           教学（sandbox 分支在真局之前天然全屏接管，live store 没动过——教学里
+           「退出教学」回 pick 后本分支原样恢复，画面即原路返回）。点空白处关闭 -->
+      <view
+        class="teach-ov"
+        :class="{ on: teachOpen }"
+        @click="teachOpen = false"
+      >
+        <view class="teach-cards" @click.stop>
+          <view class="teach-kt">{{ TEACH_OV_TITLE }}</view>
+          <view class="teach-duo">
+            <view class="teach-card" @click="pickTeach('participate')">
+              <view v-if="sandbox.doneCards.participate" class="ok">✓</view>
+              <view class="t">{{ CARD_TITLES.participate.title }}</view>
+              <view class="s">{{ CARD_TITLES.participate.sub }}</view>
+            </view>
+            <view class="teach-card" @click="pickTeach('organize')">
+              <view v-if="sandbox.doneCards.organize" class="ok">✓</view>
+              <view class="t">{{ CARD_TITLES.organize.title }}</view>
+              <view class="s">{{ CARD_TITLES.organize.sub }}</view>
+            </view>
+          </view>
+          <view class="teach-x">点空白处关闭 · 退出教学回到这里</view>
+        </view>
       </view>
 
       <!-- 本地弹层：点人（含换人二段）/ 签到 / 队列 / 规则；开新的自动顶旧的（单槽） -->
@@ -196,6 +226,7 @@ import { goMeet } from "@/utils/nav";
 import { shareLink } from "@/utils/share";
 import { gameShareUrl } from "@/utils/deeplink";
 import { DEAD_LINK_MSG } from "@/utils/recap";
+import { CARD_TITLES, TEACH_OV_TITLE } from "@/sandbox/data";
 
 /** 本地弹层槽（单槽替换语义：开新的自动顶旧的；与全局 SheetPayload 互不相干）。
     confirm=危险动作确认（A3）：后果句 + 执行动作，确认后才跑 */
@@ -220,6 +251,13 @@ const full = computed(() => liveStore.isFullPower);
 
 const liveSheet = ref<LocalSheet | null>(null);
 const qrOpen = ref(false);
+/** 真局「新手教学」浮层（§4.7）：选卡即 enter——教学态分支在真局之前接管画面，
+    退出原路返回（exit 回 pick 后本分支自然恢复，无需 origin 记号） */
+const teachOpen = ref(false);
+function pickTeach(kind: "participate" | "organize"): void {
+  teachOpen.value = false;
+  sandbox.enter(kind);
+}
 /** A2 加载中：ensureLive 在途的骨架开关（进页先拉详情的窗口期；hasLive 即撤） */
 const booting = ref(false);
 /** 死链态（2.6 §4.6）：只对带 id 进入生效——ensureLive 判负（真没有/已撤销/断网）
@@ -410,9 +448,9 @@ onLoad((options) => {
   }
 });
 onShow(() => {
-  /* 教学态（2.7）：示例局接管画面期间不接真局不重启轮询（切回 tab 保持教学局面，
-     真局 store 原样等着——退出教学后分支次序自然恢复真局画面）；mode 回 pick 后
-     下次 onShow 走原路 */
+  /* 教学态（2.7）：示例局接管画面期间不接真局不重启轮询（防御闸——onHide 已把教学
+     退到 pick，正常到不了这里；轮询本身不用管：进教学不经 onHide，已活的轮询照跑，
+     教学只是渲染层接管） */
   if (sandbox.mode !== "pick") return;
   if (liveStore.hasLive) {
     liveStore.pendingLiveId = null; // 已开分支不接新局，信号位一并兜底清（残留不跨状态）
@@ -479,6 +517,7 @@ onHide(() => {
   sandbox.exit();
   liveSheet.value = null;
   qrOpen.value = false;
+  teachOpen.value = false;
   liveStore.stopPolling();
 });
 onUnload(() => liveStore.stopPolling());
@@ -506,6 +545,107 @@ onUnload(() => liveStore.stopPolling());
 /* 无 live 空态：自补壳层边距（同默认 .page 顶距口径）+ 原内联间距 */
 .empty-wrap {
   padding: calc(env(safe-area-inset-top) + 14px) 18px;
+}
+
+/* 新手教学入口行（§4.7）：顶条与对局区之间一行小字，常驻不催 */
+.teach-row {
+  flex: none;
+  text-align: center;
+  font-size: 11px;
+  color: var(--dim);
+  padding: 6px 0 0;
+  cursor: pointer;
+}
+.teach-row:active {
+  color: var(--lemon);
+}
+
+/* 真局「新手教学」浮层（§4.7）：轻量两卡组（复用选卡屏卡名/副句/✓ 语言，
+   不整块搬 SandboxPicker——那含横幅与随便逛逛，浮层里没有它们的位置） */
+.teach-ov {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  background: rgba(4, 4, 6, 0.72);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.22s,
+    visibility 0.22s;
+}
+.teach-ov.on {
+  opacity: 1;
+  visibility: visible;
+}
+.teach-cards {
+  width: 82%;
+  max-width: 340px;
+  border: 1px solid rgba(255, 212, 0, 0.25);
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, var(--ink3), var(--ink2));
+  padding: 16px 14px 12px;
+}
+.teach-kt {
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--dim);
+  margin-bottom: 12px;
+}
+.teach-duo {
+  display: flex;
+  gap: 10px;
+}
+.teach-card {
+  position: relative;
+  flex: 1;
+  border: 1px solid rgba(255, 212, 0, 0.28);
+  border-radius: var(--r-md);
+  background: var(--ink2);
+  padding: 16px 10px 14px;
+  text-align: center;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.teach-card:active {
+  transform: scale(0.96);
+  border-color: var(--lemon);
+}
+.teach-card .ok {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--lemon);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+.teach-card .t {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--cream);
+}
+.teach-card .s {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--dim);
+}
+.teach-x {
+  text-align: center;
+  font-size: 11px;
+  color: var(--dim);
+  margin-top: 12px;
 }
 
 /* 加载骨架（A2）：.skel-wrap/.sk 族是全局类（base.scss 单一源，recap 子页同款） */

@@ -17,9 +17,9 @@ export interface TutorEv {
 
 export interface TutorStep {
   text: string | ((s: SandState) => string); // 函数形=随状态换句（第 7 条歇没歇两句/组织卡收尾句）
-  spot?: string; // 光圈锚 key（缺省=无光圈；final 行整行可点）
+  spot?: string | ((s: SandState) => string | null); // 光圈锚 key（缺省=无光圈；函数形=随状态熄——组织卡末条散场后整行是收尾出口，不再指散场钮）
   done?: (s: SandState, ev?: TutorEv) => boolean; // 缺省=不由状态推进（自动步/收尾行归 store）
-  autoAfterMs?: number; // 停 N 毫秒自动进下一条（规格明说的只有参与卡第 7 条停 4 秒，与 final 收尾的几秒收尾巴——5000ms）
+  autoAfterMs?: number | ((s: SandState) => number | null); // 停 N 毫秒自动进下一条（函数形=条件自动步——组织卡末条要等散场收工完才收尾巴，进条时不计时）
   final?: boolean; // 收尾行：点击跳约球页、几秒后收成尾部小条
 }
 
@@ -135,12 +135,14 @@ export const ORGANIZE_STEPS: TutorStep[] = [
     done: (s) => s.matches.length >= 2, // 两片各结算一次
   },
   {
-    // 散场进行中锚散场入口；ended 后换收尾句（规格 4.3 收尾，点击跳发局）
+    // 散场进行中锚散场入口；ended 后换收尾句（规格 4.3 收尾，点击跳发局）、
+    // 光圈熄（出口已不是散场钮）、几秒后收尾巴（「之后同参与卡」——从收尾句起算）
     text: (s) =>
       s.ended
         ? "组织者的事就这些——去发个真局 ▸"
         : "都打完了——散场收工，看看费用怎么摊",
-    spot: "sweep-entry",
+    spot: (s) => (s.ended ? null : "sweep-entry"),
+    autoAfterMs: (s) => (s.ended ? 5000 : null),
     final: true,
   },
 ];

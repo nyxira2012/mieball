@@ -16,13 +16,12 @@
       @click="sandbox.restart()"
       >重新来一遍 ▸</view
     >
-    <!-- final 收尾行：整行可点（真出口：跳约球页——切 tab 触发 onHide，局面照 §4.5 即散） -->
-    <view
-      v-else-if="sandbox.step?.final"
-      class="sb-tutor-line link"
-      @click="goMeet"
-      >{{ sandbox.stepText }}</view
-    >
+    <!-- final 收尾行：整行可点（真出口：跳约球页——切 tab 触发 onHide，局面照 §4.5 即散）。
+         组织卡末条双阶段（规格 A3 第 10 条）：散场进行中它是提示行（点它跳走会经 onHide
+         把教学散掉——出口只在 ended 后的收尾句上） -->
+    <view v-else-if="isExitRow" class="sb-tutor-line link" @click="goMeet">{{
+      sandbox.stepText
+    }}</view>
     <!-- 尾巴态：走完不消失，收窄一行钉在最下 -->
     <view v-else-if="isTail" class="sb-tutor-line dim">{{ TUTOR_TAIL }}</view>
     <view v-else class="sb-tutor-line">{{ sandbox.stepText }}</view>
@@ -45,6 +44,13 @@ const sandbox = useSandboxStore();
 /** 尾巴态 = 两卡步进表走完（stepIdx 推过末条，step 为 null）；freeroam 无表，不算走完 */
 const isTail = computed(
   () => sandbox.mode !== "freeroam" && sandbox.step === null,
+);
+/** final 行何时是「出口」：参与卡末条恒是收尾出口；组织卡末条双阶段——散场收工完
+    （ended）才换成跳发局的收尾句，进行中渲染成普通提示行（光圈指向散场钮） */
+const isExitRow = computed(
+  () =>
+    sandbox.step?.final === true &&
+    (sandbox.mode !== "organize" || sandbox.state?.ended === true),
 );
 </script>
 

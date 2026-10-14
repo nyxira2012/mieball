@@ -3,14 +3,23 @@
        柠檬描边 + 我的轮次一句话 + 我到了 / ＋到场。我的状态句推演吃 engine 状态，
        轮数用真局同式 ceil((每片人数×空片+队列位+1)/每片人数)——不发明第二套。
        参与卡身份随卡走（规格 4.4）：我到了亮着（幕一光圈锚 me-checkin）；
-       ＋到场是代办工具——普通球员点了如实拦下（权限提示由 Stage 编排） -->
+       ＋到场是代办工具——普通球员点了由 store 权限闸如实拦下（批4）；
+       候场头像可点开点人抽屉（§4.4，批4） -->
   <view v-if="s" class="sb-qbar">
     <view class="sb-qmid">
       <view class="sb-qlabel">{{
         s.queue.length ? "下一场" : "全员都在场上"
       }}</view>
       <view class="sb-qavs">
-        <view v-for="id in nextN" :key="id" class="sb-qav">
+        <!-- 候场头像可点（§4.4「点任何人的头像都开点人抽屉」；组织卡第七步
+             「点候场里的凯文」的入口）：光圈亮整个候场排——提示语点名要封谁 -->
+        <view
+          v-for="id in nextN"
+          :key="id"
+          class="sb-qav"
+          :class="{ 'sb-glow': sandbox.spot === 'queue-kevin' }"
+          @click.stop="emit('person', id)"
+        >
           <ChibiAvatar :chibi="pOf(s, id).chibi" :size="26" />
         </view>
       </view>
@@ -41,6 +50,7 @@ import { COURT_SIZE } from "@/sandbox/data";
 const emit = defineEmits<{
   (e: "arrive"): void;
   (e: "checkin"): void;
+  (e: "person", id: number): void;
 }>();
 
 const sandbox = useSandboxStore();
@@ -110,6 +120,7 @@ const SIZE = COURT_SIZE;
   justify-content: center;
   border: 2px solid var(--lemon); /* 下几位高亮 */
   margin-right: -6px;
+  cursor: pointer;
 }
 .sb-qme {
   font-size: 12px;

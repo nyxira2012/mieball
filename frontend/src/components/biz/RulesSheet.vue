@@ -97,7 +97,7 @@ import AppField from "@/components/ui/AppField.vue";
 import AppSeg from "@/components/ui/AppSeg.vue";
 import AppStepper from "@/components/ui/AppStepper.vue";
 import { useLiveStore } from "@/stores/live";
-import { DOWN_NAMES, PAIRING_NAMES } from "@/utils/format";
+import { DOWN_NAMES, PAIRING_NAMES, SCORE_OPTS } from "@/utils/format";
 import type { DownMode, PairingMode } from "@/api/types";
 
 defineProps({
@@ -112,12 +112,6 @@ const rules = computed(() => liveStore.live?.rules);
 const full = computed(() => liveStore.isFullPower);
 const advice = computed(() => liveStore.advice);
 
-/** 原型 seg-score：11 快节奏 / 15 标准局 / 21 马拉松（2.1 照旧保留） */
-const SCORE_OPTS = [
-  { value: 11, label: "11", sub: "快节奏" },
-  { value: 15, label: "15", sub: "标准局" },
-  { value: 21, label: "21", sub: "马拉松" },
-];
 /** 单双打全场统一（§4.1 禁止一片单打一片双打混打）；默认双打（§4.2） */
 const SINGLES_OPTS = [
   { value: "doubles", label: "双打" },

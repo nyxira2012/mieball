@@ -191,3 +191,22 @@ describe("参与卡六幕串联（§4.2：幕三老金小鹿条件触发→幕�
     );
   });
 });
+
+describe("抽屉族与权限闸（2.7 批4：参与卡=普通球员）", () => {
+  it("参与卡改分制不动、规则抽屉照常可开（只读）；退出清抽屉状态（局面散）", async () => {
+    const h = await load();
+    h.enter("participate");
+    h.checkInMe();
+    vi.advanceTimersByTime(2000); // 自动开赛
+    h.setScoring(15); // 普通球员：不动（真局 needFull 同闸；抽屉内罩层点不动是第一层）
+    expect(h.state!.scoring).toBe(11);
+    h.openRules(); // 抽屉照常可开（§4.4 规格原话「规则抽屉照常可开但改不了」）
+    expect(h.sheetKind).toBe("rules");
+    h.openPerson(h.state!.players.find((p) => p.you)!.id); // 点自己头像（幕五入口）
+    expect(h.sheetKind).toBe("person");
+    expect(h.personId).toBe(h.state!.players.find((p) => p.you)!.id);
+    h.exit();
+    expect(h.sheetKind).toBeNull(); // 退出即散（§4.5：卡标记之外不落任何东西）
+    expect(h.personId).toBe(0);
+  });
+});
