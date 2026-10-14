@@ -1,8 +1,8 @@
 """配置 —— 环境变量一次性读入，全项目只经 get_settings() 取用。
 
 开发期零配置可跑：默认 SQLite 落在 backend/mieball.db、固定开发 pepper、
-短信走控制台假发送器（验证码打印到后端日志，对应评审 R1 的发送器抽象）。
-上线前必须设置 MIEBALL_PEPPER 与 MIEBALL_SMS_PROVIDER（见 docs/1.1 §B）。
+短信走控制台假发送器（验证码打印到后端日志，对应发送器抽象）。
+上线前必须设置 MIEBALL_PEPPER 与 MIEBALL_SMS_PROVIDER。
 """
 
 from __future__ import annotations

@@ -1,10 +1,10 @@
-"""live 路由 —— 现场总账的 HTTP 面（读 + 记分链写 + 2.2 域写 + 散场链）：
+"""live 路由 —— 现场总账的 HTTP 面（读 + 记分链写 + 现场管理 + 散场链）：
 纯参数搬运，规则全在 LiveBook。
 
 响应约定同 games：成功体直接是总账视图（写后回最新画面）；防线退回的 409 在
 {"error": {code, message}} 之外再带 "view"（最新总账，前端对表用）。
 写请求一律带 base_total_seq（片级另带 base_court_seq）——出发时看到的两级号；
-check/swap/tempo/rules/封撤管理员/散场链动全场，只走总号（2.3 §4.8-4）。
+动全场写操作只校验总号 base_total_seq。
 """
 
 from __future__ import annotations
@@ -23,15 +23,13 @@ router = APIRouter(prefix="/games/{game_id}/live", tags=["live"])
 
 
 class DealIn(BaseModel):
-    """一键排阵（2.8 §4.5）：空载荷只带出发号——按下=让后端补满所有空片，
-    全权闸在 services 层。旧 courts 牌面字段已随前端薄壳批整体删除。"""
+    """一键排阵：空载荷只带出发版本号，补满当前所有空片，全权权限闸在服务层校验。"""
 
     base_total_seq: int
 
 
 class RedealIn(BaseModel):
-    """重排这片（2.8 §4.4，全权）：取消+立刻重发二合一；按下=担保这场还没人
-    开始记分（责任模型），二次确认与清扫态拦截在前端。"""
+    """重排这片（全权）：取消对局并立刻重新发牌。"""
 
     court_no: int
     base_total_seq: int
@@ -39,8 +37,7 @@ class RedealIn(BaseModel):
 
 
 class SettleConfirmIn(BaseModel):
-    """上传结算（2026-10-09 记分本地化）：记分在各手机本地，这片打完把本地账
-    传上来——胜方/比分全由上传者给定，谁先传先落。"""
+    """上传结算：由到场者将本地比分上传落账，胜方与比分由上传者指定，先传先落。"""
 
     court_no: int
     winner_side: Literal["a", "b"]
@@ -71,7 +68,7 @@ class CancelIn(BaseModel):
 
 
 class CheckIn(BaseModel):
-    """报到四态（2.2 §4.2/4.3/4.5）：player_id 是名册行 id，代办他人需全权。"""
+    """考勤打卡：修改名册行签到状态（ok/late/join/left），代办他人需全权。"""
 
     player_id: int
     check: Literal["ok", "late", "join", "left"]
@@ -79,7 +76,7 @@ class CheckIn(BaseModel):
 
 
 class SwapIn(BaseModel):
-    """换人（2.2 §4.9）：out_id 场上名册行、in_id 候场名册行。"""
+    """换人：out_id 场上名册行、in_id 候场名册行。"""
 
     out_id: int
     in_id: int
@@ -87,7 +84,7 @@ class SwapIn(BaseModel):
 
 
 class TempoIn(BaseModel):
-    """歇连（2.2 §4.10）：skip 按一次叠一轮、fire 连战、unskip 取消休息。"""
+    """歇连节奏：skip 休息一轮、fire 连战、unskip 取消休息。"""
 
     player_id: int
     action: Literal["skip", "fire", "unskip"]
@@ -95,7 +92,7 @@ class TempoIn(BaseModel):
 
 
 class RulesIn(BaseModel):
-    """规则四件套+场地片数+分制（2.2 §4.7 收权 / 2.6 机制A）：全可选，只动显式给的字段。"""
+    """规则四件套与场地参数修改：全可选字段，只更新显式给出的字段。"""
 
     doubles: bool | None = None
     down: Literal["all", "loser", "n1", "n2", "n3"] | None = None
@@ -115,7 +112,7 @@ class PlayerWriteIn(BaseModel):
 
 
 class GuestsIn(BaseModel):
-    """带访客（1.3 附录 B1，全权）：count 位访客挂 guarantor 名册行（账号行）名下。"""
+    """带访客（全权）：指定数量访客挂在 guarantor 名册行（账号行）名下。"""
 
     count: int = Field(ge=1)
     name: str | None = None
@@ -137,10 +134,9 @@ def live_view(
     account: Account | None = Depends(current_account),
     book: LiveBook = Depends(get_live_book),
 ):
-    """总账读：游客可读（散场后同一形状即只读回看）；考勤时刻按 viewer 分权。
-    两参都带走条件拉取快路（2.8 §4.6）：稳态回 204 空体，任一不同回全量；
-    没带参/只带一个=全量（首拍与写后对表不受影响）。改价指纹必带——账单/局簿域
-    改 fee_total 不 bump live 号，只比号会把改价闷在 204 里。"""
+    """总账读取：游客可读（散场后为只读回看态）；考勤时刻按查看者分权。
+    若携带 since_total_seq 与 since_fee_total 且数据未变，返回 204 无内容；
+    任一变化或未带参数时返回全量视图。"""
     if (
         since_total_seq is not None
         and since_fee_total is not None

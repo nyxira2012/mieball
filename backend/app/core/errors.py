@@ -82,7 +82,7 @@ def sms_code_expired() -> ApiError:
     return ApiError(400, "sms_code_expired", "验证码已过期，请重新获取")
 
 
-# ---- 密码钥匙（docs/1.6 §4.8~§4.11）----
+# ---- 密码钥匙 ----
 
 
 def password_exists() -> ApiError:
@@ -98,7 +98,7 @@ def password_too_short() -> ApiError:
 
 
 def password_wrong(remaining: int | None = None) -> ApiError:
-    # 登录/接管语境带剩余次数（连错计数，4.9）；改密语境 None 只提示重输不计锁（4.11）
+    # 登录/接管场景携带剩余重试次数；改密场景只提示重输
     msg = (
         f"密码不对，还可试 {remaining} 次"
         if remaining is not None
@@ -108,7 +108,7 @@ def password_wrong(remaining: int | None = None) -> ApiError:
 
 
 def password_locked(retry_after: int) -> ApiError:
-    # 镜像 sms_cooldown 形状带剩余秒；锁的是"用密码"这条路，短信路照常（4.9 边缘）
+    # 仅锁定密码验证途径，短信验证途径仍可正常进入
     return ApiError(
         429,
         "password_locked",
@@ -116,27 +116,26 @@ def password_locked(retry_after: int) -> ApiError:
     )
 
 
-# ---- 微信钥匙（docs/1.7 第四把；文案即分流指引，前端按 code 提示不解析中文）----
+# ---- 微信钥匙 ----
 
 
 def wechat_off() -> ApiError:
-    # 通道未配置（资质没到位）：维持 1.6 占位语义（原句逐字沿用），配置一填即点亮
+    # 微信通道未配置或资质未就绪
     return ApiError(503, "wechat_off", "微信登录即将开通 · 资质到位后点亮")
 
 
 def wechat_code_invalid() -> ApiError:
-    # 授权凭证过期/已用过（微信侧 5 分钟一次性）：可自愈，重点一次即走通
+    # 授权凭证过期或已使用
     return ApiError(400, "wechat_code_invalid", "微信授权已过期，请再点一次")
 
 
 def wechat_unavailable() -> ApiError:
-    # 微信官方服务不通/网络断：三把旧钥匙完全不受影响
+    # 微信官方服务不可用或网络异常
     return ApiError(503, "wechat_unavailable", "微信登录暂时不可用，可先用短信或密码")
 
 
 def wechat_unbound() -> ApiError:
-    # 占卡「微信验证进入」时该微信从没绑过（4.5 甲）：与「顺手绑在本账号」（甲'）
-    # 同用一句通用话术——两情形用户看同一句话即知下一步
+    # 微信尚未与此账号完成正式绑定，指引使用短信或密码验证
     return ApiError(
         404,
         "wechat_unbound",
@@ -145,7 +144,7 @@ def wechat_unbound() -> ApiError:
 
 
 def wechat_bound_other() -> ApiError:
-    # 该微信绑在另一个账号上：不透露那个账号是谁；换绑走验证顶替（4.5 乙下文）
+    # 该微信已绑定在另一个账号上，不透露具体账号信息
     return ApiError(
         409,
         "wechat_bound_other",
@@ -154,8 +153,7 @@ def wechat_bound_other() -> ApiError:
 
 
 def wechat_binding_weak() -> ApiError:
-    # 绑过这个账号但只是建号时顺手绑的（4.5 甲'）——放行等于给冒填者开门；
-    # 话术与 wechat_unbound 同句（指路是同一句，用户无需分清两情形）
+    # 建号时仅顺手暂存的弱绑定，需通过短信或密码验明正身
     return ApiError(
         403,
         "wechat_binding_weak",
@@ -164,13 +162,12 @@ def wechat_binding_weak() -> ApiError:
 
 
 def wechat_fast_failed() -> ApiError:
-    # 快进建号半路失败（1.8 §4.9-3）：整体不生效不留半个账号，重点一次即走通
+    # 快进建号失败：事务整体回滚不留半个账号
     return ApiError(503, "wechat_fast_failed", "没办成，请再点一次微信授权")
 
 
 def phone_taken_redirect() -> ApiError:
-    # 补绑手机号撞占用（1.8 §4.4-2）：不透露那个账号是谁，指路登录页走短信验证
-    # ——验证收编那一刻微信会自动绑回老账号（话术已把记录留守说清）
+    # 补绑手机号撞占用：不透露账号信息，指路登录页走短信验证
     return ApiError(
         409,
         "phone_taken_redirect",
@@ -180,9 +177,7 @@ def phone_taken_redirect() -> ApiError:
 
 
 def phone_already_bound() -> ApiError:
-    # bind_phone 前置守卫（1.8 §4.4）：账号已有手机号时，凭一张新号验证码自助换绑
-    # = 原根号被静默顶掉释放（被劫持会话 + 攻击者手机号 = 可短信重置密码的持久
-    # 接管），核销验证码前一律拒；换号对齐 1.6 A1 人工口径（联系平台客服）
+    # 账号已有手机号时不开放自助换绑，需联系客服处理
     return ApiError(
         409,
         "phone_already_bound",
@@ -190,7 +185,7 @@ def phone_already_bound() -> ApiError:
     )
 
 
-# ---- 球局域（docs/1.2 技术设计 §2.3；账号域旧码一律不动） ----
+# ---- 球局域 ----
 
 
 def game_not_found() -> ApiError:
@@ -245,20 +240,20 @@ def booking_invalid(msg: str = "订场登记没填好：场地号和总价都要
 
 
 def game_ended() -> ApiError:
-    # 散场确认后总价定死（1.3 §4.5 修订①）：book/clear_booking 的改价窗口已关
+    # 散场确认后总价定死：改价窗口已关闭
     return ApiError(422, "game_ended", "球局已散场，费用已定死")
 
 
-# ---- 账单域（docs/1.3）----
+# ---- 账单域 ----
 
 
 def game_not_ended() -> ApiError:
-    # 出账只挂散场（1.3 §4.7）：没散场的局不收补填总价
+    # 出账仅限散场后：进行中的局不接受补填总价
     return ApiError(422, "game_not_ended", "球局还没散场，散场后才能定总价")
 
 
 def fee_already_set() -> ApiError:
-    # 价格定死不回头（1.3 §4.5 禁止项）：填过（含补 0）就没有第二个口子
+    # 总价定死不可修改：一旦设定（包含设为 0）禁止二次修改
     return ApiError(409, "fee_already_set", "总价已定死，不能再改")
 
 
@@ -267,17 +262,16 @@ def fee_invalid() -> ApiError:
 
 
 def bill_not_found() -> ApiError:
-    # 这场局没有账（未散场/未填价/0 元）——读链（批4）与 settle/receive（批5）用
+    # 当前球局未出账（未散场/未填价/0元免费局）
     return ApiError(404, "bill_not_found", "这场局还没有账")
 
 
 def not_on_bill(msg: str = "你不在这场局的摊钱名单里") -> ApiError:
-    # 本人不在摊钱名单（settle/receive 用，批4）：404 不泄漏别人的账（1.3 §4.6 看账
-    # 边界）；组织者行误点结算/收款走同码分支说话（沿 not_organizer 先例）
+    # 本人不在分摊名单中：404 避免泄漏他人账单
     return ApiError(404, "not_on_bill", msg)
 
 
-# ---- 现场域（docs/2.3；球局域旧码一律不动） ----
+# ---- 现场域 ----
 
 
 def live_not_found() -> ApiError:
@@ -285,17 +279,17 @@ def live_not_found() -> ApiError:
 
 
 def live_ended() -> ApiError:
-    # 散场后旧画面的写动作一律拒收，回这一句（2.3 §4.10/附录 B1）
+    # 散场后旧画面的写动作一律拒收
     return ApiError(409, "live_ended", "球局已结束")
 
 
 def live_stale_total() -> ApiError:
-    # 两级号防线·总号旧（附录 B1）：这笔退回，最新画面随 409 一起送来
+    # 乐观锁两级号防线·总号旧：退回写请求，最新总账视图随 409 一同返回供对表
     return ApiError(409, "live_stale_total", "现场已更新，请看最新画面再操作")
 
 
 def live_stale_court() -> ApiError:
-    # 两级号防线·片号旧（附录 B1）：只拦该片，别片照常
+    # 乐观锁两级号防线·片号旧：仅拦截冲突场地，其余场地正常
     return ApiError(409, "live_stale_court", "这片现场已更新，请看最新画面再操作")
 
 
@@ -304,49 +298,45 @@ def court_idle() -> ApiError:
 
 
 def live_invalid(msg: str) -> ApiError:
-    # 现场写动作的事实把关不成立（分低的一方当不了胜方等）——
-    # 与权限（live_forbidden）、状态机（court_idle）各管一道
+    # 现场写动作事实把关不成立（如分低一方不能当胜方）
     return ApiError(422, "live_invalid", msg)
 
 
 def settle_recorded(sa: int, sb: int) -> ApiError:
-    # 传分冲突（2026-10-09 记分本地化裁决②）：这片有人先传先落了、且记的不是
-    # 你手里的分——不当并发错误吵，把已记比分说清、纠纷引给组织者
+    # 记分冲突：该片已被其他人抢先落账，返回已记比分避免并发覆盖
     return ApiError(409, "settle_recorded", f"已按 {sa}:{sb} 记账 · 有异议找组织者")
 
 
 def live_residue() -> ApiError:
-    # 散场入口即清扫（2.3 §4.9）：残局不清完不放行
+    # 散场入口清扫守卫：残局不清完不放行
     return ApiError(409, "live_residue", "还有没处理完的对局，先逐片处理再散场")
 
 
 def live_duplicate() -> ApiError:
-    # 空降防重（1.3 附录 B1）：同账号已有名册行不得新建——空降行重复点走幂等 200，
-    # 此码拦名册已有非空降本人行（正式球友误走空降通道）等异常路径，防御双行
+    # 空降防重：已在现场名册中的账号不得重复新建名册行
     return ApiError(409, "live_duplicate", "你已在现场名册里")
 
 
 def live_forbidden() -> ApiError:
-    # 现场越权统一句式（沿 2.2）：球友点结束对局类/清零等动作的提示
+    # 现场越权提示
     return ApiError(403, "live_forbidden", "请找组织者或管理员")
 
 
 def organizer_only(msg: str = "只有组织者能做") -> ApiError:
-    # 现场域的组织者独占动作（封撤管理员/散场收局）；与球局域 not_organizer 分码不混用
+    # 现场域组织者独占操作（封撤管理员/散场收局）
     return ApiError(403, "organizer_only", msg)
 
 
-# ---- 开账触发权（docs/2.5 §4/§8 裁决：先成局再开账，正式成员两小时窗） ----
+# ---- 开账触发权 ----
 
 
 def live_requires_forced(msg: str = "先锁定必打，才能开始打球") -> ApiError:
-    # 未成局（报名中/已散场）谁都不能开账，组织者同规（§8 Q3 现有行为收紧）；
-    # 死局（撤局/终止/待处置）同码不同句（msg 分句，2.5 批1 修1 裁决）
+    # 未成局（报名中/已散场）禁止开账
     return ApiError(403, "live_requires_forced", msg)
 
 
 def live_entry_required() -> ApiError:
-    # 开账触发权只到正式报名（候补 app 内不服务，§8 候补裁决）
+    # 开账触发权只向正式报名成员开放
     return ApiError(
         403,
         "live_entry_required",
@@ -355,11 +345,11 @@ def live_entry_required() -> ApiError:
 
 
 def live_too_early() -> ApiError:
-    # 正式成员的开账窗：开打前两小时内（§8 两小时门槛定值裁决）
+    # 正式成员开账窗口：开打前两小时内开放
     return ApiError(403, "live_too_early", "开打前两小时内才能进现场")
 
 
-# ---- ops 读取口守卫（docs/6.1 批4；码进契约总则 §3，具名构造器两边同步）----
+# ---- 运维接口读取鉴权 ----
 
 
 def ops_key_off() -> ApiError:

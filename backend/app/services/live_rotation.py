@@ -1,9 +1,8 @@
-"""live_rotation —— 轮换纯逻辑：取队、分边、空片补满、确认后的人员回流
-（docs/2.4 四件套；2.8 §4.1 收编——「谁上场」全站只剩这一个定义点，前端引擎与
-后端闸的两份拷贝退役）。
+"""live_rotation —— 现场轮换纯逻辑：取队、分边、空片补满、确认后的人员回流。
+谁能上场、如何分边全站统一由此定义。
 
-纯 dict/list 进出、原地更新，不碰 sqlalchemy/快框架（I3.2 解耦：可单测；喂行与
-写回归 LiveBook——live._rotation_rows / _apply_rotation 是喂行契约的唯二出入口）。
+纯 dict/list 进出、原地更新，不依赖 sqlalchemy 与 web 框架（便于独立单测；
+输入输出通过 LiveBook 的 _rotation_rows / _apply_rotation 转换）。
 
 喂行契约（每行 dict 的键）：id / court_no / court_side / check / skip / fire /
 court_mark / rating。缺键按最保守值参与（check 缺=不可发、skip 缺=0、fire 缺=False、
@@ -17,8 +16,7 @@ from __future__ import annotations
 
 from .dupr import GUEST_DUPR
 
-# 算到场口径（2.2 §4.2）：absent 未到 / left 早退不算在场。住纯函数层——取队的可发
-# 判定要用它，而本模块不许反向依赖带 sqlalchemy 的服务模块；live/live_sweep 从这里取
+# 算到场口径：absent 未到 / left 早退不算在场。本模块为纯逻辑层，不依赖数据库模型；live/live_sweep 从这里取
 ARRIVED = ("ok", "late", "join")
 
 
@@ -27,7 +25,7 @@ def _arrived(p: dict | None) -> bool:
 
 
 def _issuable(p: dict | None) -> bool:
-    """可发（镜像 rotate.ts issuable）：到场且不在歇轮——补片前「够不够人」的判定源。"""
+    """可发判定：到场且不在歇轮状态，作为补片前人数是否充足的判定依据。"""
     return _arrived(p) and not p.get("skip")
 
 
@@ -37,17 +35,14 @@ def _tenure_key(p: dict) -> tuple[bool, int]:
 
 
 def _by_tenure(players: list[dict]) -> list[dict]:
-    """资历序（2.4 §4.4「待得最久」）：上场章 court_mark 升序——先上的先下；没章的行
+    """资历序（上场最久者优先下场）：上场章 court_mark 升序——先上的先下；没章的行
     （存量/从未落位）视为最新排最后，彼此并列保持传入序（sorted 稳定）。"""
     return sorted(players, key=_tenure_key)
 
 
 def snake_pick(players: list[dict], n: int) -> list[list[dict]]:
-    """按 DUPR 蛇形均衡分 n 队（2.4 均衡配对，1.4 换源吃 DUPR 积分）：rating
-    降序（同分按传入序，不掷骰子）、蛇形轮发 1..n,n..1——最强+最弱 vs 二三，
-    不让最强的几个挤同队。缺 rating 键按访客分兜底（LiveBook 喂行时
-    恒带值，纯函数缺省只是防御）。镜像 rotate.ts splitSides(balance) 的语义
-    并推广到 n 队。"""
+    """按 DUPR 蛇形均衡分 n 队：rating 降序（同分按传入序）、蛇形轮发 1..n, n..1，
+    最强+最弱 vs 二三，避免强手扎堆。缺 rating 键按访客分兜底。"""
     if n < 1:
         return []
     ranked = sorted(players, key=lambda p: -p.get("rating", GUEST_DUPR))
@@ -60,11 +55,10 @@ def snake_pick(players: list[dict], n: int) -> list[list[dict]]:
 
 
 def take_from_queue(players: list[dict], queue: list[int], n: int) -> list[int]:
-    """队首取 n 人发牌（2.4 §4.8，逐字镜像 rotate.ts takeFromQueue）：连战（fire）
-    优先收——候场序内到场的 fire 者先取、最多 n 个；其余按队序扫描：轮到歇轮者
-    （skip>0）跳过这一轮并消耗一次（原地写回 skip-1）、坑由下一位顶、跳过者保位
-    留队；不可发者（check 不在 ARRIVED）保位留队不动；取满即停——没被轮到的歇轮
-    不消耗。queue 原地重排为剩余序（取走的人出队、其余相对序不变）。
+    """队首取 n 人发牌：连战（fire）优先收——候场序内到场的 fire 者先取、最多 n 个；
+    其余按队序扫描：轮到歇轮者（skip>0）跳过这一轮并消耗一次（原地写回 skip-1）、坑由下一位顶、
+    跳过者保位留队；不可发者（check 不在 ARRIVED）保位留队不动；取满即停——没被轮到的歇轮不消耗。
+    queue 原地重排为剩余序（取走的人出队、其余相对序不变）。
     返回取走的 id（fire 者在前、余按队序）；n<=0 空手不动队。"""
     if n <= 0:
         return []
@@ -96,9 +90,9 @@ def take_from_queue(players: list[dict], queue: list[int], n: int) -> list[int]:
 def _split_sides(
     players: list[dict], ids: list[int], pairing: str | None
 ) -> tuple[list[int], list[int]]:
-    """全新一队分边（2.4 §4.5，ids 已是取队序）：balance 走 snake_pick（最强+最弱 vs
-    二三，同分按队序先后）；queue 按队序对半——第 1、2 位一队、第 3、4 位一队
-    （供给不足奇数时前边多一）。上场永远队序，均衡只管分边不越序挑人。"""
+    """全新一队分边：balance 走 snake_pick（最强+最弱 vs 二三，同分按队序先后）；
+    queue 按队序对半——第 1、2 位一队、第 3、4 位一队（供给不足奇数时前边多一）。
+    上场永远队序，均衡只管分边不越序挑人。"""
     if pairing == "balance":
         by_id = {p["id"]: p for p in players}
         side_a, side_b = snake_pick([by_id[i] for i in ids], 2)
@@ -126,9 +120,8 @@ def _deal_fresh(
 def autofill_idle(
     players: list[dict], courts: list[dict], rules: dict, queue: list[int]
 ) -> list[int]:
-    """空片补满（2.4 §4.3/§4.9，镜像 rotate.ts fillAllCourts）：按片号先后把所有
-    status=idle 的片补满——多片同时要人时候场队按片号序供给；每片 size 吃
-    rules.doubles 当前值（双打 4 / 单打 2；过渡期在打片照旧、新开片按新规）。
+    """空片补满：按片号先后把所有 status=idle 的片补满——多片同时要人时候场队按片号序供给；
+    每片 size 吃 rules.doubles 当前值（双打 4 / 单打 2；在打片照旧打完、新开片按新规）。
     候场里可发人数（到场且不在歇轮）不够一片的留空、不动队列（歇不消耗）。
     原地落行 court_no/court_side、片 dict 翻 status=playing；返回补开的片号
     （供审计与片行落账）。
@@ -154,7 +147,7 @@ def requeue_after_confirm(
     rules: dict,
     queue: list,
 ) -> None:
-    """确认结束后的该片回流（2.3 §4.6-③，四件套按 2.4 真值）——原地更新，只动该片。
+    """确认结束后的该片人员回流与补位：原地更新，只动该片。
 
     players: 全场名册行（喂行契约全键）；只改 court_no 片上行与 queue。
     queue:   候场 id 列表（队首在前）——下场者按资历序入队尾、补位者走 take_from_queue

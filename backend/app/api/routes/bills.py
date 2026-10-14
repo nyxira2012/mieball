@@ -1,4 +1,4 @@
-"""bills 路由 —— 账单域（docs/1.3）的 HTTP 面，前缀 /api/bills。
+"""bills 路由 —— 账单域的 HTTP 面，前缀 /api/bills。
 
 域职责：账单页全视图（GET /api/bills）与两向记账动作（settle・receive）。出账的
 写入口不在这里——散场出账挂在 live 的 end() commit 内、补填总价走 games 路由的
@@ -28,7 +28,7 @@ Period = Literal["7d", "30d", "all"]
 
 
 class ReceiveIn(BaseModel):
-    """收款靶子（§4.4 按人明细里的一行）。"""
+    """收款目标：对应按人分摊明细中的账号行。"""
 
     account_id: int
 
@@ -39,8 +39,7 @@ def list_bills(
     account: Account = Depends(require_account),
     bills: BillBook = Depends(get_bill_book),
 ):
-    """账单页全视图（1.3 §4.6）：登录者的待付/已付 + 应收/已收 + 谁还欠你 +
-    费用未定提醒——SQL 只取 viewer 的行/viewer 组织的局，分权在服务层裁死。"""
+    """账单页全视图：当前登录用户的待付/已付 + 应收/已收 + 欠款人名单 + 费用未定提醒。"""
     return bills.view(account_id=account.id, period=period)
 
 
@@ -51,7 +50,7 @@ def settle_bill(
     account: Account = Depends(require_account),
     bills: BillBook = Depends(get_bill_book),
 ):
-    """点「结算」（§4.3）：本人行 paid_at 置位，终态不可逆；重放幂等回视图。"""
+    """标记结算已付：当前用户该局账单行标记 paid_at，不可逆；重放幂等并返回最新视图。"""
     out = bills.settle(game_id=game_id, account_id=account.id, period=period)
     audit(
         "settle_bill",
@@ -70,7 +69,7 @@ def receive_payer(
     account: Account = Depends(require_account),
     bills: BillBook = Depends(get_bill_book),
 ):
-    """逐人点「已收」（§4.4）：组织者本人（管理员不碰钱，C2），幂等回视图。"""
+    """标记单人已收：仅限组织者本人操作（管理员不可管账），重放幂等并返回最新视图。"""
     out = bills.receive(
         game_id=game_id,
         payer_account_id=body.account_id,

@@ -1,7 +1,7 @@
 """intents 路由 —— 意向簿的 HTTP 面：纯参数搬运，规则全在 IntentBook。
 
-known（与 viewer 打过没打过）是两簿组合视图：在这里用 GameBook.played_mates 对表覆写，
-IntentBook 不反向依赖局簿（技术设计 §3 两簿边界）；游客 viewer 没有 known，恒 False。
+known（与当前查看者是否共同打过球）是组合视图：在此处通过 GameBook.played_mates 对表覆写，
+IntentBook 保持独立不反向依赖局簿；游客没有打球记录，known 恒为 False。
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/intents", tags=["intents"])
 
 
 class IntentIn(BaseModel):
-    """留/改意向表单（4.13）：至少一个时段 + 频率（0/1/2）+ 备注可空。"""
+    """留/改意向表单：至少一个时段 + 频率选项 + 可选备注。"""
 
     slots: list[str]
     frequency: int
@@ -46,7 +46,7 @@ def list_intents(
     book: IntentBook = Depends(get_intent_book),
     games: GameBook = Depends(get_game_book),
 ):
-    """意向列表：谁都能翻（含游客，4.13 评审裁决）；known 两簿组合。"""
+    """意向列表：公开可翻看；known 字段由意向簿与对局记录组合计算。"""
     viewer_id = account.id if account else None
     out = book.list(viewer_id=viewer_id)
     if viewer_id is not None:
@@ -64,14 +64,14 @@ def save_intent(
     account: Account = Depends(require_account),
     book: IntentBook = Depends(get_intent_book),
 ):
-    """留/改意向（4.13）：一人一份；改了想法清已邀标记、重排回前面。"""
+    """留/改意向：一人一份；更新后清除已邀请标记并重新置顶。"""
     out = book.save(
         account_id=account.id,
         slots=body.slots,
         frequency=body.frequency,
         note=body.note,
     )
-    # 意向不挂局：审计行 game_id=None，语境靠 detail（技术设计 §1.3）
+    # 意向不挂靠具体球局：审计日志 game_id 为空，详情记录时段与频率
     audit(
         "save_intent",
         account_id=account.id,

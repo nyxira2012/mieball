@@ -88,16 +88,13 @@ _ENSURE_INDEXES = (
 
 
 # 已从模型退役、但存量库可能还挂着的旧列（与 _NEW_COLUMNS 对偶的删列登记）。
-# create_all 不改旧表：删列若不在启动时清障，旧列里带 NOT NULL 而模型已不写的
-# （live_courts.sa/sb——2026-10-09 记分本地化退役四列）会让首次 INSERT 直接
-# IntegrityError——生产 2026-10-10「发牌八连 500」事故即此（存量表建于 10-08、
-# 删列部署后未清障）。清法不依赖 SQLite 3.35+ 的 DROP COLUMN：借道重建
-# （改名 → 按模型建新表 → 搬交集列 → 删旧表），老内核同样能跑
+# create_all 不会删除已有表中的旧列；如果旧列带有 NOT NULL 约束且新代码不再写入，
+# 会导致首次 INSERT 触发 IntegrityError。清理逻辑借道表重建
+# （改名 → 按新模型建表 → 复制交集列 → 删旧表），兼容各版本 SQLite 内核。
 _DROPPED_COLUMNS = {
-    # 2.3 §8 记分本地化（2026-10-09）：记分归各手机本地账，片行不再存进行中比分
+    # 记分本地化：比分仅保留在各手机本地内存，数据库片行不再持久化进行中比分
     "live_courts": ("sa", "sb", "last_winner_side", "pending_origin"),
-    # 1.4 §10 建号自评废除（2026-10-09，6811bd4）：起步统一 2.5，自评列退役
-    # （可空闲列不炸 INSERT，清掉只为库与模型零残留；生产实测 2026-10-10）
+    # 账号起步分统一为 2.5，清理不再使用的自评列
     "accounts": ("self_rating",),
 }
 
@@ -131,7 +128,7 @@ def _drop_legacy_columns(bind) -> None:
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     factory = make_session_factory(settings.db_url)
-    # 第一版不引 Alembic：启动时建表 + 列级补齐；后续结构大了再上迁移（docs/1.1 §B 量级下够用）
+    # 启动时建表并补齐/清理列，暂不引入外部迁移工具
     bind = factory.kw["bind"]
     Base.metadata.create_all(bind)
     _migrate_columns(bind)

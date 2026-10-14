@@ -50,12 +50,12 @@ class SmsIn(BaseModel):
         "deactivate",
         "set_password",
         "reset_password",
-        "bind_phone",  # 1.8：快进号补绑（判定反转：无账号才发码）
+        "bind_phone",  # 快进号补绑（无账号才发码）
     ]
 
 
 class PhoneBindIn(BaseModel):
-    """补绑确认（1.8 §4.4）：输码绑上，必须收码验证。"""
+    """补绑手机号：校验验证码后绑定到当前账号。"""
 
     phone: str
     code: str
@@ -67,7 +67,7 @@ class RedeemIn(BaseModel):
     purpose: Literal["recovery", "takeover"]
     device_marker: str
     card: CardIn | None = None
-    bind_token: str | None = None  # 1.7：验明正身时刻凭它正式绑微信
+    bind_token: str | None = None  # 验明正身时刻凭此凭条绑定微信
 
 
 class DeactivateIn(BaseModel):
@@ -90,7 +90,7 @@ class PasswordLoginIn(BaseModel):
     phone: str
     password: str
     device_marker: str
-    bind_token: str | None = None  # 1.7：验明正身时刻凭它正式绑微信
+    bind_token: str | None = None  # 验明正身时刻凭此凭条绑定微信
 
 
 class PasswordResetIn(BaseModel):
@@ -115,7 +115,7 @@ class PasswordRedeemIn(BaseModel):
 
 
 class WechatUrlIn(BaseModel):
-    """跳微信授权页的完整地址（1.7 A4）：地址由这边拼好，画面只管跳。"""
+    """跳转微信授权页的完整地址：服务端拼装完成，前端直接跳转。"""
 
     redirect_uri: str
     state: str
@@ -124,10 +124,8 @@ class WechatUrlIn(BaseModel):
 class WechatLoginIn(BaseModel):
     code: str
     device_marker: str
-    # 1.8 快进建号：动作弹的卡（微信内）传 fast=True；登录页不传——unbound 仍走
-    # 1.7 原路发凭条落卡（4.7 防误快进护栏）。修订二：卡上表单两环境同貌，快进
-    # 带的手填字段如数收——昵称手填优先、头像选了落档、手机号没人用建带号账号
-    # （撞占用同机续接窗内直接进既有账号，否则 phone_taken 整体不生效）
+    # 微信快进建号：动作弹卡且在微信内传 fast=True；登录页不传（未绑定时下发绑定凭条落卡）。
+    # 携带名片手填字段：手填昵称优先、所选头像落档、手机号未占用则建带号账号。
     fast: bool = False
     nickname: str | None = None
     phone: str | None = None
@@ -136,7 +134,7 @@ class WechatLoginIn(BaseModel):
 
 
 class WechatRedeemIn(BaseModel):
-    """占卡「微信验证进入」（1.7 §4.4/4.5）：phone=占卡时填的那个号。"""
+    """占卡后微信验证进入：phone 为占卡时填写的手机号。"""
 
     code: str
     phone: str
@@ -145,8 +143,7 @@ class WechatRedeemIn(BaseModel):
 
 
 def _session_out(view: dict, token: str, wechat_bound: bool) -> dict:
-    """五路发钥匙端点共用收口；绑定真成了才带 wechat_bound（画面据此说「已绑上」，
-    没绑上绝不说——1.7 §5 验收锁）。"""
+    """各发钥匙端点共用响应组装；实际完成绑定才返回 wechat_bound=True。"""
     out = {"token": token, "account": view}
     if wechat_bound:
         out["wechat_bound"] = True
@@ -266,7 +263,7 @@ def deactivate(
     return {"ok": True}
 
 
-# ---- 密码钥匙（docs/1.6 §4.8~§4.11）：纯搬运，规则全在 PasswordMixin ----
+# ---- 密码钥匙路由：参数校验与结果组装，规则收口在 PasswordMixin ----
 
 
 @router.post("/password/set")

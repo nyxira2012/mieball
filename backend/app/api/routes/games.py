@@ -2,7 +2,7 @@
 纯参数搬运，规则全在 GameBook。
 
 响应约定同 auth：成功体直接是 game_view（或其列表）；失败体 {"error": {code, message}}。
-时间进出 ISO 8601 +08:00，换算在服务层（契约§2）。
+时间进出统一为 ISO 8601 +08:00，换算收口在服务层。
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/games", tags=["games"])
 
 
 class PublishIn(BaseModel):
-    """发局表单（4.1）。deadline 只在这里出现——没有任何修改入口（不变承诺 3）。"""
+    """发局表单：报名截止时间发布后即定死，不提供修改接口。"""
 
     name: str | None = None
     start_at: datetime
@@ -39,14 +39,13 @@ class PublishIn(BaseModel):
 
 
 class JoinIn(BaseModel):
-    """报名表单（4.3）：带几个人 0-3，缺省 0（自己占 1 坑）。"""
+    """报名表单：带几人 0-3，缺省 0（自己占 1 坑）。"""
 
     bring: int = 0
 
 
 class EditIn(BaseModel):
-    """改局表单（4.6）：全 Optional——None 参沿用原值；deadline 不在表上
-    （截止发布即定死，不变承诺 3）。"""
+    """改局表单：字段可选，None 沿用原值；报名截止时间不可改。"""
 
     name: str | None = None
     start_at: datetime | None = None
@@ -62,20 +61,20 @@ class EditIn(BaseModel):
 
 
 class BookingIn(BaseModel):
-    """订场登记表单（4.7）：场地号几片填几个 + 小票总价（免费填 0）。"""
+    """订场登记表单：场地名称列表 + 小票总价（免费填 0）。"""
 
     courts: list[str]
     fee_total: int
 
 
 class InviteIn(BaseModel):
-    """邀请表单（4.11）：邀谁（被邀不占坑，对方点不点加入随他）。"""
+    """邀请球友加入球局：被邀请人不占名额，加入与否由对方自决。"""
 
     account_id: int
 
 
 class FeeIn(BaseModel):
-    """补填总价表单（1.3 §4.5）：只开给散场过且从未填过价的局；免费的填 0。"""
+    """补填总价表单：只对已散场且从未填过价的局开放；免费填 0。"""
 
     fee_total: int
 
@@ -133,7 +132,7 @@ def my_playlog(
     account: Account = Depends(require_account),
     book: GameBook = Depends(get_game_book),
 ):
-    """打球记录（2.6 §4.4）：三笔规矩算好的局列表 + 累计上场对局数。"""
+    """打球记录：当前用户参与过的球局列表与累计上场对局数。"""
     return book.playlog(account_id=account.id)
 
 
@@ -143,7 +142,7 @@ def game_detail(
     account: Account | None = Depends(current_account),
     book: GameBook = Depends(get_game_book),
 ):
-    """局详情：链接即门票——匿名可看、档位不拦（4.2/4.5）。"""
+    """局详情：公开可看，包含球友与对局信息。"""
     return book.detail(game_id=game_id, viewer_id=account.id if account else None)
 
 
@@ -247,8 +246,7 @@ def game_fee_preview(
     account: Account = Depends(require_account),
     bills: BillBook = Depends(get_bill_book),
 ):
-    """补填确认步定值（1.3 §4.5）：「将按人均 X 元向 N 人出账」——按当前名册
-    现算不落库，组织者本人（管理员不碰钱，C2）。"""
+    """补填总价预览：按当前名册实时计算预计分摊金额，仅组织者本人可查。"""
     return bills.preview(game_id=game_id, organizer_id=account.id, amount=amount)
 
 
@@ -260,8 +258,7 @@ def set_game_fee(
     book: GameBook = Depends(get_game_book),
     bills: BillBook = Depends(get_bill_book),
 ):
-    """补填总价（1.3 §4.5）：>0 当场出账（账单日期仍记散场那天）、=0 只定值
-    不出账；价格就此定死。响应直出局视图（带 bill 块）。"""
+    """补填总价：>0 当场出账、=0 标记免费不出账；设置后金额定死不可修改。"""
     bills.set_fee(game_id=game_id, organizer_id=account.id, fee_total=body.fee_total)
     audit(
         "set_game_fee",

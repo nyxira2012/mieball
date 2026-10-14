@@ -54,13 +54,12 @@ def current_account(
     token: str | None = Depends(bearer_token),
     book: AccountBook = Depends(get_account_book),
 ) -> Account | None:
-    """钥匙无效/已作废/未带 → None（游客处理，不报错，docs/1.1 §B"认人"）。"""
+    """钥匙无效/已作废/未带 → None（按游客处理，静默不报错）。"""
     if not token:
         return None
     account = book.by_token(token)
     if account is not None:
-        # 日志贴「谁」标签（6.1 §B1）：ctx 供同上下文读取；deps 在线程池里跑、
-        # contextvars 拷贝回不到中间件，镜像一份到共享的 request.state
+        # 审计日志上下文记录当前请求者账号 ID；deps 在线程池跑，镜像到 request.state 供中间件读取
         ctx_account.set(account.id)
         request.state.log_account = account.id
     return account
@@ -84,8 +83,7 @@ def client_ip(request: Request) -> str:
 def require_ops_key(
     request: Request, x_ops_key: str | None = Header(default=None, alias="X-Ops-Key")
 ) -> None:
-    """读取口守卫（6.1 批4）：没配 OPS_KEY=口子整个关着；配了但不对这个码→403。
-    具名构造器在 errors.py（码进契约总则 §3，两边同步）。"""
+    """运维日志读取口鉴权守卫：未配置 OPS_KEY 时接口关闭；Key 不匹配抛 403。"""
     settings = request.app.state.settings
     if not settings.ops_key:
         raise errors.ops_key_off()

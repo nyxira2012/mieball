@@ -65,7 +65,7 @@ def _fmt(v: int | str | None) -> str:
 
 
 def _client_label(ua: str) -> str:
-    """端标签（6.1 §B1「用什么端」）：微信小程序 UA 带 miniProgram 字样，其余 web。"""
+    """客户端标签：微信小程序 UA 包含 miniProgram 时标记为 mp，其余为 web。"""
     return "mp" if "miniprogram" in ua.lower() else "web"
 
 
@@ -76,9 +76,7 @@ def audit(
     detail: str | None = None,
     account_id: int | None = None,
 ) -> None:
-    """审计落一笔（spec C1）：不在请求里/没挂账本 → 静默不记。account_id 显式传——
-    deps 在线程池里 set 的 ctx_account 拷贝不进路由（见模块头），批3 埋点从路由
-    手上的 account 传入。"""
+    """记录一笔审计日志：不在请求中或无 Journal 实例时静默忽略。account_id 由调用方显式传入。"""
     j = ctx_journal.get()
     if j is not None:
         j.audit(action, game_id=game_id, detail=detail, account_id=account_id)
@@ -99,7 +97,7 @@ class Journal:
     # ---- 对外写口 ----
 
     def startup(self, note: str) -> None:
-        """启动记号一行——落盘顺带触发一次切换+清理检查（停机错过半夜那趟，spec 4.8）。"""
+        """启动标记行：写入一条启动日志，并触发检查日志文件的按天轮转与历史清理。"""
         self.line("info", note)
 
     def line(self, level: str, msg: str, *, account_id: int | None = None) -> None:
@@ -118,7 +116,7 @@ class Journal:
         account_id: int | None = None,
         client: str = "web",
     ) -> None:
-        """访问流水（spec §6 先全记）：≥400 落 warn 失败行，其余 info 流水行。"""
+        """访问流水：HTTP 状态码 ≥400 记为 warn 警告，正常响应记为 info。"""
         lvl = "warn" if status >= 400 else "info"
         head = self._head(lvl, account_id, client)
         self._emit("app", f"{head}access {method} {path} {status} {ms}ms")
@@ -257,8 +255,7 @@ def game_from_path(path: str) -> int | None:
 
 
 class AccessLogMiddleware(BaseHTTPMiddleware):
-    """计时中间件（main.py 挂最内层）：心跳 200 静默 / 慢警告（慢拍即使 200 也记）/
-    ≥400 失败行 / 其余 access 流水（spec 4.5、§6「流水先全记」）。"""
+    """计时中间件：心跳 200 静默；耗时超过阈值记慢请求警告；≥400 记失败警告；其余记访问流水。"""
 
     def __init__(self, app, journal: Journal, slow_ms: int = 1000) -> None:
         super().__init__(app)
