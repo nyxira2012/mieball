@@ -171,7 +171,7 @@ def main() -> None:
     )
     tokens: dict[str, tuple[int, str]] = {}  # nickname -> (id, token)
     for nickname, phone, chibi in roster:
-        view, token = accounts.signup(
+        view, token, _bound = accounts.signup(  # 三元组（1.8 快进：微信绑没绑上，seed 不消费）
             phone=phone,
             device_marker=f"seed-{phone}",
             nickname=nickname,
@@ -394,17 +394,15 @@ def main() -> None:
             base_total_seq=v["total_seq"],
         )
     # 五场对局——四人各满 5 场正好跨过定级门槛（1.4 §5）。赛制是「确认即开下一场」：
-    # settle_confirm 落账后后端自动回流补位续场（场片保持 playing），deal 只用于
-    # 首场发牌（发牌算法在前端，服务层只把关「发的是候场队头」，种子按队序拼两边）。
+    # settle_confirm 落账后后端自动回流补位续场（场片保持 playing），首场发牌
+    # 走 2.8 收编后的空载荷 deal（全权补所有空片，取队口径在后端单一真值）。
     # 胜方 a/b 交替防连庄一边倒；最后一场 no_redeal 定格（= 组织者散场时对残局
     # 「上传比分」的正路：落账计分但不排下一场），场片回 idle 散场才放行。
     travel(wk(2, 19 * 60 + 45))  # 首场开打
     v = live.view(game_id=g6, viewer_id=uid("老周"))
-    head = v["queue"][:4]
     v = live.deal(
         game_id=g6,
         actor_id=uid("老周"),
-        courts=[{"court_no": 1, "a": head[:2], "b": head[2:]}],
         base_total_seq=v["total_seq"],
     )
     for i, (hi, lo) in enumerate(((11, 9), (11, 7), (11, 6), (12, 10), (11, 8))):

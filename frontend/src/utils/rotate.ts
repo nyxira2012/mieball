@@ -43,7 +43,8 @@ export function reachedLocal(sa: number, sb: number, scoring: number): boolean {
 }
 
 /** 每片人数单一源（双打 4 / 单打 2）——myRound/差人卡同口径，消灭 4 人硬编码。
-    后端取队同值（live_rotation.court_size）；前端只作展示换算，不作发牌依据 */
+    后端取队同值（live_rotation autofill_idle/requeue 内联按 rules.doubles 取 4/2，
+    无独立符号）；前端只作展示换算，不作发牌依据 */
 export const courtSize = (singles: boolean): number => (singles ? 2 : 4);
 
 /** 片数单一源：订场登记优先（片数是花钱定下的默认值），未登记回退 maxPlayers≥12 三片否则两片。
