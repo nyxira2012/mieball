@@ -46,8 +46,9 @@ class LiveSweepMixin:
                 self._void_court(rows, by_id, court)
                 swept = True
             if swept:
-                self._bump_total(state)
-                self.db.commit()
+                # 豁免补片（2.8 §4.2 声明式）：一键清完要能散场，重发会变出残局；
+                # 无残局时原样回视图不进号（重试幂等，在突变前 return）
+                self._finish(state, game_id=game_id, actor_id=actor_id, autofill=False)
         return self.view(game_id=game_id, viewer_id=actor_id)
 
     def end(self, *, game_id: int, actor_id: int, base_total_seq: int) -> dict:
@@ -82,8 +83,8 @@ class LiveSweepMixin:
             # 当场算好，与封存锚/考勤定格一本账原子——半局账或半场封存都不存在；
             # 总价未定/0 元时引擎自行不出（挂提醒等补填）
             BillBook(self.db).generate(game=game)
-            self._bump_total(state)
-            self.db.commit()
+            # 豁免补片（2.8 §4.2 声明式）：账已封存，补片会把在打片留进散场画面
+            self._finish(state, game_id=game_id, actor_id=actor_id, autofill=False)
         return self.view(game_id=game_id, viewer_id=actor_id)
 
     def _admin_may_end(self, state: LiveState, game: Game, actor_id: int) -> bool:

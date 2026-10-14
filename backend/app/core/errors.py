@@ -304,7 +304,7 @@ def court_idle() -> ApiError:
 
 
 def live_invalid(msg: str) -> ApiError:
-    # 现场写动作的事实把关不成立（发牌名单不在候场队首 / 胜方比分更低等）——
+    # 现场写动作的事实把关不成立（分低的一方当不了胜方等）——
     # 与权限（live_forbidden）、状态机（court_idle）各管一道
     return ApiError(422, "live_invalid", msg)
 

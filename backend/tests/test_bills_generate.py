@@ -208,8 +208,11 @@ def test_absent_left_dropin_all_billed_waitlist_never(client: TestClient):
         client,
         gid,
         {
-            4: {"check": "left"},  # 早退
+            2: {"check": "absent", "queue_pos": None},  # 缺席
+            3: {"check": "absent", "queue_pos": None},  # 缺席
+            4: {"check": "left", "queue_pos": None},  # 早退
             5: {"check": "absent", "queue_pos": None},  # 缺席
+            # 2.8 报到路补片：可发压到 3 人，空降不点亮空片（本测管账不管轮转）
         },
     )
     stranger = signup(client, "13800060005", "s")
@@ -442,6 +445,12 @@ def test_fee_guards(client: TestClient):
     gid = env["game_id"]
     org_tok, mate = env["org"]["token"], env["mate"]
     rows = env["view"]["players"]
+    # 留三人候场：封管理员是成功写、会触发出口补片，别点亮空片挡了后面散场
+    seed_rows(
+        client,
+        gid,
+        {i: {"check": "absent", "queue_pos": None} for i in (3, 4, 5)},
+    )
     r = set_fee(client, org_tok, gid, 700)  # 未散场：组织者本人也拦
     assert r.status_code == 422 and r.json()["error"]["code"] == "game_not_ended"
     r = set_fee(client, mate["token"], gid, 700)  # 球友不碰钱

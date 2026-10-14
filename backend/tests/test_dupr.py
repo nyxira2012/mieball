@@ -321,13 +321,12 @@ def test_balance_pairing_snakes_by_dupr(client: TestClient):
     env = open_live(client, seed=105, players=6, rules={"pairing": "balance"})
     rows = env["view"]["players"]
     org, m1, _m2, _m3, m4, m5 = rows
-    # 回流发牌在结算事务内、派分行覆写前——代位分靠预埋缓存行拉开档位差
-    # （m5 4.0 / m1 3.5 / org 3.0；m4 无行=起步 2.5）
+    # 档位差下在不上首场的两人身上（m5 4.0 / m4 2.0）：org/m1 打首场，派生分
+    # 会被首场重放覆写——覆写后仍落在 2.0~4.0 带内，排序对首场分边不敏感
     seed_dupr_row(client, m5["account_id"], 4.0)
-    seed_dupr_row(client, m1["account_id"], 3.5)
-    seed_dupr_row(client, org["account_id"], 3.0)
+    seed_dupr_row(client, m4["account_id"], 2.0)
 
-    # 蛇形吃 DUPR：最强 m5(4.0)+最弱 m4(2.5) vs m1(3.5)+org(3.0)
+    # 蛇形吃 DUPR：最强+最弱一队、二三一队
     # （旧 1500 默认会按队序排成 [m4,m5] vs [org,m1]）
     v = settled_11_9(client, env)
     assert side_ids(v, 1, "a") == {m5["id"], m4["id"]}
@@ -340,9 +339,17 @@ def test_settle_only_recomputes_involved(client: TestClient):
     v = settled_11_9(client, env)
     first = dupr_rows(client, org_id)[org_id]
 
-    # 第二场（候场首 4 人补位）不涉及 org：他的派生分与明细零动（重算幂等）
-    # ——org 虽不在场上，到场者传他所见的本地分照常收
-    r = confirm(client, env["org"]["token"], env["game_id"], v, score_a=11, score_b=0)
+    # 第二场（2 号片——报到路补片在开片时就点亮了）不涉及 org：他的派生分与
+    # 明细零动（重算幂等）——org 虽不在场上，到场者传他所见的本地分照常收
+    r = confirm(
+        client,
+        env["org"]["token"],
+        env["game_id"],
+        v,
+        court_no=2,
+        score_a=11,
+        score_b=0,
+    )
     assert r.status_code == 200, r.text
     again = dupr_rows(client, org_id)[org_id]
     assert (again.rating, again.games) == (first.rating, 1)

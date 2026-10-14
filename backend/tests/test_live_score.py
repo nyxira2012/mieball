@@ -28,6 +28,13 @@ from app.services import dupr
 from .conftest import auth, signup
 from .test_games_actions import join_ok
 from .test_games_read import publish
+from .test_logs import audit_rows, make_client
+
+
+def audit_row_of(rows: list[dict], action: str) -> dict:
+    # 局部副本（test_audit 同名件）：score 被 test_audit 间接依赖，反向 import 成环
+    return next(r for r in rows if r["action"] == action)
+
 
 NOW_ISO = "2026-10-04T12:00:00+08:00"  # FakeClock 基点（conftest）
 
@@ -652,18 +659,39 @@ def test_overwrite_full_power_only_and_idempotent(client: TestClient):
     assert (rt1.rating, rt1.play, rt1.win) == (rt0.rating, rt0.play, rt0.win)
 
 
-# ---- 取消对局（§4.7）：作用面收为 playing，其余照旧 ----
+# ---- 取消对局（§4.7）：非清扫取消回流即重发（2.8 验收 3），清扫态只清不补 ----
 
 
-def test_cancel_on_playing_returns_players_to_queue_head(client: TestClient):
+def test_cancel_refills_right_away_recognizing_skip(client: TestClient):
+    """验收 3（422 消亡）：非清扫取消回流队首 → 出口自动重发认歇——含歇者在
+    取人窗口不再被打回；作废不留战报、积分零动。"""
     env = open_live(client, seed=11)
     rows = env["view"]["players"]
-    oncourt = [r["id"] for r in rows[:4]]
+    gid, tok = env["game_id"], env["org"]["token"]
+    v = deal_one(client, env)
+    v = tempo(client, tok, gid, v, rows[2]["id"], "skip")  # 场上设歇
+    r = live_call(client, tok, gid, "cancel", write_body(v, 1))
+    assert r.status_code == 200, r.text
+    v = r.json()
+    # 回流即重发：歇者 2 被跳过（消耗一次）、坑由 3/4 顶
+    assert court(v, 1)["status"] == "playing"
+    assert side_ids(v, 1, "a") == {rows[0]["id"], rows[1]["id"]}
+    assert side_ids(v, 1, "b") == {rows[3]["id"], rows[4]["id"]}
+    assert player(v, rows[2]["id"])["skip"] == 0
+    assert v["queue"] == [rows[2]["id"], rows[5]["id"]]
+    assert v["matches"] == []  # 作废不留战报
+    assert ratings(client, rows[0]["account_id"])[rows[0]["account_id"]].play == 0
 
-    v = deal_one(client, env)  # 在打取消
-    r = live_call(
-        client, env["org"]["token"], env["game_id"], "cancel", write_body(v, 1)
-    )
+
+def test_cancel_sweep_variant_only_clears(client: TestClient):
+    """清扫态取消（no_redeal 声明豁免）：只清不补——场上的人原样回流队首、
+    片留空好散场。"""
+    env = open_live(client, seed=16)
+    rows = env["view"]["players"]
+    gid, tok = env["game_id"], env["org"]["token"]
+    v = deal_one(client, env)
+    oncourt = [r["id"] for r in rows[:4]]
+    r = live_call(client, tok, gid, "cancel", write_body(v, 1) | {"no_redeal": True})
     assert r.status_code == 200, r.text
     v = r.json()
     assert v["queue"] == [*oncourt, rows[4]["id"], rows[5]["id"]]  # 原样回流队首
@@ -799,10 +827,13 @@ def test_anonymous_can_read_view(client: TestClient):
     assert len(v["players"]) == 3 and v["courts"] == [] and v["matches"] == []
 
 
-# ---- deal 把关（总账只认事实：名册内 + 候场队头顺位） ----
+# ---- 排阵上报载荷退役（2.8）：收下即丢、闸随收编删除 ----
 
 
-def test_deal_validates_roster_and_queue_head(client: TestClient):
+def test_deal_payload_retired_gate_gone(client: TestClient):
+    """验收 3 后半：旧牌面（名册外/跳位/在打片重复发）一律收下即丢不再校验，
+    「发牌的人不在候场队首」在发牌链无触发路径；实际动作=按后端真值补所有
+    空片，空手幂等回最新视图不双开。"""
     env = open_live(client, seed=19)
     v = env["view"]
     ids = [r["id"] for r in v["players"]]
@@ -812,12 +843,16 @@ def test_deal_validates_roster_and_queue_head(client: TestClient):
         env["game_id"],
         "deal",
         {
-            "courts": [{"court_no": 1, "a": [999], "b": [ids[1]]}],
+            "courts": [{"court_no": 1, "a": [999], "b": []}],
             "base_total_seq": v["total_seq"],
         },
     )
-    assert r.status_code == 422 and r.json()["error"]["code"] == "live_invalid"
-    r = live_call(  # 跳位：队头 4 人不取、直取队尾
+    assert r.status_code == 200, r.text  # 旧「名册外的人」422 消亡
+    v = r.json()
+    assert court(v, 1)["status"] == "playing"  # 实际=后端按候场队首补片
+    assert side_ids(v, 1, "a") == {ids[0], ids[1]}
+    # 跳位牌面 + 在打片再来一手（旧 422 两连）：照单全收、空手不双开
+    r = live_call(
         client,
         env["org"]["token"],
         env["game_id"],
@@ -827,19 +862,265 @@ def test_deal_validates_roster_and_queue_head(client: TestClient):
             "base_total_seq": v["total_seq"],
         },
     )
-    assert r.status_code == 422 and r.json()["error"]["code"] == "live_invalid"
+    assert r.status_code == 200, r.text
+    after = r.json()
+    assert after["total_seq"] == v["total_seq"] + 1  # 空手也是一写动作：恰一 bump
+    assert court(after, 1)["seq"] == 1  # 片号没进：不双开
+    assert after["queue"] == ids[4:]
+
+
+# ---- 2.8 批2：写路径出口补片（验收 2/6/8/9） ----
+
+
+def seed_row(client: TestClient, player_id: int, **kw) -> None:
+    """直落一行名册真值（本册局部改态用；批量版在 test_live_end.seed_rows）。"""
+    from app.db.models import LivePlayer as LP
+
+    db = client.app.state.session_factory()
+    try:
+        row = db.get(LP, player_id)
+        for k, val in kw.items():
+            setattr(row, k, val)
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_idle_fill_skips_queue_skipper_and_consumes(client: TestClient):
+    """验收 2（歇·空片路）：歇者坐取人窗口 → 补片跳过他、坑由下位顶、skip 消耗
+    一次、保位留队（报到路触发）。"""
+    env = open_live(client, seed=91, players=5)
+    gid, tok = env["game_id"], env["org"]["token"]
+    ids = [r["id"] for r in env["view"]["players"]]
+    seed_row(client, ids[3], check="absent", queue_pos=None)  # 拉薄候场防抢补
+    v = live_get(client, gid, tok)
+    v = tempo(client, tok, gid, v, ids[0], "skip")  # 队首设歇：可发 3 < 4，不补
+    assert v["courts"] == [] and player(v, ids[0])["skip"] == 1
+    # 报到凑齐第四个可发人：补片跳过歇者、坑由下位顶
+    r = live_call(
+        client,
+        tok,
+        gid,
+        "check",
+        {"player_id": ids[3], "check": "ok", "base_total_seq": v["total_seq"]},
+    )
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert court(v, 1)["status"] == "playing"
+    assert side_ids(v, 1, "a") == {ids[1], ids[2]}
+    assert side_ids(v, 1, "b") == {ids[4], ids[3]}
+    assert player(v, ids[0])["skip"] == 0  # 轮到即消耗一次
+    assert v["queue"] == [ids[0]]  # 保位：歇者仍坐队首
+
+
+def test_write_exit_refills_idle_court_per_endpoint(client: TestClient):
+    """验收 6 前半：报到/空降/换人/取消/改规则/tempo 成功后空片被顺手补满
+    （逐端点）。前两段用「七人可发、差一个可发人」的世界——写动作自己凑齐
+    第四人；后四段用「两片全开再清扫态腾空 2 号片」的世界——片空、候场够一片。"""
+
+    def scene_thin(seed: int):
+        # 9 人名册、2 人缺席：开 1 号片后候场可发 3 人，2 号片空着等第四人
+        env = open_live(client, seed=seed, players=9)
+        for i in (7, 8):
+            seed_row(
+                client,
+                env["view"]["players"][i]["id"],
+                check="absent",
+                queue_pos=None,
+            )
+        return env, deal_one(client, env)
+
+    def scene_vacant(seed: int):
+        # 9 人全到：两片全开，再清扫态取消 2 号片（只清不补）腾出空片
+        env = open_live(client, seed=seed, players=9)
+        v = deal_one(client, env)
+        v = live_call(
+            client,
+            env["org"]["token"],
+            env["game_id"],
+            "cancel",
+            write_body(v, 2) | {"no_redeal": True},
+        ).json()
+        assert court(v, 2)["status"] == "idle"
+        return env, v
+
+    env, v = scene_thin(61)  # 报到：第四个可发人进队即点亮
+    r = live_call(
+        client,
+        env["org"]["token"],
+        env["game_id"],
+        "check",
+        {
+            "player_id": env["view"]["players"][7]["id"],
+            "check": "ok",
+            "base_total_seq": v["total_seq"],
+        },
+    )
+    assert r.status_code == 200 and court(r.json(), 2)["status"] == "playing"
+
+    env, v = scene_thin(62)  # 空降
+    stranger = signup(client, "13800036201", "d")
+    r = live_call(
+        client,
+        stranger["token"],
+        env["game_id"],
+        "dropin",
+        {"base_total_seq": v["total_seq"]},
+    )
+    assert r.status_code == 200 and court(r.json(), 2)["status"] == "playing"
+
+    env, v = scene_vacant(63)  # 换人（不改变可发数，出口照补）
+    rows = env["view"]["players"]
+    r = live_call(
+        client,
+        env["org"]["token"],
+        env["game_id"],
+        "swap",
+        {
+            "out_id": rows[0]["id"],
+            "in_id": rows[4]["id"],
+            "base_total_seq": v["total_seq"],
+        },
+    )
+    assert r.status_code == 200 and court(r.json(), 2)["status"] == "playing"
+
+    env, v = scene_vacant(64)  # 取消（非清扫）：回流队首后原地重发
+    r = live_call(
+        client, env["org"]["token"], env["game_id"], "cancel", write_body(v, 1)
+    )
+    assert r.status_code == 200 and court(r.json(), 1)["status"] == "playing"
+
+    env, v = scene_vacant(65)  # 改规则
+    r = live_call(
+        client,
+        env["org"]["token"],
+        env["game_id"],
+        "rules",
+        {"streak_max": 5, "base_total_seq": v["total_seq"]},
+    )
+    assert r.status_code == 200 and court(r.json(), 2)["status"] == "playing"
+
+    env, v = scene_vacant(66)  # tempo：设歇是减员方向，出口照常补别的空片
+    r = live_call(
+        client,
+        env["org"]["token"],
+        env["game_id"],
+        "tempo",
+        {
+            "player_id": env["view"]["players"][0]["id"],
+            "action": "skip",
+            "base_total_seq": v["total_seq"],
+        },
+    )
+    assert r.status_code == 200 and court(r.json(), 2)["status"] == "playing"
+
+
+def test_exempt_endpoints_never_refill(client: TestClient):
+    """验收 6 后半：改分重落/清扫取消/一键清扫/散场四处不补（声明式豁免）。"""
+    # 改分重落：账面动作，2 号片空着照旧空着（7 人局凑不齐第二片，片行都没开）
+    env = open_live(client, seed=67, players=6, bring=1)
+    v = settled_11_9(client, env)
+    assert [c["court_no"] for c in v["courts"]] == [1]
+    r = overwrite(client, env["org"]["token"], env["game_id"], v, score_a=11, score_b=8)
+    assert r.status_code == 200
+    assert [c["court_no"] for c in r.json()["courts"]] == [1]
+
+    # 清扫态取消
+    env = open_live(client, seed=68)
     v = deal_one(client, env)
-    r = live_call(  # 在打的片不能重复发牌
+    r = live_call(
         client,
         env["org"]["token"],
         env["game_id"],
-        "deal",
+        "cancel",
+        write_body(v, 1) | {"no_redeal": True},
+    )
+    assert r.status_code == 200 and court(r.json(), 1)["status"] == "idle"
+
+    # 一键清扫
+    env = open_live(client, seed=69)
+    v = deal_one(client, env)
+    r = live_call(
+        client,
+        env["org"]["token"],
+        env["game_id"],
+        "sweep-cancel-all",
+        {"base_total_seq": v["total_seq"]},
+    )
+    assert r.status_code == 200 and court(r.json(), 1)["status"] == "idle"
+
+    # 散场：无残局直接收工，收工不把空片点亮
+    env = open_live(client, seed=70)
+    v = deal_one(client, env)
+    v = confirm(client, env["org"]["token"], env["game_id"], v, no_redeal=True).json()
+    r = live_call(
+        client,
+        env["org"]["token"],
+        env["game_id"],
+        "end",
+        {"base_total_seq": v["total_seq"]},
+    )
+    assert r.status_code == 200, r.text
+    assert all(c["status"] == "idle" for c in r.json()["courts"])
+
+
+def test_fill_failure_degrades_without_killing_main_action(tmp_path, monkeypatch, fake):
+    """验收 8（降级不连坐）：补片段构造性失败 → 主动作照常 200 落账、片留空态、
+    live_auto_fill_error 审计落盘。"""
+    from app.services import live_rotation
+
+    def boom(players, courts, rules, queue):
+        raise RuntimeError("构造性失败")
+
+    monkeypatch.setattr(live_rotation, "autofill_idle", boom)
+    logs_dir = tmp_path / "logs"
+    client = make_client(tmp_path)
+    env = open_live(client, seed=74)
+    gid, tok = env["game_id"], env["org"]["token"]
+    v = env["view"]
+    r = live_call(
+        client,
+        tok,
+        gid,
+        "tempo",
         {
-            "courts": [{"court_no": 1, "a": ids[4:5], "b": ids[5:6]}],
+            "player_id": v["players"][4]["id"],
+            "action": "skip",
             "base_total_seq": v["total_seq"],
         },
     )
-    assert r.status_code == 422 and r.json()["error"]["code"] == "live_invalid"
+    assert r.status_code == 200, r.text  # 主动作照常
+    after = r.json()
+    assert after["players"][4]["skip"] == 1  # 主动作落账
+    assert after["courts"] == []  # 片留空态：失败只回滚补片段
+    assert after["total_seq"] == v["total_seq"] + 1  # 一写动作恰一 bump
+    row = audit_row_of(audit_rows(logs_dir), "live_auto_fill_error")
+    assert row["game_id"] == gid and "RuntimeError" in row["detail"]
+
+
+def test_auto_deal_audit_row(tmp_path, fake):
+    """验收 9：自动开片落「自动排阵」审计行，操作人=触发写动作的人。"""
+    logs_dir = tmp_path / "logs"
+    client = make_client(tmp_path)
+    env = open_live(client, seed=75)
+    gid = env["game_id"]
+    v = env["view"]
+    r = live_call(
+        client,
+        env["org"]["token"],
+        gid,
+        "tempo",
+        {
+            "player_id": v["players"][0]["id"],
+            "action": "fire",
+            "base_total_seq": v["total_seq"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    row = audit_row_of(audit_rows(logs_dir), "live_auto_deal")
+    assert row["game_id"] == gid
+    assert row["account_id"] == env["org"]["account"]["id"]
+    assert "courts=1" in row["detail"]  # 6 人候场只够一片
 
 
 # ---- 早退抽空片（2026-10-10 事故修复：单边空 playing 片不再炸 view） ----

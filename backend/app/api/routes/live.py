@@ -23,15 +23,19 @@ router = APIRouter(prefix="/games/{game_id}/live", tags=["live"])
 
 
 class DealCourtIn(BaseModel):
-    """一片的排阵上报：a/b 是名册行标识（LivePlayer.id），发牌算法在前端。"""
+    """一片的排阵上报（2.8 退役中）：发牌算法已收编后端，本模型只为旧前端
+    兼容期收下载荷——约束随闸一起卸（收下即丢，不校验），批3 连类删除。"""
 
-    court_no: int = Field(ge=1)
-    a: list[int] = Field(min_length=1)
-    b: list[int] = Field(min_length=1)
+    court_no: int
+    a: list[int]
+    b: list[int]
 
 
 class DealIn(BaseModel):
-    courts: list[DealCourtIn] = Field(min_length=1)
+    """排阵上报（2.8 §4.5 载荷退役）：courts 可选、收下即丢——按下=让后端补满
+    所有空片，旧前端带牌上报不报错。"""
+
+    courts: list[DealCourtIn] | None = None
     base_total_seq: int
 
 
@@ -63,6 +67,8 @@ class CancelIn(BaseModel):
     court_no: int
     base_total_seq: int
     base_court_seq: int
+    # 清扫态逐调用声明（前端编排态，后端无全局旗）：真=取消后不补片，好散场
+    no_redeal: bool = False
 
 
 class CheckIn(BaseModel):
@@ -160,14 +166,13 @@ def live_deal(
     out = book.deal(
         game_id=game_id,
         actor_id=account.id,
-        courts=[c.model_dump() for c in body.courts],
         base_total_seq=body.base_total_seq,
     )
     audit(
         "live_deal",
         game_id=game_id,
         account_id=account.id,
-        detail=f"{len(body.courts)} 片发牌",
+        detail="一键排阵",
     )
     return out
 
@@ -238,6 +243,7 @@ def live_cancel(
         court_no=body.court_no,
         base_total_seq=body.base_total_seq,
         base_court_seq=body.base_court_seq,
+        no_redeal=body.no_redeal,
     )
     audit(
         "live_cancel",

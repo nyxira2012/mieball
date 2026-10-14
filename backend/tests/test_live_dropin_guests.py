@@ -59,12 +59,13 @@ def test_dropin_new_row_arrives_queue_tail_and_counts_head(client: TestClient):
     assert row["dropin"] is True and row["guest"] is False
     assert row["guarantor_account_id"] is None
     assert row["check"] == "ok" and row["arrive_at"] == NOW_ISO  # 开球前归一 ok
-    assert v2["queue"][-1] == row["id"] and row["queue_pos"] == 6  # 进队尾
+    assert v2["queue"][-1] == row["id"] and row["queue_pos"] == len(v2["queue"]) - 1
+    # 进队尾（报到路补片把 1 号片点亮，队尾口径不变）
     assert v2["fee"]["heads"] == 7  # 空降进总账即进摊钱人头（附录 B1）
 
 
 def test_dropin_idempotent_replay_then_late_after_start(client, fake):
-    env = open_live(client, seed=42)
+    env = open_live(client, seed=42, players=3)  # 3 人候场：首降即点亮 1 号片
     gid = env["game_id"]
     stranger = signup(client, "13800039702", "d")
     v0 = live_get(client, gid, stranger["token"])
@@ -137,7 +138,7 @@ def test_guests_full_power_only_naming_and_queue_tail(client: TestClient):
         g["guest"] and g["guarantor_account_id"] == rows[1]["account_id"] for g in gs
     )
     assert all(g["check"] == "ok" and g["arrive_at"] == NOW_ISO for g in gs)
-    assert v2["queue"][-2:] == [g["id"] for g in gs]
+    assert all(g["court_no"] == 2 for g in gs)  # 候场够片：报到路补片让访客随队上场
     assert v2["fee"]["heads"] == 8  # 6 人头 + 2 访客（访客不单算、归担保人份额）
     # 空名：担保名前两字+的球友（沿前端 addGuests 命名规则后端重做）
     cur = live_get(client, gid, env["org"]["token"])

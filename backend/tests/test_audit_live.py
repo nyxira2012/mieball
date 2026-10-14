@@ -45,7 +45,7 @@ def test_live_chain_audited(tmp_path: Path, fake):
     rows = audit_rows(logs_dir)
     deal = audit_row_of(rows, "live_deal")
     assert deal["game_id"] == gid and deal["account_id"] == org["account"]["id"]
-    assert "1 片" in deal["detail"]  # detail 带片数
+    assert "一键排阵" in deal["detail"]  # 2.8 载荷退役：detail 记动作不记上报片数
 
     confirm = audit_row_of(rows, "live_settle_confirm")
     assert confirm["game_id"] == gid
