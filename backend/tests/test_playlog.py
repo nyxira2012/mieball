@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from .conftest import signup
+from .conftest import auth, signup
 from .test_bills_generate import book_fee, end_live, set_fee
 from .test_games_actions import join_ok
 from .test_games_read import (
@@ -30,10 +30,6 @@ from .test_live_score import (
     lock_game_direct,
     open_live,
 )
-
-
-def auth(token: str | None) -> dict:
-    return {"Authorization": f"Bearer {token}"} if token else {}
 
 
 def settle(client: TestClient, token: str, gid: int, view: dict, **over) -> dict:

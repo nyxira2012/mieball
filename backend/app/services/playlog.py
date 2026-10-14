@@ -52,6 +52,24 @@ def _match_hits(
     ]
 
 
+def _billed_or_organized(db: Session, account_id: int) -> set[int]:
+    """三笔规矩的后两笔——账单里有份 ∨ 这局的组织者——选出的局 id 集。
+    批量路与单局谓词同吃这一份，两支口径不靠人肉对齐（行数以十计，
+    单局路也无 JSON 解析负担）。"""
+    billed = {
+        gid
+        for (gid,) in db.execute(
+            select(Bill.game_id)
+            .join(BillRow, BillRow.bill_id == Bill.id)
+            .where(BillRow.account_id == account_id)
+        )
+    }
+    organized = set(
+        db.execute(select(Game.id).where(Game.organizer_id == account_id)).scalars()
+    )
+    return billed | organized
+
+
 def playlog_source(db: Session, account_id: int) -> tuple[set[int], int]:
     """记录页组装的一次扫描：返回（三笔规矩选出的局 id 集 ∩ 已散场，累计上场对局数）。
     三笔先并再统锚 ended_at：开账可早于开打时刻、被撤的局也可能留有上场记录
@@ -61,21 +79,7 @@ def playlog_source(db: Session, account_id: int) -> tuple[set[int], int]:
     hits = _match_hits(db, _roster_rows_by_game(db, account_id))
     ids = {gid for gid, hit in hits if hit}
     count = sum(1 for _, hit in hits if hit)  # 按「场」数不按「局」：一局可打多场
-    ids |= {
-        gid
-        for (gid,) in db.execute(
-            select(Bill.game_id)
-            .join(BillRow, BillRow.bill_id == Bill.id)
-            .where(BillRow.account_id == account_id)
-        )
-    }
-    ids |= set(
-        db.execute(
-            select(Game.id).where(
-                Game.organizer_id == account_id, Game.ended_at.is_not(None)
-            )
-        ).scalars()
-    )
+    ids |= _billed_or_organized(db, account_id)
     if not ids:
         return set(), count
     ended = set(
@@ -88,9 +92,11 @@ def playlog_source(db: Session, account_id: int) -> tuple[set[int], int]:
 
 def is_my_game_at(db: Session, game_id: int, account_id: int | None) -> bool:
     """单局谓词（live view 提示行的身份定值）：与名单规矩同一把尺，未登录（路人）
-    一律 False；未散场局按名单前提不算。
-    逐笔钉死在本局查（WHERE game_id）——全量版 playlog_source 要把本人全部历史
-    战报 JSON 扫一遍，只为一个布尔不该挂在 3s 轮询端点上（它只留给记录列表页）。"""
+    一律 False。前提：调用方先锚 game.ended_at 散场才进门（未散场局按名单前提
+    恒 False，散场旗在调用点先行短路，本函数不再自查 ended_at——热路径上不为
+    一个已知值重查）。战报 JSON 钉死在本局逐场查；账单/组织者两笔走
+    _billed_or_organized 与批量路同一份。全量版 playlog_source 才扫全历史
+    战报 JSON（只留给记录列表页）。"""
     if account_id is None:
         return False
     row_ids = set(
@@ -109,18 +115,4 @@ def is_my_game_at(db: Session, game_id: int, account_id: int | None) -> bool:
             )
         )
     )
-    if not on_court:
-        billed = db.execute(
-            select(BillRow.id)
-            .join(Bill, BillRow.bill_id == Bill.id)
-            .where(Bill.game_id == game_id, BillRow.account_id == account_id)
-        ).first()
-        organized = db.execute(
-            select(Game.id).where(Game.id == game_id, Game.organizer_id == account_id)
-        ).first()
-        if billed is None and organized is None:
-            return False
-    return (
-        db.execute(select(Game.ended_at).where(Game.id == game_id)).scalar_one_or_none()
-        is not None
-    )
+    return on_court or game_id in _billed_or_organized(db, account_id)

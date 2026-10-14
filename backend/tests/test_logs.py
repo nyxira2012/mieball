@@ -19,7 +19,7 @@ from app.core.config import Settings
 from app.core.logs import Journal, mask
 from app.main import create_app
 
-from .conftest import signup
+from .conftest import auth, signup
 from .test_games_read import publish
 
 
@@ -46,10 +46,6 @@ def audit_rows(logs_dir: Path) -> list[dict]:
     return [
         json.loads(ln) for ln in max(files).read_text(encoding="utf-8").splitlines()
     ]
-
-
-def auth(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}"}
 
 
 def heartbeat_game(client: TestClient) -> int:

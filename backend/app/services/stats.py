@@ -1,7 +1,7 @@
 """StatsLedger —— 战力双轨账房（1.4）：DUPR 核心轨的明细落账、窗口重放与派生读。
 
 与 LiveBook 的关系：settle 只在 settle_confirm 的一本账事务内被调（Elo 之后、
-同一 commit——双写两本账）；pairing_rating / card 是读侧（配平代位与名片）。
+同一 commit——双写两本账）；pairing_ratings / card 是读侧（配平代位与名片）。
 口径常量全在 dupr.py（单一源），本模块只管持久化与重放编排。
 """
 
@@ -83,21 +83,10 @@ class StatsLedger:
         for acct in (a for a, _ in [*winner_side, *loser_side] if a is not None):
             self._recompute(acct)
 
-    def pairing_rating(self, account_id: int | None) -> float:
-        """配平代位分（1.4 §6 + 技术设计 §0，修订后口径）：访客/无派分行统一
-        GUEST_DUPR 起步——0 场即 2.5，第 5 场定级无切换跳变。"""
-        if account_id is None:
-            return dupr.GUEST_DUPR
-        row = self.db.execute(
-            select(DuprRating).where(DuprRating.account_id == account_id)
-        ).scalar_one_or_none()
-        if row is not None:
-            return row.rating
-        return dupr.GUEST_DUPR
-
     def pairing_ratings(self, account_ids: list[int | None]) -> dict[int | None, float]:
-        """pairing_rating 的批量版（view / 确认回流逐人代位分一次查齐，免 N+1）：
-        语义逐条同单发版——访客与查无派行者（含注销清户）统一回 GUEST_DUPR 起步。"""
+        """配平代位分的批量版（view / 确认回流逐人一次查齐，免 N+1）：访客与
+        查无派行者（含注销清户）统一回 GUEST_DUPR 起步——0 场即 2.5，
+        第 5 场定级无切换跳变。"""
         out: dict[int | None, float] = {}
         if any(a is None for a in account_ids):
             out[None] = dupr.GUEST_DUPR
@@ -161,7 +150,7 @@ class StatsLedger:
             select(DuprRating).where(DuprRating.account_id == account_id)
         ).scalar_one_or_none()
         games = row.games if row else 0
-        rating = row.rating if row else self.pairing_rating(account_id)
+        rating = row.rating if row else dupr.GUEST_DUPR
         if games == 0:
             return {
                 "rating": rating,

@@ -13,7 +13,6 @@ import {
   fillAllCourts,
   fillCourt,
   pById,
-  rankOf,
   splitSides,
   takeFromQueue,
   usedCourts,
@@ -41,7 +40,6 @@ function mkP(dupr: number, extra: Partial<User> = {}): User {
 const R0 = (): RotationRules => ({
   singles: false,
   down: "all",
-  downChosen: true,
   pairing: "queue",
   champCap: 3,
 });
@@ -107,10 +105,6 @@ describe("pById / usedCourts（长期保留导出）", () => {
       singles: false,
       A: [ps[0].id, ps[1].id],
       B: [ps[2].id, ps[3].id],
-      sa: 0,
-      sb: 0,
-      streakA: 0,
-      streakB: 0,
     };
     const idle = {
       id: 1,
@@ -118,10 +112,6 @@ describe("pById / usedCourts（长期保留导出）", () => {
       singles: false,
       A: [],
       B: [],
-      sa: 0,
-      sb: 0,
-      streakA: 0,
-      streakB: 0,
     };
     const live = mkLive("rotate", ps, { courts: [full, idle] });
     expect(usedCourts(live)).toBe(1);
@@ -136,7 +126,6 @@ describe("pById / usedCourts（长期保留导出）", () => {
 const R = (over: Partial<RotationRules> = {}): RotationRules => ({
   singles: false,
   down: "all",
-  downChosen: true,
   pairing: "queue",
   champCap: 3,
   ...over,
@@ -150,10 +139,6 @@ const mkCourt = (
   B: b.map((p) => p.id),
   id: 0,
   singles: false,
-  sa: 0,
-  sb: 0,
-  streakA: 0,
-  streakB: 0,
   ...over,
 });
 describe("takeFromQueue（2.4 §4.8：跳轮消耗+保位+坑由下位顶）", () => {
@@ -244,9 +229,6 @@ describe("splitSides（2.4 §4.5 分边真值）", () => {
   });
 
   it("缺 dupr 的按 2.5 兜底参与排序（1.4 §6 配对吃 DUPR；2.5=访客/缺数，对齐后端 GUEST_DUPR）", () => {
-    expect(rankOf(mkP(3.7))).toBe(3.7);
-    expect(rankOf(mkP(2.5, { dupr: undefined }))).toBe(2.5);
-    expect(rankOf(undefined)).toBe(2.5);
     const ps = [mkP(4.0), mkP(2.5, { dupr: undefined }), mkP(3.6), mkP(3.2)];
     const live = mkLive("rotate", ps); // 缺数者按 2.5 排：低于 3.2/3.6，垫底与最强一队
     expect(
@@ -275,15 +257,9 @@ describe("splitSides（2.4 §4.5 分边真值）", () => {
 });
 
 describe("fillCourt / fillAllCourts（2.4 §4.3 补满即打）", () => {
-  it("空片补满：按怎么公分边、比分清零、新队连庄清零", () => {
+  it("空片补满：按怎么公分边（比分归零归 localScores/resetLocal，片行无记分位）", () => {
     const ps = Array.from({ length: 8 }, (_, i) => mkP(3.2 - i * 0.1));
-    const court = mkCourt([], [], {
-      id: 0,
-      streakA: 5,
-      streakB: 2,
-      sa: 11,
-      sb: 7,
-    });
+    const court = mkCourt([], []);
     const live = mkLive("rotate", ps, {
       rules: R({ down: "loser" }),
       courts: [court],
@@ -292,10 +268,6 @@ describe("fillCourt / fillAllCourts（2.4 §4.3 补满即打）", () => {
     expect(court).toMatchObject({
       A: [ps[0].id, ps[1].id],
       B: [ps[2].id, ps[3].id],
-      sa: 0,
-      sb: 0,
-      streakA: 0,
-      streakB: 0,
     });
     expect(live.queue).toEqual(ps.slice(4).map((p) => p.id));
   });

@@ -45,12 +45,6 @@ export function courtOfPerson(
    落账归 store 编排；结束对局后的回流补位（§4.4-4.7 五式）真值在后端
    live_rotation.requeue_after_confirm——确认响应视图落地即排好，前端不再镜像。 */
 
-/** 均衡排序用分（1.4 §6 消费矩阵修订：配对吃 DUPR——未定级吃派生分，2.5 起）：dupr 直用，
-    访客/缺数兜底 2.5（duprOf 单一源，1.4 §4 修订：与新号起步同源） */
-export function rankOf(p: User | undefined): number {
-  return duprOf(p);
-}
-
 /** 本地到分判定（2.3 记分本地化）：任一方够线且净胜 ≥2——与后端判分同式，
     但吃本机 localScores 账面（服务端已不记进行中比分）；命中即自动开上传窗。
     scoring 吃片分制快照（court.scoring），在打片照旧旧制 */
@@ -127,7 +121,7 @@ export function splitSides(
   if (ids.length < 4) return { A: [ids[0]], B: ids.length > 1 ? [ids[1]] : [] };
   if (pairing === "balance") {
     const order = ids
-      .map((id, i) => ({ id, i, r: rankOf(pById(live, id)) }))
+      .map((id, i) => ({ id, i, r: duprOf(pById(live, id)) }))
       .sort((a, b) => b.r - a.r || a.i - b.i);
     return { A: [order[0].id, order[3].id], B: [order[1].id, order[2].id] };
   }
@@ -135,8 +129,9 @@ export function splitSides(
 }
 
 /** 空片补满即打（2.4 §4.3）：按 court.singles（过渡期可 ≠ rules.singles）取一整片，
-    按当前怎么配分边，新队连庄清零。补不满留空（差人卡呈现），不动队列。
-    （回流补位/资历记账真值在后端 live_rotation，前端不再镜像——enterCourt 已随批2 删。） */
+    按当前怎么配分边。补不满留空（差人卡呈现），不动队列。
+    （回流补位/资历记账真值在后端 live_rotation，前端不再镜像——enterCourt 已随批2 删；
+    比分归零归 store.resetLocal 的 localScores 本地账，片行上已无记分位。） */
 export function fillCourt(live: LiveState, court: LiveCourt): void {
   const rules = live.rules;
   if (!isIdle(court)) return;
@@ -146,10 +141,6 @@ export function fillCourt(live: LiveState, court: LiveCourt): void {
   const { A, B } = splitSides(live, ids, rules.pairing);
   court.A = A;
   court.B = B;
-  court.sa = 0;
-  court.sb = 0;
-  court.streakA = 0;
-  court.streakB = 0;
 }
 
 /** 按片号先后补所有空片（多片同时要人时，候场队按片号先后供给） */

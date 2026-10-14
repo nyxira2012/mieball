@@ -1,6 +1,6 @@
 <template>
   <!-- 出勤底账抽屉（§4.14）：每人几点到/几点走、访客谁带的——留给事后摊钱用。
-       纯渲染 live.ledger 快照行（一人一行、不引用名册），散场前后都可查。 -->
+       行直接从最近视图 players 现推（真值单源，store 不另存平行树），散场前后都可查。 -->
   <AppSheet
     :visible="visible"
     title="出勤底账"
@@ -37,15 +37,14 @@
 </template>
 
 <script setup lang="ts">
-/* 底账抽屉（2.2 批4）：无本地态，读 live store 的 ledger 快照；头像借名册同 id 者
-   （底账与名册同源于视图 players，byId 兜底空配置纯防御）。时刻 isoHm 北京墙钟（未落 = 「—」）。 */
+/* 底账抽屉（2.2 批4）：无本地态；头像借名册同 id 者（byId 兜底空配置纯防御）。
+   时刻 isoHm 北京墙钟（未落 = 「—」）。 */
 import { computed } from "vue";
 import AppSheet from "@/components/ui/AppSheet.vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
 import { isoHmOrDash } from "@/utils/time";
-import type { ChibiConfig, LedgerRow } from "@/api/types";
 
 defineProps({
   visible: { type: Boolean, default: false },
@@ -56,11 +55,23 @@ const emit = defineEmits<{
 
 const liveStore = useLiveStore();
 
-/** 行视图一次解析好：底账行 + 名册头像（快照行不存 chibi——人可能被移出，名册是真源） */
-const rows = computed<(LedgerRow & { chibi: ChibiConfig })[]>(() =>
-  (liveStore.live?.ledger ?? []).map((r) => ({
-    ...r,
-    chibi: liveStore.byId(r.id).chibi,
+/** 行视图一次解析好：视图行直推 + 担保人名（guarantorAccountId 对同视图 players
+    解析，不在册回 undefined）+ 名册头像 */
+const rows = computed(() =>
+  (liveStore.liveView?.players ?? []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    shadow: p.guest || undefined,
+    dropin: p.dropin || undefined,
+    guarantor:
+      p.guarantorAccountId != null
+        ? liveStore.liveView?.players.find(
+            (x) => x.accountId === p.guarantorAccountId,
+          )?.name
+        : undefined,
+    arriveAt: p.arriveAt ?? undefined,
+    leftAt: p.leftAt ?? undefined,
+    chibi: liveStore.byId(p.id).chibi,
   })),
 );
 </script>

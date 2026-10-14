@@ -3,7 +3,8 @@
 
 - 定格名单（§4.1/§7 裁决）：散场/补填那一刻的 LivePlayer 快照——账号行一人一行
   （缺席照摊、空降照摊、早退整份；候补从不进 live_players 故天然不进账）；访客行
-  不单独计，份额归担保人（1+名下访客数）。名单头尺与 live 视图 _fee_block 同一把。
+  不单独计，份额归担保人（1+名下访客数）。名单头尺收在 bill_heads 一份代码里，
+  live 视图 _fee_block 同吃（「确认页亮的数=实摊的账」靠同一份代码，不靠注释承诺）。
 - 零头组织者兜底（§8 裁决）：base=总价//人头 向下抹零，非组织者 amount=base×份额，
   组织者=总价−Σ非组织者——合计恒等于总价（不变承诺 1）。
 - 出账时机（B1：都不用任何人点「生成」）：散场 end() 的同一 commit（一本账原子）；
@@ -53,9 +54,24 @@ def _split(
     return amounts, heads, base
 
 
-def generate(db: Session, game: Game) -> Bill | None:
-    """出账唯一入口（散场 end 与补填端点共用）——模块级函数，live_sweep 不持 BillBook。"""
-    return BillBook(db).generate(game=game)
+def _guest_counts(
+    rows: list[LivePlayer],
+) -> tuple[set[int], dict[int, int]]:
+    """摊钱人头清点的底账：账号行集合与各账号名下访客数（访客行不单独计，
+    份额归担保人）。定格名单 _shares 与亮数 bill_heads 同吃这一份。"""
+    accounts = {r.account_id for r in rows if r.account_id is not None}
+    guests: dict[int, int] = {}
+    for r in rows:
+        if r.account_id is None and r.guarantor_account_id in accounts:
+            guests[r.guarantor_account_id] = guests.get(r.guarantor_account_id, 0) + 1
+    return accounts, guests
+
+
+def bill_heads(rows: list[LivePlayer]) -> int:
+    """账单口径的摊钱人头：正式/空降行每人 1 + 名下访客行数。live 视图
+    _fee_block 同吃这一份——亮数与实摊一个数由同一份代码保证。"""
+    accounts, guests = _guest_counts(rows)
+    return len(accounts) + sum(guests.values())
 
 
 class BillBook:
@@ -388,13 +404,7 @@ class BillBook:
             .scalars()
             .all()
         )
-        accounts = {r.account_id for r in rows if r.account_id is not None}
-        guests: dict[int, int] = {}
-        for r in rows:
-            if r.account_id is None and r.guarantor_account_id in accounts:
-                guests[r.guarantor_account_id] = (
-                    guests.get(r.guarantor_account_id, 0) + 1
-                )
+        _, guests = _guest_counts(rows)
         shares = [
             (
                 r.account_id,

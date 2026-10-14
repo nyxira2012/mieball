@@ -41,6 +41,7 @@ from ..db.models import (
 )
 from . import live_rotation
 from .accounts import person_view
+from .bills import bill_heads
 from .game_views import derive, is_forced
 from .live_sweep import ARRIVED, LiveSweepMixin
 from .playlog import is_my_game_at
@@ -68,6 +69,21 @@ _VIEW_CODES = frozenset(
 def _snapshot(p: LivePlayer) -> dict:
     """战报名单快照（LiveMatch.winners/losers 元素）：id 是名册行 id。"""
     return {"id": p.id, "name": p.display_name, "guest": p.guest}
+
+
+def _guest_display_name(
+    guarantor_name: str, name: str | None, i: int, count: int, *, numbered: bool
+) -> str:
+    """随行访客的定格名，两路同吃一份零件（担保名前两字+「的球友」/具名+「·序号」）：
+    空名兜底=担保名前两字+的球友；具名多人=name·序号、单人照给。numbered 只归
+    开账展开路（start/absorb_join 同口径逐字一致）——空名也带序号防重名；现场带客
+    沿旧例不编号。两支空名形不一致是产品现状，收编的是零件不是统一行为。"""
+    if not name:
+        tail = f"·{i + 1}" if numbered else ""
+        return f"{guarantor_name[:2]}的球友{tail}"
+    if count > 1:
+        return f"{name}·{i + 1}"
+    return name
 
 
 # 现场写动作全串行：SQLite 无行锁，靠它保住"账只有一本"（2.3 附录 B1）
@@ -147,8 +163,9 @@ class LiveBook(LiveSweepMixin):
                 LivePlayer(
                     game_id=game_id,
                     account_id=None,
-                    # 访客命名沿前端 startLive：担保人昵称前两字 + 编号
-                    display_name=f"{name[:2]}的球友·{i + 1}",
+                    display_name=_guest_display_name(
+                        name, None, i, bring, numbered=True
+                    ),
                     guest=True,
                     guarantor_account_id=account_id,
                     check="absent",
@@ -792,8 +809,8 @@ class LiveBook(LiveSweepMixin):
         """现场带访客（§5/§8 裁决二：带朋友的份额归担保人）：count 位访客一人一行
         挂 guarantor 名册行名下——guarantor_account_id 是出账归账键（1+名下访客
         人头），须是账号行（访客挂不到访客名下）；到场即带（check=ok、落 arrive_at）
-        排队尾。命名沿前端 addGuests 规则后端重做：空名=担保名前两字+的球友、多人
-        具名=name·i、单人具名照给。访客不建 EloRating 行不进榜（2.3 裁决）。"""
+        排队尾。命名走 _guest_display_name（前端 addGuests 已切真不命名，命名归后端）。
+        访客不建 EloRating 行不进榜（2.3 裁决）。"""
         with self._write(game_id=game_id, actor_id=actor_id):
             state, game = self._open_write(game_id)
             self._require_full_power(state, game, actor_id)
@@ -804,12 +821,9 @@ class LiveBook(LiveSweepMixin):
             now = clock.now()
             made: list[LivePlayer] = []
             for i in range(count):
-                if not name:
-                    display = f"{guarantor.display_name[:2]}的球友"
-                elif count > 1:
-                    display = f"{name}·{i + 1}"
-                else:
-                    display = name
+                display = _guest_display_name(
+                    guarantor.display_name, name, i, count, numbered=False
+                )
                 row = LivePlayer(
                     game_id=game_id,
                     account_id=None,
@@ -901,8 +915,8 @@ class LiveBook(LiveSweepMixin):
             or (viewer_id is not None and viewer_id in (state.admins or [])),
             # 提示行身份定值（2.6 §4.3-3）：判定的尺与打球记录名单三笔规矩同一把
             # （playlog 单一源），前端不自判；未散场局按名单前提恒 False——散场旗
-            # 先行短路（谓词收尾那条 Game 重查也一并省掉），3s 轮询热路径上
-            # 在办局不再白跑战报 JSON/账单谓词
+            # 先行短路，散场前提由调用点锚死（谓词内不再自查 ended_at），3s 轮询
+            # 热路径上在办局不再白跑战报 JSON/账单谓词
             "is_my_game": game.ended_at is not None
             and is_my_game_at(self.db, game_id, viewer_id),
             "organizer_account_id": game.organizer_id,
@@ -957,14 +971,11 @@ class LiveBook(LiveSweepMixin):
 
     def _fee_block(self, game: Game, roster: list[LivePlayer] | None = None) -> dict:
         """费用亮数块（1.3 §3 散场确认页）：总价=订场登记真值（null=未定）；人头=
-        账单口径的摊钱人头——正式/空降行每人 1 + 名下访客行数（与出账引擎同尺，
-        亮数与实摊一个数）；per_head=floor 向下抹零，未定价局为 null 但 heads 照给
+        账单口径的摊钱人头（bills.bill_heads 同一份代码，亮数与实摊一个数）；
+        per_head=floor 向下抹零，未定价局为 null 但 heads 照给
         （亮「总价未定 · N 人」用）。roster 由 view 顺手递入免二次查（单独调用自查）。"""
         rows = roster if roster is not None else self._roster(game.id)
-        accounts = {p.account_id for p in rows if p.account_id is not None}
-        heads = len(accounts) + sum(
-            1 for p in rows if p.guarantor_account_id in accounts
-        )
+        heads = bill_heads(rows)
         per_head = game.fee_total // heads if game.fee_total is not None else None
         return {"total": game.fee_total, "heads": heads, "per_head": per_head}
 

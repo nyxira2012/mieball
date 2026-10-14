@@ -98,9 +98,14 @@ import { useUserStore } from "./user";
 export { isArrived };
 
 /** 片序换算单点（旧片序 0 起 ↔ 视图/载荷片号 1 起）：记分族动作、确认窗取数、
-    发牌载荷共用——换算散写已在批5b 验收官 Nit 销号，新增一律走本函数 */
+    发牌载荷、视图落地共用——换算散写已在批5b 验收官 Nit 销号，新增一律走本函数 */
 export function courtNoOf(courtId: number): number {
   return courtId + 1;
+}
+
+/** 逆向换算（视图片号 → 本地片 id），与 courtNoOf 同一把双键契约 */
+export function courtIdOf(courtNo: number): number {
+  return courtNo - 1;
 }
 
 /** 确认窗胜方联动（§4.6「改比分胜方自动跟分高方」的纯函数面，EndSettleModal 消费）：
@@ -309,10 +314,6 @@ export const useLiveStore = defineStore("live", () => {
       singles: L.rules.singles,
       A: [],
       B: [],
-      sa: 0,
-      sb: 0,
-      streakA: 0,
-      streakB: 0,
     };
   }
 
@@ -937,7 +938,7 @@ export const useLiveStore = defineStore("live", () => {
       同款单点口径）——SweepSheet 只消费不自算 */
   const sweepResidues = computed(() =>
     (liveView.value?.courts.filter((c) => c.status !== "idle") ?? []).map(
-      (c) => ({ ...c, courtId: c.courtNo - 1 }),
+      (c) => ({ ...c, courtId: courtIdOf(c.courtNo) }),
     ),
   );
 
@@ -1071,7 +1072,7 @@ export const useLiveStore = defineStore("live", () => {
       // ensurePerson 在途去重，轮询不会打成请求风暴）
       if (p.accountId != null && p.accountId !== useUserStore().me.id)
         void userStore.ensurePerson(p.accountId);
-      u.dupr = p.dupr; // 视图行 dupr 真值直落展示位（配对 rankOf 消费；访客后端已回 3.0）
+      u.dupr = p.dupr; // 视图行 dupr 真值直落展示位（发牌均衡配对 duprOf 消费；访客后端回 GUEST_DUPR=2.5）
       u.id = p.id; // 名册行 id（写动作靶位），与 queue/片位同键
       u.name = p.name; // 开账定格名（注销者占位名/访客编号名照显）
       u.shadow = p.guest || undefined;
@@ -1092,16 +1093,12 @@ export const useLiveStore = defineStore("live", () => {
       roster,
       queue: [...v.queue],
       courts: v.courts.map((c) => ({
-        id: c.courtNo - 1, // 视片段号 1 起 ↔ 旧片序 0 起（记分族动作按旧键定位）
-        name: names[c.courtNo - 1] ?? `${c.courtNo}号`,
+        id: courtIdOf(c.courtNo), // 视片段号 1 起 ↔ 旧片序 0 起（记分族动作按旧键定位）
+        name: names[courtIdOf(c.courtNo)] ?? `${c.courtNo}号`,
         singles: !v.rules.doubles,
         A: onSide(c.courtNo, "a"),
         B: onSide(c.courtNo, "b"),
-        sa: 0, // 真值挂 localScores 本地账（记分本地化），此位留 0 兼 mock 树必填——删旧归 1.3
-        sb: 0,
         scoring: c.scoring, // 片分制快照（卡头读它——在打片照旧、新开片用新制，2.6）
-        streakA: 0,
-        streakB: 0,
       })),
       history: v.matches
         .map((m) => ({
@@ -1115,25 +1112,9 @@ export const useLiveStore = defineStore("live", () => {
       feed: feedSentences(v.feed),
       startedAt: v.startedAt,
       endedAt: v.endedAt ?? undefined,
-      ledger: v.players.map((p) => ({
-        id: p.id,
-        name: p.name,
-        ...(p.guest ? { shadow: true } : {}),
-        ...(p.dropin ? { dropin: true } : {}),
-        ...(p.guarantorAccountId != null
-          ? {
-              guarantor: v.players.find(
-                (x) => x.accountId === p.guarantorAccountId,
-              )?.name,
-            }
-          : {}),
-        ...(p.arriveAt ? { arriveAt: p.arriveAt } : {}),
-        ...(p.leftAt ? { leftAt: p.leftAt } : {}),
-      })),
       rules: {
         singles: !v.rules.doubles,
-        down: v.rules.down,
-        downChosen: true, // 冻结本地推荐跟随：down 是总账定值
+        down: v.rules.down, // 总账定值：推荐替改已归后端
         pairing: v.rules.pairing,
         champCap: v.rules.streakMax,
       },
@@ -1155,17 +1136,18 @@ export const useLiveStore = defineStore("live", () => {
   }
 
   /** 拉总账读对表（§4.8）：totalSeq 没变不重建（画面零漂移），返回是否更新供上层
-      决定 toast「现场已更新」。拉读失败静默 false——轮询下一拍再试，写链的 409
-      对表另走 applyStaleView */
+      决定 toast「现场已更新」。比对拦在 toLiveView 映射之前——号没变映射结果必与
+      现值同（幂等映射），稳态拍不再白造整棵 camel 树（3s 轮询热路径的大头）。
+      拉读失败静默 false——轮询下一拍再试，写链的 409 对表另走 applyStaleView */
   async function pollLiveView(gameId: number): Promise<boolean> {
     try {
-      const view = toLiveView(await apiLiveView(gameId));
+      const raw = await apiLiveView(gameId);
       if (
-        liveView.value?.gameId === view.gameId &&
-        view.totalSeq === liveView.value.totalSeq
+        liveView.value?.gameId === raw.game_id &&
+        raw.total_seq === liveView.value.totalSeq
       )
         return false;
-      applyLiveView(view);
+      applyLiveView(toLiveView(raw));
       return true;
     } catch {
       return false;

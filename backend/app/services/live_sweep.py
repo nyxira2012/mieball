@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 
 from ..core import clock, errors
 from ..db.models import Game, LiveMatch, LivePlayer, LiveState
-from . import bills
+from .bills import BillBook
 
 # 算到场口径（2.2 §4.2）：absent 未到 / left 早退不算在场——live.py 与本模块共用，
 # 定义在此处是因为 live 已 import 本模块（反向会循环）
@@ -81,7 +81,7 @@ class LiveSweepMixin:
             # 出账挂同一 commit（1.3 §4.7「散场即出账」）：总价已定（非 null 且 >0）
             # 当场算好，与封存锚/考勤定格一本账原子——半局账或半场封存都不存在；
             # 总价未定/0 元时引擎自行不出（挂提醒等补填）
-            bills.generate(self.db, game)
+            BillBook(self.db).generate(game=game)
             self._bump_total(state)
             self.db.commit()
         return self.view(game_id=game_id, viewer_id=actor_id)

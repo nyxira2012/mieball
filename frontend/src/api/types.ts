@@ -48,18 +48,6 @@ export interface User {
   leftAt?: string; // ISO · 早退离场时刻
 }
 
-/** 出勤底账一行（§4.14 观察点：几点到/几点走/访客谁带的）。
-    一人一行快照式、不引用 User（applyLiveView 随视图 players 重建，故复制字段）。 */
-export interface LedgerRow {
-  id: number;
-  name: string;
-  shadow?: boolean; // 随行访客 · 不计积分不进榜
-  dropin?: boolean; // 空降进场
-  guarantor?: string; // 担保人名（访客谁带的）
-  arriveAt?: string; // ISO · 几点到（首次到场）
-  leftAt?: string; // ISO · 几点走（早退）
-}
-
 /** 发牌模式（alpha:1404 winner 赢家留场 / rotate 纯粹轮转 / balance 均衡配对） */
 export type CourtMode = "winner" | "rotate" | "balance";
 
@@ -322,29 +310,23 @@ export type PairingMode = "queue" | "balance";
 /** 现场轮换四件套（2.4 §4.1）：谁能改=全权者（2.2 已定），点选即生效、在打对局照旧打完 */
 export interface RotationRules {
   singles: boolean; // 全场统一单双打（true=单打）；默认双打
-  down: DownMode; // 谁下；未自选时跟推荐走，「不荐」时挂 'all' 占位
-  downChosen: boolean; // 组织者自选过「谁下」即 true，此后推荐只亮标签不替改
+  down: DownMode; // 谁下（总账定值：推荐替改已归后端，前端只显不判）
   pairing: PairingMode; // 怎么配；默认按候场队序
   champCap: number; // 连庄上限（仅输家下显示/生效）；默认 3，0=不限
 }
 
 /** 一片场地（2.4 多片并行）：A/B 半边存玩家 id——
     每片各打各的（补满即打，无「待开」态）；playing/idle 由 A/B 是否空区分。
-    id/name 归 store 建片，singles/streak 归并行引擎（记分族动作按 id 定位这片）；
-    记分本地化（2026-10-09）后 sa/sb/last 是旧引擎记分板位：恒 0/空占位
-    （fillCourt 归零兜旧格式），真值挂 store.localScores——留 0 兼 mock 树必填，
-    删旧归 1.3。 */
+    id/name 归 store 建片，singles 归并行引擎（记分族动作按 id 定位这片）；
+    记分真值挂 store.localScores（旧引擎记分板位 sa/sb/last 与连庄位已随
+    记分本地化删除）。 */
 export interface LiveCourt {
   A: number[];
   B: number[];
   id: number; // 片序 0..n-1（并行模型键，记分族动作按此定位）
   name: string; // 场地号（'3号'；未登记回退序号场）
   singles: boolean; // 本片当前对局格式（换单双打过渡期可 ≠ rules.singles，2.4 §4.7-3）
-  sa: number; // 旧位恒 0 占位——真值挂 localScores，留 0 兼 mock 树必填（删旧归 1.3）
-  sb: number; // 同 sa
   scoring?: number; // 片分制快照（视图缺行时本地补空片走 g.scoring 兜底，2.6）
-  streakA: number; // 连庄数——跟半边不跟人（手动换人不动连庄，2.4 §4.9）
-  streakB: number;
 }
 
 /** 已完成场次（alpha:1710）。alpha 的 txt 为含高亮的 HTML 字符串，这里存纯文本胜者名，
@@ -370,7 +352,6 @@ export interface LiveState {
   feed: string[]; // 战报事件句（unshift 新到旧；句子在动作处拼好、含操作者，LiveTopbar 轮播消费）
   startedAt: string; // 现场点亮时刻（startLive 落 ISO；批4 底账定格/散场消费）
   endedAt?: string; // 散场时刻（apiLiveEnd 落）：有值=现场封存转只读回看（§4.9/4.10）；live 态保留供回看与底账查
-  ledger: LedgerRow[]; // 出勤底账（applyLiveView 随视图 players 重建：到/走/访客谁带的）
   rules: RotationRules; // 2.4 轮换四件套（startLive 起必挂：自选前 down 跟推荐走）
 }
 
@@ -423,13 +404,6 @@ export type SheetPayload =
 // 名片建号卡（1.1 A1）：游客点报名/建局/留意向/扫码签到时弹出；建号成功自动接着完成挂起的动作（D3 两步拆分）
 // pendingCheckin（2.1·选项A）：扫码到场一律走名片建号，建号成功后自动「我到了」进候场区
 // pendingIntent（1.2 4.13）：游客留意向同走先看后报——建号成功自动把意向落进意向簿
-
-/** 结算 ±积分一行（2.1 打球页改版：终局结算弹窗 EndSettleModal 的预览行复用本形状） */
-export interface WinChange {
-  name: string;
-  up: boolean;
-  d: number;
-}
 
 /* ─────────── 2.3 现场总账读链（批4 阶段1·类型层） ───────────
    与上面的 mock 期现场族（LiveState/LiveCourt/MatchHistory）双树为稳态，删旧归 1.3。

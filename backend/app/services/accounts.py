@@ -76,6 +76,12 @@ class AccountBook(PasswordMixin, WechatMixin):
         self.keys = keys
         self.wechat = wechat
 
+    @classmethod
+    def open(cls, db: Session, settings) -> AccountBook:
+        # 装配单点：路由依赖与运维脚本都从这取实例，加钥匙通道只改这一处
+        # （曾在加第四把微信钥匙时漏改 seed_demo，脚本静默损坏）
+        return cls(db, SmsGate(db, settings), KeyVault(db), WeChatGate(db, settings))
+
     # ---- 建号（4.2：点报名那一刻填名片，建号发钥匙一步完成） ----
 
     def signup(

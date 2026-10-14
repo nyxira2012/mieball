@@ -7,14 +7,10 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from .conftest import signup
+from .conftest import auth, signup
 from .test_games_actions import join_ok
 from .test_games_read import publish, seed_entry
 from .test_live_base import lock_past_deadline, start_live, view_live
-
-
-def auth(token: str | None) -> dict:
-    return {"Authorization": f"Bearer {token}"} if token else {}
 
 
 def check_in(client: TestClient, token: str, game_id: int, player_id: int) -> dict:

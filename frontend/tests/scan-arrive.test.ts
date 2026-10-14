@@ -256,7 +256,7 @@ describe("arriveMe（扫码签到）", () => {
     expect(me?.dropin).toBe(true); // 空降标全场看得到
     expect(L.queue).toEqual([6, 42]); // 排到队尾（视图真值）
     expect(store.findGame(107)?.heads).toBe(2); // 线上名单原样不动
-    expect(L.ledger.find((r) => r.id === 42)!.dropin).toBe(true); // 底账带空降标
+    expect(live.liveView!.players.find((r) => r.id === 42)!.dropin).toBe(true); // 底账带空降标（LedgerSheet 视图行直推）
   });
 
   it("空降报到够一片人数 → 自动发牌上片（修复批：空降支线此前漏 maybeDeal，要手点 ⚡）", async () => {
@@ -317,7 +317,7 @@ describe("arriveMe（扫码签到）", () => {
     expect(me).toBeTruthy(); // 回到名册
     expect(me!.check).toBe("ok");
     expect(live.live!.queue[live.live!.queue.length - 1]).toBe(42); // 进候场队尾
-    expect(live.live!.ledger.filter((r) => r.id === 42)).toHaveLength(1); // 底账一行
+    expect(live.liveView!.players.filter((r) => r.id === 42)).toHaveLength(1); // 底账一行（视图行直推）
   });
 
   it("已在场 → 幂等提示，不再发空降/报到", async () => {

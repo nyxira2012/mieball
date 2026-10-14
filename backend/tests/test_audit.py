@@ -3,7 +3,7 @@
 撤局/救回/补填总价（detail 含金额）/结算/收款/留删意向（game_id=None 长相）；
 错误路径（服务抛 ApiError）不落审计。断言从 audit-*.log 的 JSON 行读回。
 
-夹具自足（不动 conftest）：复用 test_logs 的 make_client/auth/audit_rows，
+复用 test_logs 的 make_client/audit_rows（auth 已收编 conftest），
 log_dir 指到 tmp_path。
 """
 
@@ -13,11 +13,11 @@ from datetime import timedelta
 
 from app.core import clock
 
-from .conftest import signup
 from .test_bills_read import receive, settle, stage
 from .test_games_actions import join_ok
 from .test_games_read import detail, publish
-from .test_logs import audit_rows, auth, make_client
+from .conftest import auth, signup
+from .test_logs import audit_rows, make_client
 
 
 def audit_row_of(rows: list[dict], action: str) -> dict:

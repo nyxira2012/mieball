@@ -454,8 +454,6 @@ describe("applyLiveView（批4 阶段2：总账视图 → 本地 LiveState 幂�
       name: "1号",
       A: [101],
       B: [102],
-      sa: 0, // 片位无比分（记分本地化：进行中比分挂本机 localScores）
-      sb: 0,
     });
     expect(L.courts[1]).toMatchObject({ id: 1, name: "2号", A: [], B: [] });
     expect(L.history).toEqual([
@@ -467,16 +465,19 @@ describe("applyLiveView（批4 阶段2：总账视图 → 本地 LiveState 幂�
     ]);
     expect(L.rules).toEqual({
       singles: false,
-      down: "loser",
-      downChosen: true, // 总账定值：冻结本地推荐跟随
+      down: "loser", // 总账定值
       pairing: "balance",
       champCap: 2,
     });
     expect(L.admins).toEqual([5]);
     expect(L.round).toBe(2);
-    expect(L.ledger.find((r) => r.id === 102)!.guarantor).toBe(
-      "亮马河快攻", // guarantorAccountId → 册内行名解析（底账「谁带的」）
-    );
+    // 底账「谁带的」素材在视图行（LedgerSheet 由 guarantorAccountId 现推担保人名）
+    const p102 = live.liveView!.players.find((r) => r.id === 102)!;
+    expect(
+      live.liveView!.players.find(
+        (x) => x.accountId === p102.guarantorAccountId,
+      )!.name,
+    ).toBe("亮马河快攻");
     expect(live.settleWindow).toBeNull(); // 视图落地不开窗（窗只由记分/入口驱动）
     expect(live.liveView?.totalSeq).toBe(7); // 最近视图持有
     expect(live.recap).toBeNull(); // 未散场不持有回看
@@ -1663,10 +1664,16 @@ describe("空降与带访客（1.3 批2 切真：apiLiveGuests · 命名/挂账/
     expect(gs.map((g) => g.name)).toEqual(["帮手·1", "帮手·2"]);
     expect(gs.every((g) => g.shadow && g.check === "ok")).toBe(true); // 到场即带
     expect(live.live!.queue).toEqual([106, 107]); // 队尾
-    expect(live.live!.ledger.slice(4).map((r) => r.guarantor)).toEqual([
-      "我",
-      "我",
-    ]); // 底账挂担保人（视图 guarantorAccountId → 担保人名）
+    expect(
+      live
+        .liveView!.players.slice(4)
+        .map(
+          (p) =>
+            live.liveView!.players.find(
+              (x) => x.accountId === p.guarantorAccountId,
+            )?.name,
+        ),
+    ).toEqual(["我", "我"]); // 底账挂担保人（视图 guarantorAccountId → 担保人名，LedgerSheet 现推）
     expect(ui.toastMsg).toBe("已带 2 位访客 · 进候场区");
   });
   it("G2 addGuests：空称呼不发 name（命名归后端）；needFull 前置拦截不发", async () => {

@@ -10,7 +10,7 @@ from app.core import clock
 from app.db.models import Entry
 from fastapi.testclient import TestClient
 
-from .conftest import signup
+from .conftest import auth, signup
 
 START, END, DEADLINE = (
     "2026-10-06T19:00:00+08:00",
@@ -23,10 +23,6 @@ START2, END2, DEADLINE2 = (
     "2026-10-07T21:00:00+08:00",
     "2026-10-07T17:00:00+08:00",
 )
-
-
-def auth(token: str | None) -> dict:
-    return {"Authorization": f"Bearer {token}"} if token else {}
 
 
 def post_game(client: TestClient, token: str, **over):

@@ -25,15 +25,11 @@ from app.db.models import (
 )
 from app.services import dupr
 
-from .conftest import signup
+from .conftest import auth, signup
 from .test_games_actions import join_ok
 from .test_games_read import publish
 
 NOW_ISO = "2026-10-04T12:00:00+08:00"  # FakeClock 基点（conftest）
-
-
-def auth(token: str | None) -> dict:
-    return {"Authorization": f"Bearer {token}"} if token else {}
 
 
 def live_get(client: TestClient, game_id: int, token: str | None = None) -> dict:

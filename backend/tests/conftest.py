@@ -111,6 +111,11 @@ def me(client: TestClient, token: str | None) -> dict | None:
     return r.json()["account"]
 
 
+def auth(token: str | None) -> dict:
+    """Bearer 头构造（None=游客不带）——曾七处测试文件各抄一份，收编到此。"""
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
 def _pwd_post(
     client: TestClient, path: str, body: dict, token: str | None = None
 ) -> dict:

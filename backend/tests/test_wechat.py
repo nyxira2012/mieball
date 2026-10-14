@@ -19,7 +19,7 @@ from app.core import clock
 from app.core.config import Settings
 from app.db.models import Account, DeviceKey
 
-from .conftest import code_of, me, password_set, redeem, send_code, signup
+from .conftest import auth, code_of, me, password_set, redeem, send_code, signup
 
 # ---- 帮手 ----
 
@@ -464,10 +464,6 @@ def wechat_fast(
     r = client.post("/api/auth/wechat/login", json=body)
     assert r.status_code == 200, r.text
     return r.json()
-
-
-def auth(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}"}
 
 
 def account_row(client: TestClient, **filt) -> Account:

@@ -27,9 +27,6 @@
           <view class="arena-side">
             <view class="side-label" :class="s.team">
               {{ s.label }}
-              <text v-if="streakOf(s.k)" class="streak-tag"
-                >连庄 {{ streakOf(s.k) }}</text
-              >
             </view>
             <view class="players-duo">
               <view
@@ -200,13 +197,6 @@ const scoring = computed(
   () => props.court.scoring ?? liveStore.live?.g.scoring ?? 11,
 );
 
-/** 连庄 chip（2.4 §4.6 新增显示）：只有输家下才有连庄，且该边 streak>0 才显 */
-function streakOf(k: "a" | "b"): number {
-  const L = liveStore.live;
-  if (!L || L.rules.down !== "loser") return 0;
-  return k === "a" ? props.court.streakA : props.court.streakB;
-}
-
 /** A/B 两队一并解析球员（computed 一次算好，模板只读数组——逐字段 byId 是每格一次名册线性扫描） */
 const sides = computed(() =>
   [
@@ -350,17 +340,6 @@ onUnmounted(() => {
 }
 .side-label.team-b {
   color: var(--ice);
-}
-/* 连庄 chip（2.4 §4.6）：跟半边——赢家留场连庄数跳动，手动换人不动 */
-.streak-tag {
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.06em;
-  font-weight: 400;
-  padding: 1px 7px;
-  border-radius: 99px;
-  border: 1px solid rgba(255, 212, 0, 0.4);
-  color: var(--lemon);
 }
 .players-duo {
   display: flex;

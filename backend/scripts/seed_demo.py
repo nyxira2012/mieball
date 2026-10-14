@@ -42,6 +42,8 @@ import sys
 from datetime import datetime, time, timedelta
 from pathlib import Path
 
+from sqlalchemy import delete, select
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # backend/ 入 import 路径
 
 from app.core import clock
@@ -52,10 +54,7 @@ from app.services.accounts import AccountBook
 from app.services.bills import BillBook
 from app.services.games import GameBook
 from app.services.intents import IntentBook
-from app.services.keys import KeyVault
 from app.services.live import LiveBook
-from app.services.sms import SmsGate
-from sqlalchemy import delete, select
 
 WD = "一二三四五六日"
 
@@ -101,7 +100,7 @@ def main() -> None:
     Base.metadata.create_all(bind)
 
     db = factory()
-    accounts = AccountBook(db, SmsGate(db, settings), KeyVault(db))
+    accounts = AccountBook.open(db, settings)
     games = GameBook(db)
     intents = IntentBook(db)
     live = LiveBook(db)

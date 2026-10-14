@@ -20,15 +20,11 @@ from app.core import clock
 from app.db.models import Account, Bill, BillRow, Game, LivePlayer
 from app.services.bills import BillBook
 
-from .conftest import signup
+from .conftest import auth, signup
 from .test_games_actions import join_ok
 from .test_games_read import DEADLINE2, END2, START2, detail, publish
 from .test_live_end import seed_rows
 from .test_live_score import live_call, open_live
-
-
-def auth(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}"}
 
 
 def book_fee(client: TestClient, token: str, game_id: int, fee_total: int) -> dict:
