@@ -29,6 +29,15 @@ class DealIn(BaseModel):
     base_total_seq: int
 
 
+class RedealIn(BaseModel):
+    """重排这片（2.8 §4.4，全权）：取消+立刻重发二合一；按下=担保这场还没人
+    开始记分（责任模型），二次确认与清扫态拦截在前端。"""
+
+    court_no: int
+    base_total_seq: int
+    base_court_seq: int
+
+
 class SettleConfirmIn(BaseModel):
     """上传结算（2026-10-09 记分本地化）：记分在各手机本地，这片打完把本地账
     传上来——胜方/比分全由上传者给定，谁先传先落。"""
@@ -163,6 +172,29 @@ def live_deal(
         game_id=game_id,
         account_id=account.id,
         detail="一键排阵",
+    )
+    return out
+
+
+@router.post("/redeal")
+def live_redeal(
+    game_id: int,
+    body: RedealIn,
+    account: Account = Depends(require_account),
+    book: LiveBook = Depends(get_live_book),
+):
+    out = book.redeal(
+        game_id=game_id,
+        actor_id=account.id,
+        court_no=body.court_no,
+        base_total_seq=body.base_total_seq,
+        base_court_seq=body.base_court_seq,
+    )
+    audit(
+        "live_redeal",
+        game_id=game_id,
+        account_id=account.id,
+        detail=f"court={body.court_no}",
     )
     return out
 

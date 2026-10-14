@@ -239,6 +239,37 @@ class LiveBook(LiveSweepMixin):
             self._finish(state, game_id=game_id, actor_id=actor_id)
         return self.view(game_id=game_id, viewer_id=actor_id)
 
+    def redeal(
+        self,
+        *,
+        game_id: int,
+        actor_id: int,
+        court_no: int,
+        base_total_seq: int,
+        base_court_seq: int,
+    ) -> dict:
+        """重排这片（2.8 §4.4，全权）：取消+立刻重发二合一——在打片场上的人原样
+        回流队首（_void_court 与 cancel 同一段账面动作，不抄第三份），随即同事务
+        走出口补片按最新规矩（歇/连战/考勤）重发，回流+出口一拍完成、恰一 bump；
+        空片重排=补片（空手到出口即得）。责任担保在按下的人（「这场还没人开始
+        记分」人眼担保——比分在各手机本地服务器判不了），二次确认在前端页面层；
+        清扫态拦截也在前端（sweepState 不亮钮，后端无全局旗，与 no_redeal 同哲学）。
+        散场后写被 _open_write 拒。幂等口径：不设 settle 式重放——同拍重放的号
+        必已旧、两级号闸 409 携最新视图退回；回流+补片本身无重复人风险（重排把
+        同一批人再排一次也只是同一落位）。"""
+        with self._write(game_id=game_id, actor_id=actor_id):
+            state, game = self._open_write(game_id)
+            self._require_full_power(state, game, actor_id)
+            self._check_total(state, base_total_seq)
+            court = self._court_or_none(game_id, court_no)
+            if court is not None:  # 没开过行的空片无片号可比（视图端缺行补 0）
+                self._check_court(court, base_court_seq)
+            if court is not None and court.status == "playing":
+                rows = self._roster(game_id)
+                self._void_court(rows, {r.id: r for r in rows}, court)
+            self._finish(state, game_id=game_id, actor_id=actor_id)
+        return self.view(game_id=game_id, viewer_id=actor_id)
+
     def settle_confirm(
         self,
         *,

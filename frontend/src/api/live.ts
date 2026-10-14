@@ -91,6 +91,22 @@ export function apiLiveCancel(
   });
 }
 
+/** 重排这片（全权，2.8 §4.4）：取消+立刻重发二合一——场上的人原样回流队首、
+    同一事务按最新规矩（歇/连战/考勤）重发，一拍一号跳；空片=补片。
+    责任担保在按下的人（「重排会推翻当前这场」确认句在前端页面层） */
+export function apiLiveRedeal(
+  gameId: number,
+  courtNo: number,
+  baseTotalSeq: number,
+  baseCourtSeq: number,
+): Promise<LiveViewApi> {
+  return request("POST", `/games/${gameId}/live/redeal`, {
+    court_no: courtNo,
+    base_total_seq: baseTotalSeq,
+    base_court_seq: baseCourtSeq,
+  });
+}
+
 /* ---- 2.2 域动作（动全场，只走总号） ---- */
 
 /** 报到四态（自己报自己可、代办他人需全权）：late/join 排队尾、left 清队列位与片位 */

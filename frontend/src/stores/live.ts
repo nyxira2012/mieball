@@ -49,6 +49,7 @@ import {
   apiLiveDropIn,
   apiLiveEnd,
   apiLiveGuests,
+  apiLiveRedeal,
   apiLiveRules,
   apiLiveSetAdmin,
   apiLiveSettleConfirm,
@@ -784,6 +785,24 @@ export const useLiveStore = defineStore("live", () => {
     );
   }
 
+  /** 重排这片（全权，2.8 §4.4）：取消+立刻重发二合一在后端一个事务——刚设的
+      歇/连战立刻兑现（响应视图即重排结果）。清扫态不可用（sweepState 前闸：
+      清扫要清出空片好散场，重发会把残局变回在打）；二次确认在页面层（A3，
+      合同确认句「重排会推翻当前这场」），needFull 只是提示性前闸、真闸在后端 */
+  async function redealCourt(courtId: number): Promise<void> {
+    const L = live.value;
+    const c = courtOf(courtId);
+    if (!L || !c || sweepState.value || !needFull()) return;
+    const gid = L.g.id;
+    const no = courtNoOf(courtId);
+    const s = seqs(no);
+    await writeAction(
+      gid,
+      () => apiLiveRedeal(gid, no, s.baseTotalSeq, s.baseCourtSeq),
+      () => ui.toast("这片已重排 · 按最新状态排好"),
+    );
+  }
+
   /** 换人（§4.9 球友开放，无 guard）：场上 outId 原位顶坑给候场 inId——
       out 回队尾、feed 留名、pending 片冻结拒收全在总账；名册行恒为视图行
       （见 setCheck 处注）。
@@ -1196,6 +1215,7 @@ export const useLiveStore = defineStore("live", () => {
     uploadSettle,
     overwriteSettle,
     cancelMatch,
+    redealCourt,
     togglePerson,
     swapPlayers,
     setRuleScore,

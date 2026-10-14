@@ -94,6 +94,7 @@
             @clear="onClearScore"
             @settle="onSettle"
             @cancel="onCancelMatch"
+            @redeal="onRedealCourt"
             @autodeal="liveStore.autoDeal"
             @pull="goPull"
             @person="onPerson"
@@ -247,6 +248,15 @@ function askConfirm(msg: string, action: () => void): void {
 function onCancelMatch(courtId: number): void {
   askConfirm("这场将不计分，场上的人回候场队最前面", () =>
     liveStore.cancelMatch(courtId, liveStore.sweepState),
+  );
+}
+/** 重排这片（2.8 §4.4，全权）：责任模型=按下的人担保「这场还没人开始记分」
+    （比分在各手机本地，服务器判不了）——确认句先落这句话再执行；清扫态闸与
+    动作本体都在 store（sweepState 前闸），这里只管「先确认」 */
+function onRedealCourt(courtId: number): void {
+  askConfirm(
+    "重排会推翻当前这场——确认还没人开始记分，场上的人回队首立刻重排",
+    () => liveStore.redealCourt(courtId),
   );
 }
 /** 长按清零重开（本地记分）：长按撤回即归零重开，零弹窗打扰，轻量 toast 反馈 */

@@ -86,7 +86,8 @@
       <!-- 全权工具行（非 full 不渲染；换人不设独立入口，走「点人」抽屉）：
           本场完成=开本地上传窗（先传先落，2026-10-11 按钮由「结束对局」更名——
           术语「结束对局」指动作本体不变）；上一场·改分=覆盖重落窗（销 P2-1 后的
-          纠错入口，预填最新落账）；取消对局先确认由页面接（A3）。
+          纠错入口，预填最新落账）；重排这片=取消+立刻重发二合一（2.8 §4.4，清扫
+          态不亮钮——清扫要清出空片好散场）；取消对局先确认由页面接（A3）。
           清零不在本行——球友本地操作，在记分框中列与撤回并列 -->
       <view v-if="full" class="match-card-tools">
         <text
@@ -97,6 +98,12 @@
         >
         <text class="tool-link" @click="emit('settle', court.id)"
           >本场完成</text
+        >
+        <text
+          v-if="!liveStore.sweepState"
+          class="tool-link"
+          @click="emit('redeal', court.id)"
+          >重排这片</text
         >
         <text class="tool-link danger" @click="emit('cancel', court.id)"
           >取消对局</text
@@ -160,6 +167,7 @@ const emit = defineEmits<{
   (e: "clear", courtId: number): void;
   (e: "settle", courtId: number): void;
   (e: "cancel", courtId: number): void;
+  (e: "redeal", courtId: number): void;
   (e: "autodeal"): void;
   (e: "pull"): void;
   /** 点场上人 → 开点人抽屉（2026-10-10 修复批 F5：此前开档案卡，组织者对场上人
