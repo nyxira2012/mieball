@@ -139,6 +139,7 @@ import { recordVenue } from "@/utils/venues";
 import type { CourtMode, PublishGameInput, Visibility } from "@/api/types";
 import { MODE_NAMES, SCORE_RULE_NAMES, autoGameName } from "@/utils/format";
 import { beijingAt, isoDay, isoDayOff, isoParts, toIso } from "@/utils/time";
+import { GRID_LABELS, GRID_MAX, STEP, m2g, playEndMin } from "@/utils/wheel";
 import { errText } from "@/api/http";
 import { goMeet } from "@/utils/nav";
 
@@ -152,16 +153,8 @@ const session = useSessionStore();
 const ui = useUiStore();
 const user = useUserStore();
 
-/* ---- 拨盘常量与网格 ---- */
+/* ---- 拨盘网格（网格族收在 utils/wheel 单一源，测试直盖；本地只留日期范围） ---- */
 const DAY_N = 14; // 日期范围：今天起 14 天
-const STEP = 30; // 时刻步进（分钟）——2026-10-04 定：30 分钟一格
-const GRID_N = 48; // 24h × 2 格（00:00–23:30）
-const GRID_MAX = 23 * 60 + 30; // 网格最后一格
-const GRID_LABELS: string[] = Array.from(
-  { length: GRID_N },
-  (_, i) =>
-    `${String(Math.floor(i / 2)).padStart(2, "0")}:${String((i % 2) * 30).padStart(2, "0")}`,
-);
 /** 规则三件 + 谁能翻到（label 引 MODE_NAMES/SCORE_RULE_NAMES 与 detail/live 同源；
     可见档文案表落本组件内——技术设计§4 知识落点） */
 const SCORES = [11, 15, 21];
@@ -185,9 +178,7 @@ const visHint = computed(() => {
   if (lf.visibility === "public") return "任何人翻约球页都能看到这局";
   return "列表里不出现 · 只把链接或邀请发给人";
 });
-/** 分钟 ↔ 网格下标（夹取） */
-const m2g = (m: number): number =>
-  Math.max(0, Math.min(Math.round(m / STEP), GRID_N - 1));
+/** 分钟 ↔ 网格下标（夹取）在 utils/wheel；本地 clamp 供回填与截止拨盘夹取 */
 const clamp = (v: number, lo: number, hi: number): number =>
   Math.max(lo, Math.min(v, hi));
 
@@ -253,14 +244,18 @@ const playHint = computed(
     `${dayLabels.value[dayI.value]} ${GRID_LABELS[m2g(startMin.value)]}–${GRID_LABELS[m2g(endMin.value)]}`,
 );
 
-/** 开打拨盘变化：夹结束时刻；截止为手动态时把越界部分收进新的可拨范围 */
+/** 开打拨盘变化：结束列被拨才消费它的行号（2026-10-16 修复：此前 v[2] 从未被
+    读，拨结束列表单值纹丝不动，保存回旧时间）；没拨保持旧结束分钟（只拨开始列
+    时结束绝对时刻不变）。截止为手动态时把越界部分收进新的可拨范围 */
 function onPlayChange(v: number[]): void {
+  const prevEndRow = endRow.value; // 旧开始口径的选中行——picker 行号对照的是旧 value
   dayI.value = v[0] ?? dayI.value;
   startMin.value = clamp((v[1] ?? 0) * STEP, 0, GRID_MAX);
-  endMin.value = clamp(
+  endMin.value = playEndMin(
+    v[2] ?? prevEndRow,
+    prevEndRow,
     endMin.value,
-    startMin.value + 30,
-    Math.min(startMin.value + 360, GRID_MAX),
+    startMin.value,
   );
   if (!dlAuto.value) fitDlToRange();
 }
