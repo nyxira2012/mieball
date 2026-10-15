@@ -1,6 +1,6 @@
 /* 教学沙盒编排层（2.7 批2）：模式路由 + 步进指针 + NPC 剧本定时器 + 本地记分账 +
    结算编排的单点。真局 live store 全程不碰——教学态是 live.vue 的平级分支，
-   退出即散（§4.5：卡标记之外本机不落任何东西）。动作编排套路统一为
+   退出即散（§4.5：本机不落任何东西）。动作编排套路统一为
    「调 engine → 查 NPC 调度表 → advanceIf 跑当前步判据」，批3/批4 的组件动作
    （tempo/swap/加片等）进来时照同一套路挂。 */
 import { computed, reactive, ref } from "vue";
@@ -17,30 +17,10 @@ import {
 import { reachedLocal } from "@/utils/rotate";
 import { useUiStore } from "@/stores/ui";
 
-export type SandboxMode = "pick" | "participate" | "organize" | "freeroam";
-
-/** 卡标记两粒（进过即落，走没走完都算；§4.5）——storage 一 key 存一对 */
-const CARDS_KEY = "mieball.sandbox.cards";
-type CardKind = "participate" | "organize";
-
-function loadCards(): Record<CardKind, boolean> {
-  try {
-    const raw = uni.getStorageSync(CARDS_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (parsed && typeof parsed === "object") {
-      return {
-        participate: !!parsed.participate,
-        organize: !!parsed.organize,
-      };
-    }
-  } catch {
-    // 格式损坏/无环境静默走默认（venues.ts 同款兜底）
-  }
-  return { participate: false, organize: false };
-}
+export type SandboxMode = "pick" | "participate" | "organize";
 
 export const useSandboxStore = defineStore("sandbox", () => {
-  /** pick=选卡屏；participate/organize=两张教学卡；freeroam=随便逛逛 */
+  /** pick=未进教学（渲染落回 live.vue 真局/空态）；participate/organize=两张教学卡 */
   const mode = ref<SandboxMode>("pick");
   /** 教学态现场数据（engine 初始化的剧本局）；pick 态恒 null */
   const state = ref<SandState | null>(null);
@@ -73,25 +53,6 @@ export const useSandboxStore = defineStore("sandbox", () => {
     if (!cur || !s) return "";
     return typeof cur.text === "function" ? cur.text(s) : cur.text;
   });
-
-  /* ---- 卡标记（storage 不在响应系内：写入后靠 rev 通知 computed 重读，
-      选卡屏 ✓ 与教学横幅才能即时点亮） ---- */
-  const cardsRev = ref(0);
-  const doneCards = computed(() => {
-    void cardsRev.value;
-    return loadCards();
-  });
-  function markCard(kind: CardKind): void {
-    const marks = loadCards();
-    if (marks[kind]) return;
-    marks[kind] = true;
-    try {
-      uni.setStorageSync(CARDS_KEY, JSON.stringify(marks));
-    } catch {
-      // 存储满静默跳过：卡标记只是 ✓ 装饰，丢了不影响玩法
-    }
-    cardsRev.value++;
-  }
 
   /* ---- NPC 剧本定时器（调度表在 data.ts；fired 去重防条件重复武装） ---- */
   let timers: ReturnType<typeof setTimeout>[] = [];
@@ -268,7 +229,7 @@ export const useSandboxStore = defineStore("sandbox", () => {
     settleWindow.value = null;
   }
 
-  /* ---- 权限闸单点（§4.4 权限随卡走）：组织卡=组织者全开；参与卡/随便逛逛=普通
+  /* ---- 权限闸单点（§4.4 权限随卡走）：组织卡=组织者全开；参与卡=普通
       球员——只有自己歇/退场与记分/结算，其余动作如实拦下（真局 needFull 同句）。 ---- */
   const ui = useUiStore();
   const isFull = computed(() => mode.value === "organize");
@@ -304,12 +265,12 @@ export const useSandboxStore = defineStore("sandbox", () => {
     personSwap.value = false;
     sheetKind.value = "person";
   }
-  /** ＋到场：代办工具入口（§4.4 唯一入口级拦截——参与卡/随便逛逛如实拦下） */
+  /** ＋到场：代办工具入口（§4.4 唯一入口级拦截——参与卡如实拦下） */
   function tapCheckin(): void {
     if (!needFull()) return;
     sheetKind.value = "checkin";
   }
-  /** 规则抽屉两卡都可开（参与卡只读三保险之一：抽屉内罩层）；freeroam 同 */
+  /** 规则抽屉两卡都可开（参与卡只读三保险之一：抽屉内罩层） */
   function openRules(): void {
     sheetKind.value = "rules";
   }
@@ -443,22 +404,6 @@ export const useSandboxStore = defineStore("sandbox", () => {
 
   /* ---- 进出与重放 ---- */
 
-  /** 自由玩态种子（§4.5/A2 快照）：走到「第一场收完」——你在 1 号场打第二场
-      （7:5），阿豪、老周候场。组合 engine 动作搭出来，不另开剧本 */
-  function seedFreeroam(): SandState {
-    const s = engine.initParticipate();
-    const id = (name: string) => s.players.find((p) => p.name === name)!.id;
-    engine.checkIn(s, id("你"));
-    engine.checkIn(s, id("球球")); // 第 4 人→自动开赛 阿豪·老周 vs 你·球球
-    engine.checkIn(s, id("老金"));
-    engine.checkIn(s, id("小鹿"));
-    engine.settle(s, 1, "a", 11, 9); // 老金小鹿顶坑，候场 [阿豪, 老周]
-    const history: ("a" | "b")[] = [];
-    for (let i = 0; i < 12; i++) history.push(i < 7 ? "a" : "b");
-    localScores[1] = { sa: 7, sb: 5, history };
-    return s;
-  }
-
   function enter(kind: Exclude<SandboxMode, "pick">): void {
     clearTimers();
     fired.clear();
@@ -466,12 +411,7 @@ export const useSandboxStore = defineStore("sandbox", () => {
     // 重放/换卡前清残账：局面不落盘（§4.5），上一局的本地记分不得带进新开局
     for (const k of Object.keys(localScores)) delete localScores[Number(k)];
     state.value =
-      kind === "organize"
-        ? engine.initOrganize()
-        : kind === "freeroam"
-          ? seedFreeroam()
-          : engine.initParticipate();
-    if (kind !== "freeroam") markCard(kind); // 随便逛逛不落卡标记（本机只落两粒）
+      kind === "organize" ? engine.initOrganize() : engine.initParticipate();
     stepIdx.value = 0;
     settleWindow.value = null;
     sheetKind.value = null; // 抽屉族随局面散（重放/换卡不残留上一局的开着的抽屉）
@@ -486,7 +426,7 @@ export const useSandboxStore = defineStore("sandbox", () => {
     if (mode.value !== "pick") enter(mode.value);
   }
 
-  /** 退出：局面散、定时器清、回选卡屏 */
+  /** 退出：局面散、定时器清、回未进教学态（渲染落回 live.vue 真局/空态） */
   function exit(): void {
     clearTimers();
     fired.clear();
@@ -507,7 +447,6 @@ export const useSandboxStore = defineStore("sandbox", () => {
     step,
     stepText,
     spot,
-    doneCards,
     localScores,
     settleWindow,
     enter,

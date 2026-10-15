@@ -59,7 +59,7 @@
 
     <!-- 教学态（2.7 批3）：sandbox store 全屏接管（分支在真局之前——自动态永不
          截胡，§4.7；onLoad 冷启动分发与 onShow 接局照旧，这里只拦渲染）。
-         退出教学（含从真局入口进的）：exit 回 pick 后分支次序天然落回真局/选卡屏
+         退出教学（含从真局入口进的）：exit 回 pick 后分支次序天然落回真局/空态
          ——live store 全程没动，无需恢复逻辑 -->
     <template v-else-if="sandbox.mode !== 'pick'">
       <SandboxStage />
@@ -104,7 +104,7 @@
         />
       </view>
 
-      <!-- 真局「新手教学」浮层（2.7 §4.7）：两张体验卡带 ✓（进过即落）；选卡即进
+      <!-- 真局「新手教学」浮层（2.7 §4.7）：两张体验卡；选卡即进
            教学（sandbox 分支在真局之前天然全屏接管，live store 没动过——教学里
            「退出教学」回 pick 后本分支原样恢复，画面即原路返回）。点空白处关闭 -->
       <view
@@ -116,12 +116,10 @@
           <view class="teach-kt">{{ TEACH_OV_TITLE }}</view>
           <view class="teach-duo">
             <view class="teach-card" @click="pickTeach('participate')">
-              <view v-if="sandbox.doneCards.participate" class="ok">✓</view>
               <view class="t">{{ CARD_TITLES.participate.title }}</view>
               <view class="s">{{ CARD_TITLES.participate.sub }}</view>
             </view>
             <view class="teach-card" @click="pickTeach('organize')">
-              <view v-if="sandbox.doneCards.organize" class="ok">✓</view>
               <view class="t">{{ CARD_TITLES.organize.title }}</view>
               <view class="s">{{ CARD_TITLES.organize.sub }}</view>
             </view>
@@ -186,10 +184,22 @@
       <QrOverlay :visible="qrOpen" @close="qrOpen = false" />
     </template>
 
-    <!-- 无局空态=选卡屏（2.7 §4.1）：两张体验卡+随便逛逛+常驻横幅接替 2.1 的
-         「还没有进行中的球局」一句话空态（2.1 文档已挂指针空态由 2.7 接替） -->
-    <template v-else>
-      <SandboxPicker />
+    <!-- 无 live 空态（alpha:1532-1535 版式；bare 壳下自补边距）。按钮文案 2026-10-11 改——
+         没球打的去向是约球页的两个低门槛动作（找局/留意向），不再预设用户当组织者。
+         2.7 教学以两张虚拟卡挂进这套 2.1 框架（不替代空态本身） -->
+    <template v-else-if="!liveStore.hasLive">
+      <view class="empty-wrap">
+        <view class="kicker kt30">Court</view>
+        <view class="brand">现<text class="bem">场</text></view>
+        <EmptyBox class="et20">
+          <view>还没有进行中的球局</view>
+          <AppButton variant="pri" size="sm" class="go-btn" @click="goMeet"
+            >先约球或留下意向 ▸</AppButton
+          >
+        </EmptyBox>
+        <view class="hr" />
+        <SandboxCards />
+      </view>
     </template>
   </PageShell>
 </template>
@@ -215,7 +225,7 @@ import EndSettleModal from "@/components/biz/EndSettleModal.vue";
 import SweepSheet from "@/components/biz/SweepSheet.vue";
 import LiveRecap from "@/components/biz/LiveRecap.vue";
 import QrOverlay from "@/components/biz/QrOverlay.vue";
-import SandboxPicker from "@/components/sandbox/SandboxPicker.vue";
+import SandboxCards from "@/components/sandbox/SandboxCards.vue";
 import SandboxStage from "@/components/sandbox/SandboxStage.vue";
 import { useLiveStore } from "@/stores/live";
 import { useGameStore } from "@/stores/game";
@@ -495,7 +505,7 @@ function retryDead(): void {
 /* ---------- 战报门牌（2.6 §4.1/§4.3） ---------- */
 /** 完成=收摊（合同 4.1-3：只清本机画面，账一点不动；不弹确认）：还有别的在办局
     原地接最近开打的（liveGame 口径在 game store，同 tab 不跳页），无则落
-    2.7 选卡屏。深链残留 id 一并清（§4.3-4 收摊语义）：
+    2.1 空态。深链残留 id 一并清（§4.3-4 收摊语义）：
     不清则切走再切回 onShow `liveId ?? …` 仍拿它重接刚收掉的局，战报复活 */
 function onRecapComplete(): void {
   liveStore.dismissRecap();
@@ -560,8 +570,9 @@ onUnload(() => liveStore.stopPolling());
   color: var(--lemon);
 }
 
-/* 真局「新手教学」浮层（§4.7）：轻量两卡组（复用选卡屏卡名/副句/✓ 语言，
-   不整块搬 SandboxPicker——那含横幅与随便逛逛，浮层里没有它们的位置） */
+/* 真局「新手教学」浮层（§4.7）：轻量两卡组（卡名/副句与空态两张虚拟卡同一源
+   sandbox/data 的 CARD_TITLES，不整块搬 SandboxCards——那带名册小像画面，
+   浮层里只放题+副句） */
 .teach-ov {
   position: fixed;
   inset: 0;
@@ -602,7 +613,6 @@ onUnload(() => liveStore.stopPolling());
   gap: 10px;
 }
 .teach-card {
-  position: relative;
   flex: 1;
   border: 1px solid rgba(255, 212, 0, 0.28);
   border-radius: var(--r-md);
@@ -615,21 +625,6 @@ onUnload(() => liveStore.stopPolling());
 .teach-card:active {
   transform: scale(0.96);
   border-color: var(--lemon);
-}
-.teach-card .ok {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--lemon);
-  color: var(--ink);
-  font-size: 11px;
-  font-weight: 700;
 }
 .teach-card .t {
   font-size: 13px;
@@ -655,6 +650,15 @@ onUnload(() => liveStore.stopPolling());
 }
 .et20 {
   margin-top: 20px;
+}
+.go-btn {
+  margin-top: 20px;
+}
+/* 空态框与两张教学卡之间的分割线：真局去向与练习入口分家 */
+.hr {
+  height: 1px;
+  background: var(--line);
+  margin: 20px 0 12px;
 }
 
 /* 危险动作确认槽：叠在所有本地弹层之上（EndSettleModal z-110 也在其下；confetti 115 / toast 120 仍在上） */

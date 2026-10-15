@@ -92,7 +92,7 @@
     </view>
 
     <!-- 滚动对局区：一片一卡（playing/idle 由卡自判）；full 随卡走——组织卡全权
-         （⚡ 亮、工具行「本场完成」），参与卡/随便逛逛=普通球员 -->
+         （⚡ 亮、工具行「本场完成」），参与卡=普通球员 -->
     <view class="sb-courts">
       <SandboxCourtCard
         v-for="c in s.courts"

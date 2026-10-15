@@ -1,6 +1,5 @@
-/* 沙盒 store 编排锁（2.7 批2）：模式进出/卡标记两粒/NPC 定时器清理/本地记分到分
-   开窗/结算编排推进。真局 live store 不涉、零 API——storage 用内存 Map stub 掉
-   uni 全局（黑匣子测试同惯例），node 环境可跑。每例全新 pinia + 假定时器。 */
+/* 沙盒 store 编排锁（2.7 批2）：模式进出/NPC 定时器清理/本地记分到分
+   开窗/结算编排推进。真局 live store 不涉、零 API。每例全新 pinia + 假定时器。 */
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import * as engine from "@/sandbox/engine";
@@ -32,7 +31,7 @@ const qNames = (s: SandState) =>
   s.queue.map((id) => s.players.find((p) => p.id === id)!.name);
 
 describe("进卡/退出/重放（§4.1/§4.5）", () => {
-  it("enter('participate')：mode/state/stepIdx=0/步进表首句/卡标记即落", async () => {
+  it("enter('participate')：mode/state/stepIdx=0/步进表首句", async () => {
     const h = await load();
     h.enter("participate");
     expect(h.mode).toBe("participate");
@@ -40,7 +39,6 @@ describe("进卡/退出/重放（§4.1/§4.5）", () => {
     expect(qNames(h.state!)).toEqual(["阿豪", "老周"]); // 幕一：阿豪老周在等
     expect(h.stepIdx).toBe(0);
     expect(h.step?.text).toBe("这局是示例——点『我到了』，你也进场");
-    expect(h.doneCards).toEqual({ participate: true, organize: false }); // 进过即落
   });
 
   it("exit：mode 回 pick、局面散、定时器清光（NPC 线索不再触发）", async () => {
@@ -53,10 +51,9 @@ describe("进卡/退出/重放（§4.1/§4.5）", () => {
     expect(vi.getTimerCount()).toBe(0);
     expect(() => vi.advanceTimersByTime(5000)).not.toThrow(); // 散场后到点的旧定时器无局可落
     expect(h.state).toBeNull();
-    expect(h.doneCards.organize).toBe(true); // 退出不撤销卡标记（进过即落）
   });
 
-  it("重放：exit 再进=全新开局（步进指针回零、局面复位）；随便逛逛不落卡标记", async () => {
+  it("重放：exit 再进=全新开局（步进指针回零、局面复位）", async () => {
     const h = await load();
     h.enter("participate");
     h.checkInMe();
@@ -66,10 +63,6 @@ describe("进卡/退出/重放（§4.1/§4.5）", () => {
     expect(h.stepIdx).toBe(0);
     expect(qNames(h.state!)).toEqual(["阿豪", "老周"]);
     expect(h.state!.players.find((p) => p.you)!.check).toBe("none"); // 你未签到（重放）
-
-    h.enter("freeroam"); // 随便逛逛（§4.5）：不带引导
-    expect(h.step).toBeNull();
-    expect(h.doneCards).toEqual({ participate: true, organize: false }); // 本机只落两粒
   });
 });
 
@@ -206,7 +199,7 @@ describe("抽屉族与权限闸（2.7 批4：参与卡=普通球员）", () => {
     expect(h.sheetKind).toBe("person");
     expect(h.personId).toBe(h.state!.players.find((p) => p.you)!.id);
     h.exit();
-    expect(h.sheetKind).toBeNull(); // 退出即散（§4.5：卡标记之外不落任何东西）
+    expect(h.sheetKind).toBeNull(); // 退出即散（§4.5：本机不落任何东西）
     expect(h.personId).toBe(0);
   });
 });

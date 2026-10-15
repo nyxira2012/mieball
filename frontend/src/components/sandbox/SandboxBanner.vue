@@ -1,7 +1,7 @@
 <template>
   <!-- 教学沙盒常驻横幅（2.7 §4.1 两档）：访客带「登录 ▸」转化出口（§4.6 三处之一
        ——点开名片建号卡，pending 空对象＝建号成功回现场页接着玩）；已登录讲空态事实。
-       选卡屏与教学态顶部各挂一条（规格：横幅常驻），两档文案单一源在 sandbox/data -->
+       教学态顶部挂一条（规格：横幅常驻），两档文案单一源在 sandbox/data -->
   <view class="sb-banner">
     <text class="msg">{{
       session.isGuest ? BANNER_GUEST : BANNER_LOGGED_IN

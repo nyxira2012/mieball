@@ -2,24 +2,16 @@
   <!-- 教学底盘（2.7 §4.4/A3）：一张步进表驱动的提示行——句子吃 store.stepText
        （函数步解析单点在 store），右端两粒小字常驻（退出教学/重新教学，想走想重来随时）。
        三形态：普通提示行 / final 收尾行（整行可点跳约球页，几秒后 store autoTimer 推过
-       末条）/ 尾巴态（走完收窄成最下一行「✓ 教学走完了」，两粒照旧——提示不消失）。
-       随便逛逛（freeroam）不带引导：提示槽只有「重新来一遍 ▸」（§4.5），两粒照旧给出路。 -->
+       末条）/ 尾巴态（走完收窄成最下一行「✓ 教学走完了」，两粒照旧——提示不消失）。 -->
   <view
     v-if="sandbox.mode !== 'pick'"
     class="sb-tutor"
     :class="{ tail: isTail }"
   >
-    <!-- freeroam：倒带行（不占步进表） -->
-    <view
-      v-if="sandbox.mode === 'freeroam'"
-      class="sb-tutor-line link"
-      @click="sandbox.restart()"
-      >重新来一遍 ▸</view
-    >
     <!-- final 收尾行：整行可点（真出口：跳约球页——切 tab 触发 onHide，局面照 §4.5 即散）。
          组织卡末条双阶段（规格 A3 第 10 条）：散场进行中它是提示行（点它跳走会经 onHide
          把教学散掉——出口只在 ended 后的收尾句上） -->
-    <view v-else-if="isExitRow" class="sb-tutor-line link" @click="goMeet">{{
+    <view v-if="isExitRow" class="sb-tutor-line link" @click="goMeet">{{
       sandbox.stepText
     }}</view>
     <!-- 尾巴态：走完不消失，收窄一行钉在最下 -->
@@ -41,10 +33,8 @@ import { TUTOR_TAIL } from "@/sandbox/data";
 
 const sandbox = useSandboxStore();
 
-/** 尾巴态 = 两卡步进表走完（stepIdx 推过末条，step 为 null）；freeroam 无表，不算走完 */
-const isTail = computed(
-  () => sandbox.mode !== "freeroam" && sandbox.step === null,
-);
+/** 尾巴态 = 步进表走完（stepIdx 推过末条，step 为 null） */
+const isTail = computed(() => sandbox.step === null);
 /** final 行何时是「出口」：参与卡末条恒是收尾出口；组织卡末条双阶段——散场收工完
     （ended）才换成跳发局的收尾句，进行中渲染成普通提示行（光圈指向散场钮） */
 const isExitRow = computed(

@@ -1,7 +1,7 @@
 /* 沙盒组织卡十步数字账全程锁（2.7 批4）——照规格 §7 A4 组织卡数字账经 store 编排
    逐条断言（组件动作全走 store：抽屉族/权限闸/编排动作单一真值在这，与真局抽屉同路
    ——engine 层的同一份账已锁在 sandbox-engine.test.ts，这里锁的是「组件动作 → store
-   编排 → 步进翻面」全程）。另锁：权限随卡走（§4.4）、freeroam 快照与全功能（A2）。
+   编排 → 步进翻面」全程）。另锁：权限随卡走（§4.4）。
    真局 live store 不涉、零 API——uni 全局 stub 掉（黑匣子测试同惯例），node 环境可跑。
    每例全新 pinia + 假定时器。 */
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -198,38 +198,5 @@ describe("权限随卡走（§4.4）", () => {
     h.tempo(zh.id, "skip"); // 组织卡全权：给别人可用
     expect(zh.skip).toBe(1);
     expect(h.stepIdx).toBe(2); // 无关动作不抢翻步进（第三步代办等着）
-  });
-});
-
-describe("freeroam 随便逛逛（§4.5/A2）", () => {
-  it("快照：第二场 7:5、老金小鹿 vs 你球球、阿豪老周候场；无引导；全功能照常轮转", async () => {
-    const h = await load();
-    const { useUiStore } = await import("@/stores/ui");
-    const ui = useUiStore();
-    h.enter("freeroam");
-    const s = h.state!;
-    expect(sideNames(s, 1, "a")).toEqual(["老金", "小鹿"]);
-    expect(sideNames(s, 1, "b")).toEqual(["你", "球球"]);
-    expect(qNames(s)).toEqual(["阿豪", "老周"]);
-    expect(h.localScores[1]).toMatchObject({ sa: 7, sb: 5 });
-    expect(h.step).toBeNull(); // 提示槽无步进（组件只画「重新来一遍 ▸」）
-
-    h.tapCheckin(); // ＋到场：普通球员如实拦下
-    expect(h.sheetKind).toBeNull();
-    expect(ui.toastMsg).toBe("请找组织者或管理员");
-    h.openRules(); // 规则抽屉照常可开（抽屉内只读）
-    expect(h.sheetKind).toBe("rules");
-    h.closeSheet();
-
-    for (let i = 0; i < 6; i++) h.point(1, "b"); // 7:5 → 7:11 到分自动开窗（b=你球球）
-    expect(h.settleWindow).toEqual({ courtNo: 1 });
-    h.confirmSettle(1, "b", 7, 11);
-    // 先上的先下：你球球连打两场下场入队尾，阿豪老周顶坑
-    expect(sideNames(s, 1, "b")).toEqual(["阿豪", "老周"]);
-    expect(qNames(s)).toEqual(["你", "球球"]);
-
-    h.restart(); // 「重新来一遍 ▸」= 同快照重放
-    expect(h.localScores[1]).toMatchObject({ sa: 7, sb: 5 });
-    expect(sideNames(h.state!, 1, "a")).toEqual(["老金", "小鹿"]);
   });
 });

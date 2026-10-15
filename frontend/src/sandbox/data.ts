@@ -160,13 +160,13 @@ export const ORG_FINAL_BILL = {
 
 /* ───────── 示例句常量（规格 4.1/4.4/收尾逐字）───────── */
 
-/** 选卡屏/教学态常驻横幅两档：访客带转化出口，已登录讲空态事实 */
+/** 教学态常驻横幅两档：访客带转化出口，已登录讲空态事实 */
 export const BANNER_GUEST = "示例局 · 登录后这里就是你的现场";
 export const BANNER_GUEST_ACTION = "登录 ▸";
 export const BANNER_LOGGED_IN = "你还没有进行中的球局 · 下面是示例";
 
-/** 两张体验卡的题+副句单一源：SandboxPicker 选卡屏与真局 live.vue teach-ov
-    浮层两屏同貌同吃——改文案只动这里，两处不会劈叉 */
+/** 两张体验卡的题+副句单一源：2.1 空态的两张虚拟卡（SandboxCards）与真局
+    live.vue teach-ov 浮层两屏同貌同吃——改文案只动这里，两处不会劈叉 */
 export const CARD_TITLES = {
   participate: { title: "参与打球指引", sub: "第一次来？跟着打一遍" },
   organize: { title: "组织打球指引", sub: "想自己组局？跟着当一遍组织者" },
