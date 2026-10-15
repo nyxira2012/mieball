@@ -16,7 +16,14 @@
     }}</view>
     <!-- 尾巴态：走完不消失，收窄一行钉在最下 -->
     <view v-else-if="isTail" class="sb-tutor-line dim">{{ TUTOR_TAIL }}</view>
-    <view v-else class="sb-tutor-line">{{ sandbox.stepText }}</view>
+    <!-- 普通提示行：行首柠檬呼吸点（与 sb-glow 光圈同节奏——「引导在这里」的常驻
+         信号）+ 新句浮入（:key 换句重挂触发——句子变了看得见，视觉权重不靠喊） -->
+    <view v-else class="sb-tutor-line">
+      <view class="sb-tipdot" />
+      <text :key="sandbox.stepText" class="sb-tutor-txt">{{
+        sandbox.stepText
+      }}</text>
+    </view>
 
     <view class="sb-tutor-acts">
       <text @click="sandbox.exit()">退出教学</text>
@@ -60,10 +67,48 @@ const isExitRow = computed(
 .sb-tutor-line {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
   font-weight: 600;
   color: var(--cream);
   line-height: 1.45;
+}
+/* 行首呼吸点：1.6s 与 sb-glow 同拍——光圈亮目标、这颗亮「引导本体在这」 */
+.sb-tipdot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lemon);
+  animation: sbTipPulse 1.6s ease-in-out infinite;
+}
+@keyframes sbTipPulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(255, 212, 0, 0.45);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 5px rgba(255, 212, 0, 0);
+  }
+}
+/* 新句浮入：换句重挂时 0.25s 轻浮入——步进翻面的变化感（用户裁决：动效优于换色，
+   整行柠檬会与 final 可点行混淆） */
+.sb-tutor-txt {
+  animation: sbTutorIn 0.25s ease-out;
+}
+@keyframes sbTutorIn {
+  from {
+    opacity: 0.35;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .sb-tutor-line.dim {
   font-size: 12px;
