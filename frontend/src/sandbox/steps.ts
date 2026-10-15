@@ -7,11 +7,11 @@
    ——批3 定形：final 行的「几秒后收成尾巴」也走 autoAfterMs，store autoTimer
    推过末条即尾巴态，不另设机制）。 */
 import type { SandState } from "./engine";
-import { arrived } from "./engine";
+import { arrived, pOf } from "./engine";
 
 /** 教学事件（store 编排层在动作/本地记分后喂给判据） */
 export interface TutorEv {
-  kind: "score" | "swap";
+  kind: "score" | "swap" | "qr";
   mine?: boolean; // score：是不是你队的数字
 }
 
@@ -44,6 +44,15 @@ export const PARTICIPATE_STEPS: TutorStep[] = [
     done: (s) => onCourt(s, youOf(s).id), // 球球到场自动开赛、你上场（NPC 定时器在 store）
   },
   {
+    // 锚顶条二维码钮（v2.8 亮码升为一步，推翻「不占提示步」）：点开示意浮层即算
+    // 完成——浮层里那句「已到场的人都能亮这张码收人」就是本步的正文。完成判据
+    // 只认点击事件、状态恒不成立（NPC 定时器级联跳不了这步）；不模拟「朋友真扫
+    // 码进场」——教学零联网，剧本加空降会打乱轮转数字账的确定性（§8 v2.8）
+    text: "想拉朋友进来？点顶条的二维码亮码——朋友扫码填个称呼就能进场打球",
+    spot: "qr-btn",
+    done: (_s, ev) => ev?.kind === "qr", // 点开示意浮层
+  },
+  {
     // 锚你队的比分数字
     text: "轮到你了——点你们队的数字记分；点错了点冒号旁的撤回",
     spot: "my-score",
@@ -55,8 +64,9 @@ export const PARTICIPATE_STEPS: TutorStep[] = [
     done: (s) => s.matches.length >= 1, // 第一次结算确认
   },
   {
-    // 锚你在场上的头像（点人抽屉入口）
-    text: "先上的先下——你不下接着打。打累了？点自己的头像，选『休息一轮』",
+    // 锚你在场上的头像（点人抽屉入口）。第二场的引导要在本句里给足：不歇的
+    // 用户第二场结算时本步与第 6 步同拍级联翻过，第 6 句没有显示的机会
+    text: "先上的先下——你不下接着打，把第二场打到 11 分再走一次结算。打累了？点自己的头像，选『休息一轮』",
     spot: "my-avatar",
     done: (s) => youOf(s).skip > 0 || s.matches.length >= 2, // 设了歇，或第二场结算确认（不歇也放行）
   },
@@ -84,12 +94,16 @@ export const PARTICIPATE_STEPS: TutorStep[] = [
     换人→封管理员→加片→快速结算→散场收工；ended 后换收尾句跳发局 */
 export const ORGANIZE_STEPS: TutorStep[] = [
   {
+    // 球球到=第 4 人签到即自动开赛的那一刻翻面——文案与开赛画面同拍；若等老金
+    // （晚 800ms）才翻，开赛已发生在本句展示期间，文案时序与画面错位
     text: "你是这局的组织者——人够就开赛",
-    done: (s) => arrivedP(s, "球球") && arrivedP(s, "老金"), // 两位 NPC 到场（约 2 秒，store 定时器）
+    done: (s) => arrivedP(s, "球球"),
   },
   {
+    // 观演步停一拍（规格 A3「约一拍自动进下一条」）：判据版会在老金到场时被
+    // 同拍级联直接跳过——「开赛不用谁按」这句就永远显示不出来，故纯定时
     text: "人够 4 个局就自己开——开赛不用谁按",
-    done: (s) => s.courts.some((c) => c.a.length + c.b.length > 0), // 四人对局开出
+    autoAfterMs: 2000,
   },
   {
     // 锚【＋到场】钮（候场条上，全权亮）
@@ -110,16 +124,29 @@ export const ORGANIZE_STEPS: TutorStep[] = [
     done: (s) => s.scoring === 15, // 分制改成 15（下一场起生效）
   },
   {
-    // 锚场上任一头像
-    text: "排得不顺眼？点场上的头像能换人",
+    // 锚场上任一头像。点名换入对象（v2.13）：球球↔老金是剧本正路——若把凯文
+    // 换上场，第七步「封凯文」的主线就断了（场上的候场者没有设管理员钮），
+    // 所以文案直接指到人；换谁都照样翻面（判据吃事件宽容）
+    text: "排得不顺眼？点场上【球球】的头像，把他换成【老金】",
     spot: "court-avatar",
     done: (_s, ev) => ev?.kind === "swap", // 一次换人落位（状态无痕，吃事件）
   },
   {
-    // 锚候场里的凯文
-    text: "临时不在场？点一个人，封他当管理员",
+    // 锚候场里的凯文（整排亮）。点名自适应（v2.13）：凯文还候场就点名凯文；
+    // 被第六步自由操作换上了场，就改点名候场里第一个可封的人（非访客未封）
+    // ——点名指主线，谁候场封谁，什么换法都保得住
+    text: (s) => {
+      const k = s.players.find((p) => p.name === "凯文")!;
+      const first = s.queue
+        .map((id) => pOf(s, id))
+        .find((p) => !p.guest && !p.admin);
+      const name = s.queue.includes(k.id) ? k.name : (first?.name ?? "球友");
+      return `临时不在场？点候场里的【${name}】，封他当管理员`;
+    },
     spot: "queue-kevin",
-    done: (s) => s.players.find((p) => p.name === "凯文")!.admin, // 凯文带「管理员」徽章
+    // 判据=封了任一人：文案点名凯文为主线，照点别人也放行（v2.9 用户实测教训
+    // 的另一半——文案与判据同一口径：指名是引导，宽容是出口）
+    done: (s) => s.players.some((p) => p.admin),
   },
   {
     // 锚顶条场地格（直填出口）
@@ -129,9 +156,17 @@ export const ORGANIZE_STEPS: TutorStep[] = [
       s.courts.some((c) => c.no === 2 && c.a.length + c.b.length > 0), // 第二片自动开出、四人上场（填完即开，无按钮）
   },
   {
-    // 锚对局卡上的【本场完成】钮（全权专属）
+    // 锚对局卡上的【本场完成】钮（全权专属）。两片各结一次——光圈一次只亮该结的
+    // 那片（在打且未结算过的最靠前片，锚带片号），结完一颗换下一颗（用户裁决：
+    // 两颗同闪分不清先结哪场）。用户跳过锚先结另一片也照算（判据只数场数）
     text: "打完不用一分一分点——点『本场完成』，把比分直接填进去",
-    spot: "quick-settle",
+    spot: (s) => {
+      const settled = new Set(s.matches.map((m) => m.courtNo));
+      const c = s.courts.find(
+        (cc) => (cc.a.length || cc.b.length) && !settled.has(cc.no),
+      );
+      return c ? `quick-settle-${c.no}` : null;
+    },
     done: (s) => s.matches.length >= 2, // 两片各结算一次
   },
   {

@@ -145,6 +145,8 @@ export const useSandboxStore = defineStore("sandbox", () => {
         if (mode.value === "pick" || stepIdx.value !== at) return; // 手动先做完了不抢翻
         stepIdx.value++;
         onStepEnter();
+        advanceIf(); // 定时步等待期用户可能已办完新步的事（组织卡第 2 步停一拍期间
+        // 代办了凯文）——翻面后补跑级联，否则要等下一个动作才翻、卡一步
       }, ms);
     }
   }
@@ -166,6 +168,12 @@ export const useSandboxStore = defineStore("sandbox", () => {
     if (!s || !you) return;
     armCues("me-checked-in");
     checkInById(you.id);
+  }
+
+  /** 二维码示意浮层点开（参与卡「亮码收人」步）：开关本位在 Stage 本地，
+      这里只收「点开过」事件喂判据——看到了就算学过，关不关不问 */
+  function qrShown(): void {
+    advanceIf({ kind: "qr" });
   }
 
   /* ---- 本地记分账（同构 live store 的 per-court {sa,sb,history}，纯内存：
@@ -296,11 +304,14 @@ export const useSandboxStore = defineStore("sandbox", () => {
     checkInById(g.id);
   }
 
-  /** 歇/连/取消歇（点人抽屉手柄钮） */
+  /** 歇/连/取消歇（点人抽屉手柄钮）：办完抽屉即关——提示行是教学的引导本体，
+      不能压在抽屉底下（规格幕五验收「设歇后抽屉关上」，歇的凭据靠复开抽屉看
+      「再歇一轮 · 将跳 N 轮」；真局抽屉不关是另一套口径，教学按自己的规格走） */
   function tempo(id: number, action: "skip" | "unskip" | "fire"): void {
     const s = state.value;
     if (!s || !canOperatePerson(id)) return;
     engine.tempo(s, id, action);
+    closeSheet();
     advanceIf();
   }
 
@@ -329,13 +340,15 @@ export const useSandboxStore = defineStore("sandbox", () => {
   }
 
   /** 封管理员：只封候场正式球友（访客不行——真局口径；抽屉渲染同闸，store 兜底）。
-      封完武装 admin-set 线索（NPC 调度表：小鹿随后到，第八步的因） */
+      封完关抽屉（tempo 同族：下一步入口在顶条场地格，抽屉压着够不着）+ 武装
+      admin-set 线索（NPC 调度表：小鹿随后到，第八步的因） */
   function setAdmin(id: number): void {
     const s = state.value;
     if (!s || !isFull.value) return;
     const p = engine.pOf(s, id);
     if (p.guest || p.admin || !s.queue.includes(id)) return;
     engine.setAdmin(s, id);
+    closeSheet();
     armCues("admin-set");
     advanceIf();
   }
@@ -393,12 +406,19 @@ export const useSandboxStore = defineStore("sandbox", () => {
     engine.sweepCancelAll(s);
   }
   /** 确认散场（抽屉内二次确认后调）：放行落 ended → 抽屉转账单态、提示条换收尾句；
-      重进 onStepEnter 让末条的条件自动步（收尾巴）此刻才计时 */
+      重进 onStepEnter 让末条的条件自动步（收尾巴）此刻才计时。提前散场（如第九步
+      直录没做完场就没了）时后面各步判据从此不可满足——散场收工=组织者的事教完了，
+      直接跳末条收尾，别把提示行死锁在中间步（用户实测踩中） */
   function endGame(): boolean {
     const s = state.value;
     if (!s || !isFull.value) return false;
     const ok = engine.endGame(s);
-    if (ok) onStepEnter();
+    if (ok) {
+      const steps = curSteps.value;
+      if (steps && !steps[stepIdx.value]?.final)
+        stepIdx.value = steps.length - 1;
+      onStepEnter();
+    }
     return ok;
   }
 
@@ -453,6 +473,7 @@ export const useSandboxStore = defineStore("sandbox", () => {
     exit,
     restart,
     checkInMe,
+    qrShown,
     point,
     undoPoint,
     clearScore,

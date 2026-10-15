@@ -23,9 +23,14 @@
           </view>
         </view>
         <view class="sb-tacts">
-          <!-- 二维码钮照常在（点了示意浮层，§4.4：不出真码）；散场钮组织卡常显
-               （你是组织者，canEnd 真局同位；参与卡不渲染）——进清扫流（第十步，锚 sweep-entry） -->
-          <view class="sb-qrbtn" @click="qrOpen = true">
+          <!-- 二维码钮照常在（点了示意浮层，§4.4：不出真码）；参与卡「亮码收人」步
+               （v2.8）光圈指这颗钮；散场钮组织卡常显（你是组织者，canEnd 真局同位；
+               参与卡不渲染）——进清扫流（第十步，锚 sweep-entry） -->
+          <view
+            class="sb-qrbtn"
+            :class="{ 'sb-glow': sandbox.spot === 'qr-btn' }"
+            @click="onQr"
+          >
             <view class="sb-qric">
               <view class="sb-qrbox tl" /><view class="sb-qrbox tr" /><view
                 class="sb-qrbox bl"
@@ -165,6 +170,12 @@ const arrivedCount = computed(() => s.value!.players.filter(arrived).length);
 function onClear(courtNo: number): void {
   sandbox.clearScore(courtNo);
   ui.toast("比分已清零");
+}
+
+/** 二维码示意浮层：开浮层 + 给「亮码收人」步报点开事件（判据只认这一下） */
+function onQr(): void {
+  qrOpen.value = true;
+  sandbox.qrShown();
 }
 
 /* ---------- 顶条场地格直填（组织卡第八步）：本地态随 store 片数走，提交成败

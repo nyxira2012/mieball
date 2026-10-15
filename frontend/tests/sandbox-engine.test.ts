@@ -253,13 +253,16 @@ describe("写死数值与步进表（界面不自算·A3 条数）", () => {
     }
   });
 
-  it("步进表：参与卡 8 条、组织卡 10 条，首尾句逐字", () => {
-    expect(PARTICIPATE_STEPS.length).toBe(8);
+  it("步进表：参与卡 9 条、组织卡 10 条，首尾句逐字", () => {
+    expect(PARTICIPATE_STEPS.length).toBe(9);
     expect(ORGANIZE_STEPS.length).toBe(10);
     expect(PARTICIPATE_STEPS[0]!.text).toBe(
       "这局是示例——点『我到了』，你也进场",
     );
-    expect(PARTICIPATE_STEPS[7]).toMatchObject({
+    expect(PARTICIPATE_STEPS[2]).toMatchObject({
+      spot: "qr-btn", // v2.8 亮码收人步：光圈指顶条二维码钮
+    });
+    expect(PARTICIPATE_STEPS[8]).toMatchObject({
       text: "想打真的？去约球页找个真局 ▸",
       final: true,
     });
@@ -279,18 +282,29 @@ describe("写死数值与步进表（界面不自算·A3 条数）", () => {
     expect(step(1)(s)).toBe(false);
     checkIn(s, idOf(s, "球球"));
     expect(step(1)(s)).toBe(true); // 你上场
-    expect(step(2)(s, { kind: "score", mine: false })).toBe(false);
-    expect(step(2)(s, { kind: "score", mine: true })).toBe(true); // 你记了 1 分
-    expect(step(3)(s)).toBe(false);
+    expect(step(2)(s)).toBe(false); // 亮码步：状态恒不成立（NPC 定时器跳不了）
+    expect(step(2)(s, { kind: "score", mine: true })).toBe(false); // 也不吃记分事件
+    expect(step(2)(s, { kind: "qr" })).toBe(true); // 只认点开示意浮层
+    expect(step(3)(s, { kind: "score", mine: false })).toBe(false);
+    expect(step(3)(s, { kind: "score", mine: true })).toBe(true); // 你记了 1 分
+    expect(step(4)(s)).toBe(false);
     checkIn(s, idOf(s, "老金"));
     checkIn(s, idOf(s, "小鹿"));
     settle(s, 1, "a", 11, 9);
-    expect(step(3)(s)).toBe(true); // 第一次结算确认
-    expect(step(4)(s)).toBe(false);
-    tempo(s, idOf(s, "你"), "skip");
-    expect(step(4)(s)).toBe(true); // 设了歇
+    expect(step(4)(s)).toBe(true); // 第一次结算确认
     expect(step(5)(s)).toBe(false);
+    tempo(s, idOf(s, "你"), "skip");
+    expect(step(5)(s)).toBe(true); // 设了歇
+    expect(step(6)(s)).toBe(false);
     settle(s, 1, "b", 9, 11);
-    expect(step(5)(s)).toBe(true); // 第二次结算确认
+    expect(step(6)(s)).toBe(true); // 第二次结算确认
+  });
+
+  it("组织卡第七步判据：封了任一人即翻面（文案「点一个人」，不锁凯文）", () => {
+    const s = initOrganize();
+    const step7 = ORGANIZE_STEPS[6]!.done!;
+    expect(step7(s)).toBe(false); // 无人被封
+    setAdmin(s, idOf(s, "球球")); // 照文案封了别人（用户实测踩中的卡点）
+    expect(step7(s)).toBe(true);
   });
 });

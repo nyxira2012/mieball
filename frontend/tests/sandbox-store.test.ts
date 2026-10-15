@@ -2,7 +2,6 @@
    开窗/结算编排推进。真局 live store 不涉、零 API。每例全新 pinia + 假定时器。 */
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
-import * as engine from "@/sandbox/engine";
 import type { SandState } from "@/sandbox/engine";
 import { ELO_PREVIEW } from "@/sandbox/data";
 
@@ -72,15 +71,19 @@ describe("本地记分与结算编排（§4.2 幕三/幕四）", () => {
     h.enter("participate");
     h.checkInMe(); // 幕一：候场出现你 → 第 1 步翻面
     expect(h.stepIdx).toBe(1);
-    vi.advanceTimersByTime(2000); // 球球到（第 4 人）自动开赛、你上场 → 第 2 步翻面
+    vi.advanceTimersByTime(2000); // 球球到（第 4 人）自动开赛、你上场 → 亮码步等着
     expect(h.stepIdx).toBe(2);
+    expect(h.step?.spot).toBe("qr-btn"); // v2.8 亮码收人步：光圈指顶条二维码钮
+    expect(h.stepText).toContain("二维码亮码");
+    h.qrShown(); // 点开示意浮层 → 亮码步翻面（判据只认点击事件，状态跳不了）
+    expect(h.stepIdx).toBe(3);
     expect(
       h.state!.courts[0]!.b.map(
         (id) => h.state!.players.find((p) => p.id === id)!.name,
       ),
     ).toEqual(["你", "球球"]);
-    h.point(1, "b"); // 你队记 1 分 → 第 3 步翻面；武装老金小鹿线索
-    expect(h.stepIdx).toBe(3);
+    h.point(1, "b"); // 你队记 1 分 → 第 4 步翻面；武装老金小鹿线索
+    expect(h.stepIdx).toBe(4);
     vi.advanceTimersByTime(600); // 老金到
     vi.advanceTimersByTime(2000); // 小鹿随后到
     expect(qNames(h.state!)).toEqual(["老金", "小鹿"]);
@@ -91,7 +94,7 @@ describe("本地记分与结算编排（§4.2 幕三/幕四）", () => {
     expect(h.settleWindow).toBeNull(); // 关窗
     expect(h.localScores[1]).toEqual({ sa: 0, sb: 0, history: [] }); // 清账，下一场 0:0
     expect(qNames(h.state!)).toEqual(["阿豪", "老周"]); // 第一场结算：老金小鹿顶坑
-    expect(h.stepIdx).toBe(4); // 第 4 步翻面；第 5 步（设歇/第二场结算）等着
+    expect(h.stepIdx).toBe(5); // 第 5 步翻面；第 6 步（设歇/第二场结算）等着
     expect(h.step?.text).toContain("先上的先下——你不下接着打");
   });
 
@@ -100,6 +103,7 @@ describe("本地记分与结算编排（§4.2 幕三/幕四）", () => {
     h.enter("participate");
     h.checkInMe();
     vi.advanceTimersByTime(2000);
+    h.qrShown(); // 亮码步过（记分步前的一步）
     h.point(1, "b");
     h.point(1, "b");
     h.undoPoint(1);
@@ -108,7 +112,7 @@ describe("本地记分与结算编排（§4.2 幕三/幕四）", () => {
     expect(h.localScores[1]).toEqual({ sa: 0, sb: 0, history: [] });
     h.confirmSettle(1, "b", 11, 0); // 窗没开着：什么都不发生
     expect(h.state!.matches.length).toBe(0);
-    expect(h.stepIdx).toBe(3); // 没有判据推进（记 1 分那面已翻过）
+    expect(h.stepIdx).toBe(4); // 没有判据推进（记 1 分那面已翻过）
   });
 
   it("涨跌预览纯查表（§6 界面一个数不自算）：结算全链不碰 ELO_PREVIEW，改比分预览值不动", async () => {
@@ -130,14 +134,15 @@ describe("本地记分与结算编排（§4.2 幕三/幕四）", () => {
   });
 });
 
-describe("参与卡六幕串联（§4.2：幕三老金小鹿条件触发→幕六收尾 final 行）", () => {
-  /** 从进卡推到「第一次结算确认完」（幕四完）：返回 store 与「你」的行 */
+describe("参与卡七幕串联（§4.2：幕四老金小鹿条件触发→幕七收尾 final 行）", () => {
+  /** 从进卡推到「第一次结算确认完」（幕五完）：返回 store 与「你」的行 */
   async function toFirstSettle() {
     const h = await load();
     h.enter("participate");
     h.checkInMe(); // 幕一：候场出现你
     vi.advanceTimersByTime(2000); // 幕二：球球到（第 4 人）自动开赛、你上场
-    h.point(1, "b"); // 幕三：你记 1 分（武装老金小鹿条件线索）
+    h.qrShown(); // 幕三：点开二维码示意浮层（亮码收人）
+    h.point(1, "b"); // 幕四：你记 1 分（武装老金小鹿条件线索）
     vi.advanceTimersByTime(600 + 2000); // 老金、小鹿前后脚到
     expect(qNames(h.state!)).toEqual(["老金", "小鹿"]); // 不弹提示、不打断
     for (let i = 0; i < 11; i++) h.point(1, "b"); // 幕四：打到 11:0 自动开窗
@@ -147,12 +152,13 @@ describe("参与卡六幕串联（§4.2：幕三老金小鹿条件触发→幕�
 
   it("幕五歇轮+幕六第二场：你不下→设歇翻面→第二场结算你下场、歇了句、4 秒进 final、5 秒收尾巴", async () => {
     const { h, you } = await toFirstSettle();
-    expect(h.stepIdx).toBe(4); // 幕四完：先上的先下——你不下（第 5 步等着）
+    expect(h.stepIdx).toBe(5); // 幕五完：先上的先下——你不下（第 6 步等着）
     expect(h.state!.courts[0]!.b).toContain(you.id); // 你留场接着打
 
-    engine.tempo(h.state!, you.id, "skip"); // 幕五「休息一轮」（点人抽屉批4 挂同一编排）
-    h.point(1, "b"); // 任意动作出口带一次步进判定
-    expect(h.stepIdx).toBe(5); // 设了歇即翻面
+    h.openPerson(you.id); // 幕五入口：点自己头像开点人抽屉
+    h.tempo(you.id, "skip"); // 幕五「休息一轮」——办完抽屉即关（规格幕五验收「设歇后抽屉关上」）
+    expect(h.sheetKind).toBeNull(); // 抽屉关上——提示行是引导本体，不能压在抽屉底下
+    expect(h.stepIdx).toBe(6); // 设了歇即翻面
     expect(you.skip).toBe(1); // 歇记在名下——不是马上离场
 
     for (let i = 0; i < 11; i++) h.point(1, "b"); // 幕六：第二场打到 11
@@ -163,7 +169,7 @@ describe("参与卡六幕串联（§4.2：幕三老金小鹿条件触发→幕�
         (i) => h.state!.players.find((p) => p.id === i)!.name,
       ),
     ).toEqual(["阿豪", "老周"]); // 阿豪老周顶上
-    expect(h.stepIdx).toBe(6); // 幕五/幕六两步判据同拍级联翻完
+    expect(h.stepIdx).toBe(7); // 幕六/幕七两步判据同拍级联翻完
     expect(h.stepText).toBe(
       "你下场了，歇的那一轮也记上了——现场就是这么转起来的",
     );
@@ -178,7 +184,7 @@ describe("参与卡六幕串联（§4.2：幕三老金小鹿条件触发→幕�
     const { h } = await toFirstSettle();
     for (let i = 0; i < 11; i++) h.point(1, "b");
     h.confirmSettle(1, "b", 11, 0);
-    expect(h.stepIdx).toBe(6); // 不歇：两步判据同拍翻完，一样放行
+    expect(h.stepIdx).toBe(7); // 不歇：两步判据同拍翻完，一样放行
     expect(h.stepText).toBe(
       "下次累了可以先歇——点自己的头像就行。现场就是这么转起来的",
     );

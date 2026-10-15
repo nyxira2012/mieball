@@ -29,9 +29,15 @@
                 :class="{ me: pl.you }"
                 @click="emit('person', pl.id)"
               >
+                <!-- my-avatar=参与卡第 5 步只亮你；court-avatar=组织卡第 6 步整排亮
+                     （queue-kevin 同惯例：提示语点名，光圈指路不猜人） -->
                 <view
                   class="sb-avwrap"
-                  :class="{ 'sb-glow': sandbox.spot === 'my-avatar' && pl.you }"
+                  :class="{
+                    'sb-glow':
+                      sandbox.spot === 'court-avatar' ||
+                      (sandbox.spot === 'my-avatar' && pl.you),
+                  }"
                   ><ChibiAvatar :chibi="pl.chibi" :size="44"
                 /></view>
                 <text class="sb-pname">{{ pl.name }}</text>
@@ -87,12 +93,13 @@
 
       <!-- 全权工具行（复刻 CourtMatchCard .match-card-tools；非 full 不渲染——
            「本场完成＋直录」是组织者/管理员的本事，参与卡普通球员没有它）：沙盒只教
-           「本场完成」——开结算窗直录（组织卡第九步，光圈锚 quick-settle）；
-           改分/重排/取消对局不进教学（规格 §6 非目标） -->
+           「本场完成」——开结算窗直录（组织卡第九步，光圈锚 quick-settle-N 逐片指路：
+           一次亮该结的那片，结完换下一颗）；真局工具行另有改分/重排/取消三件，
+           教学不教（规格 §6 非目标） -->
       <view v-if="full" class="sb-tools">
         <text
           class="sb-toollink"
-          :class="{ 'sb-glow': sandbox.spot === 'quick-settle' }"
+          :class="{ 'sb-glow': sandbox.spot === 'quick-settle-' + court.no }"
           @click="emit('settle', court.no)"
           >本场完成</text
         >

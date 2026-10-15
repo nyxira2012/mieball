@@ -44,7 +44,11 @@
         <EmptyBox v-else text="都到齐了" />
       </view>
 
-      <view class="sb-cksec">
+      <!-- 光圈锚 bring-guest（组织卡第 4 步）：套住整个带访客区块（标题+称呼+带上） -->
+      <view
+        class="sb-cksec"
+        :class="{ 'sb-glow': sandbox.spot === 'bring-guest' }"
+      >
         <view class="sb-ckt">带访客</view>
         <view class="sb-ckin">
           <AppInput v-model="gName" placeholder="访客称呼" />

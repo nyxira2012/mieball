@@ -46,11 +46,14 @@ describe("组织卡十步全程（A4 数字账 × store 编排）", () => {
     expect(h.isFull).toBe(true); // 组织卡=全权
     const s = h.state!;
 
-    vi.advanceTimersByTime(2000 + 800); // 球球到（第 4 人）自动开赛、老金紧随
-    expect(h.stepIdx).toBe(2); // 第 1、2 步判据同拍级联（开赛不用谁按）
+    vi.advanceTimersByTime(2000); // 球球到（第 4 人）→ 自动开赛，第 1 步开赛那刻翻面
+    expect(h.stepIdx).toBe(1); // 文案与开赛画面同拍（不等老金才翻）
     expect(sideNames(s, 1, "a")).toEqual(["老周", "小敏"]);
     expect(sideNames(s, 1, "b")).toEqual(["你", "球球"]);
     expect(s.feed[0]).toBe("人够 4 · 自动开赛");
+    vi.advanceTimersByTime(800); // 老金紧随入候场（第 2 步纯定时步不受动作影响）
+    vi.advanceTimersByTime(2000); // 第 2 步停一拍——「开赛不用谁按」真的显示过了
+    expect(h.stepIdx).toBe(2);
 
     // 第三步：凯文迟到句滚出 → ＋到场开代办抽屉 → 【到场】签入队尾
     vi.advanceTimersByTime(1); // 凯文迟到句是 0 延时线索（下一拍滚出；假定时器 0 步进不触发）
@@ -86,11 +89,14 @@ describe("组织卡十步全程（A4 数字账 × store 编排）", () => {
     expect(h.sheetKind).toBeNull();
     expect(sideNames(s, 1, "b")).toEqual(["你", "老金"]);
     expect(h.stepIdx).toBe(6);
+    expect(h.stepText).toContain("【凯文】"); // 剧本正路（球球换老金）→ 第七步点名凯文
 
-    // 第七步：点候场里的凯文封管理员（带徽章）；小鹿随后到
+    // 第七步：点候场里的凯文封管理员（带徽章）；封完抽屉关上（下一步入口在
+    // 顶条场地格，抽屉压着够不着）；小鹿随后到
     h.openPerson(idOf(s, "凯文"));
     h.setAdmin(idOf(s, "凯文"));
     expect(s.players.find((p) => p.name === "凯文")!.admin).toBe(true);
+    expect(h.sheetKind).toBeNull(); // 办完即关（tempo 同族）
     expect(h.stepIdx).toBe(7);
     vi.advanceTimersByTime(800); // admin-set 线索：小鹿到
     expect(qNames(s)).toEqual(["凯文", "朋友", "球球", "小鹿"]); // 攒到 4 人、无空片不开
@@ -105,13 +111,15 @@ describe("组织卡十步全程（A4 数字账 × store 编排）", () => {
     expect(qNames(s)).toEqual([]);
     expect(h.stepIdx).toBe(8);
 
-    // 第九步：两片各「本场完成＋直录」（15 分制）；无人候场=原班续场
-    expect(h.spot).toBe("quick-settle");
+    // 第九步：两片各「本场完成＋直录」（15 分制）；无人候场=原班续场。
+    // 光圈逐片指路（用户裁决）：一次亮该结的那片，结完一颗换下一颗
+    expect(h.spot).toBe("quick-settle-1");
     h.openSettle(1);
     expect(h.settleWindow).toEqual({ courtNo: 1 });
     h.confirmSettle(1, "a", 15, 9);
     expect(sideNames(s, 1, "a")).toEqual(["老周", "小敏"]); // 刚下的转身又顶回来
     expect(h.stepIdx).toBe(8); // 两片各一次才翻面
+    expect(h.spot).toBe("quick-settle-2"); // 第一片结过→光圈换第二片
     h.openSettle(2);
     h.confirmSettle(2, "b", 7, 15);
     expect(h.stepIdx).toBe(9);
@@ -168,6 +176,46 @@ describe("组织卡十步全程（A4 数字账 × store 编排）", () => {
     h.setAdmin(idOf(s, "阿花"));
     expect(s.players.find((p) => p.name === "阿花")!.admin).toBe(false);
   });
+
+  it("提前散场不卡步：局面 ended 即直跳末条收尾句（第九步直录没做完就散场的死锁）", async () => {
+    const h = await load();
+    h.enter("organize");
+    vi.advanceTimersByTime(2000 + 800); // 球球老金到（开赛+候场）
+    vi.advanceTimersByTime(2000); // 第 2 步停一拍 → 停在第三步
+    // 不签凯文不直录，直接散场：残局=开赛的 1 号场
+    h.openSweep();
+    h.sweepCancelAll();
+    expect(h.endGame()).toBe(true);
+    expect(h.state!.ended).toBe(true);
+    expect(h.stepIdx).toBe(9); // 中间步判据已不可满足——直跳末条
+    expect(h.stepText).toBe("组织者的事就这些——去发个真局 ▸");
+  });
+
+  it("换入凯文的点名自适应（用户失败路径）：球球换成凯文 → 第七步改点老金", async () => {
+    const h = await load();
+    h.enter("organize");
+    vi.advanceTimersByTime(2000 + 800 + 2000); // 开赛+第 2 步停一拍 → 第三步
+    vi.advanceTimersByTime(1); // 凯文迟到句
+    const s = h.state!;
+    // 正路走到第六步：代办→带访客→改分制
+    h.tapCheckin();
+    h.checkInRow(idOf(s, "凯文"));
+    h.bringGuest("朋友");
+    h.openRules();
+    h.setScoring(15);
+    h.closeSheet();
+    // 第六步自由操作：球球 ↔ 凯文（凯文上场——主线冲突场景）
+    h.openPerson(idOf(s, "球球"));
+    h.setSwapMode(true);
+    h.swapWith(idOf(s, "凯文"));
+    expect(h.stepIdx).toBe(6); // 换谁都照样翻面（判据宽容）
+    expect(h.stepText).toContain("【老金】"); // 凯文上场了→自适应改点候场第一个可封的
+    expect(h.stepText).not.toContain("【凯文】");
+    // 照新提示办：老金可封（候场正式球友）
+    h.openPerson(idOf(s, "老金"));
+    h.setAdmin(idOf(s, "老金"));
+    expect(h.stepIdx).toBe(7);
+  });
 });
 
 describe("权限随卡走（§4.4）", () => {
@@ -191,7 +239,8 @@ describe("权限随卡走（§4.4）", () => {
     h.exit();
 
     h.enter("organize");
-    vi.advanceTimersByTime(2000 + 800);
+    vi.advanceTimersByTime(2000 + 800); // 球球老金到（自动开赛+候场）
+    vi.advanceTimersByTime(2000); // 第 2 步停一拍翻面
     vi.advanceTimersByTime(1); // 凯文迟到句（0 延时线索，0 步进不触发）
     const zh = h.state!.players.find((p) => p.name === "老周")!;
     h.openPerson(zh.id);
