@@ -304,8 +304,8 @@ export interface BillsView {
 /** 谁下（2.4 §4.1 四件套之二）：全上全下 / 输家下 / 1、2、3人下（单打只有 all/loser） */
 export type DownMode = "all" | "loser" | "n1" | "n2" | "n3";
 
-/** 怎么配（仅双打）：按候场队序 / 均衡配对（2.4 §4.5） */
-export type PairingMode = "queue" | "balance";
+/** 怎么配（仅双打）：按候场队序 / 均衡配对 / 轮换优先 / 胜负均衡 */
+export type PairingMode = "queue" | "balance" | "partner" | "even";
 
 /** 现场轮换四件套（2.4 §4.1）：谁能改=全权者（2.2 已定），点选即生效、在打对局照旧打完 */
 export interface RotationRules {
@@ -442,6 +442,7 @@ export interface LivePlayerApi {
   skip: number; // 剩余歇轮数（轮到发牌给他时递减）
   fire: boolean; // 连战：排到队首，与歇互斥
   queue_pos: number | null; // 候场序（升序即队列序）；null=场上/不在队
+  tonight: number; // 今晚已打场数（后端战报实时派生，前端不重算）
 }
 
 /** 片行（view.courts 元素镜像）：进行中比分不进协议（记分本地化，2026-10-09）——
@@ -557,6 +558,7 @@ export interface LivePlayer {
   skip: number;
   fire: boolean;
   queuePos: number | null;
+  tonight: number;
 }
 
 /** 片行（camel；不叫 LiveCourt 是避让上面 mock 期的旧类型，阶段2 删旧后不复名） */

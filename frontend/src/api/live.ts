@@ -309,6 +309,7 @@ export function toLiveView(v: LiveViewApi): LiveView {
       skip: p.skip,
       fire: p.fire,
       queuePos: p.queue_pos,
+      tonight: p.tonight,
     })),
     queue: [...v.queue],
     courts: v.courts.map((c) => ({

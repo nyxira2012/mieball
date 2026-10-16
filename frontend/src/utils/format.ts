@@ -37,10 +37,12 @@ export const DOWN_NAMES: Record<DownMode, string> = {
   n3: "3人下",
 };
 
-/** 怎么配名单一源（仅双打显示，2.4 §4.5） */
+/** 怎么配名单一源（仅双打显示） */
 export const PAIRING_NAMES: Record<PairingMode, string> = {
   queue: "按候场队序",
   balance: "均衡配对",
+  partner: "轮换优先",
+  even: "胜负均衡",
 };
 
 /** 局分分制三档单一源（原型 seg-score · 11 快节奏/15 标准局/21 马拉松，2.1 照旧保留）：
