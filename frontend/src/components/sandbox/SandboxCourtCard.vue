@@ -147,6 +147,7 @@ import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import type { SandCourt, SandPlayer } from "@/sandbox/engine";
 import { COURT_SIZE } from "@/sandbox/data";
+import { emptyLocal } from "@/utils/localScore";
 import { useSandboxStore } from "@/stores/sandbox";
 
 const props = defineProps({
@@ -197,9 +198,9 @@ const mySide = computed<"a" | "b" | null>(() => {
   return null;
 });
 
-/** 本机账（无账显示 0:0；记分本地化与真局同语义） */
+/** 本机账（无账显示 0:0；记分本地化与真局同语义，空账形状单一源 emptyLocal） */
 const local = computed(
-  () => sandbox.localScores[props.court.no] ?? { sa: 0, sb: 0, history: [] },
+  () => sandbox.localScores[props.court.no] ?? emptyLocal(),
 );
 
 /* 得分数字弹跳（CourtMatchCard 同法）：上涨侧挂 .bump，撤回回落不弹 */

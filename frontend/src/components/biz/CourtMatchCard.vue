@@ -151,6 +151,7 @@ import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import type { LiveCourt } from "@/api/types";
 import { courtSize } from "@/utils/rotate";
+import { emptyLocal } from "@/utils/localScore";
 import { duprOf, fmtDupr1 } from "@/utils/elo";
 import { courtDisplayName } from "@/utils/format";
 import { courtNoOf, latestMatchOf, useLiveStore } from "@/stores/live";
@@ -183,9 +184,9 @@ const playing = computed(
 );
 
 /** 本机账（记分本地化的显示源：服务端不记进行中比分，视图 sa/sb 位恒 0）；
-    无账（这片还没点过分）显示 0:0 */
+    无账（这片还没点过分）显示 0:0（空账形状单一源 emptyLocal） */
 const local = computed(
-  () => liveStore.localScores[props.court.id] ?? { sa: 0, sb: 0, history: [] },
+  () => liveStore.localScores[props.court.id] ?? emptyLocal(),
 );
 
 /** 该片最新落账战报（「上一场 · 改分」入口的真值源，latestMatchOf 单一源——

@@ -1,7 +1,7 @@
 <template>
   <!-- 沙盒候场条（2.7 批3，复刻 QueueBar 长相手感——真局组件零改动）：下一场头像×4
        柠檬描边 + 我的轮次一句话 + 我到了 / ＋到场。我的状态句推演吃 engine 状态，
-       轮数用真局同式 ceil((每片人数×空片+队列位+1)/每片人数)——不发明第二套。
+       轮数吃真局同一真值（utils/rotate 的 roundsToPlay 单一源）。
        参与卡身份随卡走（规格 4.4）：我到了亮着（幕一光圈锚 me-checkin）；
        ＋到场是代办工具——普通球员点了由 store 权限闸如实拦下（批4）；
        候场头像可点开点人抽屉（§4.4，批4） -->
@@ -44,6 +44,7 @@
 import { computed } from "vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import { useSandboxStore } from "@/stores/sandbox";
+import { roundsToPlay } from "@/utils/rotate";
 import { arrived, pOf } from "@/sandbox/engine";
 import { COURT_SIZE } from "@/sandbox/data";
 
@@ -59,7 +60,8 @@ const s = computed(() => sandbox.state);
 /** 下 N 位头像（N=每片人数，单源 data.COURT_SIZE；engine fillIdle 同吃） */
 const nextN = computed(() => (s.value?.queue ?? []).slice(0, COURT_SIZE));
 
-/** 我的轮次：真局 myRound 同式（ceil((size×空片+队列位+1)/size)）；不在队列 → null */
+/** 我的轮次：真局 myRound 同一真值（roundsToPlay 单一源，utils/rotate——
+    「不发明第二套」这次落进代码）；不在队列 → null */
 const myRound = computed<number | null>(() => {
   const st = s.value;
   const you = st?.players.find((p) => p.you);
@@ -67,7 +69,7 @@ const myRound = computed<number | null>(() => {
   const idx = st.queue.indexOf(you.id);
   if (idx < 0) return null;
   const empty = st.courts.filter((c) => !c.a.length && !c.b.length).length;
-  return Math.ceil((SIZE * empty + idx + 1) / SIZE);
+  return roundsToPlay(SIZE, empty, idx);
 });
 
 /** 我的状态一句话（真局同式）：队列里「还有 N 轮到我」（=1 强调）；

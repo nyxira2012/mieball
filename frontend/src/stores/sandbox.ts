@@ -15,6 +15,13 @@ import {
   type TutorStep,
 } from "@/sandbox/steps";
 import { reachedLocal } from "@/utils/rotate";
+import {
+  applyPoint,
+  clearLocal,
+  emptyLocal,
+  undoPointIn,
+  type LocalScoreBook,
+} from "@/utils/localScore";
 import { useUiStore } from "@/stores/ui";
 
 export type SandboxMode = "pick" | "participate" | "organize";
@@ -176,11 +183,9 @@ export const useSandboxStore = defineStore("sandbox", () => {
     advanceIf({ kind: "qr" });
   }
 
-  /* ---- 本地记分账（同构 live store 的 per-court {sa,sb,history}，纯内存：
-      比分在各手机本地记，settle 只吃确认窗定死的终局比分） ---- */
-  const localScores = reactive<
-    Record<number, { sa: number; sb: number; history: ("a" | "b")[] }>
-  >({});
+  /* ---- 本地记分账（同构 live store 的 per-court 账，纯内存：比分在各手机本地记，
+      settle 只吃确认窗定死的终局比分；形状与代数单一源在 utils/localScore） ---- */
+  const localScores = reactive<LocalScoreBook>({});
   /** 本地结算窗（一次一扇）：到分自动开，SandboxSettle（批3）直读自驱 */
   const settleWindow = ref<{ courtNo: number } | null>(null);
 
@@ -188,9 +193,8 @@ export const useSandboxStore = defineStore("sandbox", () => {
     const s = state.value;
     const c = s?.courts.find((c) => c.no === courtNo);
     if (!s || !c || !(c.a.length || c.b.length)) return; // 空片不记（同 live isIdle 守卫）
-    const acc = (localScores[courtNo] ??= { sa: 0, sb: 0, history: [] });
-    acc[side === "a" ? "sa" : "sb"]++;
-    acc.history.push(side);
+    const acc = (localScores[courtNo] ??= emptyLocal());
+    applyPoint(acc, side);
     const you = s.players.find((p) => p.you);
     const mine = you != null && (c.a.includes(you.id) || c.b.includes(you.id));
     if (mine) armCues("me-scored"); // 幕三：你打着分，老金小鹿前后脚到
@@ -202,18 +206,18 @@ export const useSandboxStore = defineStore("sandbox", () => {
   }
 
   function undoPoint(courtNo: number): void {
-    const acc = localScores[courtNo];
-    const side = acc?.history?.pop();
-    if (side === "a") acc!.sa--;
-    else if (side === "b") acc!.sb--;
+    undoPointIn(localScores[courtNo]);
   }
 
   function clearScore(courtNo: number): void {
-    const acc = localScores[courtNo];
-    if (acc) {
-      acc.sa = acc.sb = 0;
-      acc.history = [];
-    }
+    clearLocal(localScores[courtNo]);
+  }
+
+  /** 窗内直录纠偏写回（SandboxSettle 消费）：懒建在账代数内，组件不经账面结构直改 */
+  function setLocalScore(courtNo: number, sa: number, sb: number): void {
+    const acc = (localScores[courtNo] ??= emptyLocal());
+    acc.sa = sa;
+    acc.sb = sb;
   }
 
   /** 结算确认编排：engine.settle（战报+先上的先下回流）→ 关窗清账（下一场
@@ -228,7 +232,7 @@ export const useSandboxStore = defineStore("sandbox", () => {
     if (!s || settleWindow.value?.courtNo !== courtNo) return;
     engine.settle(s, courtNo, winner, sa, sb);
     settleWindow.value = null;
-    localScores[courtNo] = { sa: 0, sb: 0, history: [] };
+    localScores[courtNo] = emptyLocal();
     advanceIf();
   }
 
@@ -247,14 +251,14 @@ export const useSandboxStore = defineStore("sandbox", () => {
     return false;
   }
   /** 手柄钮闸（歇/连/退/换）：自己随时可、给别人需全权（真局 canOperate 同式）——
-      拦下即提示，钮不隐藏（教学要的就是「点了看见真实待遇」）。
-      语义差位：needFull 是全权闸、本闸是「自己∨全权」闸；拦下分支 isFull 已为假
-      （上方放过），此时 needFull 只带同句 toast——沙盒 needFull 无真局 sealGate，行为等价 */
+      拦下即提示，钮不隐藏（教学要的就是「点了看见真实待遇」） */
   function canOperatePerson(id: number): boolean {
     const s = state.value;
     if (!s) return false;
     if (isFull.value || s.players.find((p) => p.you)?.id === id) return true;
-    return needFull();
+    // 拦下分支 isFull 必假（上方放过），与 needFull 的拦下路同句同果——直写免借道
+    ui.toast("请找组织者或管理员");
+    return false;
   }
 
   /* ---- 抽屉族（2.7 批4）：点人/签到代办/规则/散场四扇——开关单槽与点中人都在这
@@ -288,11 +292,6 @@ export const useSandboxStore = defineStore("sandbox", () => {
   }
 
   /* ---- 组织卡编排动作（调 engine → 查表 → 推进步进，同 checkInMe 套路） ---- */
-
-  /** 代办签到（抽屉内【到场】）：到场单点复用 checkInById */
-  function checkInRow(id: number): void {
-    checkInById(id);
-  }
 
   /** 带访客：称呼用你填的（签到前直接改行上的 name——data.ts 契约），已到场不重带 */
   function bringGuest(name: string): void {
@@ -424,19 +423,25 @@ export const useSandboxStore = defineStore("sandbox", () => {
 
   /* ---- 进出与重放 ---- */
 
-  function enter(kind: Exclude<SandboxMode, "pick">): void {
+  /** 会话态归零（enter/exit 的公共序列收此一处：加第九个会话态只改这里，
+      漏一处即成重放残留） */
+  function resetSession(): void {
     clearTimers();
     fired.clear();
-    mode.value = kind;
-    // 重放/换卡前清残账：局面不落盘（§4.5），上一局的本地记分不得带进新开局
-    for (const k of Object.keys(localScores)) delete localScores[Number(k)];
-    state.value =
-      kind === "organize" ? engine.initOrganize() : engine.initParticipate();
     stepIdx.value = 0;
     settleWindow.value = null;
-    sheetKind.value = null; // 抽屉族随局面散（重放/换卡不残留上一局的开着的抽屉）
+    sheetKind.value = null;
     personId.value = 0;
     personSwap.value = false;
+    // 残账清零：局面不落盘（§4.5），上一局的本地记分不得带进新开局
+    for (const k of Object.keys(localScores)) delete localScores[Number(k)];
+  }
+
+  function enter(kind: Exclude<SandboxMode, "pick">): void {
+    resetSession();
+    mode.value = kind;
+    state.value =
+      kind === "organize" ? engine.initOrganize() : engine.initParticipate();
     onStepEnter();
     armCues("enter");
   }
@@ -448,16 +453,9 @@ export const useSandboxStore = defineStore("sandbox", () => {
 
   /** 退出：局面散、定时器清、回未进教学态（渲染落回 live.vue 真局/空态） */
   function exit(): void {
-    clearTimers();
-    fired.clear();
+    resetSession();
     mode.value = "pick";
     state.value = null;
-    stepIdx.value = 0;
-    settleWindow.value = null;
-    sheetKind.value = null;
-    personId.value = 0;
-    personSwap.value = false;
-    for (const k of Object.keys(localScores)) delete localScores[Number(k)];
   }
 
   return {
@@ -477,6 +475,7 @@ export const useSandboxStore = defineStore("sandbox", () => {
     point,
     undoPoint,
     clearScore,
+    setLocalScore,
     confirmSettle,
     closeSettleWindow,
     /* 批4：权限闸 + 抽屉族 + 组织卡编排 */
@@ -489,7 +488,7 @@ export const useSandboxStore = defineStore("sandbox", () => {
     tapCheckin,
     openRules,
     openSweep,
-    checkInRow,
+    checkInRow: checkInById, // 抽屉【到场】消费的语义名（到场单点即 checkInById）
     bringGuest,
     tempo,
     leavePerson,

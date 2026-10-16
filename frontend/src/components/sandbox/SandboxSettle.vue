@@ -87,11 +87,14 @@
 
 <script setup lang="ts">
 /* 本地态只有 winA/sa/sb（EndSettleModal 同构）；编排归 sandbox store（confirmSettle
-   关窗清账、closeSettleWindow 保分接着打）。followWinner/canPick 两行谓词就地写——
-   真局版单一源在 live store 模块，沙盒旁挂原则不反向依赖真局模块（架构总决策） */
-import { computed, ref, watch } from "vue";
+   关窗清账、closeSettleWindow 保分接着打）。比分直录交互单一源在
+   composables/scoreEntry（真局结算窗同吃），胜方联动谓词在 utils/rotate——
+   都是不挑 store 的中立层，沙盒旁挂原则（不反向依赖真局模块）不破 */
+import { computed } from "vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import { useSandboxStore } from "@/stores/sandbox";
+import { useScoreEntry } from "@/composables/scoreEntry";
+import { followWinner } from "@/utils/rotate";
 import { pOf } from "@/sandbox/engine";
 import { ELO_PREVIEW } from "@/sandbox/data";
 
@@ -103,73 +106,35 @@ const court = computed(() =>
   sandbox.state?.courts.find((c) => c.no === win.value?.courtNo),
 );
 
-/* 本地态：胜方可点选；比分两格文本直录 */
-const winA = ref<boolean | null>(null);
-const saText = ref("0");
-const sbText = ref("0");
-const sa = computed(() => Number(saText.value || "0"));
-const sb = computed(() => Number(sbText.value || "0"));
-
-/** 开窗对齐：按本机账重置本地态（一次一扇，窗开着不会换片）；胜方预选=分高方 */
-watch(
+/* 比分直录交互单一源（真局 EndSettleModal 同吃）：开窗吃本机账、胜方预选=分高方；
+   直录当场写回本机账——暂不结算后接着打的就是纠偏后的分 */
+const {
+  winA,
+  saText,
+  sbText,
+  sa,
+  sb,
+  canA,
+  canB,
+  canConfirm,
+  pick,
+  onScore,
+  onBlurScore,
+} = useScoreEntry(
   win,
-  (w) => {
-    if (!w) return;
-    const acc = sandbox.localScores[w.courtNo];
-    saText.value = String(acc?.sa ?? 0);
-    sbText.value = String(acc?.sb ?? 0);
-    winA.value = followWinner(sa.value, sb.value);
+  () => {
+    const acc = sandbox.localScores[win.value?.courtNo ?? -1];
+    return {
+      sa: acc?.sa ?? 0,
+      sb: acc?.sb ?? 0,
+      winA: followWinner(acc?.sa ?? 0, acc?.sb ?? 0),
+    };
   },
-  { immediate: true },
+  (sa2, sb2) => {
+    const w = win.value;
+    if (w) sandbox.setLocalScore(w.courtNo, sa2, sb2);
+  },
 );
-
-/** 分低方选不中；平分双方均可点（真局 §4.6 同式） */
-const canA = computed(() => sa.value >= sb.value);
-const canB = computed(() => sb.value >= sa.value);
-const canConfirm = computed(() => winA.value !== null);
-
-function followWinner(a: number, b: number): boolean | null {
-  if (a > b) return true;
-  if (b > a) return false;
-  return null;
-}
-
-function pick(side: "a" | "b"): void {
-  if (side === "a" ? !canA.value : !canB.value) return;
-  winA.value = side === "a";
-}
-
-/** 比分直录：只收非负整数、至多 3 位；输入即写回本机账 */
-function onScore(side: "a" | "b", ev: Event): void {
-  const raw =
-    (ev as { detail?: { value?: string } }).detail?.value ??
-    (ev.target as { value?: string } | null)?.value ??
-    "";
-  const digits = raw.replace(/\D/g, "").slice(0, 3);
-  if (side === "a") saText.value = digits;
-  else sbText.value = digits;
-  winA.value = followWinner(sa.value, sb.value);
-  writeBack();
-}
-
-/** 失焦归一：空与前置零收成规范十进制 */
-function onBlurScore(side: "a" | "b"): void {
-  if (side === "a") saText.value = String(sa.value);
-  else sbText.value = String(sb.value);
-}
-
-/** 写回本机账（懒建：没点过一分、窗内一次直录的主场景守卫会静默丢分） */
-function writeBack(): void {
-  const w = win.value;
-  if (!w) return;
-  const acc = (sandbox.localScores[w.courtNo] ??= {
-    sa: 0,
-    sb: 0,
-    history: [],
-  });
-  acc.sa = sa.value;
-  acc.sb = sb.value;
-}
 
 const namesA = computed(() => sideNames("a").join(" / "));
 const namesB = computed(() => sideNames("b").join(" / "));

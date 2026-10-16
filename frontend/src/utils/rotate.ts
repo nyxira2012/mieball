@@ -47,6 +47,35 @@ export function reachedLocal(sa: number, sb: number, scoring: number): boolean {
     无独立符号）；前端只作展示换算，不作发牌依据 */
 export const courtSize = (singles: boolean): number => (singles ? 2 : 4);
 
+/** 还差几轮到我（队列位 0 起）：ceil((每片人数 × 空片数 + 位次 + 1) / 每片人数)——
+    live store 的 myRound 与教学沙盒候场条同吃，口径改这里一处 */
+export function roundsToPlay(
+  size: number,
+  emptyCourts: number,
+  queueIdx: number,
+): number {
+  return Math.ceil((size * emptyCourts + queueIdx + 1) / size);
+}
+
+/** 确认窗胜方联动（「改比分胜方自动跟分高方」的纯函数面，EndSettleModal 与
+    SandboxSettle 同吃）：分高方当胜方——分低的一方当不了胜方，落不出「分低的
+    赢了」的战报；平分清空预选（返回 null＝禁确认，平分不预选）。
+    前端联动、后端 settle-confirm 仍把关 */
+export function followWinner(sa: number, sb: number): boolean | null {
+  if (sa > sb) return true;
+  if (sb > sa) return false;
+  return null;
+}
+
+/** 确认窗胜方点选闸（分低方选不中；平分双方均可点——点了才有预选） */
+export function canPickWinner(
+  sa: number,
+  sb: number,
+  side: "a" | "b",
+): boolean {
+  return side === "a" ? sa >= sb : sb >= sa;
+}
+
 /** 片数单一源：订场登记优先（片数是花钱定下的默认值），未登记回退 maxPlayers≥12 三片否则两片。
     推荐矩阵与建片（store syncCourts）同源消费。 */
 export function courtCount(live: LiveState): number {

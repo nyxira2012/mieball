@@ -8,9 +8,12 @@ import type {
 } from "@/api/types";
 import {
   activePlayers,
+  canPickWinner,
   courtCount,
   courtSize,
+  followWinner,
   pById,
+  roundsToPlay,
   usedCourts,
 } from "@/utils/rotate";
 
@@ -156,5 +159,21 @@ describe("口径单一源（2.4 技术设计 §0.5/§0.6）", () => {
       queue: [a.id, gone.id, b.id, c.id],
     });
     expect(activePlayers(live)).toBe(5); // 片上 2 + 候场 3（早退 gone 不算，歇轮 a 算）
+  });
+});
+
+describe("roundsToPlay（live store myRound 与沙盒候场条共用的轮次公式）", () => {
+  it("全场在打：队首下一场上，每片人数进一轮", () => {
+    expect(roundsToPlay(4, 0, 0)).toBe(1);
+    expect(roundsToPlay(4, 0, 3)).toBe(1);
+    expect(roundsToPlay(4, 0, 4)).toBe(2);
+    expect(roundsToPlay(4, 0, 7)).toBe(2);
+  });
+
+  it("有空片：补片先吃的队首段整体进位（与 live store 既有口径逐字同式）", () => {
+    expect(roundsToPlay(4, 1, 0)).toBe(2);
+    expect(roundsToPlay(4, 1, 3)).toBe(2);
+    expect(roundsToPlay(4, 1, 4)).toBe(3);
+    expect(roundsToPlay(2, 1, 1)).toBe(2); // 单打：1 空片 + 位 1
   });
 });

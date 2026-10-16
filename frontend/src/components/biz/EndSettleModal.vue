@@ -105,23 +105,22 @@
 
 <script setup lang="ts">
 /* 本地结算窗呈现与联动（2.3 记分本地化；编排归 store）：本地态只有 winA/sa/sb——
-   开窗时按模式重置（upload 吃本机账、胜方预选=分高方与 followWinner 同口径；
-   overwrite 吃该片最新落账 match），比分输入只动本地（upload 模式写回本机账），确认直调
-   store（uploadSettle/overwriteSettle：落账·关窗·toast 都在 store；清扫态 noRedeal
+   比分直录交互单一源在 composables/scoreEntry（开窗按模式预填、确认直调 store：
+   uploadSettle/overwriteSettle 落账·关窗·toast 都在 store；清扫态 noRedeal
    随 settleWindow 透传）。
-   联动纯函数（followWinner/canPickWinner）单一源在 store 模块，测试落 live-store.test.ts。
-   上传权=任意到场者（后端 _require_arrived 把关）：窗内无全权只读态；改分重落全权
-   闸在 store.overwriteSettle（needFull）。 */
-import { computed, ref, watch } from "vue";
+   联动纯函数（followWinner/canPickWinner）单一源在 utils/rotate（store 转出口），
+   测试落 live-store.test.ts。上传权=任意到场者（后端 _require_arrived 把关）：
+   窗内无全权只读态；改分重落全权闸在 store.overwriteSettle（needFull）。 */
+import { computed } from "vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import {
-  canPickWinner,
   courtNoOf,
   followWinner,
   latestMatchOf,
   useLiveStore,
 } from "@/stores/live";
 import { courtDisplayName } from "@/utils/format";
+import { useScoreEntry } from "@/composables/scoreEntry";
 import type { LivePlayer } from "@/api/types";
 
 const liveStore = useLiveStore();
@@ -133,13 +132,6 @@ const kick = computed(
   () =>
     `${mode.value === "overwrite" ? "REWRITE" : "SETTLE"} · ${courtName.value}`,
 );
-
-/* 本地态：胜方可点选；比分两格文本直录，空视同 0（数字面派生） */
-const winA = ref<boolean | null>(null);
-const saText = ref("0");
-const sbText = ref("0");
-const sa = computed(() => Number(saText.value || "0"));
-const sb = computed(() => Number(sbText.value || "0"));
 
 /** 当前结算窗这片在视图里的片号（courtNoOf(win.courtId) 三处共用单一源） */
 const winCourtNo = computed(() => courtNoOf(win.value?.courtId ?? -1));
@@ -173,76 +165,42 @@ const namesB = computed(() =>
     .join(" / "),
 );
 
-/** overwrite 预填源=该片最新落账 match（latestMatchOf 单一源，场卡「上一场 · 改分」
-    链接同一真值）；该片还没落过账（正常开不到这个模式）回落 0:0 不预选 */
-
-/* 开窗对齐：settleWindow 变即按模式重置本地态（一次一扇，窗开着不会换片）；
-   输入只动本地不触发本 watch */
-watch(
+/* 比分直录交互单一源（沙盒 SandboxSettle 同吃）。开窗预填按模式：overwrite 吃
+   该片最新落账 match（latestMatchOf 单一源，场卡「上一场 · 改分」链接同一真值；
+   该片还没落过账——正常开不到这个模式——回落 0:0 不预选）；upload 吃本机账、
+   胜方预选=分高方。直录写回只在 upload 模式（改分只动本地，落账即覆盖） */
+const {
+  winA,
+  saText,
+  sbText,
+  sa,
+  sb,
+  canA,
+  canB,
+  canConfirm,
+  pick,
+  onScore,
+  onBlurScore,
+} = useScoreEntry(
   win,
-  (w) => {
-    if (!w) return;
-    if (w.mode === "overwrite") {
+  () => {
+    const w = win.value;
+    if (w?.mode === "overwrite") {
       const m = latestMatchOf(liveStore.liveView, winCourtNo.value);
-      saText.value = String(m?.sa ?? 0);
-      sbText.value = String(m?.sb ?? 0);
-      winA.value = m ? m.winA : null;
-    } else {
-      const acc = liveStore.localScores[w.courtId];
-      saText.value = String(acc?.sa ?? 0);
-      sbText.value = String(acc?.sb ?? 0);
-      winA.value = followWinner(sa.value, sb.value);
+      return { sa: m?.sa ?? 0, sb: m?.sb ?? 0, winA: m ? m.winA : null };
     }
+    const acc = liveStore.localScores[w?.courtId ?? -1];
+    return {
+      sa: acc?.sa ?? 0,
+      sb: acc?.sb ?? 0,
+      winA: followWinner(acc?.sa ?? 0, acc?.sb ?? 0),
+    };
   },
-  { immediate: true },
+  (sa2, sb2) => {
+    const w = win.value;
+    if (w?.mode === "upload") liveStore.setLocalScore(w.courtId, sa2, sb2);
+  },
 );
-
-/** 分低方选不中（§4.6）；平分双方均可点 */
-const canA = computed(() => canPickWinner(sa.value, sb.value, "a"));
-const canB = computed(() => canPickWinner(sa.value, sb.value, "b"));
-/** 确认闸：已点胜方（平分未点禁确认） */
-const canConfirm = computed(() => winA.value !== null);
-
-/** 点胜方（防左右记反） */
-function pick(side: "a" | "b"): void {
-  if (!canPickWinner(sa.value, sb.value, side)) return;
-  winA.value = side === "a";
-}
-
-/** 比分直录：只收非负整数、至多 3 位（防误触长串，非分制上限——净胜 2 可无限延）；
-    胜方联动沿 ± 时代（自动跟分高方、平分清空，后端仍把关）；upload 模式输入即写回
-    本机账——「暂不结算」后场卡接着打的就是纠偏后的分 */
-function onScore(side: "a" | "b", ev: Event): void {
-  const raw =
-    (ev as { detail?: { value?: string } }).detail?.value ??
-    (ev.target as { value?: string } | null)?.value ??
-    "";
-  const digits = raw.replace(/\D/g, "").slice(0, 3);
-  if (side === "a") saText.value = digits;
-  else sbText.value = digits;
-  winA.value = followWinner(sa.value, sb.value);
-  if (mode.value === "upload") writeBack();
-}
-
-/** 失焦归一：空与前置零收成规范十进制（""→"0"、"007"→"7"） */
-function onBlurScore(side: "a" | "b"): void {
-  if (side === "a") saText.value = String(sa.value);
-  else sbText.value = String(sb.value);
-}
-
-/** upload 模式写回本机账（± 时代同口径）；懒建替原 if(acc) 守卫——没点过一分、
-    结束时一次直录的主场景里守卫会静默丢分 */
-function writeBack(): void {
-  const w = win.value;
-  if (!w) return;
-  const acc = (liveStore.localScores[w.courtId] ??= {
-    sa: 0,
-    sb: 0,
-    history: [],
-  });
-  acc.sa = sa.value;
-  acc.sb = sb.value;
-}
 
 /** ±积分预演：读视图 elo_preview 双分支——后端 _elo_settle 同一条路算好随画面给
     （批1 起挂 playing 片，A 胜/B 胜各一套，胜队在前），预演=落账；点胜方只是切换分支 */
