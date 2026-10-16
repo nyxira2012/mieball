@@ -17,8 +17,8 @@ const row = (accountId: number | null, delta: number): EloRow => ({
 const m = (eloRows: EloRow[]): MatchReport => ({
   courtNo: 1,
   seq: 1,
-  winners: [],
-  losers: [],
+  sideA: [],
+  sideB: [],
   sa: 11,
   sb: 7,
   winA: true,

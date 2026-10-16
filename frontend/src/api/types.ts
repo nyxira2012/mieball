@@ -616,18 +616,22 @@ export interface LiveFee {
   perHead: number | null;
 }
 
-/** 战报新结构（2.3）：片号/第几场/双方名单快照/比分/胜方是否 A/时刻/结算行。
+/** 战报新结构（2.3）：片号/第几场/两侧名单快照/比分/胜方是否 A/时刻/结算行。
     与旧 MatchHistory 双树为稳态，删旧归 1.3；sa/sb/winA 沿旧树短名。 */
 export interface MatchReport {
   courtNo: number;
   seq: number;
-  winners: MatchPerson[];
-  losers: MatchPerson[];
+  /** A/B 面名单：与比分 sa/sb 同序摆位（战报行左 A 右 B）。线上快照只记胜败
+      两堆不记边位，边序由 toLiveView 用 winner_side 反推成这两栏——换算单一源
+      在映射层，消费方不得再从胜败快照自推（按胜负摆会让 B 面赢的场次名字顶错
+      比分、胜方高亮落到输家头上） */
+  sideA: MatchPerson[];
+  sideB: MatchPerson[];
   sa: number;
   sb: number;
   winA: boolean; // winner_side === 'a'
   endedAt: string;
-  eloRows: EloRow[];
+  eloRows: EloRow[]; // 胜队在前；涨跌看 delta 正负，与 A/B 边序无关
 }
 
 /** 总账读视图（camel，store/页面消费）：toLiveView 映射产物，画面一个字不自算（A4）。

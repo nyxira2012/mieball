@@ -325,17 +325,24 @@ export function toLiveView(v: LiveViewApi): LiveView {
     courtSeqs: Object.fromEntries(
       v.courts.map((c) => [c.court_no, c.court_seq]),
     ),
-    matches: v.matches.map((m) => ({
-      courtNo: m.court_no,
-      seq: m.seq,
-      winners: m.winners.map((w) => ({ ...w })),
-      losers: m.losers.map((w) => ({ ...w })),
-      sa: m.score_a,
-      sb: m.score_b,
-      winA: m.winner_side === "a",
-      endedAt: m.ended_at,
-      eloRows: m.elo_rows.map(eloRow),
-    })),
+    matches: v.matches.map((m) => {
+      // 快照只记胜败两堆不记边位：A/B 面由 winner_side 反推（与后端改分重落的
+      // 换边同一条推法）。战报行按「左 A 右 B、与比分 sa:sb 同序」消费，边序
+      // 换算只此一处——组件层再自推就是第二真值
+      const a = m.winner_side === "a" ? m.winners : m.losers;
+      const b = m.winner_side === "a" ? m.losers : m.winners;
+      return {
+        courtNo: m.court_no,
+        seq: m.seq,
+        sideA: a.map((w) => ({ ...w })),
+        sideB: b.map((w) => ({ ...w })),
+        sa: m.score_a,
+        sb: m.score_b,
+        winA: m.winner_side === "a",
+        endedAt: m.ended_at,
+        eloRows: m.elo_rows.map(eloRow),
+      };
+    }),
     isOrganizer: v.is_organizer,
     isFullPower: v.is_full_power,
     organizerAccountId: v.organizer_account_id,

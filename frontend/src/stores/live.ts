@@ -1142,9 +1142,11 @@ export const useLiveStore = defineStore("live", () => {
       })),
       history: v.matches
         .map((m) => ({
-          names: m.winners.map((w) => w.name).join(" & "),
-          sa: m.sa,
-          sb: m.sb,
+          // 轮播句「X & Y N:M 拿下」：名单与比分都按胜方摆（胜方在前）——边序
+          // sideA/sideB 只管战报行左右摆位，这里语义是「谁赢了」
+          names: (m.winA ? m.sideA : m.sideB).map((w) => w.name).join(" & "),
+          sa: m.winA ? m.sa : m.sb,
+          sb: m.winA ? m.sb : m.sa,
         }))
         .reverse(),
       round: v.round,

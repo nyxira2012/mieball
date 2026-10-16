@@ -868,8 +868,8 @@ describe("上传结算与改分重落（记分本地化：先传先落 / settle_
     expect(live.liveView!.totalSeq).toBe(9); // 错误体视图已对表
     expect(live.live!.history[0]).toEqual({
       names: "北苑小钢炮 & 亮的球友·1",
-      sa: 9,
-      sb: 11,
+      sa: 11, // 轮播句按胜方摆：winner_side=b（sb=11 高分），胜方比分在前
+      sb: 9,
     });
     expect(live.localScores[0]).toEqual({
       sa: 0,

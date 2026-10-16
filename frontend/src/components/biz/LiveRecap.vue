@@ -44,13 +44,13 @@
         <view class="m-score">
           <view class="m-team" :class="{ win: m.winA }">
             <text class="side">A</text>
-            <text class="names">{{ names(m.winners, m.losers, true) }}</text>
+            <text class="names">{{ names(m.sideA) }}</text>
           </view>
           <view class="m-num" :class="{ a: m.winA }"
             >{{ m.sa }} : {{ m.sb }}</view
           >
           <view class="m-team right" :class="{ win: !m.winA }">
-            <text class="names">{{ names(m.winners, m.losers, false) }}</text>
+            <text class="names">{{ names(m.sideB) }}</text>
             <text class="side">B</text>
           </view>
         </view>
@@ -134,10 +134,10 @@ const matchesDesc = computed(() => [...props.view.matches].reverse());
 /** 去向提示行只给现场门牌·这局的人（is_my_game 后端定值，前端不自判） */
 const showHint = computed(() => props.door === "live" && props.view.isMyGame);
 
-/** 梗句候选=上过场的昵称（落账快照收名；去重与剔除归 pickMeme） */
+/** 梗句候选=上过场的昵称（两侧名单同一批人；去重与剔除归 pickMeme） */
 const playedNames = computed(() =>
   props.view.matches.flatMap((m) =>
-    [...m.winners, ...m.losers].map((p) => p.name),
+    [...m.sideA, ...m.sideB].map((p) => p.name),
   ),
 );
 
@@ -160,13 +160,9 @@ function fmtDelta(d: number): string {
   return d > 0 ? `+${d}` : d < 0 ? `−${Math.abs(d)}` : "±0";
 }
 
-/** 一侧名单：胜方/败方从快照取（落账定格事实，join 名册反而要二次查） */
-function names(
-  winners: MatchPerson[],
-  losers: MatchPerson[],
-  winSide: boolean,
-): string {
-  const rows = winSide ? winners : losers;
+/** 一侧名单拼句：两侧名单按边随视图下发（toLiveView 反推好的 sideA/sideB），
+    这里只拼字——比分 sa:sb 与左右名单同序，胜方高亮看 winA */
+function names(rows: MatchPerson[]): string {
   return rows.map((p) => p.name).join(" / ") || "—";
 }
 
