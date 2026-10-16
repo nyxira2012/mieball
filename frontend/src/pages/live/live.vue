@@ -161,26 +161,16 @@
         @end="onSweepEnd"
       />
       <!-- 危险动作先确认（A3）：后果句+双纽，本地确认槽不走全局 union；叠在结算窗之上。
-           内容壳类名勿用 .cf——那是全局 animations.scss 的撒花粒子类（absolute 9px 见方 +
-           pointer-events:none），撞上即面板塌成 9px 宽、按钮全不可点（批6 走查 P1 根因） -->
-      <AppSheet
+           壳收在共享 ConfirmSheet（账单页同吃）——内容壳类名勿用 .cf——那是全局
+           animations.scss 的撒花粒子类（absolute 9px 见方 + pointer-events:none），
+           撞上即面板塌成 9px 宽、按钮全不可点（批6 走查 P1 根因） -->
+      <ConfirmSheet
         class="confirm-sheet"
         :visible="confirmOpen"
+        :msg="confirmMsg"
         @close="closeLocal"
-      >
-        <view v-if="liveSheet?.k === 'confirm'" class="cfm">
-          <view class="sheet-t">确定要这么做？</view>
-          <view class="sheet-hint">{{ liveSheet.msg }}</view>
-          <view class="cf-btns">
-            <AppButton variant="ghost" class="flex1" @click="closeLocal"
-              >再想想</AppButton
-            >
-            <AppButton variant="burn" class="flex1" @click="confirmGo"
-              >确认</AppButton
-            >
-          </view>
-        </view>
-      </AppSheet>
+        @confirm="confirmGo"
+      />
       <QrOverlay :visible="qrOpen" @close="qrOpen = false" />
     </template>
 
@@ -211,7 +201,7 @@ import { computed, ref, watch } from "vue";
 import { onHide, onLoad, onShow, onUnload } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import AppButton from "@/components/ui/AppButton.vue";
-import AppSheet from "@/components/ui/AppSheet.vue";
+import ConfirmSheet from "@/components/ui/ConfirmSheet.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import LiveTopbar from "@/components/biz/LiveTopbar.vue";
 import CourtMatchCard from "@/components/biz/CourtMatchCard.vue";
@@ -287,6 +277,9 @@ function closeLocal(): void {
   liveSheet.value = null;
 }
 const confirmOpen = computed(() => liveSheet.value?.k === "confirm");
+const confirmMsg = computed(() =>
+  liveSheet.value?.k === "confirm" ? liveSheet.value.msg : "",
+);
 
 /** 危险动作先确认（A3）：先弹后果句，确认才执行——取消对局（卡上/结算窗两入口）与清零比分；
     动作本体与权限把关都在 store（needFull 兜底），这里只管「先确认」 */
@@ -667,10 +660,6 @@ onUnload(() => liveStore.stopPolling());
 }
 .confirm-sheet :deep(.sheet) {
   z-index: 112;
-}
-.cf-btns {
-  display: flex;
-  gap: 10px;
 }
 /* 死链态出口双钮（重试 / 去约球） */
 .dl-btns {

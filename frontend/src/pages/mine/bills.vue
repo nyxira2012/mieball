@@ -125,30 +125,16 @@
     >
 
     <!-- 终态确认层（4.3/4.4/A3）：先问一句（spec 逐字）→ 确认才落 → 不可撤销。
-         本地槽沿 live.vue askConfirm 先例，不进全局 SheetPayload。在途禁用双钮防双击
-         （4.10 幂等的第一道）；失败层不关，toast 后原钮可重试，行状态不变 -->
-    <AppSheet :visible="!!ask" @close="closeAsk">
-      <view v-if="ask" class="cfm">
-        <view class="sheet-t">确定要这么做？</view>
-        <view class="sheet-hint">{{ ask.msg }}</view>
-        <view class="cf-btns">
-          <AppButton
-            variant="ghost"
-            class="flex1"
-            :disabled="acting"
-            @click="closeAsk"
-            >再想想</AppButton
-          >
-          <AppButton
-            variant="burn"
-            class="flex1"
-            :disabled="acting"
-            @click="confirmGo"
-            >{{ acting ? "处理中…" : "确认" }}</AppButton
-          >
-        </view>
-      </view>
-    </AppSheet>
+         壳收在共享 ConfirmSheet（现场页同吃）；槽沿 live.vue askConfirm 先例，
+         不进全局 SheetPayload。在途禁用双钮防双击（4.10 幂等的第一道）；
+         失败层不关，toast 后原钮可重试，行状态不变 -->
+    <ConfirmSheet
+      :visible="!!ask"
+      :msg="ask?.msg ?? ''"
+      :acting="acting"
+      @close="closeAsk"
+      @confirm="confirmGo"
+    />
   </PageShell>
 </template>
 
@@ -160,8 +146,7 @@ import { onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import BackRow from "@/components/biz/BackRow.vue";
 import BillSummaryCard from "@/components/biz/BillSummaryCard.vue";
-import AppButton from "@/components/ui/AppButton.vue";
-import AppSheet from "@/components/ui/AppSheet.vue";
+import ConfirmSheet from "@/components/ui/ConfirmSheet.vue";
 import FilterChips from "@/components/ui/FilterChips.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import {
@@ -480,14 +465,5 @@ async function confirmGo(): Promise<void> {
 .retry {
   cursor: pointer;
   text-decoration: underline;
-}
-
-/* ---------- 终态确认层（壳样式走全局 .sheet-t/.sheet-hint；双钮排同 live.vue 确认槽） ---------- */
-.cf-btns {
-  display: flex;
-  gap: 10px;
-}
-.flex1 {
-  flex: 1;
 }
 </style>
