@@ -865,8 +865,8 @@ export const useLiveStore = defineStore("live", () => {
   }
 
   /** 改轮换四件套（§4.7 收权，视图路）：点选即生效、在打对局照旧打完；
-      组合回落/连庄口径归总账；换单双打后空片由后端出口按新制补（响应视图即排好，
-      §5 边界：2 人即开赛） */
+      组合回落/连打上限口径归总账（默认随谁下自适应、手动优先）；换单双打后空片由后端
+      出口按新制补（响应视图即排好，§5 边界：2 人即开赛） */
   async function setRules(patch: Partial<RotationRules>): Promise<void> {
     const L = live.value;
     if (!L || !needFull() || !liveView.value) return;

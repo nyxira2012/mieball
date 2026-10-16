@@ -312,7 +312,7 @@ export interface RotationRules {
   singles: boolean; // 全场统一单双打（true=单打）；默认双打
   down: DownMode; // 谁下（总账定值：推荐替改已归后端，前端只显不判）
   pairing: PairingMode; // 怎么配；默认按候场队序
-  champCap: number; // 连庄上限（仅输家下显示/生效）；默认 3，0=不限
+  champCap: number; // 连打上限（全场统一、所有下法生效）；默认随谁下自适应、手动优先，0=不限
 }
 
 /** 一片场地（2.4 多片并行）：A/B 半边存玩家 id——
@@ -505,7 +505,7 @@ export interface LiveRulesApi {
   doubles: boolean; // true=双打
   down: DownMode; // 谁下（枚举沿用 2.4 定稿）
   pairing: PairingMode; // 怎么配
-  streak_max: number; // 连庄上限
+  streak_max: number; // 连打上限
 }
 
 /** 费用亮数块（view.fee 镜像，1.3 批1 散场确认页）：total=订场登记总价（null=未定）；

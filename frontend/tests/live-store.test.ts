@@ -1365,6 +1365,15 @@ describe("setRules / setCourtsInput / autoDeal（§4.7 规则与场地 · 排片
     expect(ui.toastMsg).toBe("规则已更新 · 下一场起按新规");
     expect(liveApi.apiLiveDeal).not.toHaveBeenCalled(); // 空片重排在后端出口，前端零补发
   });
+  it("setRules 连打上限 0＝不限直传（champCap:0 是合法值不得被丢包）+ 视图 streak_max:0 回填 champCap:0", async () => {
+    const { live } = await inPlay();
+    liveApi.apiLiveRules.mockResolvedValue(
+      vPlay(8, { rules: { ...vPlay().rules, streak_max: 0 } }),
+    );
+    await live.setRules({ champCap: 0 });
+    expect(liveApi.apiLiveRules).toHaveBeenCalledWith(900, { streakMax: 0 }, 7);
+    expect(live.live!.rules.champCap).toBe(0); // 抽屉「当前＝不限」的数源
+  });
   it("setCourtsInput：『3、4 / 3,4 / 3号、4号』归一 → courtsCount 上报、片名本地挂", async () => {
     const { live, ui } = await inPlay();
     liveApi.apiLiveRules.mockResolvedValue(

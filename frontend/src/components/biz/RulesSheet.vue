@@ -1,8 +1,9 @@
 <template>
   <!-- 规则抽屉（2.4 批3 重造 · §4.1）：分制照旧（11/15/21）＋轮换四件套——单双打（全场统一）、
-       谁下（单打两项/双打五项，推荐项亮「推荐」标签＋一句理由）、怎么配（仅双打）、连庄上限
-       （仅输家下，选 0 常驻「当前＝不限」）。点选即生效、不关抽屉、无确认弹窗（A3）；
-       球友同一抽屉只读（§4.1）：选项禁用态、推荐标签与理由隐藏、switch-singles 提示可见不可点。 -->
+       谁下（单打两项/双打五项，推荐项亮「推荐」标签＋一句理由）、怎么配（仅双打，四档）、连打上限
+       （全场常驻，不随谁下方式藏显——上限管所有下法；步进器 0＝不限）。点选即生效、
+       不关抽屉、无确认弹窗（A3）；球友同一抽屉只读（§4.1）：选项禁用态、推荐标签与
+       理由隐藏、switch-singles 提示可见不可点。 -->
   <AppSheet
     class="rules-sheet"
     :visible="visible"
@@ -69,7 +70,7 @@
         />
       </AppField>
 
-      <AppField v-if="rules?.down === 'loser'" label="连庄上限 · 输家下专属">
+      <AppField label="连打上限 · 全场统一">
         <view class="cap-row">
           <AppStepper
             :model-value="rules?.champCap ?? 3"
@@ -117,8 +118,10 @@ const SINGLES_OPTS = [
   { value: "doubles", label: "双打" },
   { value: "singles", label: "单打" },
 ];
-/** 怎么配主标 = PAIRING_NAMES 单一源；不进推荐（§4.2 口味问题，组织者自定） */
-const PAIRING_OPTS = (["queue", "balance"] as PairingMode[]).map((p) => ({
+/** 怎么配主标 = PAIRING_NAMES 单一源，选项键序直接从它派生——加档动 api/types.ts 的
+    PairingMode 联合 + format.ts 一处名单（Record 编译期逼改，类型联合是第一落点）；
+    不进推荐（§4.2 口味问题，组织者自定） */
+const PAIRING_OPTS = (Object.keys(PAIRING_NAMES) as PairingMode[]).map((p) => ({
   value: p,
   label: PAIRING_NAMES[p],
 }));
@@ -243,7 +246,7 @@ function onCap(n: number): void {
   color: var(--lemon);
 }
 
-/* 连庄上限行：stepper ＋ 单位/不限说明（选 0 常驻「当前＝不限」，§4.1） */
+/* 连打上限行：stepper ＋ 单位/不限说明（选 0 常驻「当前＝不限」；下限 0=不限） */
 .cap-row {
   display: flex;
   align-items: center;
