@@ -322,6 +322,11 @@ class LiveState(Base):
     feed: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     # 场地片数：开账按订场登记起笔、缺省按人数回退；缩片先撤空闲片、不得少于在用片数
     courts_count: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
+    # 全局轮转批次：每次结算确认 +1；离场/签到/换下按当时的值盖进 LivePlayer.wait_batch
+    # （两片先后结算→先确认的批号小、排位更早）
+    rotation_batch: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # 组织者手动改过连打上限：True 时切「谁下」不重置 streak_max 的模式默认值
+    streak_manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class LivePlayer(Base):
@@ -360,6 +365,12 @@ class LivePlayer(Base):
     # 上场章：落位时刻的总号 total_seq，越小代表先上场（上场最久者优先下场）；
     # 只盖不清——下场行留残值无害；null 视为最新资历
     court_mark: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 连续在场场数：结算确认时片上人各 +1；本轮没被选上场即归零（歇一轮清零）、
+    # 中途手动换上者置 0——换人保护，不背换上之前攒的连打
+    streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # 进场下那一刻的 LiveState.rotation_batch 快照：章小=等得久=排位靠前；同批并列
+    # （同一场一起退下来的算同一批；刚退下来的章最新、排在所有场下候场者之后）
+    wait_batch: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class LiveCourt(Base):

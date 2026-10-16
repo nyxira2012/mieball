@@ -34,6 +34,9 @@ _NEW_COLUMNS = {
         "courts_count": "INTEGER NOT NULL DEFAULT 2",
         # 2.5 批1：开账人（可空——旧账没有这笔记录）
         "started_by": "INTEGER",
+        # 2.9 批1：排位引擎两列（轮转批次盖 wait_batch 用 / 上限手动记号）
+        "rotation_batch": "INTEGER NOT NULL DEFAULT 0",
+        "streak_manual": "BOOLEAN NOT NULL DEFAULT 0",
     },
     # 2.6 批1：片分制快照（在打片照旧旧制、新开片用新制——开赛定格 game.scoring）
     "live_courts": {
@@ -42,6 +45,9 @@ _NEW_COLUMNS = {
     # 2.8 批1：上场章（落位时刻的总号；存量行 NULL=没盖过章、资历序按最新并列）
     "live_players": {
         "court_mark": "INTEGER",
+        # 2.9 批1：排位引擎两列（连打场数 / 进场下那一刻的批次章）
+        "streak": "INTEGER NOT NULL DEFAULT 0",
+        "wait_batch": "INTEGER NOT NULL DEFAULT 0",
     },
     # 1.6 批1：密码钥匙四列（暗记/连错计数/锁/设密宽限窗，存量行不带密码）
     "accounts": {
