@@ -23,9 +23,9 @@ from __future__ import annotations
 import threading
 from datetime import datetime
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session
 
 from ..core import clock, errors
 from ..db.models import (
@@ -59,6 +59,12 @@ VISIBILITIES = ("played", "public", "invite_only")
 
 # 局簿写动作全串行：SQLite 无行锁，靠它保住"正式人头 ≤ max"的不变承诺（技术设计 §3）
 _write_lock = threading.Lock()
+
+
+def _heads_sum():
+    """人头表达式（Σ(1+bring) 的 SQL 形，coalesce 空局归 0）：_heads 单局尺与
+    _list_batch 批量尺共用的同一表达式——人头口径改这里一处两形同步。"""
+    return func.coalesce(func.sum(1 + Entry.bring), 0)
 
 
 class GameBook:
@@ -533,25 +539,13 @@ class GameBook:
     # ---- 打过（4.2 唯一算法；users 接缝 same_game 同源） ----
 
     def played_with(self, *, account_a: int, account_b: int) -> bool:
-        """两人同在一个已成局（state='locked'，含之后的进行中/已结束）的正式名单。"""
-        ea, eb = aliased(Entry), aliased(Entry)
-        hits = self.db.execute(
-            select(func.count())
-            .select_from(ea)
-            .join(eb, and_(eb.game_id == ea.game_id))
-            .join(Game, Game.id == ea.game_id)
-            .where(
-                ea.account_id == account_a,
-                eb.account_id == account_b,
-                ea.standing == "formal",
-                eb.standing == "formal",
-                Game.state == "locked",
-            )
-        ).scalar_one()
-        return hits > 0
+        """两人同在一个已成局（state='locked'，含之后的进行中/已结束）的正式名单：
+        共打集的成员判定（played_mates 单一实现）。调用点（users 名片接缝）已在
+        自查分支之后，a≠b 恒成立——彼时两谓词数学等价。"""
+        return account_b in self.played_mates(account_a)
 
     def played_mates(self, viewer_id: int | None) -> set[int]:
-        """viewer 的共打账号集（played_with 的批量版）：与 viewer 同在一个已成局
+        """viewer 的共打账号集（打过判定的唯一实现）：与 viewer 同在一个已成局
         （state='locked'，含之后的进行中/已结束）正式名单的其他人——列表/意向页
         逐条判打过会叠成 N+1，一次拉齐逐条对表。"""
         if viewer_id is None:
@@ -654,7 +648,7 @@ class GameBook:
         )
         batch["heads"] = dict(
             self.db.execute(
-                select(Entry.game_id, func.coalesce(func.sum(1 + Entry.bring), 0))
+                select(Entry.game_id, _heads_sum())
                 .where(Entry.game_id.in_(ids), Entry.standing == "formal")
                 .group_by(Entry.game_id)
             ).all()
@@ -695,10 +689,11 @@ class GameBook:
         return batch
 
     def _heads(self, game_id: int) -> int:
-        """正式名单人头 = Σ(1+bring)——全篇数人数的唯一一把尺（规格 §4 开头）。"""
+        """正式名单人头 = Σ(1+bring)——全篇数人数的唯一一把尺（规格 §4 开头），
+        表达式单一源 _heads_sum（_list_batch 批量尺同吃）。"""
         return int(
             self.db.execute(
-                select(func.coalesce(func.sum(1 + Entry.bring), 0)).where(
+                select(_heads_sum()).where(
                     Entry.game_id == game_id, Entry.standing == "formal"
                 )
             ).scalar_one()

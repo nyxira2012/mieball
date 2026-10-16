@@ -172,14 +172,12 @@ class BillBook:
                 Game.ended_at.is_not(None),
                 *span,
             )
-            .order_by(Game.ended_at.desc(), Game.id.desc())
         ).all()
 
         organized = self.db.execute(
             select(Bill, Game)
             .join(Game, Bill.game_id == Game.id)
             .where(Game.organizer_id == account_id, Game.ended_at.is_not(None), *span)
-            .order_by(Game.ended_at.desc(), Game.id.desc())
         ).all()
 
         # 批量预取（settle/receive 每点一次也整跑 view，逐本查行、逐行查账号会叠成 N+1）：
@@ -277,6 +275,7 @@ class BillBook:
                     row.guest_count
                 )  # 「含带来的朋友 ×N」只在带了时出现
             entries.append((game.ended_at, game.id, entry))
+        # 行序唯一在此（散场日新到旧、game.id 决胜）——上面两查询不带 SQL 排序
         entries.sort(key=lambda e: (e[0], e[1]), reverse=True)
 
         unfixed = (

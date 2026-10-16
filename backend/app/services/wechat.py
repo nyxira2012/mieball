@@ -279,6 +279,7 @@ class WechatMixin:
             DEFAULT_CHIBI,
             _resolve_nickname,
             _validate_chibi,
+            new_account,
             resolve_nickname_report,
         )
 
@@ -309,13 +310,12 @@ class WechatMixin:
             # 微信昵称空/清洗不合格 → 落随机名并如实报（判据单一源在 accounts）
             final_name, nickname_random = resolve_nickname_report(wx_nickname)
         chibi_json = json.dumps(_validate_chibi(chibi) if chibi_set else DEFAULT_CHIBI)
-        account = Account(
+        # 建号行基础六件走 accounts.new_account 工厂（手填建号同源），微信三列就地透传
+        account = new_account(
             phone=phone,
             nickname=final_name,
-            chibi=chibi_json,
-            status="active",
+            chibi_json=chibi_json,
             device_marker=device_marker,
-            created_at=clock.now(),
             wechat_openid=openid,
             wechat_verified=True,
             wechat_bound_at=clock.now(),

@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
 
 from ...core.clock import CN_TZ
-from ...core.logs import APP_PREFIX, AUDIT_PREFIX
+from ...core.logs import APP_PREFIX, AUDIT_PREFIX, keep_floor
 from ..deps import require_ops_key
 
 router = APIRouter(prefix="/ops", tags=["ops"])
@@ -26,13 +26,13 @@ ERR_NOT_FOUND_NOTE = "没有这个编号：可能抄错了、已过 14 天销毁
 
 def _recent_files(log_dir: Path, prefix: str, keep_days: int) -> list[Path]:
     """近 keep_days 天的按天文件，按文件名日期升序（文件名日期字典序=时间序）；
-    窗口与 Journal._cleanup 的删除线对齐（今天往前数 keep_days 天含今天）。"""
-    cutoff = (datetime.now(CN_TZ) - timedelta(days=keep_days - 1)).strftime("%Y%m%d")
+    保留窗下界单一源 keep_floor（Journal._cleanup 的删除线同吃）。"""
+    floor = keep_floor(datetime.now(CN_TZ).strftime("%Y%m%d"), keep_days)
     return sorted(
         (
             f
             for f in log_dir.glob(f"{prefix}-*.log")
-            if f.stem.rsplit("-", 1)[-1] >= cutoff
+            if f.stem.rsplit("-", 1)[-1] >= floor
         ),
         key=lambda f: f.name,
     )

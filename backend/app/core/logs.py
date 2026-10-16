@@ -41,6 +41,16 @@ APP_PREFIX = "app"
 AUDIT_PREFIX = "audit"
 
 
+def keep_floor(day: str, keep_days: int) -> str:
+    """保留窗下界的文件名日期（%Y%m%d 字典序=时间序）：该日与更新者保留。
+    删除线（Journal._cleanup）与读取口（routes/logs._recent_files）同吃这一份，
+    窗口语义（含今天共 keep_days 天）改这里一处——两侧各自推算迟早差一错位。"""
+    return (
+        datetime.strptime(day, "%Y%m%d")  # noqa: DTZ007
+        - timedelta(days=keep_days - 1)
+    ).strftime("%Y%m%d")
+
+
 def mask(text: str | None) -> str | None:
     """脱敏（spec C3：手机号与登录钥匙明文根本不落盘）：11 位手机号→138****1234，
     ≥24 连续字母数字长串（token/key 类）→前 6+****。长串先处理——手机号嵌在
@@ -226,16 +236,14 @@ class Journal:
         self._day = None
 
     def _cleanup(self, day: str) -> None:
-        """删文件名日期 ≤ 今天-keep_days 的同前缀文件（spec 4.8 磁盘封顶）；失败不碍事，下回再试。"""
+        """删保留窗下界之前的同前缀文件（spec 4.8 磁盘封顶；下界单一源 keep_floor，
+        ops 读取口的可见窗同吃）；失败不碍事，下回再试。"""
         # 纯文件名日期字符串的先后比较，无时区语义
-        cutoff = (
-            datetime.strptime(day, "%Y%m%d")  # noqa: DTZ007
-            - timedelta(days=self._keep_days)
-        ).strftime("%Y%m%d")
+        floor = keep_floor(day, self._keep_days)
         for prefix in (APP_PREFIX, AUDIT_PREFIX):
             for f in self._dir.glob(f"{prefix}-*.log"):
                 d = f.stem.rsplit("-", 1)[-1]
-                if len(d) == 8 and d.isdigit() and d <= cutoff:
+                if len(d) == 8 and d.isdigit() and d < floor:
                     try:
                         f.unlink()
                     except OSError:
@@ -320,11 +328,6 @@ async def internal_error_handler(request: Request, exc: Exception) -> JSONRespon
     error_id = new_error_id()
     j = ctx_journal.get()
     if j is not None:  # 没账本就不记，兜底响应本身绝不依赖日志成败（spec 4.7）
-        gid = game_from_path(
-            request.url.path
-        )  # g= 从路径认（中间件已 set，此处兜同样值）
-        if gid is not None:
-            ctx_game.set(gid)
         j.line(
             "error",
             f"{error_id} {request.method} {request.url.path}\n"

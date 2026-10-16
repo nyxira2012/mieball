@@ -118,26 +118,20 @@ class StatsLedger:
             .all()
         )
         # Elo 一人一行全表一趟取齐（免逐人 N+1；无行=没打过落账局，回初始 1200，
-        # 与 EloRating.rating 默认值同源——常量真身在 live.py RATING_INIT，
-        # 这里不 import 它防 stats←live 循环）
+        # 与 EloRating.rating 默认值同源——常量真身 ELO_RATING_INIT 在 db/models
+        # （DUPR/Elo 双轨共用的单一源），本模块 import 直用）
         elo_map = {
             r.account_id: r.rating for r in self.db.execute(select(EloRating)).scalars()
         }
         out = []
         for a in accounts:
-            c = self.card(a.id)
             out.append(
                 {
                     "id": a.id,
                     "name": a.nickname,
                     "chibi": json.loads(a.chibi),
                     "card_bg": a.card_bg,
-                    "dupr_rating": c["rating"],
-                    "dupr_provisional": c["provisional"],
-                    "dupr_games": c["games"],
-                    "dupr_wins": c["wins"],
-                    "dupr_last5": c["last5"],
-                    "dupr_month_net": c["month_net"],
+                    **self.card_flat(a.id),
                     "elo_rating": elo_map.get(a.id, ELO_RATING_INIT),
                 }
             )
@@ -196,6 +190,19 @@ class StatsLedger:
             "wins": wins,
             "last5": last5,
             "month_net": month_net,
+        }
+
+    def card_flat(self, account_id: int) -> dict:
+        """名片六键的平铺形（dupr_* 前缀直出）：账号视图与战力榜同吃——
+        card() 加键时两处不必人肉同步（漏一处即名片有、榜单无的口径漂移）。"""
+        c = self.card(account_id)
+        return {
+            "dupr_rating": c["rating"],
+            "dupr_provisional": c["provisional"],
+            "dupr_games": c["games"],
+            "dupr_wins": c["wins"],
+            "dupr_last5": c["last5"],
+            "dupr_month_net": c["month_net"],
         }
 
     def _recompute(self, account_id: int) -> None:

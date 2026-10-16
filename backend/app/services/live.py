@@ -221,8 +221,9 @@ class LiveBook(LiveSweepMixin):
             if state is None or self._account_row(game_id, account_id) is not None:
                 return
             self._expand_formal(game_id=game_id, account_id=account_id, bring=bring)
-            self._bump_total(state)
-            self.db.commit()
+            # 出口豁免档（autofill=False）：新补行必 absent 无队可取（同 start
+            # 一族结构性不补片）；号跳+提交归 _finish 统一收尾
+            self._finish(state, game_id=game_id, actor_id=account_id, autofill=False)
 
     # ---- 记分链（批2）：发牌上报 → 上传结算/改分重落 → 取消 ----
 
@@ -380,10 +381,7 @@ class LiveBook(LiveSweepMixin):
                 court.seq += 1
                 # 分制快照续场同刷新（2.6 机制A）：确认即开的下一场也是"新开片"
                 court.scoring = game.scoring
-            for r in rows:
-                if r.court_side is not None:
-                    r.queue_pos = None
-            self._place_queue(by_id, queue)
+            self._writeback_queue(rows, by_id, queue)
             self._bump_court(court)
             self._finish(
                 state, game_id=game_id, actor_id=actor_id, autofill=not no_redeal
@@ -906,11 +904,9 @@ class LiveBook(LiveSweepMixin):
             .scalars()
             .all()
         )
-        # 队列序定值给出（队首在前，候场外的行不排）；queue_pos 的持久化回写是写动作的事
-        waiting = sorted(
-            (r for r in rows if r["queue_pos"] is not None),
-            key=lambda r: r["queue_pos"],
-        )
+        # 队列序定值给出（队首在前，候场外的行不排）——_queue_ids 单一源
+        # （queue_pos 升序即队列序），视图与写路径同一把尺；持久化回写是写动作的事
+        waiting = self._queue_ids(roster)
         return {
             "game_id": game_id,
             "started_at": clock.iso(state.started_at),
@@ -944,7 +940,7 @@ class LiveBook(LiveSweepMixin):
                 "streak_max": state.streak_max,
             },
             "players": rows,
-            "queue": [r["id"] for r in waiting],
+            "queue": waiting,
             "courts": [
                 {
                     "court_no": c.court_no,
@@ -1092,10 +1088,7 @@ class LiveBook(LiveSweepMixin):
             court.court_seq = 1 if fresh else court.court_seq + 1
             # 分制快照开赛定格（2.6 机制A）：改分制只影响此后新开的片
             court.scoring = game.scoring
-        for r in rows:
-            if r.court_side is not None:
-                r.queue_pos = None
-        self._place_queue(by_id, queue)  # queue 已被取队原地重排为剩余序
+        self._writeback_queue(rows, by_id, queue)  # queue 已被取队原地重排为剩余序
         return opened
 
     def _open_write(self, game_id: int) -> tuple[LiveState, Game]:
@@ -1192,6 +1185,19 @@ class LiveBook(LiveSweepMixin):
         带访客/清片八处写动作的共同尾巴——漏落一行即静默错序，收进一个口。"""
         for pos, pid in enumerate(queue):
             by_id[pid].queue_pos = pos
+
+    def _writeback_queue(
+        self,
+        rows: list[LivePlayer],
+        by_id: dict[int, LivePlayer],
+        queue: list[int],
+    ) -> None:
+        """队序落账收尾（场上人清队位 + 候场按剩余序落位）：settle_confirm 与
+        _fill_idle 同一尾巴——清位漏一行即静默错序的敏感账，与 _place_queue 同收一处。"""
+        for r in rows:
+            if r.court_side is not None:
+                r.queue_pos = None
+        self._place_queue(by_id, queue)
 
     def _queue_ids(self, rows: list[LivePlayer]) -> list[int]:
         """候场队（队首在前）——queue_pos 升序即队列序（技术设计 §2）。"""

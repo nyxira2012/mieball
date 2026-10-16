@@ -53,6 +53,28 @@ NICKNAME_MAX = 16
 Viewer = Literal["self", "same_game", "other"]
 
 
+def new_account(
+    *,
+    phone: str | None,
+    nickname: str,
+    chibi_json: str,
+    device_marker: str,
+    **wechat_cols: Any,
+) -> Account:
+    """建号行工厂（signup 手填建号与微信快进 _fast_create 同吃）：基础六件一处
+    定形，快进支多带的微信三列经 **wechat_cols 透传——新增带非库默认值的账号列
+    时改这里一处，两条建号路不漂。"""
+    return Account(
+        phone=phone,
+        nickname=nickname,
+        chibi=chibi_json,
+        status="active",
+        device_marker=device_marker,
+        created_at=clock.now(),
+        **wechat_cols,
+    )
+
+
 def person_view(account: Account | None) -> dict:
     """名单里的一人：昵称+小人（1.1 隐私口径）；已注销/不存在 → 占位形象。
     球局域名单（game_views）与意向列表（intents）共用的"对外一个人"形状。"""
@@ -109,13 +131,11 @@ class AccountBook(PasswordMixin, WechatMixin):
             bound = self._try_bind(existing, bind_token, verified=False)
             return self.view(existing.id, viewer="self"), token, bound
 
-        account = Account(
+        account = new_account(
             phone=phone,
             nickname=nickname,
-            chibi=chibi_json,
-            status="active",
+            chibi_json=chibi_json,
             device_marker=device_marker,
-            created_at=clock.now(),
         )
         self.db.add(account)
         try:
@@ -302,7 +322,7 @@ class AccountBook(PasswordMixin, WechatMixin):
                 "chibi": dict(DEFAULT_CHIBI),
                 "deactivated": True,
             }
-        dupr_card = StatsLedger(self.db).card(account.id)
+        dupr_card = StatsLedger(self.db).card_flat(account.id)
         out: dict[str, Any] = {
             "id": account.id,
             "name": account.nickname,
@@ -311,13 +331,9 @@ class AccountBook(PasswordMixin, WechatMixin):
             "deactivated": False,
             # 设置页/名片卡判"密码未设置/已设置"的唯一依据（1.6 A1）
             "has_password": account.password_hash is not None,
-            # 名片主数字 → DUPR（1.4 §6）：三件套平铺直出，缺行语义=起步分/未定级/0 场
-            "dupr_rating": dupr_card["rating"],
-            "dupr_provisional": dupr_card["provisional"],
-            "dupr_games": dupr_card["games"],
-            "dupr_wins": dupr_card["wins"],
-            "dupr_last5": dupr_card["last5"],
-            "dupr_month_net": dupr_card["month_net"],
+            # 名片主数字 → DUPR（1.4 §6）：六键平铺单一源 card_flat（榜单同吃），
+            # 缺行语义=起步分/未定级/0 场
+            **dupr_card,
         }
         if viewer in ("self", "same_game") and account.phone:
             out["phone_tail"] = account.phone[-4:]

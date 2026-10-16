@@ -138,6 +138,10 @@ elif action in ('reset', 'unlock'):
         die(f'未找到目标用户: {target}')
     uid = acc['id']
     if action == 'reset':
+        # 只落新 hash+清计数，不撤设备钥匙——与 app 内「找回/重设」的换锁语义
+        # （passwords reset_password/redeem_password：revoke_all 全钥匙作废）有意
+        # 不同：运维 reset 是帮机主设新密码，不把其全部端踢下线。处置被盗号请走
+        # app 内找回链
         cur.execute(
             "UPDATE accounts SET password_hash = ?, pwd_fail_count = 0, pwd_locked_until = NULL WHERE id = ?",
             (security.hash_password(pwd), uid),
