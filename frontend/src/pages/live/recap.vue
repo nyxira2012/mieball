@@ -70,13 +70,14 @@ import AppButton from "@/components/ui/AppButton.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import LiveRecap from "@/components/biz/LiveRecap.vue";
 import { apiLiveView, toLiveView } from "@/api/live";
-import { apiGameDetail } from "@/api/games";
+import { useGameStore } from "@/stores/game";
 import type { LiveView } from "@/api/types";
 import { shareLink } from "@/utils/share";
 import { gameShareUrl } from "@/utils/deeplink";
 import { DEAD_LINK_MSG } from "@/utils/recap";
 import { goBackOrMeet, goMeet } from "@/utils/nav";
 
+const gameStore = useGameStore();
 const view = ref<LiveView | null>(null);
 const booting = ref(true);
 /** 200 但未散场（或局在但从没开过账）：战报还没落，不亮 LiveRecap（§4.2） */
@@ -84,7 +85,8 @@ const notEnded = ref(false);
 let gameId = 0;
 
 /** 直拉定格视图（纯读，不走 ensureLive 开账流）：ended 才渲染门牌；
-    拉不到（404/断网）不 toast——先探局存在性再定落点，探不到才落死链态 */
+    拉不到（404/断网）不 toast——探局存在性再定落点（probeExistence 单一源，
+    现场页 ensureLive 同吃），探不到才落死链态 */
 async function fetchView(): Promise<void> {
   if (!gameId) return;
   booting.value = true;
@@ -98,12 +100,8 @@ async function fetchView(): Promise<void> {
     /* 探局存在性是为句面诚实（live 404 两成因）：局在但从没开过账时说「已被撤销」
        是说假话 → 探到局复用未散场中性页；探不到（game_not_found/断网）落死链态，
        重试钮即断网出口，不新增状态机 */
-    try {
-      await apiGameDetail(gameId);
-      notEnded.value = true;
-    } catch {
-      /* 死链态兜底（下方模板分支） */
-    }
+    if (await gameStore.probeExistence(gameId)) notEnded.value = true;
+    /* 探不到：死链态兜底（下方模板分支） */
   } finally {
     booting.value = false;
   }

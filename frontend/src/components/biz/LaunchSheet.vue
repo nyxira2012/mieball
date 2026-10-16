@@ -139,7 +139,16 @@ import { recordVenue } from "@/utils/venues";
 import type { CourtMode, PublishGameInput, Visibility } from "@/api/types";
 import { MODE_NAMES, SCORE_RULE_NAMES, autoGameName } from "@/utils/format";
 import { beijingAt, isoDay, isoDayOff, isoParts, toIso } from "@/utils/time";
-import { GRID_LABELS, GRID_MAX, STEP, m2g, playEndMin } from "@/utils/wheel";
+import {
+  GRID_LABELS,
+  GRID_MAX,
+  STEP,
+  clampEnd,
+  endLabels as endColLabels,
+  endRowOf,
+  m2g,
+  playEndMin,
+} from "@/utils/wheel";
 import { errText } from "@/api/http";
 import { goMeet } from "@/utils/nav";
 
@@ -217,23 +226,12 @@ const days = computed(() => {
 });
 const dayLabels = computed(() => days.value.map((d) => isoDay(d)));
 
-/** 结束时刻列：开始后 30 分钟 ~ 6 小时（且不越过 23:55） */
-const endLabels = computed(() => {
-  const hi = Math.min(startMin.value + 360, GRID_MAX);
-  const out: string[] = [];
-  for (let m = startMin.value + 30; m <= hi; m += STEP)
-    out.push(GRID_LABELS[m2g(m)]);
-  return out;
-});
-const endRow = computed(() =>
-  clamp(
-    Math.round((endMin.value - startMin.value - 30) / STEP),
-    0,
-    Math.max(0, endLabels.value.length - 1),
-  ),
-);
+/** 结束时刻列与行号：可拨窗的建列/反推单一源在 utils/wheel（endWindow 一处定窗），
+    本组件只持分钟真值 */
+const endCol = computed(() => endColLabels(startMin.value));
+const endRow = computed(() => endRowOf(startMin.value, endMin.value));
 const tIdx = computed(() => [dayI.value, m2g(startMin.value), endRow.value]);
-const tCols = computed(() => [dayLabels.value, GRID_LABELS, endLabels.value]);
+const tCols = computed(() => [dayLabels.value, GRID_LABELS, endCol.value]);
 
 const playStart = computed(() => {
   const d = days.value[clamp(dayI.value, 0, DAY_N - 1)];
@@ -382,11 +380,7 @@ function init(): void {
     dayI.value = clamp(isoDayOff(ed.startAt), 0, DAY_N - 1);
     startMin.value = clamp(sp.h * 60 + sp.min, 0, GRID_MAX);
     const ep = isoParts(ed.endAt);
-    endMin.value = clamp(
-      ep.h * 60 + ep.min,
-      startMin.value + 30,
-      Math.min(startMin.value + 360, GRID_MAX),
-    );
+    endMin.value = clampEnd(startMin.value, ep.h * 60 + ep.min);
     const dp = isoParts(ed.deadlineAt);
     lf.deadlineTxt = `${isoDay(ed.deadlineAt)} ${GRID_LABELS[m2g(dp.h * 60 + dp.min)]}`;
     dlAuto.value = false; // 编辑态截止只读，拨盘状态不参与提交

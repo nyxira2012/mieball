@@ -114,15 +114,22 @@ export const useUserStore = defineStore("user", () => {
   }
 
   /** 档案兜底：弹层开着的人/现场名册行不在缓存时单发 /users/{id}；
-      在途去重（视图轮询 3s 一发，别把同一个人打成请求风暴） */
+      在途去重 + 失败冷却（现场轮询每拍重建都调——拉失败不记冷却，断网点会被
+      打成每拍重发；60s 内不再试，成功落缓存自然出冷却） */
   const pendingIds = new Set<number>();
+  const failedAt = new Map<number, number>();
+  const FAIL_COOLDOWN_MS = 60_000;
   async function ensurePerson(id: number): Promise<void> {
     if (id === me.id || people[id] || pendingIds.has(id)) return;
+    const f = failedAt.get(id);
+    if (f != null && Date.now() - f < FAIL_COOLDOWN_MS) return;
     pendingIds.add(id);
     try {
       const { account } = await apiAccountView(id);
       people[id] = accountToUser(account);
+      failedAt.delete(id);
     } catch {
+      failedAt.set(id, Date.now());
       /* 拉不到保持缺省：档案层自显空态，不弹错 */
     } finally {
       pendingIds.delete(id);

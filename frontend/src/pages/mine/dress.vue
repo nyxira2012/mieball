@@ -145,12 +145,17 @@ async function onSave(): Promise<void> {
 }
 
 /* 键盘让位：软键盘弹起把保存条顶到键盘上沿（uni H5 3.5+/App 支持；不支持的端不触发，
-   保存条留在页底——点空白收键盘后自然可见，是同一件事的兜底） */
+   保存条留在页底——点空白收键盘后自然可见，是同一件事的兜底）。
+   on/off 配对（onKeyboardHeightChange 是全局监听，只挂不摘会随进出页面叠回调） */
 const kbH = ref(0);
+function onKbHeight(res?: { height?: number }): void {
+  kbH.value = res?.height ?? 0;
+}
 onMounted(() => {
-  uni.onKeyboardHeightChange?.((res) => {
-    kbH.value = res?.height ?? 0;
-  });
+  uni.onKeyboardHeightChange?.(onKbHeight);
+});
+onUnmounted(() => {
+  uni.offKeyboardHeightChange?.(onKbHeight);
 });
 
 /* 点空白收键盘（login 页同款，机制见 blurOnBlank.ts 头注） */

@@ -186,6 +186,20 @@ export const useGameStore = defineStore("game", () => {
     return g;
   }
 
+  /** 探局存在性（live 404 两成因的判态单一源——句面诚实：局在但从没开过账时
+      不能说「已被撤销」）：局簿缓存命中直回，否则拉一次详情。返回局详情=局在
+      （消费方自定句面：现场页拦死链句/走开账，战报页落未散场中性页）；
+      null=局簿与远端都探不到（真没有/已删/断网），落死链态 */
+  async function probeExistence(id: number): Promise<Game | null> {
+    const cached = findGame(id);
+    if (cached?.entries?.length) return cached;
+    try {
+      return await loadDetail(id);
+    } catch {
+      return null;
+    }
+  }
+
   /** 操作后单局重拉（quit/invite 这类只回 ok 的动作靠它回填名单） */
   async function refresh(id: number): Promise<Game> {
     const g = toGame(await track(() => apiGameDetail(id)));
@@ -430,6 +444,7 @@ export const useGameStore = defineStore("game", () => {
     loadGames,
     loadMine,
     loadDetail,
+    probeExistence,
     refresh,
     loadIntents,
     loadMyIntent,

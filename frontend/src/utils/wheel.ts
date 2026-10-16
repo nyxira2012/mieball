@@ -44,3 +44,28 @@ export function playEndMin(
     ? clamp(startMin + STEP + picked * STEP, lo, hi)
     : clamp(prevEndMin, lo, hi);
 }
+
+/** 结束列文案（建列单一源）：可拨窗下沿逐格到上沿。LaunchSheet 的列组装、
+    行号反推、编辑回填夹取三处同吃——窗口规则（30 分钟起、6 小时上限、封顶
+    23:30）改 endWindow 一处，行号↔分钟换算跟着同式，不再复现「行号错位」。 */
+export function endLabels(startMin: number): string[] {
+  const { lo, hi } = endWindow(startMin);
+  const out: string[] = [];
+  for (let m = lo; m <= hi; m += STEP) out.push(GRID_LABELS[m2g(m)]);
+  return out;
+}
+
+/** 分钟 → 结束列行号（endLabels 的逆换算，同窗夹取） */
+export function endRowOf(startMin: number, endMin: number): number {
+  return clamp(
+    Math.round((endMin - (startMin + STEP)) / STEP),
+    0,
+    Math.max(0, endLabels(startMin).length - 1),
+  );
+}
+
+/** 结束分钟收进可拨窗（编辑回填/保存校验同式） */
+export function clampEnd(startMin: number, endMin: number): number {
+  const { lo, hi } = endWindow(startMin);
+  return clamp(endMin, lo, hi);
+}
