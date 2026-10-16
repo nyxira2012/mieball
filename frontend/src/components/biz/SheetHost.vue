@@ -44,6 +44,7 @@
       :pending-launch="s.pendingLaunch"
       :pending-checkin="s.pendingCheckin"
       :pending-intent="s.pendingIntent"
+      :pending-direct="s.pendingDirect"
     />
   </AppSheet>
 </template>

@@ -13,10 +13,10 @@ LiveBook 继承 LiveSweepMixin 获得 sweep_cancel_all / end 两动作；写锁�
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from ..core import clock, errors
-from ..db.models import Game, LiveMatch, LivePlayer, LiveState
+from ..db.models import Game, LiveCourt, LiveMatch, LivePlayer, LiveState
 from .bills import BillBook
 
 # 算到场口径单一源住纯函数层 live_rotation（2.8 批1 搬家：取队的可发判定要同一把尺，
@@ -67,6 +67,23 @@ class LiveSweepMixin:
             if any(c.status != "idle" for c in self._courts(game_id)):
                 raise errors.live_residue()
             now = clock.now()
+            played = self.db.execute(
+                select(func.count())
+                .select_from(LiveMatch)
+                .where(LiveMatch.game_id == game_id)
+            ).scalar_one()
+            if game.source == "direct" and played == 0:
+                # 直接开场局一场对局都没落账：散场即撤、不留记录（2026-10-17 用户
+                # 裁决）——复用撤局语义（cancelled：组织者列表永不回见、打球记录
+                # ended_at 锚天然查无）；现场行整删——没战报可封，留着会让扫码
+                # 深链落进「已撤还能写」的僵尸局。响应换形（vacated 旗），前端
+                # 清本机画面不走回看
+                game.state = "cancelled"
+                game.cancelled_at = now
+                for table in (LivePlayer, LiveCourt, LiveState):
+                    self.db.execute(delete(table).where(table.game_id == game_id))
+                self.db.commit()
+                return {"ok": True, "vacated": True, "cancelled_at": clock.iso(now)}
             game.ended_at = now
             if game.state != "locked":
                 # open 局提前开账再散场的，state 停在 open 会让派生态永不到 done——散场即定格，翻 locked 让 derive 走 locked→done（1.3 走查补漏）

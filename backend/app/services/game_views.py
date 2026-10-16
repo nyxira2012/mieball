@@ -150,6 +150,8 @@ def game_view(
         "rotation": game.rotation,
         "score_rule": game.score_rule,
         "manual_lock": game.manual_lock,
+        # 开场来源（plan|direct）：前端只在散场确认文案等少数位消费
+        "source": game.source,
         "courts": list(game.courts) if game.courts is not None else None,
         "fee_total": game.fee_total,
         "bill": bill_block(db, game, viewer_id, batch=batch),

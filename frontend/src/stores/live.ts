@@ -1003,16 +1003,27 @@ export const useLiveStore = defineStore("live", () => {
 
   /** 散场收工（§4.9 二次确认后的执行件）：残局不清完后端拒 live_residue（清单留在
       那片提示重试，不放行）；成功响应=ended 视图——applyLiveView 落 recap、停轮询、
-      sealed（sealGate 收权），散场即回看 */
+      sealed（sealGate 收权），散场即回看。
+      例外（2026-10-17 用户裁决①）：直接开场局一场对局都没落账时后端走撤局语义
+      （响应换形 {ok,vacated}）——无战报可回看，dismissRecap 清本机画面回空态 */
   async function endGame(): Promise<void> {
     const L = sweeperReady();
     if (!L) return;
-    const ok = await writeAction(
-      L.g.id,
-      () => apiLiveEnd(L.g.id, seqs().baseTotalSeq),
-      () => ui.toast("已散场 · 战报与底账已封存"),
-    );
-    if (ok) sweepState.value = false;
+    let raw: LiveViewApi & { vacated?: boolean };
+    try {
+      raw = await apiLiveEnd(L.g.id, seqs().baseTotalSeq);
+    } catch (e) {
+      if (!handleWriteError(e) && liveView.value) applyLiveView(liveView.value);
+      return;
+    }
+    sweepState.value = false;
+    if (raw.vacated) {
+      dismissRecap();
+      ui.toast("已散场 · 没打过球，这局不留记录");
+      return;
+    }
+    applyLiveView(toLiveView(raw));
+    ui.toast("已散场 · 战报与底账已封存");
   }
 
   /** 名册按找（视图层 byId 的共享口径） */

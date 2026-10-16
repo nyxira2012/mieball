@@ -26,6 +26,8 @@ _NEW_COLUMNS = {
         "terminated_at": "DATETIME",
         "cancelled_at": "DATETIME",
         "ended_at": "DATETIME",
+        # 直接开场来源旗（plan|direct）：散场无痕分支的判据
+        "source": "VARCHAR(8) NOT NULL DEFAULT 'plan'",
     },
     # 2.3 批3：管理员名单/战报事件句/场地片数（JSON 列补齐要带字面默认值，存量行不吃 ORM default）
     "live_state": {

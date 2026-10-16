@@ -8,7 +8,7 @@ import { useLiveStore } from "@/stores/live";
 import { useUiStore } from "@/stores/ui";
 import { useUserStore } from "@/stores/user";
 import type { SignupPending } from "@/stores/ui";
-import { goMeet } from "@/utils/nav";
+import { goLive, goMeet } from "@/utils/nav";
 import { autoGameName } from "@/utils/format";
 
 export async function runPendingResume(pending: SignupPending): Promise<void> {
@@ -30,6 +30,14 @@ export async function runPendingResume(pending: SignupPending): Promise<void> {
         input.name = autoGameName(user.me.name, input.venue_name);
       await game.publishGame(input);
       goMeet(); // 建局成功回约球页（与 LaunchSheet.publish 同径）
+    } else if (pending.pendingDirect) {
+      // 游客直接开场（2026-10-17）：此刻建号已成、昵称已落地，兜底名在此补定
+      // （与 pendingLaunch 同款；开场成功直接跳现场页）
+      const input = { ...pending.pendingDirect };
+      if (!input.name)
+        input.name = autoGameName(user.me.name, input.venue_name);
+      const g = await game.directOpen(input);
+      goLive(g.id);
     } else if (pending.pendingCheckin) {
       await liveStore.arriveMe(pending.pendingCheckin.gameId); // 2.1 选项A：建号即球友，自动「我到了」
     } else if (pending.pendingIntent) {

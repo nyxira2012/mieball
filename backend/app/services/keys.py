@@ -3,6 +3,7 @@
 接口只有五个动词；"接管杀全部、短信验证杀未验证"这类策略由调用方（AccountBook）组合，
 本模块只负责忠实执行，不掺业务判断。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -50,7 +51,11 @@ class KeyVault:
         row = self.db.execute(
             select(DeviceKey.id, DeviceKey.account_id)
             .join(Account, Account.id == DeviceKey.account_id)
-            .where(DeviceKey.fingerprint == fp, DeviceKey.revoked_at.is_(None), Account.status == "active")
+            .where(
+                DeviceKey.fingerprint == fp,
+                DeviceKey.revoked_at.is_(None),
+                Account.status == "active",
+            )
         ).first()
         if row is None:
             return None
@@ -61,7 +66,10 @@ class KeyVault:
                 update(DeviceKey)
                 .where(
                     DeviceKey.id == row.id,
-                    or_(DeviceKey.last_used_at.is_(None), DeviceKey.last_used_at < now - LAST_USED_THROTTLE),
+                    or_(
+                        DeviceKey.last_used_at.is_(None),
+                        DeviceKey.last_used_at < now - LAST_USED_THROTTLE,
+                    ),
                 )
                 .values(last_used_at=now)
             )
@@ -75,7 +83,8 @@ class KeyVault:
         """作废这一把（退出登录用：只踢本机，别台不受影响）。"""
         fp = security.token_fingerprint(token)
         self.db.execute(
-            update(DeviceKey).where(DeviceKey.fingerprint == fp, DeviceKey.revoked_at.is_(None))
+            update(DeviceKey)
+            .where(DeviceKey.fingerprint == fp, DeviceKey.revoked_at.is_(None))
             .values(revoked_at=clock.now())
         )
         self.db.commit()

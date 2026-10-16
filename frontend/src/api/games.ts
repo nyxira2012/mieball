@@ -5,6 +5,7 @@ import { request } from "./http";
 import type {
   ChibiConfig,
   CourtMode,
+  DirectOpenInput,
   EditGameInput,
   GameStatus,
   PublishGameInput,
@@ -79,6 +80,7 @@ export interface GameViewApi {
   slots_left: number;
   per_head: number | null;
   forced: boolean;
+  source?: "plan" | "direct"; // 开场来源（缺省 plan 兼容旧快照）
   entries?: EntryRowApi[];
   my?: MyBlockApi;
 }
@@ -98,6 +100,13 @@ export interface IntentViewApi {
 
 export function apiPublishGame(input: PublishGameInput): Promise<GameViewApi> {
   return request("POST", "/games", input);
+}
+
+/** 现场页直接开场（2026-10-17）：免填建局+空锁必开+开账一步，响应 game_view */
+export function apiGameDirectOpen(
+  input: DirectOpenInput,
+): Promise<GameViewApi> {
+  return request("POST", "/games/direct", input);
 }
 
 /** 找局打列表（可匿名；懒判定+三档过滤；含 done——前端列表自滤，见 meet 修订面裁决⑧） */

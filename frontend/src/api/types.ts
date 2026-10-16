@@ -131,6 +131,7 @@ export interface Game {
   slotsLeft: number; // 剩几坑
   perHead: number | null; // 人均（half-up）；null=未定
   forced: boolean; // 必打 = 手动锁 ∨ 场上有号
+  source?: "plan" | "direct"; // 开场来源（缺省 plan 兼容旧快照）；散场确认文案等少数位消费
   entries?: EntryRow[];
   my?: MyBlock;
 }
@@ -378,6 +379,16 @@ export type EditGameInput = Partial<Omit<PublishGameInput, "deadline_at">> & {
   deadline_at?: never;
 };
 
+/** 直接开场提交值（线上形状 snake_case，POST /games/direct 镜像）：免填建局——
+    可见档/必开/人数等全后端默认，前端只问三件事：在哪、哪几片、打多久 */
+export interface DirectOpenInput {
+  name: string; // autoGameName 预生成；游客路径先空着、建号后由续办补（pendingLaunch 同款）
+  venue_name: string;
+  venue_address: string | null;
+  hours: number; // 时长 1-8 小时，默认 2
+  courts: string[]; // 场地号（如 ["3号","5号"]）——片数唯一真值=个数；缺省后端落 1 号场一片
+}
+
 /** 全局单例弹层 payload（§2.2：P2 全量预定义，后续阶段只消费不改） */
 export type SheetPayload =
   | { type: "profile"; userId: number }
@@ -401,6 +412,7 @@ export type SheetPayload =
       pendingLaunch?: PublishGameInput;
       pendingCheckin?: { gameId: number };
       pendingIntent?: { slots: string[]; frequency: number; note: string };
+      pendingDirect?: DirectOpenInput; // 游客直接开场（2026-10-17）：建号后续办开场+跳现场
     };
 // 名片建号卡（1.1 A1）：游客点报名/建局/留意向/扫码签到时弹出；建号成功自动接着完成挂起的动作（D3 两步拆分）
 // pendingCheckin（2.1·选项A）：扫码到场一律走名片建号，建号成功后自动「我到了」进候场区

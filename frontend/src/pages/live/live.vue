@@ -176,11 +176,24 @@
 
     <!-- 无 live 空态（alpha:1532-1535 版式；bare 壳下自补边距）。按钮文案 2026-10-11 改——
          没球打的去向是约球页的两个低门槛动作（找局/留意向），不再预设用户当组织者。
-         2.7 教学以两张虚拟卡挂进这套 2.1 框架（不替代空态本身） -->
+         2.7 教学以两张虚拟卡挂进这套 2.1 框架（不替代空态本身）。
+         2026-10-17：「直接开场」与「现场」标题同行右端（用户走查裁决）——免填建局+
+         开账一步，进 DirectOpenSheet 填场馆/时长防误点；先约球按钮与 2.1 版式不动 -->
     <template v-else-if="!liveStore.hasLive">
       <view class="empty-wrap">
-        <view class="kicker kt30">Court</view>
-        <view class="brand">现<text class="bem">场</text></view>
+        <view class="empty-head">
+          <view>
+            <view class="kicker kt30">Court</view>
+            <view class="brand">现<text class="bem">场</text></view>
+          </view>
+          <AppButton
+            variant="pri"
+            size="sm"
+            class="direct-btn"
+            @click="liveSheet = { k: 'direct' }"
+            >＋ 直接开场</AppButton
+          >
+        </view>
         <EmptyBox class="et20">
           <view>还没有进行中的球局</view>
           <AppButton variant="pri" size="sm" class="go-btn" @click="goMeet"
@@ -191,6 +204,10 @@
         <SandboxCards />
       </view>
     </template>
+
+    <!-- 直接开场表单（2026-10-17）：挂分支链之外——空态与真局两态都可能开（空态点
+         ＋直接开场；弹层壳自带 visible 门，挂顶层的意义就是不被分支裁掉） -->
+    <DirectOpenSheet :visible="liveSheet?.k === 'direct'" @close="closeLocal" />
   </PageShell>
 </template>
 
@@ -211,6 +228,7 @@ import CheckinSheet from "@/components/biz/CheckinSheet.vue";
 import QueueSheet from "@/components/biz/QueueSheet.vue";
 import LedgerSheet from "@/components/biz/LedgerSheet.vue";
 import RulesSheet from "@/components/biz/RulesSheet.vue";
+import DirectOpenSheet from "@/components/biz/DirectOpenSheet.vue";
 import EndSettleModal from "@/components/biz/EndSettleModal.vue";
 import SweepSheet from "@/components/biz/SweepSheet.vue";
 import LiveRecap from "@/components/biz/LiveRecap.vue";
@@ -236,6 +254,7 @@ type LocalSheet =
   | { k: "queue" }
   | { k: "ledger" }
   | { k: "rules" }
+  | { k: "direct" }
   | { k: "confirm"; msg: string; action: () => void };
 
 const liveStore = useLiveStore();
@@ -391,9 +410,19 @@ function onSweepCancelAll(): void {
     liveStore.sweepCancelAll(),
   );
 }
-/** 确认散场（§4.9 放行后的二次确认）：后果句点明不可撤销，确认执行 endGame */
+/** 确认散场（§4.9 放行后的二次确认）：后果句点明不可撤销，确认执行 endGame。
+    直接开场局一场对局都没落账时（2026-10-17 用户裁决①）：散场走后端无痕分支
+    （撤局语义），后果句换诚实版——不说「封存」 */
 function onSweepEnd(): void {
-  askConfirm("球局将收工封存，此操作不可撤销", () => liveStore.endGame());
+  const noTrace =
+    liveStore.live?.g.source === "direct" &&
+    (liveStore.liveView?.matches.length ?? 0) === 0;
+  askConfirm(
+    noTrace
+      ? "这场没落过对局账——散场即撤，这局不留任何记录"
+      : "球局将收工封存，此操作不可撤销",
+    () => liveStore.endGame(),
+  );
 }
 /** 关清扫清单（残局清单点「上传比分」开的结算窗由 store.settleWindow 自管，
     不随清单关） */
@@ -548,6 +577,18 @@ onUnload(() => liveStore.stopPolling());
 /* 无 live 空态：自补壳层边距（同默认 .page 顶距口径）+ 原内联间距 */
 .empty-wrap {
   padding: calc(env(safe-area-inset-top) + 14px) 18px;
+}
+
+/* 直接开场（2026-10-17 走查裁决）：标题行三件 flex 排——按钮贴「现场」大字同一行右端 */
+.empty-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.direct-btn {
+  flex: none;
+  margin-bottom: 4px; /* 光学对齐：贴着 34px 大字基线微抬一点 */
 }
 
 /* 新手教学入口行（§4.7）：顶条与对局区之间一行小字，常驻不催 */

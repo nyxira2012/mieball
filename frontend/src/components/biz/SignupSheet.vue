@@ -184,7 +184,11 @@ import { useSmsCountdown } from "@/composables/useSmsCountdown";
 import { phoneInputError, smsCodeError } from "@/utils/validate";
 import { isWeChatBrowser, goWechatAuth } from "@/utils/wechat";
 import { goLogin } from "@/utils/nav";
-import type { ChibiConfig, PublishGameInput } from "@/api/types";
+import type {
+  ChibiConfig,
+  DirectOpenInput,
+  PublishGameInput,
+} from "@/api/types";
 
 const props = defineProps({
   pendingJoin: {
@@ -207,6 +211,11 @@ const props = defineProps({
       frequency: number;
       note: string;
     }>,
+    default: undefined,
+  },
+  /** 直接开场（2026-10-17）：游客在现场页点「开场」→ 建号成功自动开场并跳现场 */
+  pendingDirect: {
+    type: Object as PropType<DirectOpenInput>,
     default: undefined,
   },
 });
@@ -232,18 +241,22 @@ const title = computed(() =>
     ? "填张名片，报名"
     : props.pendingLaunch
       ? "填张名片，建局"
-      : props.pendingIntent
-        ? "填张名片，留意向"
-        : "填张名片",
+      : props.pendingDirect
+        ? "填张名片，直接开场"
+        : props.pendingIntent
+          ? "填张名片，留意向"
+          : "填张名片",
 );
 const actionLabel = computed(() =>
   props.pendingJoin
     ? "确定报名"
     : props.pendingLaunch
       ? "确定建局"
-      : props.pendingIntent
-        ? "确定留下意向"
-        : "确定",
+      : props.pendingDirect
+        ? "确定并开场"
+        : props.pendingIntent
+          ? "确定留下意向"
+          : "确定",
 );
 
 /* ---- 卡形态（2026-10-13 修订二，用户裁决）：表单两环境同貌、只换按钮——
@@ -311,6 +324,7 @@ function pendingSnapshot() {
     pendingLaunch: props.pendingLaunch,
     pendingCheckin: props.pendingCheckin,
     pendingIntent: props.pendingIntent,
+    pendingDirect: props.pendingDirect,
   };
 }
 
@@ -359,9 +373,11 @@ async function onSubmitCard(): Promise<void> {
     afterSuccess(
       props.pendingJoin
         ? "报名完成，已在名单中"
-        : props.pendingIntent
-          ? "账号建好了 · 意向已留下"
-          : "账号建好了",
+        : props.pendingDirect
+          ? "账号建好了 · 马上开场"
+          : props.pendingIntent
+            ? "账号建好了 · 意向已留下"
+            : "账号建好了",
     );
   } catch (e) {
     if (e instanceof ApiError && e.code === "phone_taken") {

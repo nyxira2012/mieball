@@ -13,16 +13,17 @@ export type SignupPending = Omit<
   "type"
 >;
 
-/** 挂起动作四个信号位名：hasPending 从这里派生，pendingResume 分发器按名挂钩，
+/** 挂起动作五个信号位名：hasPending 从这里派生，pendingResume 分发器按名挂钩，
     新增动作种类时在此加一名、分发器接一支，不再各处手抄字段枚举 */
 const PENDING_KEYS = [
   "pendingJoin",
   "pendingLaunch",
   "pendingCheckin",
   "pendingIntent",
+  "pendingDirect",
 ] as const;
 
-/** 挂起动作是否非空（四种动作一样没带即空）：login.vue 随机名回执排队等判定共用 */
+/** 挂起动作是否非空（五种动作一样没带即空）：login.vue 随机名回执排队等判定共用 */
 export function hasPending(p: SignupPending): boolean {
   return PENDING_KEYS.some((k) => Boolean(p[k]));
 }

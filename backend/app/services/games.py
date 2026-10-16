@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -140,6 +140,73 @@ class GameBook:
                 )
             )
             self.db.commit()
+        return self.detail(game_id=game.id, viewer_id=organizer_id)
+
+    def direct_open(
+        self,
+        *,
+        organizer_id: int,
+        venue_name: str,
+        venue_address: str | None,
+        name: str | None,
+        hours: int,
+        courts: list[str],
+    ) -> dict:
+        """现场页直接开场（2026-10-17 用户裁决）：免填建局+空锁必打+开账一步到位。
+        组局表单在这里全部给默认——时间=现在起 hours 小时、截止=开打时刻（建出
+        即锁定，不服务报名截止语义）、人数 4-12、仅邀请（约球列表藏起来，二维码
+        即门）。空锁必打是硬前提：单人局永远凑不满最少人数，不锁会被截止懒判定
+        判死、开账闸（现1 守卫②「必开∨成局」）也不放行。
+        场地号收拢（走查裁决）：片数唯一真值=场地号个数（写 game.courts，订场
+        登记同源），不吃人数回退；不填默认 1 号场一片。开账复用 LiveBook.start
+        单一路径（锁序沿 join→absorb_join 的局簿→现场单向嵌套先例）。"""
+        venue = venue_name.strip()
+        if not venue:
+            raise errors.booking_invalid("先填个场馆再开场")
+        if not 1 <= hours <= 8:
+            raise errors.range_invalid("时长选 1 到 8 小时")
+        nums: list[str] = []
+        for c in courts:
+            n = c.strip()
+            if n and n not in nums:
+                nums.append(n)
+        if len(nums) > 8:
+            raise errors.range_invalid("场地号最多 8 片")
+        now = clock.now()
+        with _write_lock:
+            game = Game(
+                organizer_id=organizer_id,
+                name=name,
+                start_at=now,
+                end_at=now + timedelta(hours=hours),
+                deadline_at=now,
+                venue_name=venue,
+                venue_address=venue_address,
+                min_players=4,
+                max_players=12,
+                visibility="invite_only",
+                scoring=11,
+                rotation="rotate",
+                score_rule="rally",
+                manual_lock=True,
+                courts=nums or ["1号"],
+                state="locked",
+                source="direct",
+                created_at=now,
+            )
+            self.db.add(game)
+            self.db.flush()  # autoflush=False：显式 flush 拿 game.id 给报名行用
+            self.db.add(
+                Entry(
+                    game_id=game.id,
+                    account_id=organizer_id,
+                    bring=0,
+                    standing="formal",
+                    joined_at=now,
+                )
+            )
+            self.db.commit()
+        LiveBook(self.db).start(game_id=game.id, organizer_id=organizer_id)
         return self.detail(game_id=game.id, viewer_id=organizer_id)
 
     # ---- 找局打列表（4.2：三档可见 + 懒判定；排除 terminated/cancelled/pending） ----

@@ -1962,6 +1962,22 @@ describe("散场清扫链（§4.9，批6）", () => {
       vi.useRealTimers();
     }
   });
+  it("endGame 无痕分支（2026-10-17）：直接开场局没落过对局 → 后端响应换形 vacated——清本机画面回空态、不落回看、toast 不留记录句", async () => {
+    await seedGame(g900());
+    const { live, ui } = await inPlay();
+    live.sweepState = true;
+    liveApi.apiLiveEnd.mockResolvedValue({
+      ok: true,
+      vacated: true,
+      cancelled_at: "2026-10-07T20:00:00+08:00",
+    });
+    await live.endGame();
+    expect(liveApi.apiLiveEnd).toHaveBeenCalledWith(900, 7);
+    expect(live.sweepState).toBe(false);
+    expect(live.live).toBeNull(); // dismissRecap：现场态/回看/跨页信号位全清
+    expect(live.recap).toBeNull();
+    expect(ui.toastMsg).toBe("已散场 · 没打过球，这局不留记录");
+  });
 });
 
 /* ─────────── 批5b：确认窗联动纯函数（EndSettleModal 消费）+ 验收官补测销号（G1；

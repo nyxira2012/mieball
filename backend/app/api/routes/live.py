@@ -479,6 +479,11 @@ def live_end(
         "live_end",
         game_id=game_id,
         account_id=account.id,
-        detail=f"散场 {out['ended_at']}",
+        # 直接开场局无对局落账时散场即撤（无痕分支）：响应换形，审计记撤不记封存
+        detail=(
+            f"散场撤局无痕 {out['cancelled_at']}"
+            if out.get("vacated")
+            else f"散场 {out['ended_at']}"
+        ),
     )
     return out

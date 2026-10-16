@@ -38,6 +38,18 @@ class PublishIn(BaseModel):
     score_rule: str
 
 
+class DirectOpenIn(BaseModel):
+    """现场页直接开场表单：场馆/场地号/时长三问，其余全后端默认（invite_only/锁必开/人数 4-12）。"""
+
+    venue_name: str
+    venue_address: str | None = None
+    name: str | None = None
+    hours: int = 2
+    courts: list[
+        str
+    ] = []  # 场地号（如 ["3号","5号"]）：片数=场地号个数；缺省 1 号场一片
+
+
 class JoinIn(BaseModel):
     """报名表单：带几人 0-3，缺省 0（自己占 1 坑）。"""
 
@@ -105,6 +117,29 @@ def publish_game(
         game_id=out["id"],
         account_id=account.id,
         detail=f"{body.venue_name} {body.start_at:%m-%d %H:%M} 开打",
+    )
+    return out
+
+
+@router.post("/direct")
+def direct_open_game(
+    body: DirectOpenIn,
+    account: Account = Depends(require_account),
+    book: GameBook = Depends(get_game_book),
+):
+    out = book.direct_open(
+        organizer_id=account.id,
+        venue_name=body.venue_name,
+        venue_address=body.venue_address,
+        name=body.name,
+        hours=body.hours,
+        courts=body.courts,
+    )
+    audit(
+        "direct_open",
+        game_id=out["id"],
+        account_id=account.id,
+        detail=f"{body.venue_name} 直接开场 {body.hours}h",
     )
     return out
 

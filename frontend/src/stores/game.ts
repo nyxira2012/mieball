@@ -12,6 +12,7 @@ import {
   apiDeleteIntent,
   apiEditGame,
   apiGameDetail,
+  apiGameDirectOpen,
   apiGameFee,
   apiGameFeePreview,
   apiInviteUser,
@@ -30,6 +31,7 @@ import {
   type IntentViewApi,
 } from "@/api/games";
 import type {
+  DirectOpenInput,
   EditGameInput,
   Game,
   Intent,
@@ -78,6 +80,7 @@ function toGame(v: GameViewApi): Game {
     slotsLeft: v.slots_left,
     perHead: v.per_head,
     forced: v.forced,
+    source: v.source ?? "plan",
     entries: v.entries?.map((e) => ({
       account: { ...e.account },
       bring: e.bring,
@@ -243,6 +246,16 @@ export const useGameStore = defineStore("game", () => {
         ? "局已发布 · 名单头一个就是你 · 这个档位下，球友主要通过你转的链接看到这个局"
         : "局已发布 · 名单头一个就是你，点局上的 ⤴ 分享到群里拉人",
     );
+    return g;
+  }
+
+  /** 直接开场（2026-10-17）：免填建局+开账一步——后端给全默认（必开/仅邀请），
+      成功即现场点亮；页面层随后 goLive 进现场，游客路径由续办补跑 */
+  async function directOpen(input: DirectOpenInput): Promise<Game> {
+    const g = toGame(await track(() => apiGameDirectOpen(input)));
+    games.value.unshift(g);
+    upsert(g);
+    ui.toast("现场已开场 · 亮出二维码收人吧");
     return g;
   }
 
@@ -450,6 +463,7 @@ export const useGameStore = defineStore("game", () => {
     loadMyIntent,
     loadPlaylog,
     publishGame,
+    directOpen,
     editGame,
     joinGame,
     quitGame,

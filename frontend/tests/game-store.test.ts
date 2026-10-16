@@ -25,6 +25,7 @@ const api = vi.hoisted(() => ({
   apiDeleteIntent: vi.fn(),
   apiGameFeePreview: vi.fn(),
   apiGameFee: vi.fn(),
+  apiGameDirectOpen: vi.fn(),
 }));
 
 vi.mock("@/api/games", () => api);
@@ -76,6 +77,48 @@ function mkView(p: Partial<GameViewApi> = {}): GameViewApi {
     ...p,
   };
 }
+
+describe("directOpen（直接开场 2026-10-17）", () => {
+  it("成功：载荷透传、新局插列表头、toast 开场句、source=direct 映射", async () => {
+    api.apiGameDirectOpen.mockResolvedValue(
+      mkView({
+        id: 501,
+        status: "live",
+        live_opened: true,
+        forced: true,
+        source: "direct",
+        visibility: "invite_only",
+      }),
+    );
+    const { store, ui } = await loadStore();
+    const g = await store.directOpen({
+      name: "老王 · 朝阳馆",
+      venue_name: "朝阳馆",
+      venue_address: null,
+      hours: 2,
+      courts: ["3号", "5号"],
+    });
+    expect(api.apiGameDirectOpen).toHaveBeenCalledWith({
+      name: "老王 · 朝阳馆",
+      venue_name: "朝阳馆",
+      venue_address: null,
+      hours: 2,
+      courts: ["3号", "5号"],
+    });
+    expect(g.id).toBe(501);
+    expect(g.source).toBe("direct");
+    expect(store.games[0]?.id).toBe(501); // unshift 排头
+    expect(store.findGame(501)?.forced).toBe(true); // upsert 回填
+    expect(ui.toastMsg).toBe("现场已开场 · 亮出二维码收人吧");
+  });
+
+  it("旧快照无 source 字段：映射兜底 plan（兼容性）", async () => {
+    api.apiListGames.mockResolvedValue([mkView({ id: 601 })]);
+    const { store } = await loadStore();
+    await store.loadGames();
+    expect(store.findGame(601)?.source).toBe("plan");
+  });
+});
 
 describe("loadGames / loadMine / loadDetail（读链）", () => {
   it("列表填充 + snake→camel 映射抽查（定值直读，A4）", async () => {

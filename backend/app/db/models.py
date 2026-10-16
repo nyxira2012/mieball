@@ -176,6 +176,8 @@ class Game(Base):
     fee_total: Mapped[int | None] = mapped_column(
         Integer, nullable=True
     )  # 总价整数元；null=未定
+    # 开场来源：plan=组局页发局 | direct=现场页直接开场——散场无痕分支只认 direct
+    source: Mapped[str] = mapped_column(String(8), default="plan", nullable=False)
     # open 报名中 | locked 成局/已锁 | terminated 未成局 | cancelled 已撤 | pending 待处置（恢复后）
     state: Mapped[str] = mapped_column(
         String(16), default="open", nullable=False, index=True
