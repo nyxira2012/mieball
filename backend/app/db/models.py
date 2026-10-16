@@ -307,11 +307,12 @@ class LiveState(Base):
     )
     total_seq: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     # rules 四件套快照（分制真值在 game 列、片快照在 LiveCourt.scoring）：
-    # 双打 / 谁下 / 怎么配 / 连庄上限
+    # 双打 / 谁下 / 怎么配 / 连打上限（全场统一；默认随谁下自适应，真值源在
+    # LiveBook 规则层——列默认只兜直构残留，两处数字必须一致）
     doubles: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     down: Mapped[str] = mapped_column(String(8), default="all", nullable=False)
     pairing: Mapped[str] = mapped_column(String(8), default="queue", nullable=False)
-    streak_max: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    streak_max: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
     round: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     # 开账人账号 id（组织者或窗内正式成员，旧账为 None）

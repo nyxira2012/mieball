@@ -1,7 +1,8 @@
 <template>
-  <!-- 完整候场队列抽屉（temp/打球页原型 sh-queue 逐字）：首 N 行 .next 高亮（已排进下一场，
-       N=每片人数，双打 4 / 单打 2——2.4 批2 size-aware），每行 mono 小注（已打 / DUPR 一位小数）+
-       右侧 tag（下一场 / 我还有 N 轮）；点行开点人抽屉（页面编排）。 -->
+  <!-- 完整候场队列抽屉（temp/打球页原型 sh-queue 逐字）：首 N 行 .next 高亮（预计序
+     里排最前的下 N 位，N=每片人数，双打 4 / 单打 2——2.4 批2 size-aware），每行
+     mono 小注（今晚 N 场 · DUPR 一位小数——吃名册行 tonight 战报派生真值，档案
+     play 是生涯数不顶用）+ 右侧 tag（下一场 / 我还有 N 轮）；点行开点人抽屉（页面编排）。 -->
   <AppSheet
     :visible="visible"
     title="候场队列"
@@ -29,7 +30,8 @@
             ></view
           >
           <view class="meta"
-            >已打 {{ r.u.play }} 场 · DUPR {{ fmtDupr1(duprOf(r.u)) }}</view
+            >今晚 {{ r.u.tonight ?? 0 }} 场 · DUPR
+            {{ fmtDupr1(duprOf(r.u)) }}</view
           >
         </view>
         <text

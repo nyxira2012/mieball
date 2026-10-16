@@ -328,13 +328,17 @@ export const useLiveStore = defineStore("live", () => {
   }
 
   /** 写链错误共件（writeAction 与 startLive 同款两分支）：409 两码携视图 → 对表 +
-      toast「现场已更新」返 true；其余 toast errText（断网「网络不给力，请稍后再试」/
-      后端把关句）返 false */
+      toast「现场已更新」返 true；越界（rotation_overflow）错误体也携视图——主动作
+      已提交不算失败，先对表保持最新画面（发牌降级片留空，差人卡照常兜底）再透传
+      后端句「轮转数超范围，这片暂停发牌」返 false；其余 toast errText（断网
+      「网络不给力，请稍后再试」/后端把关句）返 false */
   function handleWriteError(e: unknown): boolean {
     if (applyStaleView(e)) {
       ui.toast("现场已更新");
       return true;
     }
+    if (e instanceof ApiError && e.code === "rotation_overflow" && e.view)
+      applyLiveView(toLiveView(e.view));
     ui.toast(errText(e));
     return false;
   }
@@ -594,12 +598,15 @@ export const useLiveStore = defineStore("live", () => {
       窗开着跨视图代次推进（这场已被别人落账/该片重发）时，上传前闸与视图落地的
       自动关窗都认它，旧场的账发不成新一场；overwrite 不锚 null（它操作的是「上一场
       落账行」latestMatchOf，锚片代次反而会被改分重落误杀，过期由后端片号闸兜底）。
+      done（结算一步展示）：上传成功后窗不关、内容切「下一场对阵+候场名单」只读展示，
+      等「好的」关闭——锚一并撤（不撤会被 applyLiveView 的自动关窗当成过期窗误杀）。
       旧 settling（视图 pending 驱动按片多值）窗族已随批2 会话B 退役删除，本窗独苗 */
   const settleWindow = ref<{
     courtId: number;
     noRedeal: boolean;
     mode: "upload" | "overwrite";
     courtSeqAnchor: number | null;
+    done?: boolean;
   } | null>(null);
 
   /** 窗锚过期判定（批3 单一源）：upload 窗锚的片代次已被这版视图推进＝开窗锚的
@@ -615,13 +622,14 @@ export const useLiveStore = defineStore("live", () => {
     );
   }
 
-  /** 开窗（一次一扇的闸收在这里：已有窗占位一律不重开——自动开窗与手动入口共用） */
+  /** 开窗（闸收在这里）：表单窗占位一律不重开——自动开窗与手动入口共用（一次一扇）；
+      一步展示窗是只读尾巴不占闸，下一场到分/手动入口开新窗直接顶掉它 */
   function openSettleWindow(
     courtId: number,
     mode: "upload" | "overwrite",
     noRedeal = false,
   ): void {
-    if (settleWindow.value) return;
+    if (settleWindow.value && !settleWindow.value.done) return;
     settleWindow.value = {
       courtId,
       noRedeal,
@@ -643,6 +651,16 @@ export const useLiveStore = defineStore("live", () => {
   function clearSettle(courtId: number): void {
     settleWindow.value = null;
     resetLocal(courtId);
+  }
+
+  /** 上传成功收尾（非清扫）：本地账清零 + 窗转一步展示（结算一步到位）——窗不关，
+      内容切「下一场对阵+候场名单」；锚一并撤（不撤会被 applyLiveView 的自动关窗
+      当成过期窗误杀），展示等「好的」或被下一场的新窗顶掉 */
+  function settleDone(courtId: number): void {
+    resetLocal(courtId);
+    const w = settleWindow.value;
+    if (w && w.courtId === courtId)
+      settleWindow.value = { ...w, courtSeqAnchor: null, done: true };
   }
 
   /** 得分（点比分不联网）：只写本机这笔账（比分即反馈，无 toast 无 seq）；到分
@@ -719,10 +737,10 @@ export const useLiveStore = defineStore("live", () => {
           baseTotalSeq: s.baseTotalSeq,
           baseCourtSeq: s.baseCourtSeq,
         });
-        // 先清账关窗再落视图（clearSettle 契约）：响应视图的片代次必越过窗锚
-        // （自家落账也 +1），别让 applyLiveView 的自动关窗抢在「积分落账」前
-        // 弹「这场已有人记账」
-        clearSettle(courtId);
+        // 收尾先于落视图（clearSettle 的顺序契约）：非清扫窗转一步展示（响应视图
+        // 随后落地，展示数据即最新真值）、清扫态照旧关窗清账
+        if (noRedeal) clearSettle(courtId);
+        else settleDone(courtId);
         return raw;
       },
       () =>
@@ -1090,6 +1108,7 @@ export const useLiveStore = defineStore("live", () => {
       u.fire = p.fire || undefined;
       u.check = p.check;
       u.skip = p.skip;
+      u.tonight = p.tonight; // 今晚已打场数（队列抽屉「今晚 N 场」数源；生涯数在档案缓存 play，两数不同源）
       u.arriveAt = p.arriveAt ?? undefined;
       u.leftAt = p.leftAt ?? undefined;
       return u;

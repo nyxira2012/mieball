@@ -95,7 +95,7 @@ describe("本地记分与结算编排（§4.2 幕三/幕四）", () => {
     expect(h.localScores[1]).toEqual({ sa: 0, sb: 0, history: [] }); // 清账，下一场 0:0
     expect(qNames(h.state!)).toEqual(["阿豪", "老周"]); // 第一场结算：老金小鹿顶坑
     expect(h.stepIdx).toBe(5); // 第 5 步翻面；第 6 步（设歇/第二场结算）等着
-    expect(h.step?.text).toContain("先上的先下——你不下接着打");
+    expect(h.step?.text).toContain("连打多的人先下——你不下接着打");
   });
 
   it("undoPoint/clearScore 撤得动；窗没开 confirmSettle 不落（幂等闸同 live）", async () => {
@@ -152,7 +152,7 @@ describe("参与卡七幕串联（§4.2：幕四老金小鹿条件触发→幕�
 
   it("幕五歇轮+幕六第二场：你不下→设歇翻面→第二场结算你下场、歇了句、4 秒进 final、5 秒收尾巴", async () => {
     const { h, you } = await toFirstSettle();
-    expect(h.stepIdx).toBe(5); // 幕五完：先上的先下——你不下（第 6 步等着）
+    expect(h.stepIdx).toBe(5); // 幕五完：连打多的人先下——你不下（第 6 步等着）
     expect(h.state!.courts[0]!.b).toContain(you.id); // 你留场接着打
 
     h.openPerson(you.id); // 幕五入口：点自己头像开点人抽屉

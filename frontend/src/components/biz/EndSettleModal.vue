@@ -11,6 +11,11 @@
        「请组织者或管理员确认」旁注已删。
        「暂不结算」=closeSettleWindow 保本地分接着打（P2-2，唯一非上传出口）；输入格
        纠偏 upload 模式当场写回本机账——暂不结算后场卡接着打的就是纠偏后的分。
+       一步展示（结算一步到位）：上传成功窗不关、内容切「下一场对阵+候场名单」只读
+       态（done 旗在 store 窗位），数据从落地后的最新视图取（刚发的片=courts 同片号
+       行、候场=queue 映射昵称）；片没开出（人少兜底）摆差人句不硬造对阵；「好的」
+       关闭、下一场到分开新窗直接顶掉展示窗。改分重落不转展示（它重写的是上一场，
+       轮转不动），照旧落账关窗。
        比分格数字直录替 ±（2026-10-11 裁决：不逐分记的人 0:0 起步连点不友好；
        空=0、只拦非负整数不卡上限）。窗内「撤一分」已删（P2-1）：撤分唯一入口=场卡。
        z-110 fixed 居中；遮罩不可关（旧裁决仍成立——关窗会丢待上传的账；遮罩纯视觉
@@ -18,87 +23,122 @@
   <view class="mwrap" :class="{ on: win != null }">
     <view class="mmask" />
     <view class="modal">
-      <view class="md-kick">{{ kick }}</view>
-      <view class="md-title">
-        {{ mode === "overwrite" ? "改分" : "上传"
-        }}<text class="bem">{{ mode === "overwrite" ? "重落" : "比分" }}</text>
-      </view>
-      <view v-if="mode === 'overwrite'" class="md-mode-tip"
-        >把这场已落的账按新分重写 · 积分重算</view
-      >
-
-      <!-- 胜方点选：A 柠檬 / B 冰蓝；分低方选不中（§4.6） -->
-      <view class="win-pick">
-        <view
-          class="wp a"
-          :class="{ on: winA === true, off: !canA }"
-          @click="pick('a')"
-        >
-          <view class="t">TEAM A</view>
-          <view class="n">{{ namesA }}</view>
+      <!-- ── 一步展示态（上传成功后 store 窗位翻 done）── -->
+      <template v-if="done">
+        <view class="md-kick">NEXT · {{ courtName }}</view>
+        <view class="md-title">下一场<text class="bem">已排好</text></view>
+        <view v-if="courtPlaying" class="nx-court">
+          <view class="nx-side">
+            <text class="nx-t a">TEAM A</text>
+            <text class="nx-n">{{ namesA }}</text>
+          </view>
+          <view class="nx-vs">VS</view>
+          <view class="nx-side">
+            <text class="nx-t b">TEAM B</text>
+            <text class="nx-n">{{ namesB }}</text>
+          </view>
         </view>
-        <view
-          class="wp b"
-          :class="{ on: winA === false, off: !canB }"
-          @click="pick('b')"
-        >
-          <view class="t">TEAM B</view>
-          <view class="n">{{ namesB }}</view>
+        <view v-else class="nx-idle">{{ idleTxt }}</view>
+        <view class="nx-queue">
+          <text class="nx-qt">候场</text>
+          <text class="nx-qn">{{ queueNames || "全员都在场上" }}</text>
         </view>
-      </view>
+        <view class="md-btns">
+          <AppButton variant="pri" block @click="liveStore.closeSettleWindow()"
+            >好的</AppButton
+          >
+        </view>
+      </template>
 
-      <!-- 大比分输入格：空视同 0、失焦归一 -->
-      <view class="md-score">
-        <input
-          class="num a"
-          :value="saText"
-          type="number"
-          @input="onScore('a', $event)"
-          @blur="onBlurScore('a')"
-        />
-        <view class="c">:</view>
-        <input
-          class="num b"
-          :value="sbText"
-          type="number"
-          @input="onScore('b', $event)"
-          @blur="onBlurScore('b')"
-        />
-      </view>
-      <view class="md-tools">
-        <text class="edit">点比分格 · 直接输数字</text>
-      </view>
+      <!-- ── 表单态（上传 / 改分重落）── -->
+      <template v-else>
+        <view class="md-kick">{{ kick }}</view>
+        <view class="md-title">
+          {{ mode === "overwrite" ? "改分" : "上传"
+          }}<text class="bem">{{
+            mode === "overwrite" ? "重落" : "比分"
+          }}</text>
+        </view>
+        <view v-if="mode === 'overwrite'" class="md-mode-tip"
+          >把这场已落的账按新分重写 · 积分重算</view
+        >
 
-      <!-- ±积分预览（胜队在前；平分未点胜方时不显示）；访客带「不计积分」标识 -->
-      <view v-for="(r, i) in preview" :key="i" class="elo-row">
-        <text class="nm"
-          >{{ r.name
-          }}<text v-if="r.guest" class="gtag">访客 · 不计积分</text></text
-        >
-        <text class="d" :class="r.up ? 'up' : 'dn'">{{
-          r.up ? `+${r.d}` : `−${Math.abs(r.d)}`
-        }}</text>
-      </view>
-      <view class="md-note">±积分为结算预演 · 确认后落账生效</view>
+        <!-- 胜方点选：A 柠檬 / B 冰蓝；分低方选不中（§4.6） -->
+        <view class="win-pick">
+          <view
+            class="wp a"
+            :class="{ on: winA === true, off: !canA }"
+            @click="pick('a')"
+          >
+            <view class="t">TEAM A</view>
+            <view class="n">{{ namesA }}</view>
+          </view>
+          <view
+            class="wp b"
+            :class="{ on: winA === false, off: !canB }"
+            @click="pick('b')"
+          >
+            <view class="t">TEAM B</view>
+            <view class="n">{{ namesB }}</view>
+          </view>
+        </view>
 
-      <view class="md-btns">
-        <AppButton
-          variant="pri"
-          block
-          :disabled="!canConfirm"
-          @click="onConfirm"
-          >{{
-            mode === "overwrite" ? "确认改分 · 重落这场" : "确认上传 · 落账"
-          }}</AppButton
-        >
-        <view v-if="winA === null" class="md-full-tip"
-          >平分不分胜负 · 先点胜方</view
-        >
-        <!-- 唯一非上传出口（P2-2）：关窗不丢本机账，回场卡接着打 -->
-        <AppButton variant="ghost" block @click="liveStore.closeSettleWindow()"
-          >暂不结算 · 接着打</AppButton
-        >
-      </view>
+        <!-- 大比分输入格：空视同 0、失焦归一 -->
+        <view class="md-score">
+          <input
+            class="num a"
+            :value="saText"
+            type="number"
+            @input="onScore('a', $event)"
+            @blur="onBlurScore('a')"
+          />
+          <view class="c">:</view>
+          <input
+            class="num b"
+            :value="sbText"
+            type="number"
+            @input="onScore('b', $event)"
+            @blur="onBlurScore('b')"
+          />
+        </view>
+        <view class="md-tools">
+          <text class="edit">点比分格 · 直接输数字</text>
+        </view>
+
+        <!-- ±积分预览（胜队在前；平分未点胜方时不显示）；访客带「不计积分」标识 -->
+        <view v-for="(r, i) in preview" :key="i" class="elo-row">
+          <text class="nm"
+            >{{ r.name
+            }}<text v-if="r.guest" class="gtag">访客 · 不计积分</text></text
+          >
+          <text class="d" :class="r.up ? 'up' : 'dn'">{{
+            r.up ? `+${r.d}` : `−${Math.abs(r.d)}`
+          }}</text>
+        </view>
+        <view class="md-note">±积分为结算预演 · 确认后落账生效</view>
+
+        <view class="md-btns">
+          <AppButton
+            variant="pri"
+            block
+            :disabled="!canConfirm"
+            @click="onConfirm"
+            >{{
+              mode === "overwrite" ? "确认改分 · 重落这场" : "确认上传 · 落账"
+            }}</AppButton
+          >
+          <view v-if="winA === null" class="md-full-tip"
+            >平分不分胜负 · 先点胜方</view
+          >
+          <!-- 唯一非上传出口（P2-2）：关窗不丢本机账，回场卡接着打 -->
+          <AppButton
+            variant="ghost"
+            block
+            @click="liveStore.closeSettleWindow()"
+            >暂不结算 · 接着打</AppButton
+          >
+        </view>
+      </template>
     </view>
   </view>
 </template>
@@ -107,7 +147,8 @@
 /* 本地结算窗呈现与联动（2.3 记分本地化；编排归 store）：本地态只有 winA/sa/sb——
    比分直录交互单一源在 composables/scoreEntry（开窗按模式预填、确认直调 store：
    uploadSettle/overwriteSettle 落账·关窗·toast 都在 store；清扫态 noRedeal
-   随 settleWindow 透传）。
+   随 settleWindow 透传）。上传成功窗转一步展示（done 旗在 store 窗位）：
+   下一场对阵+候场名单从最新视图取，「好的」关闭——表单态交互零改。
    联动纯函数（followWinner/canPickWinner）单一源在 utils/rotate（store 转出口），
    测试落 live-store.test.ts。上传权=任意到场者（后端 _require_arrived 把关）：
    窗内无全权只读态；改分重落全权闸在 store.overwriteSettle（needFull）。 */
@@ -120,6 +161,7 @@ import {
   useLiveStore,
 } from "@/stores/live";
 import { courtDisplayName } from "@/utils/format";
+import { courtSize, idleHint } from "@/utils/rotate";
 import { useScoreEntry } from "@/composables/scoreEntry";
 import type { LivePlayer } from "@/api/types";
 
@@ -128,6 +170,21 @@ const liveStore = useLiveStore();
 /** 窗位单一源在 store（一次一扇；visible/courtId/mode/noRedeal 全由它驱动） */
 const win = computed(() => liveStore.settleWindow);
 const mode = computed(() => win.value?.mode ?? "upload");
+/** 一步展示态：上传成功后窗不关、内容切「下一场对阵+候场名单」（数据吃落地后的
+    最新视图——namesA/namesB/courtRow 按同一 courtId 取到的就是刚发的片与新人） */
+const done = computed(() => !!win.value?.done);
+/** 这片开出没有：没开出（人少兜底）摆差人句不硬造对阵 */
+const courtPlaying = computed(() => courtRow.value?.status === "playing");
+/** 候场名单（queue 序映射昵称；空队=全员都在场上，与队列抽屉空态同句） */
+const queueNames = computed(() =>
+  (liveStore.live?.queue ?? []).map((id) => liveStore.byId(id).name).join("、"),
+);
+const idleTxt = computed(() =>
+  idleHint(
+    liveStore.live?.queue.length ?? 0,
+    courtSize(liveStore.live?.rules.singles ?? false),
+  ),
+);
 const kick = computed(
   () =>
     `${mode.value === "overwrite" ? "REWRITE" : "SETTLE"} · ${courtName.value}`,
@@ -441,6 +498,83 @@ function onConfirm(): void {
   font-size: 10px;
   color: var(--dim);
   margin: 8px 0 12px;
+}
+
+/* ---------- 一步展示（上传成功后的只读态） ---------- */
+.nx-court {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.nx-side {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  border: 1px solid rgba(245, 241, 232, 0.16);
+  border-radius: 13px;
+  background: var(--ink);
+  padding: 10px 6px;
+}
+.nx-t {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+}
+.nx-t.a {
+  color: var(--lemon);
+}
+.nx-t.b {
+  color: var(--ice);
+}
+.nx-n {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nx-vs {
+  flex: none;
+  font-family: var(--disp);
+  font-size: 18px;
+  color: var(--coral);
+}
+/* 片没开出（人少兜底）：一句差人卡同款句交代，不硬摆对阵 */
+.nx-idle {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 16px 0;
+  margin-bottom: 12px;
+  border: 1px dashed rgba(245, 241, 232, 0.2);
+  border-radius: 13px;
+}
+.nx-queue {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid rgba(245, 241, 232, 0.08);
+  border-radius: 12px;
+  background: var(--ink2);
+  margin-bottom: 12px;
+}
+.nx-qt {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--dim);
+}
+.nx-qn {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* ---------- 按钮 ---------- */

@@ -47,6 +47,13 @@ export function reachedLocal(sa: number, sb: number, scoring: number): boolean {
     无独立符号）；前端只作展示换算，不作发牌依据 */
 export const courtSize = (singles: boolean): number => (singles ? 2 : 4);
 
+/** 差人一句话（空片差人卡与结算窗一步展示同吃的一句式）：够开一片 / 还差几人两分支 */
+export function idleHint(waiting: number, size: number): string {
+  return waiting >= size
+    ? `候场 ${waiting} 人 · 够开 1 片`
+    : `还差 ${size - waiting} 人 · 候场 ${waiting} / 需 ${size} 人`;
+}
+
 /** 还差几轮到我（队列位 0 起）：ceil((每片人数 × 空片数 + 位次 + 1) / 每片人数)——
     live store 的 myRound 与教学沙盒候场条同吃，口径改这里一处 */
 export function roundsToPlay(

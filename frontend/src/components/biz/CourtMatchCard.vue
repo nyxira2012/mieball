@@ -119,11 +119,7 @@
         </view>
         <text class="chip">空闲待开</text>
       </view>
-      <view class="idle-hint">{{
-        waiting >= size
-          ? `候场 ${waiting} 人 · 够开 1 片`
-          : `还差 ${size - waiting} 人 · 候场 ${waiting} / 需 ${size} 人`
-      }}</view>
+      <view class="idle-hint">{{ idleHintTxt }}</view>
       <view class="idle-btns">
         <AppButton
           variant="pri"
@@ -150,7 +146,7 @@ import type { PropType } from "vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import type { LiveCourt } from "@/api/types";
-import { courtSize } from "@/utils/rotate";
+import { courtSize, idleHint } from "@/utils/rotate";
 import { emptyLocal } from "@/utils/localScore";
 import { duprOf, fmtDupr1 } from "@/utils/elo";
 import { courtDisplayName } from "@/utils/format";
@@ -217,9 +213,11 @@ const sides = computed(() =>
   })),
 );
 
-/** idle 差人卡：还差几人按当前格式每片人数算（双打 4 / 单打 2） */
+/** idle 差人卡：还差几人按当前格式每片人数算（双打 4 / 单打 2）；句子单一源
+    idleHint（结算窗一步展示同吃） */
 const size = computed(() => courtSize(liveStore.live?.rules.singles ?? false));
 const waiting = computed(() => liveStore.live?.queue.length ?? 0);
+const idleHintTxt = computed(() => idleHint(waiting.value, size.value));
 
 /* 得分数字弹跳（Scoreboard 同法）：watch 本机账，上涨侧挂 .bump（撤回回落不弹）；
    :key 自增重挂载，连点同侧也能重触发 */

@@ -35,6 +35,7 @@ export interface User {
   play: number;
   win: number;
   month: number;
+  tonight?: number; // 今晚已打场数（现场名册行随视图带、战报实时派生）：队列抽屉「今晚 N 场」吃它——档案缓存的 play 是生涯数
   last5?: ("W" | "L")[];
   shadow?: boolean; // 随行访客 · 不计积分不进榜（对局按新人初始等级代入算分，2.3 修订②）
   chibi: ChibiConfig;

@@ -1,11 +1,13 @@
 <template>
   <!-- 块三置底候场条（temp/打球页原型 .queuebar 逐字）：下一场头像×4 柠檬描边叠压 +
        我的轮次一句话 + 「我到了」自签到钮 + ＋到场钮。点队列区开完整队列抽屉，
-       我到了走自签到链（页面编排）、＋到场开代办签到抽屉（页面编排）。 -->
+       我到了走自签到链（页面编排）、＋到场开代办签到抽屉（页面编排）。
+       「下一场 · 预计序」：队列是后端按排位算好的快照（无人手动换人时排前几位的
+       即下一场上场人选，手动换人后以现场为准）；歇/连战角标吃名册行 skip/fire。 -->
   <view v-if="L" class="queuebar">
     <view class="q-mid" @click="emit('queue')">
       <view class="q-label">{{
-        L.queue.length ? "下一场" : "全员都在场上"
+        L.queue.length ? "下一场 · 预计序" : "全员都在场上"
       }}</view>
       <view class="q-avs">
         <view
@@ -14,6 +16,8 @@
           class="q-av next"
           :class="{ dropin: byId(id).dropin }"
         >
+          <text v-if="byId(id).fire" class="badge fire q-tag">连</text>
+          <text v-else-if="byId(id).skip" class="badge rest q-tag">歇</text>
           <ChibiAvatar :chibi="byId(id).chibi" :size="26" />
         </view>
       </view>
@@ -90,6 +94,7 @@ const meTxt = computed(() => {
   margin-top: 4px;
 }
 .q-av {
+  position: relative; /* 歇/连战角标的定位锚 */
   width: 34px;
   height: 34px;
   border-radius: 50%;
@@ -106,6 +111,14 @@ const meTxt = computed(() => {
 /* 空降者头像换冰青描边（§4.4 全场看得到；无名字位，色环即标记） */
 .q-av.dropin {
   border-color: var(--ice);
+}
+/* 歇/连战角标（§4.7 预计序上谁歇谁连战一眼可辨）：形与色吃全局 .badge，这里只
+   定位到头像右上角、压住叠压边（单字不遮脸） */
+.q-tag {
+  position: absolute;
+  top: -5px;
+  right: -3px;
+  z-index: 1;
 }
 .q-me {
   font-size: 12px;

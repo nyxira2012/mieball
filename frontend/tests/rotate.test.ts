@@ -12,6 +12,7 @@ import {
   courtCount,
   courtSize,
   followWinner,
+  idleHint,
   pById,
   roundsToPlay,
   usedCourts,
@@ -159,6 +160,13 @@ describe("口径单一源（2.4 技术设计 §0.5/§0.6）", () => {
       queue: [a.id, gone.id, b.id, c.id],
     });
     expect(activePlayers(live)).toBe(5); // 片上 2 + 候场 3（早退 gone 不算，歇轮 a 算）
+  });
+
+  it("idleHint：差人一句话（空片差人卡与结算窗一步展示同吃）——够开/还差两分支", () => {
+    expect(idleHint(4, 4)).toBe("候场 4 人 · 够开 1 片");
+    expect(idleHint(5, 4)).toBe("候场 5 人 · 够开 1 片");
+    expect(idleHint(1, 4)).toBe("还差 3 人 · 候场 1 / 需 4 人");
+    expect(idleHint(0, 2)).toBe("还差 2 人 · 候场 0 / 需 2 人"); // 单打
   });
 });
 
