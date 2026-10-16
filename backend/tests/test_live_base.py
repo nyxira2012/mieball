@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -111,13 +111,14 @@ def test_start_expands_roster_formal_and_guests(client: TestClient, fake):
         b["account"]["id"],
         c["account"]["id"],
     }
-    # rules 快照从 game 默认（scoring 复用局列；四件套起笔沿前端 startLive）
+    # rules 快照从 game 默认（scoring 复用局列；四件套起笔沿前端 startLive，
+    # streak_max 起笔=down=all 的自适应默认 2——自适应只在切档时重置，新局不修正）
     assert out["rules"] == {
         "scoring": 21,
         "doubles": True,
         "down": "all",
         "pairing": "queue",
-        "streak_max": 3,
+        "streak_max": 2,
     }
     assert out["total_seq"] == 1 and out["round"] == 0
 
@@ -582,15 +583,18 @@ def test_requeue_n2_replaces_in_place():
     assert players[4]["court_side"] == "b" and players[5]["court_side"] == "a"
 
 
-def test_snake_pick_strong_plus_weak():
-    ranked = live_rotation.snake_pick(
-        [
-            {"id": i, "rating": r}
-            for i, r in [(1, 1700), (2, 1600), (3, 1500), (4, 1400)]
-        ],
-        2,
-    )
-    assert [[p["id"] for p in t] for t in ranked] == [[1, 4], [2, 3]]
-    # 没 rating 键的按访客分 3.0 参与排序（1.4：均衡配对换源吃 DUPR）
-    fresh = live_rotation.snake_pick([{"id": 9}, {"id": 10, "rating": 1600}], 2)
-    assert [[p["id"] for p in t] for t in fresh] == [[10], [9]]
+def test_roster_seqs_arrival_then_id_tiebreak():
+    """到场先后键（排位第④档）：签到落账时刻升序、同刻行 id 决胜；未到过的
+    行共享队尾名次。"""
+    from types import SimpleNamespace
+
+    from app.services.live import _roster_seqs
+
+    t = clock.wall(datetime(2026, 10, 6, 19, 0, tzinfo=clock.CN_TZ))
+    rows = [
+        SimpleNamespace(id=3, arrive_at=t),
+        SimpleNamespace(id=1, arrive_at=t),  # 同刻：行 id 决胜
+        SimpleNamespace(id=2, arrive_at=t + timedelta(minutes=1)),
+        SimpleNamespace(id=4, arrive_at=None),  # 未到：不参与排位，共享 0 保序
+    ]
+    assert _roster_seqs(rows) == {1: 1, 3: 2, 2: 3, 4: 0}

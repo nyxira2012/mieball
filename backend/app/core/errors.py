@@ -307,6 +307,12 @@ def settle_recorded(sa: int, sb: int) -> ApiError:
     return ApiError(409, "settle_recorded", f"已按 {sa}:{sb} 记账 · 有异议找组织者")
 
 
+def rotation_overflow() -> ApiError:
+    # 轮转数超两位数护栏（今晚场次/等待批次/连打/到场数 >99）：该片暂停发牌；
+    # 主动作已照常提交（越界只拦发牌路径），最新视图随错误体送上
+    return ApiError(400, "rotation_overflow", "轮转数超范围，这片暂停发牌")
+
+
 def live_residue() -> ApiError:
     # 散场入口清扫守卫：残局不清完不放行
     return ApiError(409, "live_residue", "还有没处理完的对局，先逐片处理再散场")

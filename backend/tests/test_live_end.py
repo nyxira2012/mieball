@@ -424,14 +424,17 @@ def test_check_queue_states_and_normalization(client, fake):
     r = do_check(client, env["org"]["token"], gid, v0, rows[4], "join")
     v = r.json()
     assert pv(v, 4)["check"] == "join" and v["queue"].index(rows[4]["id"]) == pos
-    # 早退：清队列位+落离场时刻；回来=join 排队尾
+    # 早退：清队列位+落离场时刻；回来=join 进场下盖新章
     v = live_get(client, gid, env["org"]["token"])
     r = do_check(client, env["org"]["token"], gid, v, rows[5], "left")
     v = r.json()
     assert rows[5]["id"] not in v["queue"] and pv(v, 5)["left_at"] is not None
     r = do_check(client, env["org"]["token"], gid, v, rows[5], "ok")
     v = r.json()
-    assert pv(v, 5)["check"] == "join" and v["queue"][-1] == rows[5]["id"]
+    assert pv(v, 5)["check"] == "join"
+    # 回来的人不插队首、也不强制钉在队尾：候场名次=排位——6 原到场（10-04）
+    # 早于迟到的 7（10-07），同批章平手时到场先后决胜
+    assert v["queue"] == [rows[4]["id"], rows[5]["id"], rows[6]["id"]]
 
 
 def test_check_left_clears_court_slot_and_comeback(client: TestClient):

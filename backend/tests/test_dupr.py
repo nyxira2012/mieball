@@ -270,7 +270,12 @@ def test_rated_after_five_confirmed_games(client: TestClient):
     # 满 5 场定级（两态，1.4 裁决 5）；第 4 场时仍属未定级
     assert c["games"] == 5 and c["provisional"] is False
     assert seen[4] is True
-    assert c["wins"] == 1
+    # 胜场数按战报对表（2.9 起排位接管发牌，谁落在哪边随排位走——本册锁
+    # DUPR 账面，不锁轮转巧合）
+    org_row_id = env["view"]["players"][0]["id"]
+    assert c["wins"] == sum(
+        1 for m in v["matches"] if any(w["id"] == org_row_id for w in m["winners"])
+    )
     assert len(c["last5"]) == 5
     assert c["month_net"] == c["wins"] - (c["games"] - c["wins"])
 

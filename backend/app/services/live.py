@@ -22,6 +22,7 @@ import json
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from itertools import combinations
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -49,8 +50,10 @@ from .playlog import is_my_game_at
 from .stats import StatsLedger
 
 # 开账起笔的 rules 快照默认值（镜像前端 startLive 起笔，2.2 批2 §4.1）：
-# 双打 / 谁下挂 all 占位（推荐重算在前端）/ 按候场队序 / 连庄上限 3
-_DEFAULT_RULES = {"doubles": True, "down": "all", "pairing": "queue", "streak_max": 3}
+# 双打 / 谁下挂 all 占位（推荐重算在前端）/ 按候场队序 / 连打上限 2——
+# 自适应默认随「谁下」的档走（all 档=2），且只在切档时重置；新局永不修正，
+# 起笔必须是 all 档自己的默认值（切输家下时闸门再重置为 3）
+_DEFAULT_RULES = {"doubles": True, "down": "all", "pairing": "queue", "streak_max": 2}
 # Elo 娱乐轨初始分单一源在 models.ELO_RATING_INIT（建行默认值同源）
 RATING_INIT = ELO_RATING_INIT
 
@@ -60,10 +63,18 @@ RATING_INIT = ELO_RATING_INIT
 # 同走 _elo_settle）——前端零公式零镜像，调参只改这一处
 _ELO_K = 24.0
 _ELO_FLOOR = 800
-# 这些码的 409 退回要在错误体里带最新视图（附录 B1：最新画面送来，前端对表用）——
-# 防线两码之外，空降防重的 live_duplicate 与传分冲突的 settle_recorded 同样携视图
+# 这些码的退回要在错误体里带最新视图（附录 B1：最新画面送来，前端对表用）——
+# 防线两码之外，空降防重的 live_duplicate、传分冲突的 settle_recorded 与越界
+# 暂停发牌的 rotation_overflow 同样携视图（越界时主操作已提交，画面保持最新
+# 只剩这一条路说给人听）
 _VIEW_CODES = frozenset(
-    {"live_stale_total", "live_stale_court", "live_duplicate", "settle_recorded"}
+    {
+        "live_stale_total",
+        "live_stale_court",
+        "live_duplicate",
+        "settle_recorded",
+        "rotation_overflow",
+    }
 )
 
 
@@ -72,11 +83,31 @@ def _snapshot(p: LivePlayer) -> dict:
     return {"id": p.id, "name": p.display_name, "guest": p.guest}
 
 
-def _rotation_rows(rows: list[LivePlayer], rates: dict) -> list[dict]:
+def _roster_seqs(rows: list[LivePlayer]) -> dict[int, int]:
+    """到场先后（排位第④档兜底）：签到落账时刻 arrive_at 升序、同刻行 id 决胜
+    ——id 随建行单调，同刻并列时比时刻戳本身更稳定。真实流里到场者必带
+    arrive_at（check 首报落账），没时刻的行只可能是未到/早退——不可发不参与
+    排位，名次共享最小值 0 纯作保序防御（stable 序下保持传入序）。"""
+    ranked = sorted(
+        (r for r in rows if r.arrive_at is not None), key=lambda r: (r.arrive_at, r.id)
+    )
+    seqs = {r.id: i + 1 for i, r in enumerate(ranked)}
+    for r in rows:
+        seqs.setdefault(r.id, 0)
+    return seqs
+
+
+def _rotation_rows(
+    rows: list[LivePlayer],
+    rates: dict,
+    tonight: dict[int, int],
+    seqs: dict[int, int],
+) -> list[dict]:
     """轮换纯函数（live_rotation）的喂行单一源——全键契约 id/court_no/court_side/
-    check/skip/fire/court_mark/rating，结算回流与补片共用。2.8 收编前结算路手拼
-    dict 只带四键，歇与资历两条规矩在后端从未被喂到（歇白歇、「待得最久」退化成
-    名册序）——病根是喂行散写漏键，此后喂行只许走这里。"""
+    check/skip/fire/court_mark/rating/streak/wait_batch/tonight/roster_seq，结算回流
+    与补片共用；喂行散写漏键是 2.8 前排位规矩从未被喂到的病根，此后只许走这里。
+    tonight（今晚已打场次）与 seqs（到场先后）由调用方预算递入：tonight 从
+    live_matches 实时派生（改分重落/取消自动对齐由重算天然成立）。"""
     return [
         {
             "id": r.id,
@@ -88,6 +119,10 @@ def _rotation_rows(rows: list[LivePlayer], rates: dict) -> list[dict]:
             "court_mark": r.court_mark,
             # 均衡配对换源吃 DUPR（1.4 §6）：rating 键恒喂当前派生分
             "rating": rates[r.account_id],
+            "streak": r.streak,
+            "wait_batch": r.wait_batch,
+            "tonight": tonight.get(r.id, 0),
+            "roster_seq": seqs[r.id],
         }
         for r in rows
     ]
@@ -95,9 +130,10 @@ def _rotation_rows(rows: list[LivePlayer], rates: dict) -> list[dict]:
 
 def _apply_rotation(by_id: dict[int, LivePlayer], dicts: list[dict], mark: int) -> None:
     """纯函数改完的行落回 ORM（_rotation_rows 的逆向，两端键对）：去向
-    court_no/court_side、取队时「轮到即消耗」扣掉的 skip；这次从候场新落位的行
-    盖上场章 mark（落位时刻的总号——只盖不清：留场的章不动，全下全上又回来的
-    算没离开过）；候场序 queue_pos 不在此处（归 _place_queue）。"""
+    court_no/court_side、取队时「轮到即消耗」扣掉的 skip、连打归零与连战兑现
+    （已发生在纯函数行上，照抄即可）；这次从候场新落位的行盖上场章 mark（落位
+    时刻的总号——只盖不清：留场的章不动，全下全上又回来的算没离开过）；
+    候场序 queue_pos 不在此处（归 _place_queue）。"""
     for d in dicts:
         r = by_id[d["id"]]
         if d["court_no"] is not None and r.court_no is None:
@@ -105,6 +141,9 @@ def _apply_rotation(by_id: dict[int, LivePlayer], dicts: list[dict], mark: int) 
         r.court_no = d["court_no"]
         r.court_side = d["court_side"]
         r.skip = d["skip"]
+        r.streak = d["streak"]
+        r.wait_batch = d["wait_batch"]
+        r.fire = d["fire"]
 
 
 def _guest_display_name(
@@ -292,9 +331,10 @@ class LiveBook(LiveSweepMixin):
         当前视图 200 不重落；号旧且你看的那场已被别人先落 → 409 settle_recorded
         携已记比分（不当并发冲突吵，纠纷引给组织者）。no_redeal（散场清扫态）：
         回流定格、不排下一场不补位（§4.9-1）——出口补片同拍豁免（清扫要清出空片
-        好散场）。回流补位走 live_rotation 取队真值（2.8 §4.1）：歇轮跳过并消耗、
-        连战优先、未到不发、资历按上场章——喂行与写回经 _rotation_rows/
-        _apply_rotation 一对口；顺手填别的空片归出口（三默认）。"""
+        好散场）。回流补位走 live_rotation 排位引擎（2.9）：歇轮跳过并消耗、未到
+        不发，谁上谁下按排位五段典序（连打→等待批次→今晚场次→连战→到场先后）
+        ——喂行与写回经 _rotation_rows/_apply_rotation 一对口；顺手填别的空片归
+        出口（三默认）。"""
         with self._write(game_id=game_id, actor_id=actor_id):
             state, game = self._open_write(game_id)
             self._require_arrived(game_id, actor_id)
@@ -356,31 +396,50 @@ class LiveBook(LiveSweepMixin):
             queue = self._queue_ids(rows)
             if no_redeal:
                 # 清扫态：人只回流定格——不排下一场不补位，场上的人按行序接队尾
-                for r in oncourt:
-                    r.court_no = None
-                    r.court_side = None
-                    queue.append(r.id)
-                court.status = "idle"
+                self._reflow(oncourt, queue, court)
             else:
+                # —— 排位口径备键：轮转批次前进一、本片场上人连打各 +1、全员预盖
+                # 新章（谁下要进 requeue 才定，只能片上全员统一盖——留场者的脏章
+                # 无害，在场不算等待）。战报行已入会话，flush 后今晚口径必含本场。
+                state.rotation_batch += 1
+                for r in oncourt:
+                    r.streak += 1
+                    r.wait_batch = state.rotation_batch
+                self.db.flush()  # 盖章/战报先出账：越界时回滚只回滚发牌段
                 stats = StatsLedger(self.db)
                 rates = stats.pairing_ratings([r.account_id for r in rows])
-                dicts = _rotation_rows(rows, rates)
-                live_rotation.requeue_after_confirm(
-                    dicts,
-                    court_no,
-                    winner_side,
-                    {
-                        "down": state.down,
-                        "pairing": state.pairing,
-                        "doubles": state.doubles,
-                    },
-                    queue,
+                facts = self._history_facts(game_id)
+                dicts = _rotation_rows(
+                    rows, rates, facts["tonight"], _roster_seqs(rows)
                 )
-                _apply_rotation(by_id, dicts, state.total_seq)
-                court.status = "playing"
-                court.seq += 1
-                # 分制快照续场同刷新（2.6 机制A）：确认即开的下一场也是"新开片"
-                court.scoring = game.scoring
+                try:
+                    with self.db.begin_nested():
+                        live_rotation.requeue_after_confirm(
+                            dicts,
+                            court_no,
+                            winner_side,
+                            {
+                                "down": state.down,
+                                "pairing": state.pairing,
+                                "doubles": state.doubles,
+                            },
+                            queue,
+                            streak_max=state.streak_max,
+                            facts=facts,
+                        )
+                        _apply_rotation(by_id, dicts, state.total_seq)
+                        court.status = "playing"
+                        court.seq += 1
+                        # 分制快照续场同刷新（2.6 机制A）：确认即开的下一场也是"新开片"
+                        court.scoring = game.scoring
+                        self.db.flush()  # 发牌段落定才出 SAVEPOINT：越界回滚得干净
+                except live_rotation.RotationOverflow:
+                    # 越界降级：不带着越界数字乱排——回流定格（整片下、人回队、
+                    # 片转 idle 暂停发牌）；结算的落账与盖章在 SAVEPOINT 之外照常，
+                    # 提示与审计归 _finish 出口统一接管。requeue 的 to_tail 已把
+                    # 下场者 append 进队（列表突变不吃 SAVEPOINT 回滚），二次
+                    # 入队由 _reflow 的防重防御兜住
+                    self._reflow(oncourt, queue, court)
             self._writeback_queue(rows, by_id, queue)
             self._bump_court(court)
             self._finish(
@@ -553,17 +612,25 @@ class LiveBook(LiveSweepMixin):
             else:
                 if row.court_no is not None:
                     raise errors.live_invalid("人已在场上")
+                # 改态前算：absent/left 之外的重复报到不算首次到场（arrive_at
+                # 只在首报落一次，到场先后排位不随重报漂移）
+                first_arrival = row.check not in ARRIVED
+                # 进场下那一刻盖当前轮转章（等待从进场下起算）；已在队里的重复
+                # 报到不动章——重报不刷新等待资历
                 if st == "late":
                     if row.id in queue:
                         queue.remove(row.id)
                     queue.append(row.id)  # 迟到排队尾
+                    row.wait_batch = state.rotation_batch
                 elif st == "join":
                     if row.id not in queue:
                         queue.append(row.id)  # 中途加入排队尾
+                        row.wait_batch = state.rotation_batch
                 elif row.check not in ARRIVED and row.id not in queue:
                     queue.append(row.id)  # 'ok' 只在首报进队，重复报到不重排
+                    row.wait_batch = state.rotation_batch
                 row.check = st
-                if row.arrive_at is None:
+                if first_arrival and row.arrive_at is None:
                     row.arrive_at = clock.now()  # 几点到：首次到场落账
             # 自动管理员两路同权（修C）：签到端点与空降扫码共用（扫码即签到），
             # 落账后判——"第一个"含本行这次
@@ -602,9 +669,11 @@ class LiveBook(LiveSweepMixin):
             inn.court_no = court.court_no
             inn.court_side = out.court_side
             inn.court_mark = state.total_seq  # 换上即落位：盖上场章（资历从此刻起算）
+            inn.streak = 0  # 换人保护：连打从换上那一刻重新起算，不背之前的累
             inn.queue_pos = None
             out.court_no = None
             out.court_side = None
+            out.wait_batch = state.rotation_batch  # 换下进场下：盖当前章
             self._place_queue(by_id, queue)
             self._feed_push(
                 state,
@@ -630,8 +699,9 @@ class LiveBook(LiveSweepMixin):
     ) -> dict:
         """歇/连（2.2 §4.10）：给自己随时、给他人需全权。skip 按一次 +1 可叠加
         （轮到取队那一刻消耗——live_rotation.take_from_queue，结算回流路已兑现；
-        2.8 批2 补片路同源）；fire 互斥清 skip 且把候场里的人排到队首
-        （场上的人无从排起）；unskip 清零；fire 再按一次=取消连战（队列不动）。"""
+        2.8 批2 补片路同源）；fire 互斥清 skip，连战只做排位第四档平手决胜、
+        不插队首——翻转改的是排位键，候场快照统一走 _place_queue 重排；unskip
+        清零；fire 再按一次=取消连战（同样只影响排位、不动队位）。"""
         with self._write(game_id=game_id, actor_id=actor_id):
             state, game = self._open_write(game_id)
             row = self._roster_row(game_id, player_id)
@@ -646,14 +716,12 @@ class LiveBook(LiveSweepMixin):
             else:
                 row.fire = not row.fire
                 if row.fire:
-                    row.skip = 0
-                    rows = self._roster(game_id)
-                    by_id = {r.id: r for r in rows}
-                    queue = self._queue_ids(rows)
-                    if row.id in queue:
-                        queue.remove(row.id)
-                        queue.insert(0, row.id)  # 连战排队首
-                        self._place_queue(by_id, queue)
+                    row.skip = 0  # 互斥（连战只做排位第四档平手决胜，不插队首）
+            # 连战/歇都不再手动挪队位：候场名次=排位快照，落位统一走 _place_queue
+            # （fire 翻转改排位第四档，快照随之刷新）
+            rows = self._roster(game_id)
+            by_id = {r.id: r for r in rows}
+            self._place_queue(by_id, self._queue_ids(rows))
             # 减员方向（设歇）不触发补片是纯函数层的事（可发人数不够自然留空），
             # 出口恒开——取消歇恰好凑齐最后一人时这里点亮空片（验收 7）
             self._finish(state, game_id=game_id, actor_id=actor_id)
@@ -680,14 +748,27 @@ class LiveBook(LiveSweepMixin):
             state, game = self._open_write(game_id)
             self._require_full_power(state, game, actor_id)
             self._check_total(state, base_total_seq)
-            if down is not None:
-                state.down = down
+            # —— 谁下的两道闸：单打×n人下无物理意义（一片只有 2 人），回落全上
+            # 全下；连打上限默认随「谁下」自适应（输家下 3、其余 2），手动改过
+            # （streak_manual）则粘住组织者的值不随切换重置
+            down_eff = down if down is not None else state.down
+            if not (doubles if doubles is not None else state.doubles) and down_eff in (
+                "n1",
+                "n2",
+                "n3",
+            ):
+                down_eff = "all"
+            if down_eff != state.down:
+                if not state.streak_manual:
+                    state.streak_max = 3 if down_eff == "loser" else 2
+                state.down = down_eff
             if pairing is not None:
                 state.pairing = pairing
             if doubles is not None:
                 state.doubles = doubles
             if streak_max is not None:
                 state.streak_max = streak_max
+                state.streak_manual = True  # 手动优先：此后切「谁下」不再重置默认
             if scoring is not None:
                 game.scoring = scoring
             if courts_count is not None:
@@ -795,6 +876,7 @@ class LiveBook(LiveSweepMixin):
                 dropin=True,
                 check="late" if now > game.start_at else "ok",
                 arrive_at=now,
+                wait_batch=state.rotation_batch,  # 空降即进场下：盖当前轮转章
             )
             self.db.add(new)
             self.db.flush()  # 取新行 id 进队尾（queue_pos 重排与 check 端点同款）
@@ -844,6 +926,7 @@ class LiveBook(LiveSweepMixin):
                     guarantor_account_id=guarantor.account_id,
                     check="ok",
                     arrive_at=now,
+                    wait_batch=state.rotation_batch,  # 带到即进场下：盖当前轮转章
                 )
                 self.db.add(row)
                 made.append(row)
@@ -884,18 +967,7 @@ class LiveBook(LiveSweepMixin):
                 )
             ).scalars()
         }
-        rows = [
-            self._player_row(
-                p,
-                is_organizer=is_organizer,
-                viewer_id=viewer_id,
-                dupr_value=rates[p.account_id],
-                chibi=chibis.get(p.account_id),
-            )
-            for p in roster
-        ]
-        courts = self._courts(game_id)
-        matches = (
+        match_rows = (
             self.db.execute(
                 select(LiveMatch)
                 .where(LiveMatch.game_id == game_id)
@@ -904,6 +976,21 @@ class LiveBook(LiveSweepMixin):
             .scalars()
             .all()
         )
+        # 今晚口径单一源（战报实时派生）：名单行的 tonight 与分边 facts 同吃一份
+        facts = self._history_facts(game_id, match_rows)
+        rows = [
+            self._player_row(
+                p,
+                is_organizer=is_organizer,
+                viewer_id=viewer_id,
+                dupr_value=rates[p.account_id],
+                chibi=chibis.get(p.account_id),
+                tonight=facts["tonight"].get(p.id, 0),
+            )
+            for p in roster
+        ]
+        courts = self._courts(game_id)
+        matches = match_rows
         # 队列序定值给出（队首在前，候场外的行不排）——_queue_ids 单一源
         # （queue_pos 升序即队列序），视图与写路径同一把尺；持久化回写是写动作的事
         waiting = self._queue_ids(roster)
@@ -1029,8 +1116,11 @@ class LiveBook(LiveSweepMixin):
         （降级不连坐——不变量从「每次成立」降为「最终成立」，下个写动作自然
         重试、一键排阵兜底）；补开非空记 live_auto_deal，操作人=触发这次写动作
         的人。号跳纪律：一写动作恰一 bump——补片空手不额外跳号；幂等早退支在
-        突变前 return、不走出口（重放不进号语义照旧）。"""
+        突变前 return、不走出口（重放不进号语义照旧）。排位段越界（2.9 §4.9）
+        是例外路：降级同上、但提交后抛 rotation_overflow（携视图）——发牌暂停
+        这件事得说给人听，主操作已落账不算失败。"""
         opened: list[int] = []
+        overflow = False
         if autofill:
             try:
                 with self.db.begin_nested():
@@ -1042,6 +1132,9 @@ class LiveBook(LiveSweepMixin):
                     account_id=actor_id,
                     detail=f"{type(e).__name__}: {e}",
                 )
+                # 排位段越界：补片段已回滚、片留空，主动作下面照常提交；提交后再
+                # 把「这片暂停发牌」说给人听（错误体携最新视图，页面保持最新画面）
+                overflow = isinstance(e, live_rotation.RotationOverflow)
         if opened:
             logs.audit(
                 "live_auto_deal",
@@ -1051,16 +1144,19 @@ class LiveBook(LiveSweepMixin):
             )
         self._bump_total(state)
         self.db.commit()
+        if overflow:
+            raise errors.rotation_overflow()
 
     def _fill_idle(self, state: LiveState) -> list[int]:
         """把所有空片补满（出口补片与手动排阵同一份活）：喂行/写回走
         _rotation_rows/_apply_rotation 一对口，取队真值在 live_rotation.autofill_idle
-        （歇跳过消耗、连战优先、资历按上场章全在纯函数层）；片行落账沿老 deal
+        （歇跳过消耗、未到不发，排位五段典序全在纯函数层）；片行落账沿老 deal
         样——新片行起笔 1、老片行进一，分制快照开赛定格。返回补开的片号。"""
         game = self.db.get(Game, state.game_id)
         rows = self._roster(state.game_id)
         rates = StatsLedger(self.db).pairing_ratings([r.account_id for r in rows])
-        dicts = _rotation_rows(rows, rates)
+        facts = self._history_facts(state.game_id)
+        dicts = _rotation_rows(rows, rates, facts["tonight"], _roster_seqs(rows))
         status = {c.court_no: c.status for c in self._courts(state.game_id)}
         courts = [  # 含还没开过行的片：按 courts_count 补占位（autofill_idle 契约）
             {"court_no": no, "status": status.get(no, "idle")}
@@ -1072,6 +1168,7 @@ class LiveBook(LiveSweepMixin):
             courts,
             {"doubles": state.doubles, "pairing": state.pairing},
             queue,
+            facts=facts,
         )
         by_id = {r.id: r for r in rows}
         _apply_rotation(by_id, dicts, state.total_seq)  # 新落位行盖章=落位时刻总号
@@ -1180,11 +1277,86 @@ class LiveBook(LiveSweepMixin):
             .all()
         )
 
+    def _history_facts(
+        self, game_id: int, matches: list[LiveMatch] | None = None
+    ) -> dict:
+        """战报派生单一源：今晚的场次/搭档史/净胜负/最近同场分法全从 live_matches
+        实时算（改分重落改写本行、取消不留行——对齐由重算天然成立，无第二本账）。
+        键形契约与 live_rotation._split_sides 的 facts 对齐：tonight {名册行id:
+        场次}、pair_counts {(小id,大id): 搭档次数}（双打每场胜方内一对+败方内
+        一对）、net_wins {id: 今晚净胜场}、last_split {frozenset(同场全员):
+        (一边ids, 另一边ids)}——按 ended_at,id 序扫描，后写覆盖先写即「最近」。
+        matches 可由调用方递入（view 已载战报时免二查）。"""
+        if matches is None:
+            matches = (
+                self.db.execute(
+                    select(LiveMatch)
+                    .where(LiveMatch.game_id == game_id)
+                    .order_by(LiveMatch.ended_at, LiveMatch.id)
+                )
+                .scalars()
+                .all()
+            )
+        tonight: dict[int, int] = {}
+        pair_counts: dict[tuple[int, int], int] = {}
+        net_wins: dict[int, int] = {}
+        last_split: dict[frozenset[int], tuple[tuple[int, ...], tuple[int, ...]]] = {}
+        for m in matches:
+            win = tuple(s["id"] for s in m.winners)
+            lose = tuple(s["id"] for s in m.losers)
+            for pid in (*win, *lose):
+                tonight[pid] = tonight.get(pid, 0) + 1
+                net_wins[pid] = net_wins.get(pid, 0) + (1 if pid in win else -1)
+            for side in (win, lose):
+                for a, b in combinations(side, 2):
+                    key = (a, b) if a < b else (b, a)
+                    pair_counts[key] = pair_counts.get(key, 0) + 1
+            last_split[frozenset((*win, *lose))] = (win, lose)
+        return {
+            "tonight": tonight,
+            "pair_counts": pair_counts,
+            "net_wins": net_wins,
+            "last_split": last_split,
+        }
+
     def _place_queue(self, by_id: dict[int, LivePlayer], queue: list[int]) -> None:
         """候场队落位单点（queue 即名次、队首 0）：发牌/确认/取消/换人/歇连/空降/
-        带访客/清片八处写动作的共同尾巴——漏落一行即静默错序，收进一个口。"""
+        带访客/清片八处写动作的共同尾巴——漏落一行即静默错序，收进一个口。
+        名次=排位快照（预计序的持久化镜像：读路径只回放 queue_pos，发牌取人
+        同走 rank_key 不吃落位序）；排位段越界时保持传入序落位——不带着越界
+        数字乱排、主操作不连坐（发牌路径的护栏另在 _finish 接管）。"""
+        try:
+            queue = self._ranked_ids(by_id, queue)
+        except live_rotation.RotationOverflow:
+            pass
         for pos, pid in enumerate(queue):
             by_id[pid].queue_pos = pos
+
+    def _ranked_ids(self, by_id: dict[int, LivePlayer], queue: list[int]) -> list[int]:
+        """候场名单按排位分重排（与 take_from_queue 同一把尺）。by_id 恒为全场
+        名册（各调用点现状），roster_seq 按全场到场序算——与发牌路径的序号口径
+        一致；全并列时 stable 序保持传入序。不可发者同样参与落位（名册里挂着、
+        发牌路径另行过滤），不在这里二次分档。"""
+        rows = [by_id[pid] for pid in queue if pid in by_id]
+        if not rows:
+            return []
+        tonight = self._history_facts(rows[0].game_id)["tonight"]
+        seqs = _roster_seqs(list(by_id.values()))
+
+        def key(r: LivePlayer) -> int:
+            return live_rotation.rank_key(
+                {
+                    "id": r.id,
+                    "check": r.check,
+                    "streak": r.streak,
+                    "wait_batch": r.wait_batch,
+                    "tonight": tonight.get(r.id, 0),
+                    "fire": r.fire,
+                    "roster_seq": seqs[r.id],
+                }
+            )
+
+        return [r.id for r in sorted(rows, key=key)]
 
     def _writeback_queue(
         self,
@@ -1250,18 +1422,29 @@ class LiveBook(LiveSweepMixin):
             r for r in rows if r.court_no == court_no and r.court_side in ("a", "b")
         ]
 
+    @staticmethod
+    def _reflow(oncourt: list[LivePlayer], queue: list[int], court: LiveCourt) -> None:
+        """整片回流的账面动作（settle_confirm 清扫定格/越界降级、_void_court 取消
+        回流三处同吃）：清片位、id 接队尾、片行转 idle。已在队里的不重复入队——
+        越界路 requeue 的 to_tail 先 append 过（列表突变不吃 SAVEPOINT 回滚）、
+        _void_court 的「原样回流队首」由调用方预置队首表达，两形同吃这道防御。"""
+        for r in oncourt:
+            r.court_no = None
+            r.court_side = None
+            if r.id not in queue:
+                queue.append(r.id)
+        court.status = "idle"
+
     def _void_court(
         self, rows: list[LivePlayer], by_id: dict[int, LivePlayer], court: LiveCourt
     ) -> None:
         """单片作废的账面动作（§4.7）——cancel 与 sweep-cancel-all 共用：场上的人
-        原样回流队首（保行序）、片行转 idle、片号前进。"""
+        原样回流队首（保行序——_reflow 接队尾语义下由预置队首表达，id 已在队
+        防重不重接）、片行转 idle、片号前进。"""
         oncourt = self._oncourt(rows, court.court_no)
         queue = [r.id for r in oncourt] + self._queue_ids(rows)
-        for r in oncourt:
-            r.court_no = None
-            r.court_side = None
+        self._reflow(oncourt, queue, court)
         self._place_queue(by_id, queue)
-        court.status = "idle"
         self._bump_court(court)
 
     def _courts(self, game_id: int) -> list[LiveCourt]:
@@ -1485,6 +1668,7 @@ class LiveBook(LiveSweepMixin):
         viewer_id: int | None,
         dupr_value: float,
         chibi: str | None = None,
+        tonight: int = 0,
     ) -> dict:
         # 考勤分权（2.3 裁决 Q2）：早退迟到不展示给随便扫到的人
         visible = is_organizer or (viewer_id is not None and p.account_id == viewer_id)
@@ -1507,5 +1691,7 @@ class LiveBook(LiveSweepMixin):
             "court_side": p.court_side,
             "skip": p.skip,
             "fire": p.fire,
+            # 今晚已打场次（战报实时派生）：队列抽屉「今晚 N 场」与排位③档同一把尺
+            "tonight": tonight,
             "queue_pos": p.queue_pos,
         }

@@ -81,20 +81,6 @@ def rank_key(row: dict) -> int:
     return streak * 10**8 + wait * 10**6 + tonight * 10**4 + fire * 100 + seq
 
 
-def snake_pick(players: list[dict], n: int) -> list[list[dict]]:
-    """按 DUPR 蛇形均衡分 n 队：rating 降序（同分按传入序）、蛇形轮发 1..n, n..1，
-    最强+最弱 vs 二三，避免强手扎堆。缺 rating 键按访客分兜底。"""
-    if n < 1:
-        return []
-    ranked = sorted(players, key=lambda p: -p.get("rating", GUEST_DUPR))
-    teams: list[list[dict]] = [[] for _ in range(n)]
-    # 蛇形取牌序：第 1 轮 0,1,..,n-1、第 2 轮反转 n-1,..,0，按 2n 一循环
-    lap = list(range(n)) + list(range(n - 1, -1, -1))
-    for i, p in enumerate(ranked):
-        teams[lap[i % len(lap)]].append(p)
-    return teams
-
-
 def take_from_queue(players: list[dict], queue: list[int], n: int) -> list[int]:
     """按排位分抓 n 人发牌：候场（到场者）按 rank_key 典序取，返回序即上场序
     （「怎么配」的按队序档直接吃这个序）。轮到歇轮者（skip>0 且排位轮到了他）：

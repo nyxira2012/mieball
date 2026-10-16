@@ -24,6 +24,7 @@ from app.db.models import (
     LiveState,
 )
 from app.services import dupr
+from app.services.live import LiveBook
 
 from .conftest import auth, signup
 from .test_games_actions import join_ok
@@ -1109,7 +1110,7 @@ def test_fill_failure_degrades_without_killing_main_action(tmp_path, monkeypatch
     live_auto_fill_error 审计落盘。"""
     from app.services import live_rotation
 
-    def boom(players, courts, rules, queue):
+    def boom(players, courts, rules, queue, facts=None):  # facts：分边三档的战报史
         raise RuntimeError("构造性失败")
 
     monkeypatch.setattr(live_rotation, "autofill_idle", boom)
@@ -1346,9 +1347,11 @@ def test_settle_skips_on_court_skipper_and_next_game_first(client: TestClient):
     r = confirm(client, tok, gid, v, score_b=8)  # 下一场：2 在队首且歇已清
     assert r.status_code == 200, r.text
     v = r.json()
-    assert side_ids(v, 1, "a") == {ids[2], ids[0]}
-    assert side_ids(v, 1, "b") == {ids[1], ids[3]}
-    assert v["queue"] == [ids[4]]  # 全下按上场章：4 最新资历排队尾
+    # 排位接管发牌：歇醒的 2（连打 0）最先、续打的 4（连打 1）次之，连打 2 的
+    # 0、1 里再取一个（同档平手按名册序）——上场的恰四人，3 歇
+    assert side_ids(v, 1, "a") == {ids[2], ids[4]}
+    assert side_ids(v, 1, "b") == {ids[0], ids[1]}
+    assert v["queue"] == [ids[3]]
 
 
 def test_n_down_by_court_mark_not_roster_order(client: TestClient):
@@ -1382,11 +1385,12 @@ def test_settle_fire_on_court_taken_first_next_game(client: TestClient):
     v = tempo(client, tok, gid, v, ids[3], "fire")
     assert v["queue"] == [ids[4], ids[5]]
 
-    r = confirm(client, tok, gid, v)  # 全下后队 [4,5,0,1,2,3]：3 越过所有人先收
+    r = confirm(client, tok, gid, v)  # 全下后按排位取：场下 4、5（连打 0）最先，
+    # 连打 1 一档里连战的 3 越过同档的 0/1/2 先收，第 4 个取同档平手的 0
     assert r.status_code == 200, r.text
     v = r.json()
-    assert side_ids(v, 1, "a") == {ids[3], ids[4]}
-    assert side_ids(v, 1, "b") == {ids[5], ids[0]}
+    assert side_ids(v, 1, "a") == {ids[4], ids[5]}
+    assert side_ids(v, 1, "b") == {ids[3], ids[0]}
     assert v["queue"] == [ids[1], ids[2]]
 
 
@@ -1527,3 +1531,205 @@ def test_pull_not_opened_404(client: TestClient):
     g = publish(client, org["token"], visibility="public")
     r = live_pull(client, g["id"], total_seq=0, fee_total=-1)
     assert r.status_code == 404 and r.json()["error"]["code"] == "live_not_found"
+
+
+# ---- 2.9 批2：轮换排位接线（连打上限/规则自适应/单打回落/预计序/越界降级/今晚口径） ----
+
+
+def test_settle_loser_mode_winners_at_cap_all_down(client: TestClient):
+    """连打上限整片全下（2.9 §4.3/§4.4）：输家下模式赢家连打达上限（默认 3）→
+    不再守擂，整片全下按排位重发——场下先上、差名额从刚下的里捞最不累的、
+    赢家垫底去歇。"""
+    env = open_live(client, seed=111, players=6, rules={"down": "loser"})
+    gid, tok = env["game_id"], env["org"]["token"]
+    ids = [r["id"] for r in env["view"]["players"]]
+    v = deal_one(client, env)  # a=[0,1] b=[2,3]，queue=[4,5]
+    for i in (0, 1):  # 赢家预备役：这一场打完连打将满
+        seed_row(client, ids[i], streak=2)
+    r = confirm(client, tok, gid, v)
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert side_ids(v, 1, "a") == {ids[4], ids[5]}
+    assert side_ids(v, 1, "b") == {ids[2], ids[3]}
+    assert v["queue"] == [ids[0], ids[1]]  # 赢家垫底去歇
+
+
+def test_six_players_one_court_no_third_streak(client: TestClient):
+    """6 人 1 片自动打二歇一（2.9 §5 验收）：全上全下连结三场——歇过的人连打
+    归零正常轮换，无人连打第 3 场、每场恰好歇俩。"""
+    env = open_live(client, seed=112, players=6, rules={"courts_count": 1})
+    gid, tok = env["game_id"], env["org"]["token"]
+    ids = [r["id"] for r in env["view"]["players"]]
+    v = deal_one(client, env)  # a=[0,1] b=[2,3]
+    for k in range(3):  # 比分逐场换：同载荷会被幂等重放拦下不落新场
+        r = confirm(client, tok, gid, v, score_b=9 - k)
+        assert r.status_code == 200, r.text
+        v = r.json()
+        assert len(v["matches"]) == k + 1 and len(v["queue"]) == 2
+    # 三场后的轮转轨迹：0/1 打完头两场歇第三场，4/5 歇完头场连打两场再歇
+    assert v["queue"] == [ids[4], ids[5]]
+    assert side_ids(v, 1, "a") == {ids[0], ids[1]}
+    assert side_ids(v, 1, "b") == {ids[2], ids[3]}
+    played = [
+        {s["id"] for s in m["winners"]} | {s["id"] for s in m["losers"]}
+        for m in v["matches"]
+    ]
+    assert played == [
+        set(ids[:4]),
+        {ids[0], ids[1], ids[4], ids[5]},
+        {ids[2], ids[3], ids[4], ids[5]},
+    ]
+    for i in range(len(played) - 2):  # 任意连续三场不含同一人
+        assert not (played[i] & played[i + 1] & played[i + 2])
+
+
+def test_swap_protects_swapped_in_from_n_ruler(client: TestClient):
+    """换人保护（2.9 §4.3/§5）：换上者连打从换上起算——n2 结算按连打多先下，
+    连打 0 的换上人不进下场名单。"""
+    env = open_live(client, seed=113, players=6, rules={"down": "n2"})
+    gid, tok = env["game_id"], env["org"]["token"]
+    ids = [r["id"] for r in env["view"]["players"]]
+    v = deal_one(client, env)  # a=[0,1] b=[2,3]
+    seed_row(client, ids[0], streak=5)  # 老将：今晚已连打多场
+    r = live_call(
+        client,
+        tok,
+        gid,
+        "swap",
+        {"out_id": ids[1], "in_id": ids[4], "base_total_seq": v["total_seq"]},
+    )
+    assert r.status_code == 200, r.text
+    v = r.json()
+    r = confirm(client, tok, gid, v)
+    assert r.status_code == 200, r.text
+    v = r.json()
+    # 小尺子：连打 6 的老将先下、连打 1 里上场早的 2 次下；换上的 4 不下。
+    # 池里剩的这俩被取队跳过后连打归零、全档平手，保下场序（先下场的在前）
+    assert (
+        player(v, ids[0])["court_no"] is None and player(v, ids[2])["court_no"] is None
+    )
+    assert player(v, ids[4])["court_no"] == 1
+    assert v["queue"] == [ids[0], ids[2]]
+
+
+def test_rules_streak_cap_adaptive_and_manual_sticky(client: TestClient):
+    """连打上限默认自适应+手动优先（2.9 §4.4）：新局起笔=down=all 的默认 2
+    （自适应只在切档时重置，新局永不修正）；切「谁下」重置默认（输家下 3、
+    其余 2）；手动改过则粘住；0=不限照收（契约 ge=0）。"""
+    env = open_live(client, seed=114)
+    gid, tok = env["game_id"], env["org"]["token"]
+    assert live_get(client, gid, tok)["rules"]["streak_max"] == 2
+
+    def rules_of(body: dict) -> dict:
+        v = live_get(client, gid, tok)
+        r = live_call(
+            client, tok, gid, "rules", body | {"base_total_seq": v["total_seq"]}
+        )
+        assert r.status_code == 200, r.text
+        return r.json()["rules"]
+
+    assert rules_of({"down": "loser"})["streak_max"] == 3  # 输家下默认赢满 3 毕业
+    assert rules_of({"down": "n2"})["streak_max"] == 2  # 其余方式默认 2
+    assert rules_of({"streak_max": 5})["streak_max"] == 5  # 手动改过
+    assert rules_of({"down": "loser"})["streak_max"] == 5  # 手动优先：切方式不重置
+    assert rules_of({"streak_max": 0})["streak_max"] == 0  # 0=不限
+
+
+def test_rules_singles_down_falls_back_to_all(client: TestClient):
+    """单打回落（2.9 §4.8）：单打×1/2/3人下无物理意义，后端兜底回落全上全下
+    ——同拍组合与存量组合（先选 n2 再切单打）两路都回落。"""
+    env = open_live(client, seed=115)
+    gid, tok = env["game_id"], env["org"]["token"]
+
+    def rules_of(body: dict) -> dict:
+        v = live_get(client, gid, tok)
+        r = live_call(
+            client, tok, gid, "rules", body | {"base_total_seq": v["total_seq"]}
+        )
+        assert r.status_code == 200, r.text
+        return r.json()["rules"]
+
+    v = rules_of({"doubles": False, "down": "n2"})
+    assert v["down"] == "all" and v["doubles"] is False
+    v = rules_of({"doubles": True, "down": "n2"})
+    assert v["down"] == "n2" and v["doubles"] is True
+    assert rules_of({"doubles": False})["down"] == "all"
+
+
+def test_queue_view_is_rank_snapshot_with_tonight(client: TestClient):
+    """预计序视图（2.9 §4.7）：queue=排位快照（写动作重排落位），等待批次直接
+    改写次序；players 行带 tonight（今晚 N 场）。"""
+    env = open_live(client, seed=116, players=6)
+    gid, tok = env["game_id"], env["org"]["token"]
+    ids = [r["id"] for r in env["view"]["players"]]
+    v = settled_11_9(client, env)  # 全下重发：court a=[4,5] b=[0,1]，queue=[2,3]
+    assert v["queue"] == [ids[2], ids[3]]
+    assert player(v, ids[0])["tonight"] == 1  # 打过第一场的四人
+    assert player(v, ids[4])["tonight"] == 0  # 刚上场的两人
+    seed_row(client, ids[2], wait_batch=7)  # 2 的等待章改晚：等得少排后
+    v = tempo(client, tok, gid, v, ids[5], "unskip")  # 任一写动作触发重排
+    assert v["queue"] == [ids[3], ids[2]]
+    assert player(v, ids[3])["queue_pos"] == 0 and player(v, ids[2])["queue_pos"] == 1
+
+
+def test_facts_realign_after_overwrite(client: TestClient):
+    """今晚口径随改分重落对齐（2.9 §7）：net_wins/last_split 按新胜方重划、
+    tonight（场次）不变——下一次分边吃的是改判后的账。"""
+    env = open_live(client, seed=117)
+    gid = env["game_id"]
+    ids = [r["id"] for r in env["view"]["players"]]
+    v = settled_11_9(client, env)  # a 胜：winners=[0,1]
+
+    def facts() -> dict:
+        db = client.app.state.session_factory()
+        try:
+            return LiveBook(db)._history_facts(gid)
+        finally:
+            db.close()
+
+    f1 = facts()
+    assert f1["tonight"] == {ids[0]: 1, ids[1]: 1, ids[2]: 1, ids[3]: 1}
+    assert f1["net_wins"][ids[0]] == 1 and f1["net_wins"][ids[2]] == -1
+    assert f1["pair_counts"] == {(ids[0], ids[1]): 1, (ids[2], ids[3]): 1}
+    assert f1["last_split"][frozenset(ids[:4])] == ((ids[0], ids[1]), (ids[2], ids[3]))
+    r = overwrite(
+        client, env["org"]["token"], gid, v, winner_side="b", score_a=9, score_b=11
+    )
+    assert r.status_code == 200, r.text
+    f2 = facts()
+    assert f2["tonight"] == f1["tonight"]  # 还是那四个人打了那一场
+    assert f2["net_wins"][ids[0]] == -1 and f2["net_wins"][ids[2]] == 1
+    assert f2["last_split"][frozenset(ids[:4])] == ((ids[2], ids[3]), (ids[0], ids[1]))
+
+
+def test_overflow_degrades_settlement_and_audits(tmp_path, fake):
+    """越界降级不连坐（2.9 §4.9/§5）：轮转批次推过两位数护栏 → 结算的战报/Elo
+    落账照常、人回流定格、片转 idle 暂停发牌；rotation_overflow 400 携最新视图、
+    live_auto_fill_error 审计带越界明细。"""
+    logs_dir = tmp_path / "logs"
+    client = make_client(tmp_path)
+    env = open_live(client, seed=118)
+    gid, tok = env["game_id"], env["org"]["token"]
+    db = client.app.state.session_factory()
+    try:  # 极端长局：轮转批次已在 100，结算盖章即越界
+        st = db.execute(select(LiveState).where(LiveState.game_id == gid)).scalar_one()
+        st.rotation_batch = 100
+        db.commit()
+    finally:
+        db.close()
+    v = deal_one(client, env)  # 开片正常：候场章 0 在界内
+    r = confirm(client, tok, gid, v)
+    assert r.status_code == 400 and r.json()["error"]["code"] == "rotation_overflow"
+    assert r.json()["error"]["message"] == "轮转数超范围，这片暂停发牌"
+    v2 = r.json()["view"]
+    assert len(v2["matches"]) == 1  # 战报已落账（不连坐）
+    assert court(v2, 1)["status"] == "idle"  # 片转 idle 暂停发牌
+    assert all(r_["court_no"] is None for r_ in v2["players"])  # 回流定格
+    # 防二次入队：requeue 的 to_tail 已 append 过（列表突变不吃 SAVEPOINT 回滚），
+    # 降级回流不得重复——6 人局候场 2 + 回流 4，恰 6 行
+    assert len(v2["queue"]) == 6 and len(set(v2["queue"])) == 6
+    org_account = v2["players"][0]["account_id"]
+    assert ratings(client, org_account)[org_account].play == 1  # Elo 照常落账
+    row = audit_row_of(audit_rows(logs_dir), "live_auto_fill_error")
+    assert row["game_id"] == gid
+    assert "RotationOverflow" in row["detail"] and "wait_batch=101" in row["detail"]

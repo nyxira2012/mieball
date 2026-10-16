@@ -92,12 +92,13 @@ class TempoIn(BaseModel):
 
 
 class RulesIn(BaseModel):
-    """规则四件套与场地参数修改：全可选字段，只更新显式给出的字段。"""
+    """规则四件套与场地参数修改：全可选字段，只更新显式给出的字段。
+    pairing 四档（按候场队序/均衡配对/轮换优先/胜负均衡）；streak_max 0=不限。"""
 
     doubles: bool | None = None
     down: Literal["all", "loser", "n1", "n2", "n3"] | None = None
-    pairing: Literal["queue", "balance"] | None = None
-    streak_max: int | None = Field(default=None, ge=1)
+    pairing: Literal["queue", "balance", "partner", "even"] | None = None
+    streak_max: int | None = Field(default=None, ge=0)
     courts_count: int | None = Field(default=None, ge=1)
     # 分制写 game 列（组局口径）；改后在打片照旧打完旧制、新开片用新制
     scoring: int | None = Field(default=None, ge=1)
