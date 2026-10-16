@@ -30,7 +30,7 @@ export interface SandPlayer {
   guest?: boolean; // 访客：照上场照摊费（份额归担保人），elo 只给展示值
   check: SandCheck;
   skip: number; // 剩余歇轮数：轮到发牌时消耗一次（takeFromQueue），0=不在歇
-  fire: boolean; // 连战：候场里排到队首，与歇互斥
+  fire: boolean; // 连战：排位第四档平手决胜，与歇互斥
   admin: boolean; // 管理员徽章（组织卡第七步封；散场为止）
   mark: number; // 上场章：落位那次动作的 seq（先上的先下判据）；0=从未落位排最后
 }
@@ -280,7 +280,7 @@ export function setScoring(s: SandState, scoring: number): void {
 }
 
 /** 歇/连（真码 tempo 镜像）：'skip' 按一次叠一轮、与连战互斥；'unskip' 清零；
-    'fire' 连战——候场里的人排到队首、再按一次取消（队列不动）。出口恒开：
+    'fire' 连战——排位第四档平手决胜、再按一次取消（队列不动）。出口恒开：
     取消歇恰好凑齐最后一人时点亮空片（真码验收同款）。 */
 export function tempo(
   s: SandState,

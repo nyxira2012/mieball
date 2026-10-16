@@ -497,7 +497,7 @@ export const useLiveStore = defineStore("live", () => {
   }
 
   /** 休息/连战/取消休息（§4.10）：互斥与叠帐全在后端；toast 按响应视图落定态拼
-      （共跳几轮/连战队首）。名册行恒为视图行（见 setCheck 处注） */
+      （共跳几轮/连战同条件排最前）。名册行恒为视图行（见 setCheck 处注） */
   async function togglePerson(
     id: number,
     k: "skip" | "fire" | "unskip",
@@ -520,7 +520,7 @@ export const useLiveStore = defineStore("live", () => {
           ? `已再跳一轮 · 共跳 ${row.skip} 轮`
           : "已设休息 · 轮到你时自动跳一轮",
       );
-    else ui.toast(row.fire ? "连战 · 排到队首" : "取消连战");
+    else ui.toast(row.fire ? "连战 · 同条件排最前" : "取消连战");
   }
 
   /** 封/撤管理员（§4.6 仅组织者；靶行须正式球友）：守卫链/取账号/极性幂等同构，

@@ -43,7 +43,7 @@ export interface User {
   check?: CheckStatus;
   skip?: number; // 剩余歇轮数：歇两轮=2（2.1 文档+原型「候场区点人可设歇两轮」）。
   // 轮到发牌给他时递减 1（后端 live_rotation 取队消耗），归 0 自动归队；0=不在歇
-  fire?: boolean; // 连战：排到队首，与歇互斥（alpha:1631-1633）
+  fire?: boolean; // 连战：排位第四档平手决胜，与歇互斥（alpha:1631-1633）
   dropin?: boolean; // 空降进场：没报名扫码直入名册（§4.4 全场看得到的标记；线上名单/候补不动）
   arriveAt?: string; // ISO · 首次到场时刻（出勤底账，time.ts toIso 落/isoHm 显）
   leftAt?: string; // ISO · 早退离场时刻
@@ -441,7 +441,7 @@ export interface LivePlayerApi {
   court_no: number | null; // 在片上=片号；null=不在片
   court_side: LiveSide | null; // 'a'/'b'；null=候场/不在片
   skip: number; // 剩余歇轮数（轮到发牌给他时递减）
-  fire: boolean; // 连战：排到队首，与歇互斥
+  fire: boolean; // 连战：排位第四档平手决胜，与歇互斥
   queue_pos: number | null; // 候场序（升序即队列序）；null=场上/不在队
   tonight: number; // 今晚已打场数（后端战报实时派生，前端不重算）
 }

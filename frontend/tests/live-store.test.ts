@@ -1349,7 +1349,7 @@ describe("togglePerson（§4.10 歇连：叠帐归总账，toast 按落定态拼
     expect(ui.toastMsg).toBe("取消休息 · 下轮照常");
     liveApi.apiLiveTempo.mockResolvedValueOnce(view(0, true, 11));
     await live.togglePerson(105, "fire");
-    expect(ui.toastMsg).toBe("连战 · 排到队首");
+    expect(ui.toastMsg).toBe("连战 · 同条件排最前");
     liveApi.apiLiveTempo.mockResolvedValueOnce(view(0, false, 12));
     await live.togglePerson(105, "fire");
     expect(ui.toastMsg).toBe("取消连战");

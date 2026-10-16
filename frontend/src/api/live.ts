@@ -179,7 +179,7 @@ export function apiLiveSwap(
   });
 }
 
-/** 歇连（给自己随时、给他人需全权）：skip 叠加 / fire 连战排队首 / unskip 清零 */
+/** 歇连（给自己随时、给他人需全权）：skip 叠加 / fire 连战第四档抢先 / unskip 清零 */
 export function apiLiveTempo(
   gameId: number,
   playerId: number,
