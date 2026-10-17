@@ -516,6 +516,18 @@ def test_swap_position_tail_and_feed_note(client: TestClient):
         {"out_id": rows[5]["id"], "in_id": rows[4]["id"], **base},
     )
     assert r.status_code == 422 and r.json()["error"]["code"] == "live_invalid"
+    # 「in 不在候场队」：换位上线后场上⇄场上已合法（in=场上人不再被拒），
+    # 改用退场清位的行探这个闸（既不在场上也不在候场）
+    r = do_check(
+        client,
+        env["org"]["token"],
+        gid,
+        live_get(client, gid, env["org"]["token"]),
+        rows[3],
+        "left",
+    )
+    assert r.status_code == 200, r.text
+    base = {"base_total_seq": live_get(client, gid, env["org"]["token"])["total_seq"]}
     r = live_call(
         client,
         mate,
@@ -534,6 +546,84 @@ def test_swap_position_tail_and_feed_note(client: TestClient):
         {"out_id": rows[0]["id"], "in_id": rows[5]["id"], **base},
     )
     assert r.status_code == 403 and r.json()["error"]["code"] == "live_forbidden"
+
+
+def test_swap_sides_keeps_streak_mark_and_queue(client: TestClient):
+    """场上⇄场上换位：只互换片与边——连打/上场章/候场队原样（换位不是进场，
+    换人保护不适用）；同片同边原地重叠拒；feed 独立 kind 留名（句不念「换下」）。"""
+
+    def seeded(pid: int) -> dict:
+        """连打/章是内部资历键不进视图，直查名册行（court_marks 同法）。"""
+        db = client.app.state.session_factory()
+        try:
+            r = db.scalars(select(LivePlayer).where(LivePlayer.id == pid)).one()
+            return {"streak": r.streak, "mark": r.court_mark}
+        finally:
+            db.close()
+
+    env = open_live(client, seed=31, players=9)
+    rows = env["view"]["players"]
+    ids = [r["id"] for r in rows]
+    gid = env["game_id"]
+    mate = env["mate"]["token"]  # 任意到场者可换（球友的手）
+    v = deal_court(
+        client,
+        env["org"]["token"],
+        gid,
+        env["view"],
+        [
+            {"court_no": 1, "a": ids[:2], "b": ids[2:4]},
+            {"court_no": 2, "a": ids[4:6], "b": ids[6:8]},
+        ],
+    )
+    seed_rows(
+        client,
+        gid,
+        {
+            0: {"streak": 3, "court_mark": 7},
+            2: {"streak": 1, "court_mark": 5},
+            4: {"streak": 2, "court_mark": 6},
+        },
+    )
+    # 同片换边：1号片 a 的 rows[0] ↔ b 的 rows[2]
+    r = live_call(
+        client,
+        mate,
+        gid,
+        "swap",
+        {"out_id": ids[0], "in_id": ids[2], "base_total_seq": v["total_seq"]},
+    )
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert pv(v, 0)["court_no"] == 1 and pv(v, 0)["court_side"] == "b"
+    assert pv(v, 2)["court_no"] == 1 and pv(v, 2)["court_side"] == "a"
+    # 连打与上场章原样——动了就是篡改轮换账
+    assert seeded(ids[0]) == {"streak": 3, "mark": 7}
+    assert seeded(ids[2]) == {"streak": 1, "mark": 5}
+    assert v["queue"] == [ids[8]]  # 候场一格不动
+    e = v["feed"][-1]
+    assert e["kind"] == "swap_sides" and e["actor"] == rows[1]["name"]
+    assert e["a"] == rows[0]["name"] and e["b"] == rows[2]["name"]
+    # 跨片换片：1号片 a 的 rows[1] ↔ 2号片 a 的 rows[4]（章随人走，不被重盖）
+    mark1_before = seeded(ids[1])["mark"]
+    base = {"base_total_seq": live_get(client, gid, env["org"]["token"])["total_seq"]}
+    r = live_call(
+        client, mate, gid, "swap", {"out_id": ids[1], "in_id": ids[4], **base}
+    )
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert (pv(v, 1)["court_no"], pv(v, 1)["court_side"]) == (2, "a")
+    assert (pv(v, 4)["court_no"], pv(v, 4)["court_side"]) == (1, "a")
+    assert seeded(ids[4]) == {"streak": 2, "mark": 6}  # 未被重置
+    assert seeded(ids[1])["streak"] == 0  # 未被重置
+    assert seeded(ids[1])["mark"] == mark1_before
+    assert v["queue"] == [ids[8]]
+    # 同片同边（此时 1号片 a=[2,4]）：原地重叠拒
+    base = {"base_total_seq": live_get(client, gid, env["org"]["token"])["total_seq"]}
+    r = live_call(
+        client, mate, gid, "swap", {"out_id": ids[2], "in_id": ids[4], **base}
+    )
+    assert r.status_code == 422 and r.json()["error"]["code"] == "live_invalid"
 
 
 # ---- tempo（2.2 §4.10）与 rules（2.2 §4.7）----

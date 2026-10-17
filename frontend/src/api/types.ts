@@ -513,6 +513,14 @@ export interface LiveMatchApi {
 export type FeedEventApi =
   | { kind: "swap"; actor: string; out: string; in: string; at: string }
   | {
+      /** 场上⇄场上换位（互换片与边）：与 swap 分家——复用其句式会念成「换下」 */
+      kind: "swap_sides";
+      actor: string;
+      a: string;
+      b: string;
+      at: string;
+    }
+  | {
       /** auto_admin（2.5）：账开张后第一位签到的球友自动暂管现场（后端批1 落的事件，
           actor=target=获授人） */
       kind: "set_admin" | "unset_admin" | "auto_admin";

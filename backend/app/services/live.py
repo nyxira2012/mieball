@@ -653,7 +653,8 @@ class LiveBook(LiveSweepMixin):
         base_total_seq: int,
     ) -> dict:
         """换人（2.2 §4.9 任意到场者可、操作留名）：inId 出队原位顶 outId 的坑、
-        outId 离片回队尾；只收在打片（idle 片没人可换，court_idle 退回）。"""
+        outId 离片回队尾；只收在打片（idle 片没人可换，court_idle 退回）。
+        两参都在场上时走换位分支：只互换片与边，上场章/连打/候场队不动。"""
         with self._write(game_id=game_id, actor_id=actor_id):
             state, _game = self._open_write(game_id)
             self._require_arrived(game_id, actor_id)
@@ -662,33 +663,57 @@ class LiveBook(LiveSweepMixin):
             inn = self._roster_row(game_id, in_id)
             if out.court_no is None or out.court_side is None:
                 raise errors.live_invalid("被换下的人不在场上")
-            court = self._court_writable(game_id, out.court_no)
-            if inn.queue_pos is None:
-                raise errors.live_invalid("换上的人不在候场队")
-            rows = self._roster(game_id)
-            by_id = {r.id: r for r in rows}
-            queue = self._queue_ids(rows)
-            queue.remove(inn.id)
-            queue.append(out.id)  # 被换下排队尾（§4.9-3）
-            inn.court_no = court.court_no
-            inn.court_side = out.court_side
-            inn.court_mark = state.total_seq  # 换上即落位：盖上场章（资历从此刻起算）
-            inn.streak = 0  # 换人保护：连打从换上那一刻重新起算，不背之前的累
-            inn.queue_pos = None
-            out.court_no = None
-            out.court_side = None
-            out.wait_batch = state.rotation_batch  # 换下进场下：盖当前章
-            self._place_queue(by_id, queue)
-            self._feed_push(
-                state,
-                {
-                    "kind": "swap",
-                    "actor": self._actor_name(game_id, actor_id),
-                    "out": out.display_name,
-                    "in": inn.display_name,
-                    "at": clock.iso(clock.now()),
-                },
-            )
+            # 场上⇄场上＝换位：只互换片与边。章/连打不动——换人保护是「从候场进
+            # 场上」的进场礼，换位两人本来就在打；feed 另起 kind，复用换人句会
+            # 念成「换下」
+            if inn.court_no is not None and inn.court_side is not None:
+                if out.court_no == inn.court_no and out.court_side == inn.court_side:
+                    raise errors.live_invalid("两人已在同一边")
+                for no in {out.court_no, inn.court_no}:
+                    self._court_writable(game_id, no)
+                out.court_no, inn.court_no = inn.court_no, out.court_no
+                out.court_side, inn.court_side = inn.court_side, out.court_side
+                self._feed_push(
+                    state,
+                    {
+                        "kind": "swap_sides",
+                        "actor": self._actor_name(game_id, actor_id),
+                        "a": out.display_name,
+                        "b": inn.display_name,
+                        "at": clock.iso(clock.now()),
+                    },
+                )
+            else:
+                court = self._court_writable(game_id, out.court_no)
+                if inn.queue_pos is None:
+                    raise errors.live_invalid("换上的人不在候场队")
+                rows = self._roster(game_id)
+                by_id = {r.id: r for r in rows}
+                queue = self._queue_ids(rows)
+                queue.remove(inn.id)
+                queue.append(out.id)  # 被换下排队尾（§4.9-3）
+                inn.court_no = court.court_no
+                inn.court_side = out.court_side
+                inn.court_mark = (
+                    state.total_seq
+                )  # 换上即落位：盖上场章（资历从此刻起算）
+                # 连打不清：只随真歇归零（取队时没被选上）。真歇过的人这里本来就是
+                # 0；清零唯一生效的场景是"没歇就被换回"，那是洗疲劳的后门
+                inn.queue_pos = None
+                out.court_no = None
+                out.court_side = None
+                out.wait_batch = state.rotation_batch  # 换下进场下：盖当前章
+                self._place_queue(by_id, queue)
+                self._feed_push(
+                    state,
+                    {
+                        "kind": "swap",
+                        "actor": self._actor_name(game_id, actor_id),
+                        "out": out.display_name,
+                        "in": inn.display_name,
+                        "at": clock.iso(clock.now()),
+                    },
+                )
             self._finish(state, game_id=game_id, actor_id=actor_id)
         return self.view(game_id=game_id, viewer_id=actor_id)
 

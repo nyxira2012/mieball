@@ -139,11 +139,13 @@ function feedSentences(events: FeedEvent[]): string[] {
     .map((e) =>
       e.kind === "swap"
         ? `${e.actor} 把 ${e.out} 换下 · ${e.in} 上`
-        : e.kind === "set_admin"
-          ? `组织者封 ${e.target} 为管理员`
-          : e.kind === "auto_admin"
-            ? `现场第一位签到的 ${e.target} 暂管现场`
-            : `组织者收回了 ${e.target} 的管理员身份`,
+        : e.kind === "swap_sides"
+          ? `${e.actor} 把 ${e.a} 与 ${e.b} 互换位置`
+          : e.kind === "set_admin"
+            ? `组织者封 ${e.target} 为管理员`
+            : e.kind === "auto_admin"
+              ? `现场第一位签到的 ${e.target} 暂管现场`
+              : `组织者收回了 ${e.target} 的管理员身份`,
     )
     .reverse();
 }
@@ -830,12 +832,12 @@ export const useLiveStore = defineStore("live", () => {
     );
   }
 
-  /** 换人（§4.9 球友开放，无 guard）：场上 outId 原位顶坑给候场 inId——
-      out 回队尾、feed 留名、pending 片冻结拒收全在总账；名册行恒为视图行
-      （见 setCheck 处注）。
+  /** 换人/换位（§4.9 球友开放，无 guard）：场上 outId 原位顶坑给候场 inId——
+      out 回队尾、feed 留名全在总账；名册行恒为视图行（见 setCheck 处注）。
       出/入方向在单一源按名册真值定死（2026-10-10 修复批 F8：此前页面把
       候场者当 out 传，后端必拒「被换下的人不在场上」，换人整体不可用）——
-      两参语义 = 「把 A 与 B 互换」，谁在场上谁出、候场者进。 */
+      两参语义 = 「把 A 与 B 互换」，谁在场上谁出、候场者进；两人都在场上时
+      这同一份载荷落在后端换位分支（互换片与边，章/连打/队不动）。 */
   async function swapPlayers(selfId: number, targetId: number): Promise<void> {
     const L = live.value;
     if (!L) return;

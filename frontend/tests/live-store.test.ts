@@ -1426,6 +1426,40 @@ describe("swapPlayers（§4.9 球友开放：无 guard、全场写只带总号�
   });
 });
 
+describe("swapPlayers 场上⇄场上换位（方向判定不改写——两参按既有规则落后端换位分支）", () => {
+  it("同片换边：载荷原样 (out=点开的人, in=选中的人) + feed swap_sides 拼句", async () => {
+    const { live, ui } = await inPlay();
+    liveApi.apiLiveSwap.mockResolvedValue(
+      vPlay(8, {
+        players: [
+          pl(101, 0, { name: "我", court_no: 1, court_side: "b" }),
+          pl(102, 5, { name: "亮马河快攻", court_no: 1, court_side: "a" }),
+          pl(103, 8, { name: "北苑小钢炮", court_no: 1, court_side: "a" }),
+          pl(104, null, {
+            name: "亮的球友·1",
+            guarantor_account_id: 5,
+            court_no: 1,
+            court_side: "b",
+          }),
+        ],
+        feed: [
+          {
+            kind: "swap_sides",
+            actor: "亮马河快攻",
+            a: "我",
+            b: "北苑小钢炮",
+            at: "2026-10-07T19:32:00+08:00",
+          },
+        ],
+      }),
+    );
+    await live.swapPlayers(101, 103); // a 边的我 ↔ b 边的北苑小钢炮
+    expect(liveApi.apiLiveSwap).toHaveBeenCalledWith(900, 101, 103, 7);
+    expect(ui.toastMsg).toBe("已换人 · 对阵重排");
+    expect(live.live!.feed[0]).toBe("亮马河快攻 把 我 与 北苑小钢炮 互换位置"); // swap_sides 句
+  });
+});
+
 describe("setRules / setCourts / autoDeal（§4.7 规则与场地 · 排片真值在后端）", () => {
   it("setRules：四件套映射上报（singles→doubles 取反）+ toast「规则已更新 · 下一场起按新规」", async () => {
     const { live, ui } = await inPlay();

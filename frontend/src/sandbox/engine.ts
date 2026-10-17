@@ -224,13 +224,28 @@ export function settle(
   fillIdle(s);
 }
 
-/** 换人（真码 swap 镜像）：候场者出队原位顶场上者的坑、被换下者回队尾；
-    换上即落位盖章（资历从此刻起算）。出口补片。 */
+/** 换人/换位（真码 swap 镜像）：候场者出队原位顶场上者的坑、被换下者回队尾；
+    换上即落位盖章（资历从此刻起算）。两人都在场上＝换位：互换片与边、章/连打/
+    队不动（同边原地重叠拒）。出口补片。 */
 export function swap(s: SandState, outId: number, inId: number): void {
-  const c = s.courts.find((c) => c.a.includes(outId) || c.b.includes(outId));
-  if (!c) return; // 被换的人不在场上（教学剧本不走到，防呆）
+  const oc = s.courts.find((c) => c.a.includes(outId) || c.b.includes(outId));
+  if (!oc) return; // 被换的人不在场上（教学剧本不走到，防呆）
+  const ic = s.courts.find((c) => c.a.includes(inId) || c.b.includes(inId));
+  // 换位分支：同真码——不盖章不清连打不动队，句式照真码 feedSentences
+  if (ic) {
+    const oSide = oc.a.includes(outId) ? oc.a : oc.b;
+    const iSide = ic.a.includes(inId) ? ic.a : ic.b;
+    if (oSide === iSide) return; // 同片同边＝原地重叠
+    s.seq += 1;
+    oSide.splice(oSide.indexOf(outId), 1, inId);
+    iSide.splice(iSide.indexOf(inId), 1, outId);
+    s.feed.unshift(
+      `你 把 ${pOf(s, outId).name} 与 ${pOf(s, inId).name} 互换位置`,
+    );
+    return;
+  }
   s.seq += 1;
-  const side = c.a.includes(outId) ? c.a : c.b;
+  const side = oc.a.includes(outId) ? oc.a : oc.b;
   side.splice(side.indexOf(outId), 1, inId);
   const qi = s.queue.indexOf(inId);
   if (qi >= 0) s.queue.splice(qi, 1);

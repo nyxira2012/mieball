@@ -70,33 +70,41 @@
         >
       </template>
 
-      <!-- ---------- 换人二段态：列对侧池 ---------- -->
+      <!-- ---------- 换人二段态：列对侧池（人在场上分两组：换位·场上 / 换下·候场） ---------- -->
       <template v-else>
         <view class="ps-swap-t">{{
           personOnCourt ? `把 ${p.name} 换成谁？` : `用 ${p.name} 换谁下场？`
         }}</view>
-        <view v-if="poolRows.length" class="ps-pool">
-          <view
-            v-for="r in poolRows"
-            :key="r.id"
-            class="ps-row"
-            @click="onPick(r)"
-          >
-            <view class="row-av"
-              ><ChibiAvatar :chibi="r.u.chibi" :size="32"
-            /></view>
-            <view class="row-info">
-              <view class="row-nm"
-                >{{ r.u.name
-                }}<text v-if="r.u.shadow" class="badge guest">访客</text></view
+        <template v-if="poolGroups.length">
+          <block v-for="g in poolGroups" :key="g.t">
+            <view v-if="g.t" class="ps-group-t">{{ g.t }}</view>
+            <view class="ps-pool">
+              <view
+                v-for="r in g.rows"
+                :key="r.id"
+                class="ps-row"
+                @click="onPick(r)"
               >
-              <view class="row-meta"
-                >已打 {{ r.u.play }} 场 · DUPR {{ fmtDupr1(duprOf(r.u)) }}</view
-              >
+                <view class="row-av"
+                  ><ChibiAvatar :chibi="r.u.chibi" :size="32"
+                /></view>
+                <view class="row-info">
+                  <view class="row-nm"
+                    >{{ r.u.name
+                    }}<text v-if="r.u.shadow" class="badge guest"
+                      >访客</text
+                    ></view
+                  >
+                  <view class="row-meta"
+                    >已打 {{ r.u.play }} 场 · DUPR
+                    {{ fmtDupr1(duprOf(r.u)) }}</view
+                  >
+                </view>
+                <text class="row-go">换 ‹</text>
+              </view>
             </view>
-            <text class="row-go">换 ‹</text>
-          </view>
-        </view>
+          </block>
+        </template>
         <EmptyBox
           v-else
           :text="
@@ -117,7 +125,7 @@
    休息可连按叠加（按钮示「将跳 N 轮」——skip 还没消耗，将跳非已跳），「取消休息」随时清 0（§4.10 修订⑨）；
    权限（§4.8/4.9/4.10）：换人/歇/连/退场本人随时可、给他人需全权（isFullPower 单一源在 store）；
    「设为/撤掉管理员」仅组织者可见（§4.6 禁止管理员再封管理员）。
-   对侧池口径：人在场上 → 列候场队列；人在队列 → 列场上全员（cur + 各待开片）。 */
+   对侧池口径：人在场上 → 两组「换位·场上」（同边队友除外）+「换下·候场」；人在队列 → 列场上全员。 */
 import { computed } from "vue";
 import AppSheet from "@/components/ui/AppSheet.vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
@@ -193,6 +201,32 @@ const poolRows = computed(() => {
     (id) => !!pById(l, id),
   );
   return ids.map((id) => ({ id, u: liveStore.byId(id) }));
+});
+
+/** 换位池（人在场上时）：场上其他人除同边队友——同片对面边=换边、跨片=换片；
+    同边互换是原地重叠，不给选 */
+const reseatRows = computed(() => {
+  const l = liveStore.live;
+  if (!l || !personOnCourt.value) return [];
+  const mine = l.courts.find(
+    (c) => c.A.includes(props.personId) || c.B.includes(props.personId),
+  );
+  if (!mine) return [];
+  const mates = mine.A.includes(props.personId) ? mine.A : mine.B;
+  return onCourtIds.value
+    .filter((id) => id !== props.personId && !mates.includes(id))
+    .filter((id) => !!pById(l, id))
+    .map((id) => ({ id, u: liveStore.byId(id) }));
+});
+
+/** 二段池分组：人在场上 → 「换位·场上」+「换下·候场」两组（空组整组不显）；
+    人在队 → 单组无标题（列场上全员，原口径） */
+const poolGroups = computed(() => {
+  if (!personOnCourt.value) return [{ t: "", rows: poolRows.value }];
+  return [
+    { t: "换位 · 场上", rows: reseatRows.value },
+    { t: "换下 · 候场", rows: poolRows.value },
+  ].filter((g) => g.rows.length > 0);
 });
 </script>
 
@@ -289,6 +323,14 @@ const poolRows = computed(() => {
   font-size: 15px;
   font-weight: 700;
   margin-bottom: 14px;
+}
+/* 分组小标题（换位·场上 / 换下·候场）：mono 小字与候场条同语言 */
+.ps-group-t {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--dim);
+  margin: 12px 2px 6px;
 }
 .ps-pool {
   max-height: 46vh;

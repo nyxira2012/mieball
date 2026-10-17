@@ -1412,6 +1412,42 @@ def test_swap_in_stamps_court_mark_out_keeps(client: TestClient):
     assert marks[ids[0]] == 1  # 被换下的章不清（只盖不清）
 
 
+def test_swap_back_in_keeps_streak(client: TestClient):
+    """换人不清连打（连打只随真歇归零——取队时没被选上那刻清）：没歇就被
+    换回的人连打原样，换上清零是洗疲劳后门（对真歇过的人是无操作）。"""
+    env = open_live(client, seed=119, players=6)
+    gid, tok = env["game_id"], env["org"]["token"]
+    ids = [r["id"] for r in env["view"]["players"]]
+    v = deal_one(client, env)  # a=[0,1] b=[2,3]
+    seed_row(client, ids[0], streak=2)
+    r = live_call(
+        client,
+        tok,
+        gid,
+        "swap",
+        {"out_id": ids[0], "in_id": ids[4], "base_total_seq": v["total_seq"]},
+    )
+    assert r.status_code == 200, r.text
+    v = r.json()
+    # 没经过任何一轮发牌就把 0 换回（没歇）：连打必须还是 2
+    r = live_call(
+        client,
+        tok,
+        gid,
+        "swap",
+        {"out_id": ids[4], "in_id": ids[0], "base_total_seq": v["total_seq"]},
+    )
+    assert r.status_code == 200, r.text
+    db = client.app.state.session_factory()
+    try:
+        row = db.scalars(select(LivePlayer).where(LivePlayer.id == ids[0])).one()
+        assert row.streak == 2
+        # 上场时间照旧从换上重起（这一半的换人保护保留）
+        assert row.court_mark == v["total_seq"]
+    finally:
+        db.close()
+
+
 # ---- 2.8 批5：轮询条件拉取（验收 12 + 号跳纪律） ----
 
 
