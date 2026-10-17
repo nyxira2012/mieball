@@ -10,7 +10,9 @@ from pathlib import Path
 
 from app.services.accounts import CHIBI_RANGES
 
-TS_PATH = Path(__file__).resolve().parents[2] / "frontend" / "src" / "utils" / "chibi.ts"
+TS_PATH = (
+    Path(__file__).resolve().parents[2] / "frontend" / "src" / "utils" / "chibi.ts"
+)
 
 
 def _parse_ts_ranges() -> dict[str, int]:
