@@ -61,13 +61,16 @@
         </view>
       </view>
       <view class="telem-cell mode-cell" @click="emit('rules')">
-        <text class="telem-k">赛制模式</text>
-        <!-- 2.4：读 rules 四件套（选了什么显什么），不再按 g.rotation 旧三模式显示；
-             分制不进 chip（遥测格窄，对局卡头已有「双打 · 11分」） -->
-        <view class="telem-v mode-v"
-          >{{ L.rules.singles ? "单打" : "双打" }} ·
-          {{ DOWN_NAMES[L.rules.down] }} ▾</view
-        >
+        <text class="telem-k">规则设置</text>
+        <!-- 读 rules 四件套里的两件：配对规则 + 谁下——单双打不进格（对局卡头已有
+             「双打 · 11分」）。一行摆：配对当主字、谁下缩成小尾巴同行跟，分隔点
+             挂尾巴头上（用户裁决：点不在尾巴后面挂）；最长组合（积分均衡+全上全下）
+             在标准屏贴边放得下、格子高度与邻格齐平不撑高整排；窄屏尾巴省略兜底
+             （全量规则本就在抽屉里） -->
+        <view class="telem-v mode-v">
+          <text class="mv-pair">{{ PAIRING_NAMES[L.rules.pairing] }}</text>
+          <text class="mv-down">· {{ DOWN_NAMES[L.rules.down] }}</text>
+        </view>
       </view>
     </view>
 
@@ -85,7 +88,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useLiveStore } from "@/stores/live";
 import { useUserStore } from "@/stores/user";
-import { DOWN_NAMES } from "@/utils/format";
+import { DOWN_NAMES, PAIRING_NAMES } from "@/utils/format";
 import { pById } from "@/utils/rotate";
 
 const emit = defineEmits<{
@@ -410,13 +413,36 @@ const curTick = computed(
   letter-spacing: 0.05em;
   font-size: 14px;
 }
+/* 规则设置格（2026-10-17 用户裁决）：这格是入口不是遥测——标签标黄、内容改文字白 */
+.mode-cell .telem-k {
+  color: var(--lemon);
+}
+/* 规则设置格（一行摆）：配对当主字、谁下缩成小尾巴同行跟——行高与邻格齐平。
+   最长组合贴边刚好放得下；尾巴允许收缩截断（省略号）兜窄屏 */
 .mode-v {
-  display: block; /* 覆写 telem-v 的 flex：省略号截断需要块级盒 */
-  font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 700;
-  /* 遥测格窄（≈117px），「双打 · 全上全下 ▾」满宽时截断不折行 */
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 2px;
+  min-width: 0;
+  overflow: hidden;
   white-space: nowrap;
+}
+.mv-pair {
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--cream);
+  flex: none;
+}
+.mv-down {
+  font-family: var(--sans);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--cream);
+  opacity: 0.75;
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
