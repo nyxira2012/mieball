@@ -40,6 +40,11 @@ def new_bind_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def new_nonce() -> str:
+    """JS-SDK 签名用随机串：不可猜即可，不落库不进指纹，无需钥匙级长度。"""
+    return secrets.token_hex(8)
+
+
 def bind_fingerprint(token: str) -> str:
     return _hmac(f"wxb:{token}")
 
