@@ -348,7 +348,7 @@ import {
   cardLiveEntry,
   isOrg,
   liveOngoing,
-  MODE_NAMES,
+  PAIRING_NAMES,
   SCORE_RULE_NAMES,
 } from "@/utils/format";
 import { durTxt, isoDay, isoHm } from "@/utils/time";
@@ -556,9 +556,11 @@ const perNote = computed(() => {
   return "";
 });
 
-/* 规则牌：mode 必有；得分规则仅认识 rally/serve（旧局/未知值不显示） */
+/* 规则牌：配对规则与现场同源（历史旧值回落默认档）；得分规则仅认识 rally/serve（旧局/未知值不显示） */
 const modeName = computed(() =>
-  game.value ? MODE_NAMES[game.value.rotation] : "",
+  game.value
+    ? (PAIRING_NAMES[game.value.rotation] ?? PAIRING_NAMES.partner)
+    : "",
 );
 const ruleName = computed(() => {
   const r = game.value?.scoreRule;

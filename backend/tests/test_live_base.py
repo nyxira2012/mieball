@@ -111,16 +111,42 @@ def test_start_expands_roster_formal_and_guests(client: TestClient, fake):
         b["account"]["id"],
         c["account"]["id"],
     }
-    # rules 快照从 game 默认（scoring 复用局列；四件套起笔沿前端 startLive，
-    # streak_max 起笔=down=all 的自适应默认 2——自适应只在切档时重置，新局不修正）
+    # rules 快照从 game 默认（scoring 复用局列；pairing 吃 game.rotation，旧值回落 partner；
+    # 谁下默认 n2、streak_max 起笔=2）
     assert out["rules"] == {
         "scoring": 21,
         "doubles": True,
-        "down": "all",
-        "pairing": "queue",
+        "down": "n2",
+        "pairing": "partner",
         "streak_max": 2,
     }
     assert out["total_seq"] == 1 and out["round"] == 0
+
+
+def test_start_inherits_game_rotation_and_set_rules_syncs_back(
+    client: TestClient, fake
+):
+    """组局选的配对规则（game.rotation）开账落入 rules.pairing；现场改 pairing 同步回写局簿。"""
+    org = signup(client, "13800020009", "o")
+    b = signup(client, "13800020010", "b")
+    g = publish(client, org["token"], visibility="public", rotation="balance")
+    join_ok(client, b["token"], g["id"])
+    lock_past_deadline(client, fake, g["id"])
+
+    out = start_live(client, g["id"], org["account"]["id"])
+    assert out["rules"]["pairing"] == "balance"
+
+    updated = with_book(
+        client,
+        lambda book: book.rules(
+            game_id=g["id"],
+            actor_id=org["account"]["id"],
+            base_total_seq=out["total_seq"],
+            pairing="even",
+        ),
+    )
+    assert updated["rules"]["pairing"] == "even"
+    assert detail(client, g["id"])["rotation"] == "even"
 
 
 def test_start_idempotent_keeps_single_roster(client: TestClient, fake):

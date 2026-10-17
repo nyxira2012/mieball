@@ -49,9 +49,6 @@ export interface User {
   leftAt?: string; // ISO · 早退离场时刻
 }
 
-/** 发牌模式（alpha:1404 winner 赢家留场 / rotate 纯粹轮转 / balance 均衡配对） */
-export type CourtMode = "winner" | "rotate" | "balance";
-
 /** 视图状态 7 态（单一源=后端 game_views.derive；派生态读时算：
     locked 随时刻翻 locked/live/done，pending 拖过开打=terminated） */
 export type GameStatus =
@@ -116,7 +113,7 @@ export interface Game {
   maxPlayers: number; // 最多人数（满员线，进度只讲剩几坑）
   visibility: Visibility;
   scoring: number; // 分制 target（先到 N 且净胜 2）
-  rotation: CourtMode;
+  rotation: PairingMode; // 配对规则四档（与现场 rules.pairing 同一源）
   scoreRule: string; // 后端 str 原样；非 rally/serve 的值不显示得分规则段（旧局容错）
   manualLock: boolean; // 必打手动锁（锁上不撤）
   courts: string[] | null; // 订场登记的场地号；场上有号即必打；null=未登记
@@ -379,7 +376,7 @@ export interface PublishGameInput {
   max_players: number;
   visibility: Visibility; // 默认 'played'（熟人优先裁决）
   scoring: number;
-  rotation: CourtMode;
+  rotation: PairingMode;
   score_rule: string;
 }
 

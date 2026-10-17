@@ -189,7 +189,7 @@ class GameBook:
                 max_players=12,
                 visibility="invite_only",
                 scoring=15,  # 与组局页表单默认同档（15 标准局）
-                rotation="rotate",
+                rotation="partner",
                 score_rule="rally",
                 manual_lock=True,
                 courts=nums,
@@ -209,13 +209,7 @@ class GameBook:
                 )
             )
             self.db.commit()
-        # 现场规则默认（2026-10-17 用户裁决）：15 分 + 2人下 + 轮换优先——对齐组局
-        # 默认口径；其余（双打/连打帽 2）沿全局默认
-        LiveBook(self.db).start(
-            game_id=game.id,
-            organizer_id=organizer_id,
-            rules={"down": "n2", "pairing": "partner"},
-        )
+        LiveBook(self.db).start(game_id=game.id, organizer_id=organizer_id)
         return self.detail(game_id=game.id, viewer_id=organizer_id)
 
     # ---- 找局打列表（4.2：三档可见 + 懒判定；排除 terminated/cancelled/pending） ----

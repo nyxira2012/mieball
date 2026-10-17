@@ -92,7 +92,7 @@ function mkLive(
 describe("pById / usedCourts（长期保留导出）", () => {
   it("pById 按找 roster", () => {
     const ps = [3.0].map((e) => mkP(e));
-    const live = mkLive("rotate", ps);
+    const live = mkLive("queue", ps);
     expect(pById(live, ps[0].id)?.name).toBe(ps[0].name);
     expect(pById(live, 99999)).toBeUndefined();
   });
@@ -113,7 +113,7 @@ describe("pById / usedCourts（长期保留导出）", () => {
       A: [],
       B: [],
     };
-    const live = mkLive("rotate", ps, { courts: [full, idle] });
+    const live = mkLive("queue", ps, { courts: [full, idle] });
     expect(usedCourts(live)).toBe(1);
     live.courts[1]!.A = [ps[4].id]; // 半边有人即在打
     expect(usedCourts(live)).toBe(2);
@@ -140,7 +140,7 @@ describe("口径单一源（2.4 技术设计 §0.5/§0.6）", () => {
     expect(courtSize(false)).toBe(4);
     expect(courtSize(true)).toBe(2);
     const ps = Array.from({ length: 8 }, () => mkP(3.0));
-    const live = mkLive("rotate", ps); // courts 未登记、maxPlayers 8 → 2 片
+    const live = mkLive("queue", ps); // courts 未登记、maxPlayers 8 → 2 片
     expect(courtCount(live)).toBe(2);
     live.g.maxPlayers = 12;
     expect(courtCount(live)).toBe(3);
@@ -155,7 +155,7 @@ describe("口径单一源（2.4 技术设计 §0.5/§0.6）", () => {
       c = mkP(3.0);
     const on1 = mkP(3.0),
       on2 = mkP(3.0);
-    const live = mkLive("rotate", [on1, on2, a, gone, b, c], {
+    const live = mkLive("queue", [on1, on2, a, gone, b, c], {
       courts: [mkCourt([on1], [on2], { id: 0, singles: true })],
       queue: [a.id, gone.id, b.id, c.id],
     });

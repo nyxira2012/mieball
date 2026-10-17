@@ -49,11 +49,13 @@ from .live_sweep import LiveSweepMixin
 from .playlog import is_my_game_at
 from .stats import StatsLedger
 
-# 开账起笔的 rules 快照默认值（镜像前端 startLive 起笔，2.2 批2 §4.1）：
-# 双打 / 谁下挂 all 占位（推荐重算在前端）/ 签到顺序（queue）/ 连打上限 2——
-# 自适应默认随「谁下」的档走（all 档=2），且只在切档时重置；新局永不修正，
-# 起笔必须是 all 档自己的默认值（切输家下时闸门再重置为 3）
-_DEFAULT_RULES = {"doubles": True, "down": "all", "pairing": "queue", "streak_max": 2}
+# 开账起笔的 rules 快照默认值——开场只有这一份，约球局与直接开场同吃，
+# 不收任何来源特判（现场页样子只由这一局的数据决定，与怎么开场无关）：
+# 双打 / 2 人下 / 轮换优先 / 连打上限 2。连打上限的自适应默认随「谁下」的档走
+# （输家下=3，其余=2），且只在切档时重置；新局永不修正，起笔必须是起笔档
+# 自己的默认值（2 人下档=2）
+_DEFAULT_RULES = {"doubles": True, "down": "n2", "pairing": "partner", "streak_max": 2}
+_PAIRING_MODES = ("queue", "balance", "partner", "even")
 # Elo 娱乐轨初始分单一源在 models.ELO_RATING_INIT（建行默认值同源）
 RATING_INIT = ELO_RATING_INIT
 
@@ -171,17 +173,14 @@ class LiveBook(LiveSweepMixin):
 
     # ---- 开账（名册展开 + 总账头落库；幂等） ----
 
-    def start(
-        self, *, game_id: int, organizer_id: int, rules: dict | None = None
-    ) -> dict:
+    def start(self, *, game_id: int, organizer_id: int) -> dict:
         """开账（2.2 §4.1 开场亮点的总账版）：名册行从正式报名展开——正式球友一人
         一行（首见建 EloRating 行 1200），bring N 展开成 N 行随行访客（挂担保人）；
         全员先记 absent、候场队空（报到驱动，check 端点批3）；total_seq 从 1 起。
         触发权 2.5 §4/§8：成局后组织者随时、正式成员开打前两小时内（organizer_id
         形参沿路由旧名，实为开账人），落 started_by=开账人（B1「谁开的账」）。
         幂等：已有 LiveState 直接返视图（散场后再点也只回看，不重开）。
-        rules 形参供开场来源注默认（直接开场 2026-10-17 裁决：15 分/2人下/轮换优先——
-        与组局页默认对齐）；缺省沿全局 _DEFAULT_RULES，组局开场零变化。"""
+        开场规则只有 _DEFAULT_RULES 一份，不收来源参数——约球与直接开场同路。"""
         with _write_lock:
             game = self.db.get(Game, game_id)
             if game is None:
@@ -202,7 +201,14 @@ class LiveBook(LiveSweepMixin):
                         if game.courts
                         else (3 if game.max_players >= 12 else 2)
                     ),
-                    **{**_DEFAULT_RULES, **(rules or {})},
+                    **{
+                        **_DEFAULT_RULES,
+                        "pairing": (
+                            game.rotation
+                            if game.rotation in _PAIRING_MODES
+                            else _DEFAULT_RULES["pairing"]
+                        ),
+                    },
                 )
             )
             # 正式行按报名先后展开（joined_at, id 序沿 entry_rows 口径）
@@ -793,6 +799,7 @@ class LiveBook(LiveSweepMixin):
                 state.down = down_eff
             if pairing is not None:
                 state.pairing = pairing
+                game.rotation = pairing
             if doubles is not None:
                 state.doubles = doubles
             if streak_max is not None:

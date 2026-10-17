@@ -2,33 +2,17 @@
    1.2 接线清账：人头/剩坑/人均/forced/名单谓词全改读后端定值（A4 画面不自算），
    本文件只剩文案表、卡面映射（newGameCard）与少量无数据可依的纯展示口径；
    mock 快照族的 isMe/mockGameCard 已随演示世界退役（isMe 归 user store）。 */
-import type {
-  CourtMode,
-  DownMode,
-  Game,
-  GameCardModel,
-  PairingMode,
-} from "@/api/types";
+import type { DownMode, Game, GameCardModel, PairingMode } from "@/api/types";
 import { slots } from "@/api/dict";
 import { isoDay, isoHm, untilTxt } from "@/utils/time";
 
-/** 发牌模式名单一源（原 live.vue/detail.vue 内联 MODE_NAMES 挪出）。2.4 批3 清账：现场域
-    （live 顶条/规则抽屉/store 过渡桥）已停消费，剩 detail 规则牌与 LaunchSheet 规则三件——
-    随 3.2 修订「建局表单废除轮换模式选择」一并退役 */
-export const MODE_NAMES: Record<CourtMode, string> = {
-  winner: "赢家留场",
-  rotate: "纯粹轮转",
-  balance: "均衡配对",
-};
-
-/** 得分规则名单一源（MODE_NAMES 同族）：LaunchSheet 规则三件与 detail 规则牌共用 */
+/** 得分规则名单一源：LaunchSheet 规则三件与 detail 规则牌共用 */
 export const SCORE_RULE_NAMES: Record<"rally" | "serve", string> = {
   rally: "每球得分制",
   serve: "发球得分制",
 };
 
-/** 谁下五式名单一源（2.4 §4.1 四件套之二；单打只有 all/loser）。
-    RulesSheet 谁下段与 LiveTopbar 赛制 chip 消费；与 MODE_NAMES 并列不并入（3.2 面仍消费旧表） */
+/** 谁下五式名单一源（单打只有 all/loser；RulesSheet 谁下段与 LiveTopbar 赛制 chip 消费） */
 export const DOWN_NAMES: Record<DownMode, string> = {
   all: "全上全下",
   loser: "输家下",
@@ -37,13 +21,21 @@ export const DOWN_NAMES: Record<DownMode, string> = {
   n3: "3人下",
 };
 
-/** 怎么配名单一源（仅双打显示） */
+/** 配对规则名单一源（组局 LaunchSheet、详情页规则牌、现场 LiveTopbar 与 RulesSheet 共用） */
 export const PAIRING_NAMES: Record<PairingMode, string> = {
-  queue: "签到顺序", // 2026-10-17 用户裁决改名（原「按候场队序」）：按签到先后排
-  balance: "积分均衡", // （原「均衡配对」）：两边战力最接近
+  queue: "签到顺序", // 按签到先后排
+  balance: "积分均衡", // 两边战力最接近
   partner: "轮换优先",
   even: "胜负均衡",
 };
+
+/** 配对规则分段选项单一源（从 PAIRING_NAMES 键序派生，LaunchSheet 与 RulesSheet 同吃一份） */
+export const PAIRING_OPTS = (Object.keys(PAIRING_NAMES) as PairingMode[]).map(
+  (p) => ({
+    value: p,
+    label: PAIRING_NAMES[p],
+  }),
+);
 
 /** 局分分制三档单一源（原型 seg-score · 11 快节奏/15 标准局/21 马拉松，2.1 照旧保留）：
     真局 RulesSheet 与沙盒 SandboxSheets 规则抽屉同吃一份，改文案只动这里 */

@@ -4,10 +4,10 @@
 import { request } from "./http";
 import type {
   ChibiConfig,
-  CourtMode,
   DirectOpenInput,
   EditGameInput,
   GameStatus,
+  PairingMode,
   PublishGameInput,
   Visibility,
 } from "./types";
@@ -70,7 +70,7 @@ export interface GameViewApi {
   max_players: number;
   visibility: Visibility;
   scoring: number;
-  rotation: CourtMode;
+  rotation: PairingMode;
   score_rule: string;
   manual_lock: boolean;
   courts: string[] | null;

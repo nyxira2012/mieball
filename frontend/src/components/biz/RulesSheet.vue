@@ -98,7 +98,7 @@ import AppField from "@/components/ui/AppField.vue";
 import AppSeg from "@/components/ui/AppSeg.vue";
 import AppStepper from "@/components/ui/AppStepper.vue";
 import { useLiveStore } from "@/stores/live";
-import { DOWN_NAMES, PAIRING_NAMES, SCORE_OPTS } from "@/utils/format";
+import { DOWN_NAMES, PAIRING_OPTS, SCORE_OPTS } from "@/utils/format";
 import type { DownMode, PairingMode } from "@/api/types";
 
 defineProps({
@@ -118,13 +118,6 @@ const SINGLES_OPTS = [
   { value: "doubles", label: "双打" },
   { value: "singles", label: "单打" },
 ];
-/** 怎么配主标 = PAIRING_NAMES 单一源，选项键序直接从它派生——加档动 api/types.ts 的
-    PairingMode 联合 + format.ts 一处名单（Record 编译期逼改，类型联合是第一落点）；
-    不进推荐（§4.2 口味问题，组织者自定） */
-const PAIRING_OPTS = (Object.keys(PAIRING_NAMES) as PairingMode[]).map((p) => ({
-  value: p,
-  label: PAIRING_NAMES[p],
-}));
 
 /** 谁下选项随单双打折半/展开（单打×N人下不合法，store 组合回落兜底） */
 const downOpts = computed<DownMode[]>(() =>

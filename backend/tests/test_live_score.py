@@ -119,12 +119,11 @@ def open_live(
         for i, row in enumerate(rows):
             row.check = "ok"
             row.queue_pos = i
-        if rules:
-            st = db.execute(
-                select(LiveState).where(LiveState.game_id == g["id"])
-            ).scalar_one()
-            for k, v in rules.items():
-                setattr(st, k, v)
+        st = db.execute(
+            select(LiveState).where(LiveState.game_id == g["id"])
+        ).scalar_one()
+        for k, v in ({"down": "all", "pairing": "queue"} | (rules or {})).items():
+            setattr(st, k, v)
         db.commit()
     finally:
         db.close()

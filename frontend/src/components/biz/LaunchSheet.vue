@@ -90,19 +90,19 @@
       <view v-if="toWaitHint" class="ppl-hint ppl-warn">{{ toWaitHint }}</view>
     </AppField>
 
-    <!-- 规则三件（2026-10-04 定：说明字段去掉，改直选分制/轮转/得分规则） -->
-    <AppField label="分制 · 先到 N 且净胜 2">
-      <OptionChips
+    <!-- 规则三件（分制/配对规则与现场 RulesSheet 同用 AppSeg 与同一常量表） -->
+    <AppField label="计分 · 先到 N 且净胜 2">
+      <AppSeg
         :model-value="lf.scoring"
-        :options="SCORES"
+        :options="SCORE_OPTS"
         @update:model-value="lf.scoring = Number($event)"
       />
     </AppField>
-    <AppField label="轮转 · 怎么排人">
-      <OptionChips
+    <AppField label="配对规则 · 怎么排人">
+      <AppSeg
         :model-value="lf.rotation"
-        :options="MODES"
-        @update:model-value="lf.rotation = String($event) as CourtMode"
+        :options="PAIRING_OPTS"
+        @update:model-value="lf.rotation = String($event) as PairingMode"
       />
     </AppField>
     <AppField label="得分规则 · 什么球算分">
@@ -127,6 +127,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import AppField from "@/components/ui/AppField.vue";
 import AppInput from "@/components/ui/AppInput.vue";
 import AppButton from "@/components/ui/AppButton.vue";
+import AppSeg from "@/components/ui/AppSeg.vue";
 import AppStepper from "@/components/ui/AppStepper.vue";
 import OptionChips from "@/components/ui/OptionChips.vue";
 import WheelPicker from "@/components/ui/WheelPicker.vue";
@@ -136,8 +137,14 @@ import { useUiStore } from "@/stores/ui";
 import { useUserStore } from "@/stores/user";
 import VenuePicker from "@/components/biz/VenuePicker.vue";
 import { recordVenue } from "@/utils/venues";
-import type { CourtMode, PublishGameInput, Visibility } from "@/api/types";
-import { MODE_NAMES, SCORE_RULE_NAMES, autoGameName } from "@/utils/format";
+import type { PairingMode, PublishGameInput, Visibility } from "@/api/types";
+import {
+  PAIRING_NAMES,
+  PAIRING_OPTS,
+  SCORE_OPTS,
+  SCORE_RULE_NAMES,
+  autoGameName,
+} from "@/utils/format";
 import { beijingAt, isoDay, isoDayOff, isoParts, toIso } from "@/utils/time";
 import {
   GRID_LABELS,
@@ -164,14 +171,8 @@ const user = useUserStore();
 
 /* ---- 拨盘网格（网格族收在 utils/wheel 单一源，测试直盖；本地只留日期范围） ---- */
 const DAY_N = 14; // 日期范围：今天起 14 天
-/** 规则三件 + 谁能翻到（label 引 MODE_NAMES/SCORE_RULE_NAMES 与 detail/live 同源；
-    可见档文案表落本组件内——技术设计§4 知识落点） */
-const SCORES = [11, 15, 21];
-const MODES: Array<{ value: CourtMode; label: string }> = [
-  { value: "balance", label: MODE_NAMES.balance },
-  { value: "winner", label: MODE_NAMES.winner },
-  { value: "rotate", label: MODE_NAMES.rotate },
-];
+/** 规则三件 + 谁能翻到（SCORE_OPTS/PAIRING_OPTS/SCORE_RULE_NAMES 与 detail/live 同源；
+    可见档文案表落本组件内） */
 const SCORE_RULES = [
   { value: "rally", label: SCORE_RULE_NAMES.rally },
   { value: "serve", label: SCORE_RULE_NAMES.serve },
@@ -202,7 +203,7 @@ const lf = reactive({
   cap: 6,
   visibility: "played" as Visibility,
   scoring: 15,
-  rotation: "balance" as CourtMode,
+  rotation: "partner" as PairingMode,
   scoreRule: "rally" as "rally" | "serve",
 });
 
@@ -372,7 +373,7 @@ function init(): void {
   lf.min = ed ? ed.minPlayers : 4;
   lf.cap = ed ? ed.maxPlayers : 6;
   lf.scoring = ed ? ed.scoring : 15;
-  lf.rotation = ed ? ed.rotation : "balance";
+  lf.rotation = ed && ed.rotation in PAIRING_NAMES ? ed.rotation : "partner";
   lf.scoreRule = ed?.scoreRule === "serve" ? "serve" : "rally";
   if (ed) {
     // 走查#1 收口：编辑回填按北京墙钟取数（此前 new Date(iso).getHours() 吃设备时区，非东八区机器回填漂 3 小时）

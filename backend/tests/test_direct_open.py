@@ -30,8 +30,8 @@ def test_direct_open_defaults_and_opened_live(client: TestClient):
     assert g["source"] == "direct" and g["forced"] is True
     assert g["visibility"] == "invite_only" and g["live_opened"] is True
     assert g["status"] == "live" and g["heads"] == 1
-    # 规则默认（2026-10-17 裁决）：15 分、2人下、轮换优先——对齐组局页默认口径
-    assert g["scoring"] == 15
+    # 规则默认（2026-10-17 裁决）：15 分、2人下、轮换优先——局与现场同源
+    assert g["scoring"] == 15 and g["rotation"] == "partner"
     v = live_get(client, gid, org["token"])
     assert v["rules"]["scoring"] == 15
     assert v["rules"]["down"] == "n2" and v["rules"]["pairing"] == "partner"

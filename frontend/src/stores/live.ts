@@ -167,7 +167,7 @@ function stubGame(v: LiveView): Game {
     maxPlayers: 0,
     visibility: "public",
     scoring: v.rules.scoring,
-    rotation: "winner",
+    rotation: v.rules.pairing,
     scoreRule: "",
     manualLock: false,
     courts: null,
@@ -1138,7 +1138,12 @@ export const useLiveStore = defineStore("live", () => {
         .filter((p) => p.courtNo === no && p.courtSide === side)
         .map((p) => p.id);
     const L: LiveState = {
-      g: { ...src, courts: names, scoring: v.rules.scoring },
+      g: {
+        ...src,
+        courts: names,
+        scoring: v.rules.scoring,
+        rotation: v.rules.pairing,
+      },
       roster,
       queue: [...v.queue],
       courts: v.courts.map((c) => ({
