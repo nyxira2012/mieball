@@ -176,21 +176,31 @@ function ensureWxReady(): Promise<WxSdk> {
 /** 上次成功登记的卡片指纹（JSON 串）：同内容不重登的账本，失败不记 */
 let lastRegisteredFp: string | null = null;
 
-/** 登记本页分享卡：不在微信直接返回；在微信里 config 就绪后两个 update 一起调
-    （朋友卡全四件、朋友圈卡只 title/link/imgUrl——朋友圈没有描述行，微信的规矩）。
+/** 登记意图流水号：号在「页面意图诞生」（register 被调）那一刻领，写入前核——
+    等待期间又来了更新的登记（同页 watch 连触发 / 跨页跳转），旧意图自己作废。
+    「最新页面的意图赢」由此成为模块保证，页面不用自己传 token 对账 */
+let intentSeq = 0;
+
+/** 登记本页分享卡：收「怎么拼卡」（make）而不是拼好的卡——原料取数（拉场数/
+    补局名）挪进 make 并行等，且 make 只在微信内才执行（done 局微信外不白拉
+    战报视图）。不在微信直接返回（领号之前，非微信领号毫无意义）；在微信里
+    config 就绪 + 卡拼好后，先核号再写：号不等了才作废旧意图，谁新谁赢——
+    同页双拉谁后回谁写的「兜底句盖真句」就断在这。
     同内容不重登：卡片 JSON 指纹等于上次成功登记的指纹就直接返回——done 局详情
     onLoad+onShow 双拉、现场页轮询重建都会喂来一模一样的卡，SDK 侧重复登记纯浪费；
     指纹只在两个 update 都落地后才记，中途失败不记，下次照常重试。
-    任何一步失败 catch 静默——转出去退微信默认样，不弹错不打扰；签名请求只在
-    微信内才发，开发期零噪声。 */
+    任何一步失败（make 抛错也算「这次原料没拿到，不登记」）catch 静默——转出去
+    退微信默认样，不弹错不打扰；签名请求只在微信内才发，开发期零噪声。 */
 export async function registerWechatShare(
-  card: WechatShareCard,
+  make: () => WechatShareCard | Promise<WechatShareCard>,
 ): Promise<void> {
   if (!isWeChatBrowser()) return;
-  const fp = JSON.stringify(card); // 卡片都经 buildShareCard 产出，键序固定，串即指纹
-  if (fp === lastRegisteredFp) return;
+  const mine = ++intentSeq;
   try {
-    const wx = await ensureWxReady();
+    const [wx, card] = await Promise.all([ensureWxReady(), make()]);
+    if (mine !== intentSeq) return; // 期间有更新的意图，本次作废
+    const fp = JSON.stringify(card); // 卡片都经 buildShareCard 产出，键序固定，串即指纹
+    if (fp === lastRegisteredFp) return;
     wx.updateAppMessageShareData(card);
     wx.updateTimelineShareData({
       title: card.title,

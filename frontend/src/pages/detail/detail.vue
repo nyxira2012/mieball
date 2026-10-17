@@ -356,7 +356,6 @@ import { goLive, goRecap } from "@/utils/nav";
 import { gameShareUrl } from "@/utils/deeplink";
 import { shareLink } from "@/utils/share";
 import { buildShareCard, registerWechatShare } from "@/utils/wechatShare";
-import { isWeChatBrowser } from "@/utils/wechat";
 import { DEAD_LINK_MSG } from "@/utils/recap";
 import { useSlowHint } from "@/composables/useSlowHint";
 
@@ -479,16 +478,17 @@ const rosterCount = computed(
 );
 
 /* 微信分享卡登记：局一到手就登记，onShow 重拉详情 → watch 重触发=重登记
-   （信息更新跟着换卡面）。登记只在微信内有意义——首行先判环境，微信外整段
-   跳过（免得 done 局白拉一次战报视图）。done 局详情页手里没有场数——先拉一次
-   战报视图取 matches 数，拉不到（没开过账就终止的局等）落「已散场 · 看看谁赢了」
-   兜底句 */
+   （信息更新跟着换卡面）。环境判定收在 registerWechatShare 入口、make 只在
+   微信内才执行——微信外整段跳过，done 局连战报视图都不白拉。done 局详情页
+   手里没有场数——make 里拉一次战报视图取 matches 数，拉不到（没开过账就
+   终止的局等）落「已散场 · 看看谁赢了」兜底句。取数放进 make：登记意图
+   诞生即领号，onLoad+onShow 双拉并发时慢回的旧意图由模块作废，兜底句盖
+   不掉真句 */
 watch(
   game,
   (g) => {
-    if (!isWeChatBrowser()) return;
     if (!g) return;
-    void (async () => {
+    void registerWechatShare(async () => {
       let matchCount: number | null = null;
       if (g.status === "done") {
         try {
@@ -497,20 +497,18 @@ watch(
           matchCount = null;
         }
       }
-      registerWechatShare(
-        buildShareCard(
-          {
-            name: g.name,
-            status: g.status,
-            startAt: g.startAt,
-            venueName: g.venueName,
-            heads: rosterCount.value,
-            matchCount,
-          },
-          gameShareUrl(g.id),
-        ),
+      return buildShareCard(
+        {
+          name: g.name,
+          status: g.status,
+          startAt: g.startAt,
+          venueName: g.venueName,
+          heads: rosterCount.value,
+          matchCount,
+        },
+        gameShareUrl(g.id),
       );
-    })();
+    });
   },
   { immediate: true },
 );

@@ -138,23 +138,22 @@ function onShare(): void {
 
 /* 微信分享卡登记：门牌视图落位就登记场数句。局名不在战报视图里——
    resolveGameName 收口（局簿现成取/冷链补拉/泛称兜底，wechatShare 单一源），
-   不拦登记 */
+   不拦登记。补拉局名放进 make：登记意图诞生即领号，从详情页跳来时旧页/旧
+   触发的慢回意图由模块作废，盖不掉本页的卡 */
 watch(
   view,
   (v) => {
     if (!v) return;
-    void (async () => {
-      registerWechatShare(
-        buildShareCard(
-          {
-            name: await resolveGameName(gameStore, gameId),
-            status: "done",
-            matchCount: v.matches.length,
-          },
-          gameShareUrl(gameId),
-        ),
+    void registerWechatShare(async () => {
+      return buildShareCard(
+        {
+          name: await resolveGameName(gameStore, gameId),
+          status: "done",
+          matchCount: v.matches.length,
+        },
+        gameShareUrl(gameId),
       );
-    })();
+    });
   },
   { immediate: true },
 );

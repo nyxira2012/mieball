@@ -480,37 +480,36 @@ watch(
 );
 
 /* ---------- 微信分享卡登记 ---------- */
-/* 进行中：随总账更新重登记——L 只在视图真变（totalSeq 推进/写动作）时整树重建，
+/* 现场页是 tab 常驻页：逛去别页（约球/详情）时那边登记的卡会把本页的盖掉，
+   切回来 onShow 不会动 L/recap、watch 天然不重跑——shown 计数把「本页露面」
+   纳进两处 watch 的触发源，露面即重申；同内容去重兜着，重申几乎零成本。
+   进行中：随总账更新重登记——L 只在视图真变（totalSeq 推进/写动作）时整树重建，
    空拍 204 不触发，天然不会 3s 重登一遍。stub 兜底局（组织者 id<0 印记）局名是
-   占位「现场」——补拉详情换真名，拉不到这次不登记，下次触发再试。
+   占位「现场」——补拉详情换真名，拉不到在 make 里 throw（register 静默吞掉），
+   这次不登记，下次触发再试。
    教学沙盒不登记：示例局零真人数据，且 live store 为空时 watch 天然不触发 */
+const shown = ref(0);
 watch(
-  () => L.value,
-  (live) => {
+  [() => shown.value, () => L.value],
+  ([, live]) => {
     if (!live || live.endedAt) return; // 已散场走下面 recap 那路
     const g = live.g;
-    void (async () => {
+    void registerWechatShare(async () => {
       let name = g.name;
       if (g.organizer.id < 0) {
-        try {
-          name = (await gameStore.loadDetail(g.id)).name;
-        } catch {
-          return;
-        }
+        name = (await gameStore.loadDetail(g.id)).name; // 拉不到自然 throw，见上
       }
-      registerWechatShare(
-        buildShareCard(
-          {
-            name,
-            status: g.status,
-            startAt: g.startAt,
-            venueName: g.venueName,
-            heads: g.liveHeads ?? g.heads,
-          },
-          gameShareUrl(g.id),
-        ),
+      return buildShareCard(
+        {
+          name,
+          status: g.status,
+          startAt: g.startAt,
+          venueName: g.venueName,
+          heads: g.liveHeads ?? g.heads,
+        },
+        gameShareUrl(g.id),
       );
-    })();
+    });
   },
   { immediate: true },
 );
@@ -518,22 +517,20 @@ watch(
    局名 L.g 真局优先，L 缺席或 stub 局让位 resolveGameName——冷启动散场窗口
    也补拉真名，与 recap 子页同口径（wechatShare 单一源） */
 watch(
-  () => liveStore.recap,
-  (r) => {
+  [() => shown.value, () => liveStore.recap],
+  ([, r]) => {
     if (!r) return;
-    const g = L.value?.g;
-    void (async () => {
+    void registerWechatShare(async () => {
+      const g = L.value?.g;
       const name =
         g && g.organizer.id >= 0
           ? g.name
           : await resolveGameName(gameStore, r.gameId);
-      registerWechatShare(
-        buildShareCard(
-          { name, status: "done", matchCount: r.matches.length },
-          gameShareUrl(r.gameId),
-        ),
+      return buildShareCard(
+        { name, status: "done", matchCount: r.matches.length },
+        gameShareUrl(r.gameId),
       );
-    })();
+    });
   },
   { immediate: true },
 );
@@ -563,6 +560,7 @@ onShow(() => {
      退到 pick，正常到不了这里；轮询本身不用管：进教学不经 onHide，已活的轮询照跑，
      教学只是渲染层接管） */
   if (sandbox.mode !== "pick") return;
+  shown.value++; // 露面即重申分享卡（别页登记会盖掉本页的；同内容去重，几乎零成本）
   if (liveStore.hasLive) {
     liveStore.pendingLiveId = null; // 已开分支不接新局，信号位一并兜底清（残留不跨状态）
     // 回前台续轮询（onHide 停的；同局幂等不重开）；回看态是定格视图，轮询无意义（2.6）
