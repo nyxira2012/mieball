@@ -330,8 +330,8 @@
 
 <script setup lang="ts">
 /* 球局详情（1.2 接线修订面）。数据源 = game store 的 loadDetail/current；
-   分享 = 系统分享面板优先、复制链接兜底（微信自定义卡片待服务号资质）；
-   「到截止判定」手动按钮退役（懒判定归后端）。 */
+   分享 = 系统分享面板优先、复制链接兜底，微信内走右上角「···」转出已登记的
+   自定义分享卡（见下方 watch 登记）；「到截止判定」手动按钮退役（懒判定归后端）。 */
 import { computed, ref, watch } from "vue";
 import { onLoad, onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
@@ -356,6 +356,7 @@ import { goLive, goRecap } from "@/utils/nav";
 import { gameShareUrl } from "@/utils/deeplink";
 import { shareLink } from "@/utils/share";
 import { buildShareCard, registerWechatShare } from "@/utils/wechatShare";
+import { isWeChatBrowser } from "@/utils/wechat";
 import { DEAD_LINK_MSG } from "@/utils/recap";
 import { useSlowHint } from "@/composables/useSlowHint";
 
@@ -478,11 +479,14 @@ const rosterCount = computed(
 );
 
 /* 微信分享卡登记：局一到手就登记，onShow 重拉详情 → watch 重触发=重登记
-   （信息更新跟着换卡面）。done 局详情页手里没有场数——先拉一次战报视图取
-   matches 数，拉不到（没开过账就终止的局等）落「已散场 · 看看谁赢了」兜底句 */
+   （信息更新跟着换卡面）。登记只在微信内有意义——首行先判环境，微信外整段
+   跳过（免得 done 局白拉一次战报视图）。done 局详情页手里没有场数——先拉一次
+   战报视图取 matches 数，拉不到（没开过账就终止的局等）落「已散场 · 看看谁赢了」
+   兜底句 */
 watch(
   game,
   (g) => {
+    if (!isWeChatBrowser()) return;
     if (!g) return;
     void (async () => {
       let matchCount: number | null = null;
@@ -567,8 +571,8 @@ const ruleName = computed(() => {
 const meId = computed(() => useUserStore().me.id);
 
 /** 分享（2026-10-12 三处统一：详情页/战报子页/现场散场门牌都发这一条详情链接，
-    兜底提示走 shareLink 默认句「链接已复制 · 访客可看」；系统面板→复制兜底的
-    降级链在 utils/share 单一源，微信内复制+指路右上角） */
+    兜底提示走 shareLink 默认句——微信内的默认句多带「发卡片点右上角」指路；
+    系统面板→复制兜底的降级链在 utils/share 单一源） */
 const onShare = () => {
   if (!game.value) return; // 按钮只在 game 态渲染，这里防异步窗口错位
   void shareLink(gameShareUrl(game.value.id), game.value.name);

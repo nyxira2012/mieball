@@ -6,8 +6,9 @@
 import { copyWithToast } from "./clipboard";
 import { isWeChatBrowser } from "./wechat";
 
-/** 微信内复制提示语：保住「访客可看」知情小字，后半句指路卡片出口（复制≠卡片） */
-export const WECHAT_COPY_MSG = "链接已复制 · 访客可看 · 发卡片点右上角 ···";
+/** 微信内复制提示语：保住「访客可看」知情小字，后半句指路卡片出口（复制≠卡片）。
+    仅模块内消费——测试刻意钉字面量，不 import 这里 */
+const WECHAT_COPY_MSG = "链接已复制 · 访客可看 · 发卡片点右上角 ···";
 
 /** 分享链接：navigator.share 优先（AbortError=用户取消，静默）→ 复制链接兜底，
     其余分流细节不外泄。兜底提示带「访客可看」知情小字（2.6 §6；详情链接
