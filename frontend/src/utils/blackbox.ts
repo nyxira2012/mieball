@@ -43,14 +43,16 @@ export function trackNav(url: string): void {
 }
 
 /** 核心动作（6.1 §8 评审裁决：核心动作=全部 POST，与审计清单同源口径）：POST 才记、
-    GET 零记录防心跳/刷新刷屏——判定收在黑匣子，http 调用点免各自把关 */
+    GET 零记录防心跳/刷新刷屏——判定收在黑匣子，http 调用点免各自把关。
+    "WX" 白名单：微信分享登记不经 http（wx SDK 直连），同为一次性动作、无心跳可
+    刷屏——被 POST 门闸一并挡掉的话，登记成功留痕在真机上一条都落不下 */
 export function trackAct(
   method: string,
   path: string,
   ok: boolean,
   code?: string,
 ): void {
-  if (method !== "POST") return;
+  if (method !== "POST" && method !== "WX") return;
   append("act", `${method} ${path} → ${ok ? "ok" : `fail:${code ?? "?"}`}`);
 }
 

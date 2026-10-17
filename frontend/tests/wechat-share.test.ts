@@ -1,13 +1,15 @@
 /* 微信分享卡（2.10 §5 验收/附录 A4）单测：cardDesc 六态锁句 + buildShareCard
    + registerWechatShare 登记。jweixin 注入零真网络——document/location/wx 全用
-   vi.stubGlobal 假装（wechat.test.ts 先例）；api/auth 整体 mock。
+   vi.stubGlobal 假装（wechat.test.ts 先例）；api/auth 与黑匣子整体 mock。
    register 的模块级缓存（jweixin/config promise）按测试隔离：vi.resetModules
    + 动态 import 拿干净实例。 */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const authApi = vi.hoisted(() => ({ apiWechatJsapiSign: vi.fn() }));
+const blackbox = vi.hoisted(() => ({ trackErr: vi.fn(), trackAct: vi.fn() }));
 
 vi.mock("@/api/auth", () => authApi);
+vi.mock("@/utils/blackbox", () => blackbox);
 
 import { buildShareCard, cardDesc } from "@/utils/wechatShare";
 
@@ -203,6 +205,81 @@ describe("registerWechatShare（登记编排）", () => {
     });
     await registerWechatShare(() => CARD);
     expect(wx.updateAppMessageShareData).toHaveBeenCalledTimes(1);
+  });
+
+  it("wx.config 失败：微信原话落黑匣子 wx_config_fail，两个 update 不调", async () => {
+    const wx = {
+      config: vi.fn(),
+      ready: vi.fn(),
+      // error 回调即刻回话失败（invalid signature 是签名/地址口径错的典型原话）
+      error: vi.fn((fn: (res: unknown) => void) =>
+        fn({ errMsg: "config:fail,invalid signature" }),
+      ),
+      updateAppMessageShareData: vi.fn(),
+      updateTimelineShareData: vi.fn(),
+    };
+    stubWechatEnv(wx);
+    authApi.apiWechatJsapiSign.mockResolvedValue({
+      app_id: "wx1",
+      timestamp: 123,
+      nonce_str: "n",
+      signature: "sig",
+    });
+    const { registerWechatShare } = await fresh();
+    await expect(registerWechatShare(() => CARD)).resolves.toBeUndefined();
+    expect(blackbox.trackErr).toHaveBeenCalledWith(
+      "wx_config_fail",
+      "config:fail,invalid signature",
+    );
+    expect(wx.updateAppMessageShareData).not.toHaveBeenCalled();
+    expect(wx.updateTimelineShareData).not.toHaveBeenCalled();
+  });
+
+  it("jweixin 注入 onerror：wx_sdk_load 落黑匣子，签名请求与 update 都不碰", async () => {
+    vi.stubGlobal("navigator", { userAgent: "MicroMessenger/8.0.49" });
+    vi.stubGlobal("location", {
+      href: "https://x.y/#/pages/detail/detail?id=5",
+      origin: "https://x.y",
+    });
+    vi.stubGlobal("document", {
+      createElement: () => ({ src: "", onload: null, onerror: null }),
+      head: {
+        appendChild: (s: { onerror?: (() => void) | null }) => s.onerror?.(),
+      },
+    });
+    const { registerWechatShare } = await fresh();
+    await expect(registerWechatShare(() => CARD)).resolves.toBeUndefined();
+    expect(blackbox.trackErr).toHaveBeenCalledWith(
+      "wx_sdk_load",
+      "jweixin-load-fail",
+    );
+    expect(authApi.apiWechatJsapiSign).not.toHaveBeenCalled();
+  });
+
+  it("登记成功：黑匣子记 trackAct(WX, share_registered, true) 恰一次（同卡去重不重复记）", async () => {
+    const wx = {
+      config: vi.fn(),
+      ready: vi.fn((fn: () => void) => fn()),
+      error: vi.fn(),
+      updateAppMessageShareData: vi.fn(),
+      updateTimelineShareData: vi.fn(),
+    };
+    stubWechatEnv(wx);
+    authApi.apiWechatJsapiSign.mockResolvedValue({
+      app_id: "wx1",
+      timestamp: 123,
+      nonce_str: "n",
+      signature: "sig",
+    });
+    const { registerWechatShare } = await fresh();
+    await registerWechatShare(() => CARD);
+    await registerWechatShare(() => CARD);
+    expect(blackbox.trackAct).toHaveBeenCalledTimes(1);
+    expect(blackbox.trackAct).toHaveBeenCalledWith(
+      "WX",
+      "share_registered",
+      true,
+    );
   });
 
   it("同一地址只签一次：换卡重登吃 config 缓存，签名零新请求、update 照常", async () => {

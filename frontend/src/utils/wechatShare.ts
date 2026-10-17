@@ -3,6 +3,9 @@
    零 Vue import（utils 不碰框架，同 share.ts 先例）。 */
 import { apiWechatJsapiSign } from "@/api/auth";
 import type { GameStatus } from "@/api/types";
+/* 排障留痕落本地黑匣子：手机端 wx.config / SDK 注入失败不经任何网络请求，后端
+   日志完全看不见，黑匣子是唯一取证口（「我的」页一键导出即查） */
+import { trackAct, trackErr } from "./blackbox";
 import { isoDay, isoHm } from "./time";
 import { isWeChatBrowser } from "./wechat";
 
@@ -117,10 +120,10 @@ let jweixinPromise: Promise<WxSdk> | null = null;
 function loadJweixin(): Promise<WxSdk> {
   jweixinPromise ??= new Promise<WxSdk>((resolve, reject) => {
     const s = document.createElement("script");
-    const timer = setTimeout(
-      () => reject(new Error("jweixin-timeout")),
-      JWEIXIN_TIMEOUT_MS,
-    );
+    const timer = setTimeout(() => {
+      trackErr("wx_sdk_load", "jweixin-timeout");
+      reject(new Error("jweixin-timeout"));
+    }, JWEIXIN_TIMEOUT_MS);
     s.onload = () => {
       clearTimeout(timer);
       /* uni-app H5 运行时把 window.wx 占成 uni 的别名（可写可配置、无 config
@@ -130,10 +133,14 @@ function loadJweixin(): Promise<WxSdk> {
       const g = globalThis as unknown as { wx?: WxSdk; jWeixin?: WxSdk };
       const sdk = g.jWeixin ?? g.wx;
       if (sdk && typeof sdk.config === "function") resolve(sdk);
-      else reject(new Error("jweixin-missing"));
+      else {
+        trackErr("wx_sdk_load", "jweixin-missing");
+        reject(new Error("jweixin-missing"));
+      }
     };
     s.onerror = () => {
       clearTimeout(timer);
+      trackErr("wx_sdk_load", "jweixin-load-fail");
       reject(new Error("jweixin-load-fail"));
     };
     s.src = JWEIXIN_SRC;
@@ -163,7 +170,15 @@ function ensureWxReady(): Promise<WxSdk> {
         jsApiList: ["updateAppMessageShareData", "updateTimelineShareData"],
       });
       wx.ready(resolve);
-      wx.error(() => reject(new Error("wx-config-fail")));
+      wx.error((res) => {
+        // 微信原话（invalid signature / invalid url domain / permission denied…）
+        // 是分辨 config 失败种类的唯一线索，原样留进黑匣子再拒
+        trackErr(
+          "wx_config_fail",
+          (res as { errMsg?: string })?.errMsg ?? String(res),
+        );
+        reject(new Error("wx-config-fail"));
+      });
     });
     return wx;
   })().catch((e) => {
@@ -208,7 +223,9 @@ export async function registerWechatShare(
       imgUrl: card.imgUrl,
     });
     lastRegisteredFp = fp;
+    // 登记成功记一笔：有这条而线上仍是裸链接，即可排除「没登记上」，矛头指向 link/img/权限
+    trackAct("WX", "share_registered", true);
   } catch {
-    /* 静默降级（埋点在 http 层，够排障） */
+    /* 静默降级：签名失败由 http 层留痕，SDK/config 失败已在 reject 前落黑匣子 */
   }
 }
