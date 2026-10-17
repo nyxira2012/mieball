@@ -63,7 +63,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import AppButton from "@/components/ui/AppButton.vue";
@@ -74,6 +74,11 @@ import { useGameStore } from "@/stores/game";
 import type { LiveView } from "@/api/types";
 import { shareLink } from "@/utils/share";
 import { gameShareUrl } from "@/utils/deeplink";
+import {
+  buildShareCard,
+  registerWechatShare,
+  resolveGameName,
+} from "@/utils/wechatShare";
 import { DEAD_LINK_MSG } from "@/utils/recap";
 import { goBackOrMeet, goMeet } from "@/utils/nav";
 
@@ -130,6 +135,29 @@ function onShare(): void {
   if (!view.value) return;
   void shareLink(gameShareUrl(gameId), "球局战报");
 }
+
+/* 微信分享卡登记：门牌视图落位就登记场数句。局名不在战报视图里——
+   resolveGameName 收口（局簿现成取/冷链补拉/泛称兜底，wechatShare 单一源），
+   不拦登记 */
+watch(
+  view,
+  (v) => {
+    if (!v) return;
+    void (async () => {
+      registerWechatShare(
+        buildShareCard(
+          {
+            name: await resolveGameName(gameStore, gameId),
+            status: "done",
+            matchCount: v.matches.length,
+          },
+          gameShareUrl(gameId),
+        ),
+      );
+    })();
+  },
+  { immediate: true },
+);
 </script>
 
 <style lang="scss" scoped>

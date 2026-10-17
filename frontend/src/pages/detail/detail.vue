@@ -332,7 +332,7 @@
 /* 球局详情（1.2 接线修订面）。数据源 = game store 的 loadDetail/current；
    分享 = 系统分享面板优先、复制链接兜底（微信自定义卡片待服务号资质）；
    「到截止判定」手动按钮退役（懒判定归后端）。 */
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { onLoad, onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
 import BackRow from "@/components/biz/BackRow.vue";
@@ -343,6 +343,7 @@ import NoteCard from "@/components/ui/NoteCard.vue";
 import { useGameStore } from "@/stores/game";
 import { useUserStore } from "@/stores/user";
 import { useUiStore } from "@/stores/ui";
+import { apiLiveView } from "@/api/live";
 import {
   cardLiveEntry,
   isOrg,
@@ -354,6 +355,7 @@ import { durTxt, isoDay, isoHm } from "@/utils/time";
 import { goLive, goRecap } from "@/utils/nav";
 import { gameShareUrl } from "@/utils/deeplink";
 import { shareLink } from "@/utils/share";
+import { buildShareCard, registerWechatShare } from "@/utils/wechatShare";
 import { DEAD_LINK_MSG } from "@/utils/recap";
 import { useSlowHint } from "@/composables/useSlowHint";
 
@@ -475,6 +477,40 @@ const rosterCount = computed(
   () => game.value?.liveHeads ?? game.value?.heads ?? 0,
 );
 
+/* 微信分享卡登记：局一到手就登记，onShow 重拉详情 → watch 重触发=重登记
+   （信息更新跟着换卡面）。done 局详情页手里没有场数——先拉一次战报视图取
+   matches 数，拉不到（没开过账就终止的局等）落「已散场 · 看看谁赢了」兜底句 */
+watch(
+  game,
+  (g) => {
+    if (!g) return;
+    void (async () => {
+      let matchCount: number | null = null;
+      if (g.status === "done") {
+        try {
+          matchCount = (await apiLiveView(g.id)).matches.length;
+        } catch {
+          matchCount = null;
+        }
+      }
+      registerWechatShare(
+        buildShareCard(
+          {
+            name: g.name,
+            status: g.status,
+            startAt: g.startAt,
+            venueName: g.venueName,
+            heads: rosterCount.value,
+            matchCount,
+          },
+          gameShareUrl(g.id),
+        ),
+      );
+    })();
+  },
+  { immediate: true },
+);
+
 /* 局名首个 ' · ' 断行 */
 const brandA = computed(() => {
   if (!game.value) return "";
@@ -532,7 +568,7 @@ const meId = computed(() => useUserStore().me.id);
 
 /** 分享（2026-10-12 三处统一：详情页/战报子页/现场散场门牌都发这一条详情链接，
     兜底提示走 shareLink 默认句「链接已复制 · 访客可看」；系统面板→复制兜底的
-    降级链在 utils/share 单一源，微信自定义卡片维持挂起待服务号资质） */
+    降级链在 utils/share 单一源，微信内复制+指路右上角） */
 const onShare = () => {
   if (!game.value) return; // 按钮只在 game 态渲染，这里防异步窗口错位
   void shareLink(gameShareUrl(game.value.id), game.value.name);

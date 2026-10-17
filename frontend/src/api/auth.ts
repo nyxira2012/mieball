@@ -198,6 +198,21 @@ export function apiPhoneBind(
   return request("POST", "/auth/phone/bind", { phone, code });
 }
 
+/* ---- 微信 JS-SDK 签名（分享卡登记用；与上面的登录钥匙非同族——无鉴权，页面打开即调） ---- */
+
+/** 签名响应（线上 snake_case 直出，四键镜像后端 jsapi 签证处） */
+export interface WechatJsapiSign {
+  app_id: string;
+  timestamp: number;
+  nonce_str: string;
+  signature: string;
+}
+
+/** 要一页的 JS-SDK 签名：url 是去掉 hash 的页面地址（SPA 全站同址，签一次全站能用） */
+export function apiWechatJsapiSign(url: string): Promise<WechatJsapiSign> {
+  return request("GET", `/wechat/jsapi_sign?url=${encodeURIComponent(url)}`);
+}
+
 /* ---- 微信钥匙（1.7）——请求字段逐字镜像 auth.py，规则全在 stores/session 与后端 ---- */
 
 /** 要授权地址（A4：地址后端拼好，画面只管跳） */

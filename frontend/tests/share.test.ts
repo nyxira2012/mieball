@@ -58,6 +58,22 @@ describe("shareLink（分享分层：系统面板优先，复制兜底）", () =
     );
   });
 
+  it("微信内：不走系统面板（微信里没有），复制+指路右上角（2.10 场景 4.4）", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", {
+      userAgent: "Mozilla/5.0 ... MicroMessenger/8.0.49",
+      share,
+    });
+    await shareLink("https://x.y/detail?id=1", "球局详情");
+    expect(share).not.toHaveBeenCalled();
+    /* 断言钉规格字面量（2.10 场景 4.4 附录 A4 同句）不吃常量——常量改错字
+       要红在这里，不让测试跟常量一起漂 */
+    expect(clipboard.copyWithToast).toHaveBeenCalledWith(
+      "https://x.y/detail?id=1",
+      "链接已复制 · 访客可看 · 发卡片点右上角 ···",
+    );
+  });
+
   it("无 navigator.share：直接复制兜底（默认句同上）", async () => {
     vi.stubGlobal("navigator", {});
     await shareLink("https://x.y/r?id=1", "t");

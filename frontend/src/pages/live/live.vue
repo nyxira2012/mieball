@@ -250,6 +250,11 @@ import { useSandboxStore } from "@/stores/sandbox";
 import { goMeet } from "@/utils/nav";
 import { shareLink } from "@/utils/share";
 import { gameShareUrl } from "@/utils/deeplink";
+import {
+  buildShareCard,
+  registerWechatShare,
+  resolveGameName,
+} from "@/utils/wechatShare";
 import { DEAD_LINK_MSG } from "@/utils/recap";
 import { CARD_TITLES, TEACH_OV_TITLE } from "@/sandbox/data";
 
@@ -472,6 +477,65 @@ watch(
   (n, o) => {
     if (n != null && o != null && n > o) ui.burst(56);
   },
+);
+
+/* ---------- 微信分享卡登记 ---------- */
+/* 进行中：随总账更新重登记——L 只在视图真变（totalSeq 推进/写动作）时整树重建，
+   空拍 204 不触发，天然不会 3s 重登一遍。stub 兜底局（组织者 id<0 印记）局名是
+   占位「现场」——补拉详情换真名，拉不到这次不登记，下次触发再试。
+   教学沙盒不登记：示例局零真人数据，且 live store 为空时 watch 天然不触发 */
+watch(
+  () => L.value,
+  (live) => {
+    if (!live || live.endedAt) return; // 已散场走下面 recap 那路
+    const g = live.g;
+    void (async () => {
+      let name = g.name;
+      if (g.organizer.id < 0) {
+        try {
+          name = (await gameStore.loadDetail(g.id)).name;
+        } catch {
+          return;
+        }
+      }
+      registerWechatShare(
+        buildShareCard(
+          {
+            name,
+            status: g.status,
+            startAt: g.startAt,
+            venueName: g.venueName,
+            heads: g.liveHeads ?? g.heads,
+          },
+          gameShareUrl(g.id),
+        ),
+      );
+    })();
+  },
+  { immediate: true },
+);
+/* 散场门牌：recap 落位换场数句（盖过进行中那次登记——转出去说的是战报）。
+   局名 L.g 真局优先，L 缺席或 stub 局让位 resolveGameName——冷启动散场窗口
+   也补拉真名，与 recap 子页同口径（wechatShare 单一源） */
+watch(
+  () => liveStore.recap,
+  (r) => {
+    if (!r) return;
+    const g = L.value?.g;
+    void (async () => {
+      const name =
+        g && g.organizer.id >= 0
+          ? g.name
+          : await resolveGameName(gameStore, r.gameId);
+      registerWechatShare(
+        buildShareCard(
+          { name, status: "done", matchCount: r.matches.length },
+          gameShareUrl(r.gameId),
+        ),
+      );
+    })();
+  },
+  { immediate: true },
 );
 
 /* ---------- 深链与生命周期 ---------- */
