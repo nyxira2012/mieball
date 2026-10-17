@@ -39,8 +39,8 @@ export const DOWN_NAMES: Record<DownMode, string> = {
 
 /** 怎么配名单一源（仅双打显示） */
 export const PAIRING_NAMES: Record<PairingMode, string> = {
-  queue: "按候场队序",
-  balance: "均衡配对",
+  queue: "签到顺序", // 2026-10-17 用户裁决改名（原「按候场队序」）：按签到先后排
+  balance: "积分均衡", // （原「均衡配对」）：两边战力最接近
   partner: "轮换优先",
   even: "胜负均衡",
 };
@@ -53,11 +53,24 @@ export const SCORE_OPTS = [
   { value: 21, label: "21", sub: "马拉松" },
 ];
 
-/** 场地显示名单一源（登记的「3号」→「3号场」；已带「场」不重复加）——
+/** 场地显示名单一源：不管库里存的是「16」「16号」还是「16号场」，一律显示「16号场」——
+    各写入路径的场地名口径历史上不一致（订场原样存/顶条直填补号/直开场缺省带号），
+    展示侧在此一刀收口，写入路径不必迁移。名字本就以「场」结尾的（如「中央场」）原样保留。
     打球页对局卡/空闲卡与终局结算弹窗 kicker 共用。
     原 courtLabel(courts, idx)（另含序号兜底语义）自诞生起零消费，随 2.4 批2 删除，「+场」语义收编至此。 */
 export const courtDisplayName = (name: string): string =>
-  name.endsWith("场") ? name : `${name}场`;
+  name.endsWith("场")
+    ? name
+    : name.endsWith("号")
+      ? `${name}场`
+      : `${name}号场`;
+
+/** 顶条「打球场地」短标签单一源：["16号","5号"] →「16、5号场」（共用尾缀只说一遍）。
+    空数组回「—」（顶条格子无场可显的兜底）。 */
+export const courtsShortLabel = (courts: string[]): string =>
+  courts.length
+    ? `${courts.map((c) => c.replace(/(?:号)?场?$/, "")).join("、")}号场`
+    : "—";
 
 /** 是否组织者（真局看 viewer 块定值；游客无 my 恒 false） */
 export const isOrg = (g: Game): boolean => !!g.my?.isOrganizer;
@@ -140,7 +153,7 @@ export function newGameCard(g: Game): GameCardModel {
     maxPlayers: g.maxPlayers,
     slotsLeft: g.slotsLeft,
     timeSub: g.courts?.length
-      ? g.courts.join("·")
+      ? g.courts.map((c) => courtDisplayName(c)).join("·")
       : g.manualLock
         ? "必开"
         : undefined,

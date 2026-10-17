@@ -1426,7 +1426,7 @@ describe("swapPlayers（§4.9 球友开放：无 guard、全场写只带总号�
   });
 });
 
-describe("setRules / setCourtsInput / autoDeal（§4.7 规则与场地 · 排片真值在后端）", () => {
+describe("setRules / setCourts / autoDeal（§4.7 规则与场地 · 排片真值在后端）", () => {
   it("setRules：四件套映射上报（singles→doubles 取反）+ toast「规则已更新 · 下一场起按新规」", async () => {
     const { live, ui } = await inPlay();
     liveApi.apiLiveRules.mockResolvedValue(
@@ -1451,13 +1451,17 @@ describe("setRules / setCourtsInput / autoDeal（§4.7 规则与场地 · 排片
     expect(liveApi.apiLiveRules).toHaveBeenCalledWith(900, { streakMax: 0 }, 7);
     expect(live.live!.rules.champCap).toBe(0); // 抽屉「当前＝不限」的数源
   });
-  it("setCourtsInput：『3、4 / 3,4 / 3号、4号』归一 → courtsCount 上报、片名本地挂", async () => {
+  it("setCourts：数组进补尾缀去重（『3/4号』与『3号/4号』同归一）→ courtsCount 上报、片名本地挂（2026-10-17 顶条长条输入退役改吃逐框组件清洗后的数组）", async () => {
     const { live, ui } = await inPlay();
     liveApi.apiLiveRules.mockResolvedValue(
       vPlay(8, { courts_count: 2, courts: [ct(1, "playing")] }),
     );
-    for (const [i, txt] of ["3、4", "3,4", "3号、4号"].entries()) {
-      expect(await live.setCourtsInput(txt)).toBe(true);
+    for (const [i, arr] of [
+      ["3", "4"],
+      ["3号", "4号"],
+      ["3", "4", "4"], // 重复项去重保序
+    ].entries()) {
+      expect(await live.setCourts(arr)).toBe(true);
       // base 号吃最近视图：首拍 7，响应视图(total 8)落地后带 8
       expect(liveApi.apiLiveRules).toHaveBeenNthCalledWith(
         i + 1,
@@ -1470,10 +1474,10 @@ describe("setRules / setCourtsInput / autoDeal（§4.7 规则与场地 · 排片
     expect(live.live!.courts[1]!.name).toBe("4号"); // 补出的空片重挂名
     expect(ui.toastMsg).toBe("场地已更新：3号、4号");
   });
-  it("setCourtsInput 校验：空/垃圾拒「至少要有 1 片场地」；在打片不能收拒——均不发", async () => {
+  it("setCourts 校验：空数组拒「至少要有 1 片场地」；在打片不能收拒——均不发", async () => {
     const { live, ui } = await inPlay();
-    expect(await live.setCourtsInput("")).toBe(false);
-    expect(await live.setCourtsInput("abc")).toBe(false);
+    expect(await live.setCourts([])).toBe(false);
+    expect(await live.setCourts(["", " "])).toBe(false);
     expect(ui.toastMsg).toBe("至少要有 1 片场地");
     const two = await apply(
       vPlay(7, {
@@ -1486,7 +1490,7 @@ describe("setRules / setCourtsInput / autoDeal（§4.7 规则与场地 · 排片
         courts: [ct(1, "playing"), ct(2, "playing")],
       }),
     );
-    expect(await two.live.setCourtsInput("3号")).toBe(false);
+    expect(await two.live.setCourts(["3号"])).toBe(false);
     expect(two.ui.toastMsg).toBe("在打 + 待开的场地不能收");
     expect(liveApi.apiLiveRules).not.toHaveBeenCalled();
   });

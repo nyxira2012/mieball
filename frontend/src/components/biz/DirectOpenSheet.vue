@@ -18,7 +18,14 @@
 
     <view class="do-sec">
       <AppField label="场地号 · 填几个号开几片">
-        <AppInput v-model="courtRaw" placeholder="如 3号、5号 · 不填先开一片" />
+        <CourtInputs v-model="courts" />
+        <view class="do-hint">
+          {{
+            courts.length
+              ? `识别到 ${courts.length} 片：${courts.join("、")}`
+              : "不填先开一片"
+          }}
+        </view>
       </AppField>
     </view>
 
@@ -48,14 +55,16 @@
 <script setup lang="ts">
 /* 直接开场表单（2026-10-17）：场馆/场地号/时长三问——组局表单的「快进版」，不复用
    LaunchSheet（截止/可见档/人数对直接开场无意义），复用 VenuePicker 零键选馆与
-   AppInput（场地号，订场登记同款自由文本）。 */
-import { ref } from "vue";
+   CourtInputs 逐框场地号（与订场登记同一组件同一清洗口径，2026-10-17 收编）。
+   抽屉壳常驻本页不卸载（visible 门），重开时把会误导的输入清掉（场地号/时长）——
+   场馆保留：同馆连开是常态，VenuePicker 一键 ✕ 可清。 */
+import { ref, watch } from "vue";
 import AppSheet from "@/components/ui/AppSheet.vue";
 import AppField from "@/components/ui/AppField.vue";
 import AppButton from "@/components/ui/AppButton.vue";
-import AppInput from "@/components/ui/AppInput.vue";
 import OptionChips from "@/components/ui/OptionChips.vue";
 import VenuePicker from "@/components/biz/VenuePicker.vue";
+import CourtInputs from "./CourtInputs.vue";
 import { errText } from "@/api/http";
 import type { DirectOpenInput } from "@/api/types";
 import { autoGameName } from "@/utils/format";
@@ -66,28 +75,29 @@ import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import { useUserStore } from "@/stores/user";
 
-defineProps({ visible: { type: Boolean, default: false } });
+const props = defineProps({ visible: { type: Boolean, default: false } });
 const emit = defineEmits<{ (e: "close"): void }>();
 
 const HOUR_OPTS = [1, 2, 3, 4].map((n) => ({ value: n, label: `${n} 小时` }));
 
 const venue = ref("");
-const courtRaw = ref("");
+const courts = ref<string[]>([]);
 const hours = ref(2);
 const opening = ref(false);
 const game = useGameStore();
 const session = useSessionStore();
 const ui = useUiStore();
 
-/** 场地号解析：逗号/顿号/空白分隔，去空去重保序（后端同款清洗，双闸不依赖单侧） */
-function parseCourts(raw: string): string[] {
-  const out: string[] = [];
-  for (const c of raw.split(/[，,、\s]+/)) {
-    const n = c.trim();
-    if (n && !out.includes(n)) out.push(n);
-  }
-  return out;
-}
+/* 重开清误导输入（场地号/时长回默认；上次的手笔不该替这次做决定） */
+watch(
+  () => props.visible,
+  (v) => {
+    if (v) {
+      courts.value = [];
+      hours.value = 2;
+    }
+  },
+);
 
 async function onOpen(): Promise<void> {
   if (opening.value) return;
@@ -96,7 +106,7 @@ async function onOpen(): Promise<void> {
     venue_name: venue.value.trim(),
     venue_address: null,
     hours: Number(hours.value),
-    courts: parseCourts(courtRaw.value),
+    courts: courts.value,
   };
   if (session.isGuest) {
     // 游客先看后报：昵称此刻没落地，名字留空由续办补定（pendingLaunch 同款）

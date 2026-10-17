@@ -68,14 +68,19 @@
     <template v-else-if="L">
       <!-- 新手教学入口（2.7 §4.7）：真局在打页顶部常驻一行小字——只认手动点击，
            示例局绝不自动截胡；回看/死链分支在前面，天然不放这行 -->
-      <view class="teach-row" @click="teachOpen = true">新手教学 ▸</view>
       <view class="live-root">
         <LiveTopbar
           @qr="qrOpen = true"
           @rules="onRules"
           @ledger="onLedger"
           @end="onEnd"
+          @courts="onCourtsEdit"
         />
+        <!-- 新手教学入口（2.7 §4.7）：真局在打页顶部常驻一行小字——只认手动点击，
+             示例局绝不自动截胡；回看/死链分支在前面，天然不放这行。
+             （2026-10-17 走查修复：此行原来排在 live-root 外，把 100dvh-nav 的全屏
+             列整体推低一行，候场条沉进 TabBar——挪进列内随 flex 收放） -->
+        <view class="teach-row" @click="teachOpen = true">新手教学 ▸</view>
 
         <!-- 块二：滚动对局区（2.4 批2 起多片并行：一片一卡，playing/idle 由卡自判；
              记分/终局/取消 emit 带 courtId，页面直连 store 同签名动作） -->
@@ -208,6 +213,7 @@
     <!-- 直接开场表单（2026-10-17）：挂分支链之外——空态与真局两态都可能开（空态点
          ＋直接开场；弹层壳自带 visible 门，挂顶层的意义就是不被分支裁掉） -->
     <DirectOpenSheet :visible="liveSheet?.k === 'direct'" @close="closeLocal" />
+    <CourtsSheet :visible="liveSheet?.k === 'courts'" @close="closeLocal" />
   </PageShell>
 </template>
 
@@ -229,6 +235,7 @@ import QueueSheet from "@/components/biz/QueueSheet.vue";
 import LedgerSheet from "@/components/biz/LedgerSheet.vue";
 import RulesSheet from "@/components/biz/RulesSheet.vue";
 import DirectOpenSheet from "@/components/biz/DirectOpenSheet.vue";
+import CourtsSheet from "@/components/biz/CourtsSheet.vue";
 import EndSettleModal from "@/components/biz/EndSettleModal.vue";
 import SweepSheet from "@/components/biz/SweepSheet.vue";
 import LiveRecap from "@/components/biz/LiveRecap.vue";
@@ -255,6 +262,7 @@ type LocalSheet =
   | { k: "ledger" }
   | { k: "rules" }
   | { k: "direct" }
+  | { k: "courts" }
   | { k: "confirm"; msg: string; action: () => void };
 
 const liveStore = useLiveStore();
@@ -394,6 +402,13 @@ function onArriveMe(): void {
     （RulesSheet full=false 罩层）；改规则动作的 store guard 仍在——双保险 */
 function onRules(): void {
   liveSheet.value = { k: "rules" };
+}
+
+/** 改场号面板入口（顶条场地位点击，2026-10-17 长条直填退役）：全权闸在 store
+    needFull（球友点击吃「请找组织者或管理员」句） */
+function onCourtsEdit(): void {
+  if (!liveStore.needFull()) return;
+  liveSheet.value = { k: "courts" };
 }
 
 /** 散场入口（§4.9 清扫流，批6 切真）：点「散场」进清扫态——残局清单逐片强制处理，

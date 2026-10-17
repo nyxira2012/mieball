@@ -105,13 +105,15 @@
           <text class="edit">点比分格 · 直接输数字</text>
         </view>
 
-        <!-- ±积分预览（胜队在前；平分未点胜方时不显示）；访客带「不计积分」标识 -->
+        <!-- ±积分预览（胜队在前；平分未点胜方时不显示）；访客带「不计积分」标识——
+             访客不落账（1.4 口径），± 数字就不渲染，只留名单位（2026-10-17 走查修复：
+             此前「访客·不计积分」badge 旁照样挂 +12/−7，自相矛盾） -->
         <view v-for="(r, i) in preview" :key="i" class="elo-row">
           <text class="nm"
             >{{ r.name
             }}<text v-if="r.guest" class="gtag">访客 · 不计积分</text></text
           >
-          <text class="d" :class="r.up ? 'up' : 'dn'">{{
+          <text v-if="!r.guest" class="d" :class="r.up ? 'up' : 'dn'">{{
             r.up ? `+${r.d}` : `−${Math.abs(r.d)}`
           }}</text>
         </view>

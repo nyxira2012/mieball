@@ -127,13 +127,22 @@ export interface Game {
   joinable: boolean; // 派生态 ∈ {open, locked, live}——加入按钮显隐直接读
   liveOpened: boolean; // 现场账已开（LiveState 行存在；2.5 §4.4：账一开卡片立显「进入现场」，不看时间）
   ended: boolean; // 散场确认过（流程锚，与派生显示态 done 不同——到点未散场 done 但 ended 假，2.3 §4.9）
+  endedAt: string | null; // 实际散场时刻（endAt 是排场计划的收尾；未散场 null）
+  liveStartedAt: string | null; // 实际开账时刻（未开账 null）
+  liveHeads: number | null; // 实到名册行数（开过账才有；报名 heads 之外的实际口径）
   heads: number; // 人头（自己+带的人，后端定值）
   slotsLeft: number; // 剩几坑
   perHead: number | null; // 人均（half-up）；null=未定
   forced: boolean; // 必打 = 手动锁 ∨ 场上有号
   source?: "plan" | "direct"; // 开场来源（缺省 plan 兼容旧快照）；散场确认文案等少数位消费
   entries?: EntryRow[];
+  dropins?: GameDropin[]; // 空降进场者（detail 出口带；局页名单与报名行分列）
   my?: MyBlock;
+}
+
+/** 空降名单行：扫码进场的人不报名不进 entries——detail 单独带出 */
+export interface GameDropin {
+  account: Person;
 }
 
 /** 留意向（intent_view 镜像）：时段词表在 api/dict.ts slots（后端只存 key 串不校验）；
@@ -306,14 +315,14 @@ export interface BillsView {
 /** 谁下（2.4 §4.1 四件套之二）：全上全下 / 输家下 / 1、2、3人下（单打只有 all/loser） */
 export type DownMode = "all" | "loser" | "n1" | "n2" | "n3";
 
-/** 怎么配（仅双打）：按候场队序 / 均衡配对 / 轮换优先 / 胜负均衡 */
+/** 怎么配（仅双打）：签到顺序 / 积分均衡 / 轮换优先 / 胜负均衡（展示名单一源 PAIRING_NAMES） */
 export type PairingMode = "queue" | "balance" | "partner" | "even";
 
 /** 现场轮换四件套（2.4 §4.1）：谁能改=全权者（2.2 已定），点选即生效、在打对局照旧打完 */
 export interface RotationRules {
   singles: boolean; // 全场统一单双打（true=单打）；默认双打
   down: DownMode; // 谁下（总账定值：推荐替改已归后端，前端只显不判）
-  pairing: PairingMode; // 怎么配；默认按候场队序
+  pairing: PairingMode; // 怎么配；默认签到顺序（queue）
   champCap: number; // 连打上限（全场统一、所有下法生效）；默认随谁下自适应、手动优先，0=不限
 }
 

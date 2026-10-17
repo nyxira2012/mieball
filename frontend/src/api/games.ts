@@ -50,6 +50,11 @@ export interface FeePreviewApi {
   organizer_share: number;
 }
 
+/** 空降名单行（game_view 镜像）：扫码进场的人不报名不进 entries——detail 单独带出 */
+export interface DropinRowApi {
+  account: { id: number; nickname: string; chibi: ChibiConfig };
+}
+
 /** 局（game_view 镜像）。heads/slots_left/per_head/forced 是后端算好的定值（A4）；
     entries 仅详情与写动作出口带，my 仅登录 viewer 带。 */
 export interface GameViewApi {
@@ -76,12 +81,16 @@ export interface GameViewApi {
   joinable: boolean;
   live_opened: boolean; // 现场账已开（game_view 定值；2.5 批1）
   ended: boolean; // 散场确认过（流程锚；到点未散场 done 但 ended 假）
+  ended_at?: string | null; // 实际散场时刻（end_at 是排场计划的收尾）
+  live_started_at?: string | null; // 实际开账时刻（detail 出口带；未开账 null）
+  live_heads?: number | null; // 实到名册行数（detail 出口带；空降/现场带人都在册）
   heads: number;
   slots_left: number;
   per_head: number | null;
   forced: boolean;
   source?: "plan" | "direct"; // 开场来源（缺省 plan 兼容旧快照）
   entries?: EntryRowApi[];
+  dropins?: DropinRowApi[]; // 空降进场者（detail 出口带；未开账局为空数组）
   my?: MyBlockApi;
 }
 

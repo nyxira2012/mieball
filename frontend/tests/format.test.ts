@@ -3,6 +3,7 @@ import type { Game, Person } from "@/api/types";
 import {
   autoGameName,
   courtDisplayName,
+  courtsShortLabel,
   deadRowKind,
   freqName,
   gameTapAction,
@@ -85,7 +86,7 @@ describe("newGameCard（真局 → 卡面模型：定值直读，时间现场换
       expect(card.hmText).toBe("10:00"); // ISO 现场换算
       expect(card.dayText).toBe("10.10 周六"); // 北京墙钟日段（dayToken 已退役，修复批 F2）
       expect(card.venueText).toBe("亮马河 · 滨河球场");
-      expect(card.timeSub).toBe("3号"); // 场上号进时间列固定槽（join「·」），优先于空锁文案
+      expect(card.timeSub).toBe("3号场"); // 场上号进时间列固定槽（courtDisplayName 补号场），优先于空锁文案
       expect(card.slotsLeft).toBe(3);
       // 候补不进头像叠层；带的人不计入头像数
       expect(card.stackAvatars).toHaveLength(2);
@@ -121,7 +122,7 @@ describe("newGameCard（真局 → 卡面模型：定值直读，时间现场换
       newGameCard(mkGame({ manualLock: true, forced: true })).timeSub,
     ).toBe("必开"); // 仅手动锁（场上无号）亮「必开」
     expect(newGameCard(mkGame({ courts: ["16号", "17号"] })).timeSub).toBe(
-      "16号·17号", // 多片 join「·」，卡片固定槽窄位显示
+      "16号场·17号场", // 多片逐个过 courtDisplayName 再 join「·」，卡片固定槽窄位显示
     );
     expect(newGameCard(mkGame()).timeSub).toBeUndefined();
   });
@@ -373,9 +374,20 @@ describe("autoGameName（自动局名「昵称 · 场馆末段」，2026-10-11 �
 });
 
 describe("courtDisplayName（场地显示名单一源：对局卡/空闲卡/终局弹窗 kicker）", () => {
-  it("登记的场地号补「场」后缀；已带「场」不重复加", () => {
+  it("各写入路径的存量口径统一显示「N号场」；本就以「场」结尾的名字原样保留", () => {
     expect(courtDisplayName("3号")).toBe("3号场");
     expect(courtDisplayName("5号")).toBe("5号场");
-    expect(courtDisplayName("中央场")).toBe("中央场");
+    expect(courtDisplayName("16")).toBe("16号场"); // 订场/直开原样存的裸号
+    expect(courtDisplayName("16号场")).toBe("16号场"); // 种子口径（号场齐备）
+    expect(courtDisplayName("中央场")).toBe("中央场"); // 非「N号场」形状的本名不动
+  });
+});
+
+describe("courtsShortLabel（顶条打球场地短标签单一源）", () => {
+  it("共用尾缀只说一遍；空数组兜底", () => {
+    expect(courtsShortLabel(["16号", "5号"])).toBe("16、5号场");
+    expect(courtsShortLabel(["16", "5号场"])).toBe("16、5号场"); // 存量口径混着也归一
+    expect(courtsShortLabel(["1号"])).toBe("1号场");
+    expect(courtsShortLabel([])).toBe("—");
   });
 });

@@ -54,16 +54,20 @@
             <text class="side">B</text>
           </view>
         </view>
-        <!-- 落账积分（eloRows 权威）：访客有展示值不落账，带标识 -->
+        <!-- 落账积分（eloRows 权威）：访客不落账（1.4 口径），± 不渲染只留标识
+            （2026-10-17 走查修复：此前「访客·不计积分」旁照样挂 ±，自相矛盾） -->
         <view v-if="m.eloRows.length" class="m-elo">
           <view v-for="(r, j) in m.eloRows" :key="j" class="e-row">
             <text class="e-nm"
               >{{ r.name
               }}<text v-if="r.guest" class="gtag">访客 · 不计积分</text></text
             >
-            <text class="e-d" :class="r.delta >= 0 ? 'up' : 'dn'">{{
-              fmtDelta(r.delta)
-            }}</text>
+            <text
+              v-if="!r.guest"
+              class="e-d"
+              :class="r.delta >= 0 ? 'up' : 'dn'"
+              >{{ fmtDelta(r.delta) }}</text
+            >
           </view>
         </view>
       </view>

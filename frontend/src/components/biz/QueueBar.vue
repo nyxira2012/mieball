@@ -1,7 +1,8 @@
 <template>
   <!-- 块三置底候场条（temp/打球页原型 .queuebar 逐字）：下一场头像×4 柠檬描边叠压 +
-       我的轮次一句话 + 「我到了」自签到钮 + ＋到场钮。点队列区开完整队列抽屉，
-       我到了走自签到链（页面编排）、＋到场开代办签到抽屉（页面编排）。
+       我的轮次一句话 + 「我到了」自签到钮 + 「代人签到」钮（2026-10-17 用户裁决改名，
+       原文「＋ 到场」——点它开代办签到抽屉，语义是替还没到的人办到场）。
+       点队列区开完整队列抽屉，我到了走自签到链（页面编排）。
        「下一场 · 预计序」：队列是后端按排位算好的快照（无人手动换人时排前几位的
        即下一场上场人选，手动换人后以现场为准）；歇/连战角标吃名册行 skip/fire。 -->
   <view v-if="L" class="queuebar">
@@ -26,7 +27,7 @@
       meTxt
     }}</view>
     <view class="q-arrive" @click.stop="emit('arrive')">我到了</view>
-    <view class="q-check" @click.stop="emit('checkin')">＋ 到场</view>
+    <view class="q-check" @click.stop="emit('checkin')">代人签到</view>
   </view>
 </template>
 
@@ -37,7 +38,6 @@
 import { computed } from "vue";
 import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
 import { useLiveStore, isArrived } from "@/stores/live";
-import { useUserStore } from "@/stores/user";
 import { courtSize } from "@/utils/rotate";
 
 const emit = defineEmits<{
@@ -47,7 +47,6 @@ const emit = defineEmits<{
 }>();
 
 const liveStore = useLiveStore();
-const userStore = useUserStore();
 const L = computed(() => liveStore.live);
 const byId = (id: number) => liveStore.byId(id);
 
@@ -56,11 +55,13 @@ const nextN = computed(() =>
   (L.value?.queue ?? []).slice(0, courtSize(L.value?.rules.singles ?? false)),
 );
 
-/** 我的状态一句话：myRound 非空在队列；在册且已签到（谓词单一源 isArrived）但不在队列 = 场上；否则还没签到 */
+/** 我的状态一句话：myRound 非空在队列；在册且已签到（谓词单一源 isArrived）但不在队列 = 场上；否则还没签到。
+    名册行 id 与账号 id 是两套自增（见 live store myRowId 的口径注）——此处必须经
+    myRowId() 换算，裸账号 id 撞车才对、撞不上就永远误显「还没签到」（2026-10-17 走查修复） */
 const myRound = computed(() => liveStore.myRound);
 const meTxt = computed(() => {
   if (myRound.value != null) return `还有 ${myRound.value} 轮到我`;
-  const me = L.value ? liveStore.byId(userStore.me.id) : undefined;
+  const me = L.value ? liveStore.byId(liveStore.myRowId() ?? -1) : undefined;
   return me && isArrived(me.check) ? "场上打拼中" : "还没签到";
 });
 </script>

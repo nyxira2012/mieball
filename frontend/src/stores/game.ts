@@ -76,6 +76,9 @@ function toGame(v: GameViewApi): Game {
     joinable: v.joinable,
     liveOpened: v.live_opened,
     ended: v.ended,
+    endedAt: v.ended_at ?? null,
+    liveStartedAt: v.live_started_at ?? null,
+    liveHeads: v.live_heads ?? null,
     heads: v.heads,
     slotsLeft: v.slots_left,
     perHead: v.per_head,
@@ -87,6 +90,7 @@ function toGame(v: GameViewApi): Game {
       standing: e.standing,
       waitSeq: e.wait_seq,
     })),
+    dropins: v.dropins?.map((d) => ({ account: { ...d.account } })),
     my: v.my
       ? {
           isOrganizer: v.my.is_organizer,

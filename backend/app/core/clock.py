@@ -4,19 +4,22 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+# 接口进出统一时区为 ISO 8601 +08:00；数据库内一律使用 naive 北京时间
+CN_TZ = timezone(timedelta(hours=8))
+
 
 def now() -> datetime:
-    return datetime.now()
+    """北京墙钟（naive），不随部署机器时区走——datetime.now() 取机器本地钟，在非 +8
+    时区的机器（开发机/异国 ECS/Docker 默认 UTC）入库即整体漂移，而 iso() 出参恒标
+    +08:00，漂多少产品就错多少（2026-10-17 走查：+1100 开发机上「2 小时的局剩
+    5 小时」、底账到点时刻整体偏 3 小时）。前端 time.ts 修复批 F2 已同款收口。"""
+    return datetime.now(CN_TZ).replace(tzinfo=None)
 
 
 def today_key(t: datetime | None = None) -> str:
-    """按本地日切一天的计数窗口（限频的"一天"用日期字符串分组，不精确到 24h 滚动，够用）。"""
+    """按北京日切一天的计数窗口（限频的"一天"用日期字符串分组，不精确到 24h 滚动，够用）。"""
     t = t or now()
     return t.strftime("%Y-%m-%d")
-
-
-# 接口进出统一时区为 ISO 8601 +08:00；数据库内一律使用 naive 北京时间
-CN_TZ = timezone(timedelta(hours=8))
 
 
 def wall(dt: datetime) -> datetime:

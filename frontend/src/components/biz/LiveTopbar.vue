@@ -43,22 +43,15 @@
         <text class="telem-k">剩余时间</text>
         <text class="timer-val">{{ timerTxt }}</text>
       </view>
-      <view class="telem-cell">
+      <view
+        class="telem-cell"
+        :class="{ 'courts-cell': full }"
+        @click="full && emit('courts')"
+      >
         <text class="telem-k">打球场地</text>
-        <!-- 全权直填场号（原型 input：虚线下划线，blur/回车提交，校验不过回退 store 值）；球友只读文本 -->
-        <view class="telem-v">
-          <input
-            v-if="full"
-            class="courts-inp"
-            :value="courtsText"
-            placeholder="如 3、4"
-            @input="onCourtsInput"
-            @blur="commitCourts"
-            @confirm="commitCourts"
-          />
-          <text v-else class="courts-ro">{{ courtsText }}</text>
-          <text class="courts-unit">片</text>
-        </view>
+        <!-- 只读短标签（2026-10-17 顶条长条输入退役）：「16、5号场」吃 courtsShortLabel
+             单一源；全权者点格子弹改场号面板（逐框组件），球友只读不响应 -->
+        <view class="telem-v courts-v">{{ courtsLabel }}</view>
       </view>
       <view class="telem-cell mode-cell" @click="emit('rules')">
         <text class="telem-k">规则设置</text>
@@ -85,10 +78,10 @@
 
 <script setup lang="ts">
 /* 块一顶条（2.1 §3）：无 props——数据全读 live store；emit 只留页面编排：qr / rules。 */
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useLiveStore } from "@/stores/live";
 import { useUserStore } from "@/stores/user";
-import { DOWN_NAMES, PAIRING_NAMES } from "@/utils/format";
+import { courtsShortLabel, DOWN_NAMES, PAIRING_NAMES } from "@/utils/format";
 import { pById } from "@/utils/rotate";
 
 const emit = defineEmits<{
@@ -96,6 +89,7 @@ const emit = defineEmits<{
   (e: "rules"): void;
   (e: "ledger"): void;
   (e: "end"): void;
+  (e: "courts"): void;
 }>();
 
 const liveStore = useLiveStore();
@@ -133,27 +127,9 @@ const timerTxt = computed(() => {
   return `${h}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 });
 
-/* ---------- 场地号直填（组织者）：courts 去「号」展示；blur/confirm 提交，不过回退 store 值 ---------- */
-const storeTxt = computed(() =>
-  (L.value?.g.courts ?? []).map((b) => b.replace(/号$/, "")).join("、"),
-);
-const courtsText = ref(storeTxt.value);
-watch(storeTxt, (v) => {
-  courtsText.value = v;
-});
-function onCourtsInput(ev: Event): void {
-  const detail = (ev as { detail?: { value?: unknown } }).detail;
-  courtsText.value =
-    detail && typeof detail.value === "string"
-      ? detail.value
-      : courtsText.value;
-}
-function commitCourts(): void {
-  // 批5a 起为后端写（Promise<boolean>）：失败回退展示值（toast 在 store）
-  void liveStore.setCourtsInput(courtsText.value).then((ok) => {
-    if (!ok) courtsText.value = storeTxt.value;
-  });
-}
+/* ---------- 打球场地只读短标签：「16、5号场」（单一源 format.courtsShortLabel；
+     改场号走全权者点格弹出的逐框面板，长条直填已退役） ---------- */
+const courtsLabel = computed(() => courtsShortLabel(L.value?.g.courts ?? []));
 
 /* ---------- 单行轮播：feed 战报句（新到旧优先）→ history[0] 战报 → 下一场已排 → 候场人数，3.2s 换条 ---------- */
 const tickItems = computed<{ hi: string; txt: string }[]>(() => {
@@ -409,7 +385,9 @@ const curTick = computed(
 .timer-val {
   font-family: var(--mono);
   font-weight: 700;
-  color: var(--coral);
+  color: var(
+    --cream
+  ); /* 倒计时改文字暖白（2026-10-17 用户裁决）：珊瑚橙红让位给警示位专用 */
   letter-spacing: 0.05em;
   font-size: 14px;
 }
@@ -446,34 +424,20 @@ const curTick = computed(
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 场号直填（原型 .telem-v input：虚线下划线，focus 变实线）；非 org 纯文本同位 */
-.courts-inp {
-  width: 76px;
-  background: none;
-  border: none;
-  outline: none;
-  border-bottom: 1px dashed rgba(255, 212, 0, 0.35);
-  color: var(--lemon);
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 14px;
-  letter-spacing: 0.05em;
-  padding: 0 2px 1px;
-  height: 20px;
+/* 场地格只读标签：短标签可能比格宽（多片「1、2、3号场」），小字收着显；
+   全权者整格可点（telem-cell 上挂 courts-cell 类给按压反馈） */
+.courts-v {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.courts-inp:focus {
-  border-bottom-color: var(--lemon);
-  border-bottom-style: solid;
+.courts-cell {
+  cursor: pointer;
 }
-.courts-ro {
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 14px;
-  letter-spacing: 0.05em;
-}
-.courts-unit {
-  font-size: 10px;
-  color: var(--dim);
+.courts-cell:active {
+  transform: scale(0.97);
+  border-color: var(--lemon);
 }
 
 /* ---------- 单行轮播（原型 .tb-ticker：border-top 收口顶条） ---------- */

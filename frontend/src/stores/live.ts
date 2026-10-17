@@ -175,6 +175,9 @@ function stubGame(v: LiveView): Game {
     joinable: false,
     liveOpened: true, // 这本账就是从现场视图重建的——账必然开着
     ended: v.ended, // 散场确认锚随现场视图直读（回看态 stub 不给现场入口）
+    endedAt: v.endedAt,
+    liveStartedAt: v.startedAt,
+    liveHeads: v.players.length,
     heads: v.players.length,
     slotsLeft: 0,
     perHead: null,
@@ -900,16 +903,20 @@ export const useLiveStore = defineStore("live", () => {
     );
   }
 
-  /** 场地输入（2.1 顶条）：本地解析校验（至少 1 片且 ≥ 非空片数）→ 片数上报
-      （apiLiveRules courtsCount；缩片先撤空闲片归总账）；场地名本地挂供重建沿用 */
-  async function setCourtsInput(text: string): Promise<boolean> {
+  /** 场地写（2026-10-17 顶条长条输入退役，改场号面板）：吃逐框组件清洗过的场地号
+      数组——此处只补规范尾缀（「16」→「16号」，已带号/场不动）+ 去重兜底；
+      校验（至少 1 片且 ≥ 在打+待开片数）→ 片数上报（apiLiveRules courtsCount；
+      缩片先撤空闲片归总账）；场地名本地挂供重建沿用 */
+  async function setCourts(names: string[]): Promise<boolean> {
     const L = live.value;
     if (!L || !needFull() || !liveView.value) return false;
-    const parts = text
-      .split(/[、,，\s]+/)
-      .map((s) => s.trim())
-      .filter((s) => /^\d+号?$/.test(s))
-      .map((s) => (s.endsWith("号") ? s : `${s}号`));
+    const parts: string[] = [];
+    for (const n of names) {
+      const s = n.trim();
+      if (!s) continue;
+      const norm = /(?:号|场)$/.test(s) ? s : `${s}号`;
+      if (!parts.includes(norm)) parts.push(norm);
+    }
     const need = usedCourts(L);
     if (parts.length < 1) {
       ui.toast("至少要有 1 片场地");
@@ -1061,7 +1068,7 @@ export const useLiveStore = defineStore("live", () => {
   function applyLiveView(v: LiveView): void {
     const old = live.value;
     const cached = useGameStore().findGame(v.gameId);
-    // 现场克隆优先（setCourtsInput 本地挂的片名只挂在克隆上，重建沿用）；唯一例外：
+    // 现场克隆优先（setCourts 本地挂的片名只挂在克隆上，重建沿用）；唯一例外：
     // stub 兜底局（组织者 -1 印记）在局簿详情到位后让位真局——深链冷设备 ensureLive
     // 先行、loadDetail 后补的两段路（批6 走查 P2）
     const src =
@@ -1267,7 +1274,7 @@ export const useLiveStore = defineStore("live", () => {
     swapPlayers,
     setRuleScore,
     setRules,
-    setCourtsInput,
+    setCourts,
     autoDeal,
     sweepState,
     sweepOnArrive,

@@ -16,11 +16,20 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..core import clock, errors
-from ..db.models import Account, Bill, BillRow, Entry, Game, Invite, LiveState
+from ..db.models import (
+    Account,
+    Bill,
+    BillRow,
+    Entry,
+    Game,
+    Invite,
+    LivePlayer,
+    LiveState,
+)
 from .accounts import person_view
 
 # 截止后照常可加到局结束（4.14）；done/terminated/cancelled/pending 不可加
@@ -182,9 +191,27 @@ def game_view(
         # 不是一回事——到点未散场的局派生出 done 但 ended 仍 false，现场回口/补填
         # 都要锚它（2.3 §4.9）
         "ended": game.ended_at is not None,
+        # 实际散场时刻（与 live 视图 ended_at 同名同义）；end_at 是排场时的计划收尾
+        "ended_at": clock.iso(game.ended_at) if game.ended_at else None,
     }
     if with_entries:
         view["entries"] = entry_rows(db, game.id)
+        view["dropins"] = dropin_rows(db, game.id)
+        # 实到口径（现场账头时刻 + 名册行数）：heads/start_at 是排场时的计划数，
+        # 开过账的局人数以名册为准（空降/现场带人都在册）
+        state = db.execute(
+            select(LiveState).where(LiveState.game_id == game.id)
+        ).scalar_one_or_none()
+        view["live_started_at"] = clock.iso(state.started_at) if state else None
+        view["live_heads"] = (
+            db.execute(
+                select(func.count())
+                .select_from(LivePlayer)
+                .where(LivePlayer.game_id == game.id)
+            ).scalar_one()
+            if state
+            else None
+        )
     if viewer_id is not None:
         view["my"] = my_block(db, game, viewer_id, batch=batch, now=now)
     return view
@@ -259,6 +286,32 @@ def entry_rows(db: Session, game_id: int) -> list[dict]:
         }
         for e in rows
     ]
+
+
+def dropin_rows(db: Session, game_id: int) -> list[dict]:
+    """空降进场者（名册 dropin 标记的账号行），按进场先后。空降不报名不占
+    formal 名额、也不进 entries——局页名单若只列报名行会把实到的人漏掉，
+    战报名单与摊钱名单都算他一份，这里同口径带出。未开账局查无行 → 空。"""
+    rows = (
+        db.execute(
+            select(LivePlayer)
+            .where(
+                LivePlayer.game_id == game_id,
+                LivePlayer.dropin.is_(True),
+                LivePlayer.account_id.is_not(None),
+            )
+            .order_by(LivePlayer.id)
+        )
+        .scalars()
+        .all()
+    )
+    accounts = {
+        a.id: a
+        for a in db.execute(
+            select(Account).where(Account.id.in_({r.account_id for r in rows}))
+        ).scalars()
+    }
+    return [{"account": person_view(accounts.get(r.account_id))} for r in rows]
 
 
 def my_block(

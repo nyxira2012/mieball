@@ -26,7 +26,7 @@ export const SANDBOX_GAME = {
   doubles: true,
   scoring: 11,
   down: "n2" as const, // 规则抽屉词「2 人下」
-  pairing: "queue" as const, // 按候场队序
+  pairing: "queue" as const, // 签到顺序（展示名 PAIRING_NAMES，键不变）
 };
 
 /** 教学局每片人数单源：沙盒锁双打 4 人制（规格一片场双打；engine 发牌补片与

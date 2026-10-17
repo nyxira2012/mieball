@@ -370,7 +370,7 @@ export const useSandboxStore = defineStore("sandbox", () => {
   }
 
   /** 顶条场地格直填（组织卡第八步「填 2」）：本地解析 1~9，只增不减（减片教学不教
-      ——真局减片也是散场/取消的事）；成败回传给输入框回退展示值（真局 setCourtsInput 同式） */
+      ——真局减片也是散场/取消的事）；成败回传给输入框回退展示值（真局 setCourts 同式） */
   function courtsInput(raw: string): boolean {
     const s = state.value;
     if (!s || !isFull.value) return false;

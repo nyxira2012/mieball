@@ -50,7 +50,7 @@ from .playlog import is_my_game_at
 from .stats import StatsLedger
 
 # 开账起笔的 rules 快照默认值（镜像前端 startLive 起笔，2.2 批2 §4.1）：
-# 双打 / 谁下挂 all 占位（推荐重算在前端）/ 按候场队序 / 连打上限 2——
+# 双打 / 谁下挂 all 占位（推荐重算在前端）/ 签到顺序（queue）/ 连打上限 2——
 # 自适应默认随「谁下」的档走（all 档=2），且只在切档时重置；新局永不修正，
 # 起笔必须是 all 档自己的默认值（切输家下时闸门再重置为 3）
 _DEFAULT_RULES = {"doubles": True, "down": "all", "pairing": "queue", "streak_max": 2}
@@ -171,13 +171,17 @@ class LiveBook(LiveSweepMixin):
 
     # ---- 开账（名册展开 + 总账头落库；幂等） ----
 
-    def start(self, *, game_id: int, organizer_id: int) -> dict:
+    def start(
+        self, *, game_id: int, organizer_id: int, rules: dict | None = None
+    ) -> dict:
         """开账（2.2 §4.1 开场亮点的总账版）：名册行从正式报名展开——正式球友一人
         一行（首见建 EloRating 行 1200），bring N 展开成 N 行随行访客（挂担保人）；
         全员先记 absent、候场队空（报到驱动，check 端点批3）；total_seq 从 1 起。
         触发权 2.5 §4/§8：成局后组织者随时、正式成员开打前两小时内（organizer_id
         形参沿路由旧名，实为开账人），落 started_by=开账人（B1「谁开的账」）。
-        幂等：已有 LiveState 直接返视图（散场后再点也只回看，不重开）。"""
+        幂等：已有 LiveState 直接返视图（散场后再点也只回看，不重开）。
+        rules 形参供开场来源注默认（直接开场 2026-10-17 裁决：15 分/2人下/轮换优先——
+        与组局页默认对齐）；缺省沿全局 _DEFAULT_RULES，组局开场零变化。"""
         with _write_lock:
             game = self.db.get(Game, game_id)
             if game is None:
@@ -198,7 +202,7 @@ class LiveBook(LiveSweepMixin):
                         if game.courts
                         else (3 if game.max_players >= 12 else 2)
                     ),
-                    **_DEFAULT_RULES,
+                    **{**_DEFAULT_RULES, **(rules or {})},
                 )
             )
             # 正式行按报名先后展开（joined_at, id 序沿 entry_rows 口径）

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from .conftest import signup
+from .conftest import auth, signup
 from .test_live_score import NOW_ISO, live_call, live_get, open_live
 
 
@@ -43,6 +43,29 @@ def rows_of(view: dict, base: dict) -> list[dict]:
 
 
 # ---- dropin：空降报到（§5「没报名扫码直接打的」照摊） ----
+
+
+def test_dropin_listed_in_game_detail_dropins(client: TestClient):
+    """局簿详情名单带出空降（dropins 与 entries 同走 detail 全量）：局页名单
+    只列报名行会把实到的人漏掉——战报/摊钱名单都算他一份，这里同口径。
+    实到口径三字段一并锁：live_heads 吃名册行数（空降进册即 +1）、
+    live_started_at/ended_at 是实际开账/散场时刻（计划 start_at/end_at 之外）。"""
+    env = open_live(client, seed=49)
+    gid = env["game_id"]
+    stranger = signup(client, "13800039709", "d")
+    v = live_get(client, gid, stranger["token"])
+    d0 = client.get(f"/api/games/{gid}", headers=auth(env["org"]["token"])).json()
+    assert d0["dropins"] == []  # 报到前查无
+    assert d0["live_heads"] == 6 and d0["ended_at"] is None
+    assert d0["live_started_at"] == NOW_ISO  # 开账时刻即实到口径的起点
+    r = dropin_call(client, stranger["token"], gid, v["total_seq"])
+    assert r.status_code == 200, r.text
+    d = client.get(f"/api/games/{gid}", headers=auth(stranger["token"])).json()
+    assert [x["account"]["id"] for x in d["dropins"]] == [stranger["account"]["id"]]
+    assert d["live_heads"] == 7  # 空降进册即计入实到
+    assert all(
+        e["account"]["id"] != stranger["account"]["id"] for e in d["entries"]
+    )  # 空降不进 entries：两份名单不重复计人
 
 
 def test_dropin_new_row_arrives_queue_tail_and_counts_head(client: TestClient):

@@ -30,7 +30,11 @@ def test_direct_open_defaults_and_opened_live(client: TestClient):
     assert g["source"] == "direct" and g["forced"] is True
     assert g["visibility"] == "invite_only" and g["live_opened"] is True
     assert g["status"] == "live" and g["heads"] == 1
+    # 规则默认（2026-10-17 裁决）：15 分、2人下、轮换优先——对齐组局页默认口径
+    assert g["scoring"] == 15
     v = live_get(client, gid, org["token"])
+    assert v["rules"]["scoring"] == 15
+    assert v["rules"]["down"] == "n2" and v["rules"]["pairing"] == "partner"
     assert v["total_seq"] == 1
     # 名册只有组织者一行（absent——报到才进队），片全 idle
     assert len(v["players"]) == 1 and v["players"][0]["check"] == "absent"

@@ -18,16 +18,23 @@
         <text v-if="brandB" class="brand-line">{{ brandB }}</text>
       </view>
 
-      <!-- hero：大时间 · 日段·时长·场馆 · kv 行 · 人均口径 · 分享行 -->
+      <!-- hero：大时间 · 日段·时长·场馆 · kv 行 · 人均口径 · 分享行
+           （散场后切实际：大时刻=开账刻，时长行=打到几点） -->
       <view class="hero">
         <view class="big">{{ tBig }}</view>
         <view class="sub hero-sub"
-          >{{ tDay }} · 打 {{ durText }} · {{ game.venueName }}</view
+          >{{ tDay }} ·
+          {{
+            endedLive
+              ? `打到 ${isoHm(game.endedAt as string)}`
+              : `打 ${durText}`
+          }}
+          · {{ game.venueName }}</view
         >
         <view class="row">
           <view class="kv">
             <view class="k">名单</view>
-            <view class="v">{{ game.heads }}/{{ game.maxPlayers }}</view>
+            <view class="v">{{ rosterCount }}/{{ game.maxPlayers }}</view>
           </view>
           <!-- 5.1 剩坑/截止/场地是赛前口径：done 局收掉，保住 kv 网格 -->
           <view v-if="game.status !== 'done'" class="kv">
@@ -114,11 +121,9 @@
       <!-- 名单：formal 按报名先后（组织者排头）、候补按序跟后（后端 entries 保序）；
            带 N 人角标 + 随行展开成独立 pcard（带的人不单独有账号，随主人头像） -->
       <SectionTitle
-        :title="`名单 ${game.heads}/${game.maxPlayers} · 组织者排头一个`"
+        :title="`名单 ${rosterCount}/${game.maxPlayers} · 组织者排头一个`"
       >
-        <template v-if="waitlist.length" #more
-          >候补 {{ waitlist.length }} 人</template
-        >
+        <template v-if="rosterMore" #more>{{ rosterMore }}</template>
       </SectionTitle>
       <view class="grid-p">
         <template v-for="e in formalRows" :key="e.account.id">
@@ -146,6 +151,20 @@
             <view class="nm">{{ e.account.nickname.slice(0, 2) }}的球友</view>
           </view>
         </template>
+        <!-- 空降：扫码进场，有账号有点头像可跳档案 -->
+        <view
+          v-for="d in dropins"
+          :key="`d${d.account.id}`"
+          class="pcard"
+          :class="{ me: d.account.id === meId }"
+          @click="onPlayer(d.account.id)"
+        >
+          <view class="tag dropin">空降</view>
+          <view class="avatar"
+            ><ChibiAvatar :chibi="d.account.chibi" :size="56"
+          /></view>
+          <view class="nm">{{ d.account.nickname }}</view>
+        </view>
         <!-- 加人位（双角色共用：同一个位置同一个形状，点开各办各的事）——参加者=加入/
              带人，组织者=邀请（翻意向列表拉人）。joinable 定值（截止后/进行中照常可加，
              已结束只读——4.14；组织者邀请同样截止前后都开放——现场换人常翻名单）。
@@ -295,10 +314,9 @@
         >
         · {{ modeName }} · 满
         {{ game.maxPlayers }} 人进候补，有人退出即刻递补<template
-          v-if="game.perHead != null"
+          v-if="rulePerTxt"
         >
-          · 人均＝总价 ¥{{ game.feeTotal }} ÷
-          {{ game.heads }}（按实际人数摊）</template
+          · {{ rulePerTxt }}</template
         >。
       </NoteCard>
     </view>
@@ -378,6 +396,18 @@ const formalRows = computed(
 const waitlist = computed(
   () => game.value?.entries?.filter((e) => e.standing === "waitlist") ?? [],
 );
+/* 空降进场者（后端 detail 单独带出）：不报名不占坑，实到与摊钱都算一份，
+   名单区跟在报名行后分列——只列报名行会把实到的人漏掉 */
+const dropins = computed(() => game.value?.dropins ?? []);
+/* 名单区右上小字：候补/空降各有才说 */
+const rosterMore = computed(() =>
+  [
+    waitlist.value.length ? `候补 ${waitlist.value.length} 人` : "",
+    dropins.value.length ? `空降 ${dropins.value.length} 人` : "",
+  ]
+    .filter(Boolean)
+    .join(" · "),
+);
 
 const full = computed(() => !!game.value && game.value.slotsLeft <= 0);
 const joined = computed(() => !!game.value?.my?.myEntry);
@@ -422,8 +452,28 @@ const durText = computed(() => {
   return durTxt(mins / 60);
 });
 
-const tBig = computed(() => (game.value ? isoHm(game.value.startAt) : ""));
+/* 散场后的局亮实际口径：开账/散场时刻是打出来的真值，排场的 start_at/end_at
+   只是计划——hero 大时刻切实际开账，时长行换「打到几点」 */
+const endedLive = computed(() => {
+  const g = game.value;
+  return !!(g?.ended && g.liveStartedAt && g.endedAt);
+});
+
+const tBig = computed(() =>
+  game.value
+    ? isoHm(
+        endedLive.value
+          ? (game.value.liveStartedAt as string)
+          : game.value.startAt,
+      )
+    : "",
+);
 const tDay = computed(() => (game.value ? isoDay(game.value.startAt) : ""));
+
+/* 名单人数：开过账的局吃名册实到（空降/现场带人都在册），否则报名口径 */
+const rosterCount = computed(
+  () => game.value?.liveHeads ?? game.value?.heads ?? 0,
+);
 
 /* 局名首个 ' · ' 断行 */
 const brandA = computed(() => {
@@ -444,6 +494,16 @@ const perHeadTxt = computed(() => {
   if (!g) return "";
   if (g.bill) return `¥${g.bill.perHead}`;
   return g.perHead != null ? `约 ¥${g.perHead}` : "";
+});
+
+/* 规则牌人均句：未出账=按报名人数预估；已出账切摊钱名单实数（空降/随行都
+   计入）——顶层 heads 是报名口径不含空降，出账后两处人头不同源会打架 */
+const rulePerTxt = computed(() => {
+  const g = game.value;
+  if (!g || g.perHead == null) return "";
+  if (g.bill)
+    return `人均＝总价 ¥${g.feeTotal} ÷ ${g.bill.heads}（按摊钱名单实摊）`;
+  return `人均＝总价 ¥${g.feeTotal} ÷ ${g.heads}（按实际人数摊）`;
 });
 
 /* 人均口径提示：已出账切实摊说明；未出账费用已定=按当前人数预估（原句保持兼容）；
@@ -648,6 +708,11 @@ const onPlayer = (uid: number) => {
   color: var(--lilac);
   border-radius: 6px;
   padding: 2px 5px;
+}
+/* 空降角标：与战报名单同款柠檬强调，和「随行」紫标区分 */
+.pcard .tag.dropin {
+  background: rgba(255, 212, 0, 0.14);
+  color: var(--lemon);
 }
 .pcard.me {
   border-color: rgba(255, 212, 0, 0.5);

@@ -93,7 +93,7 @@ class TempoIn(BaseModel):
 
 class RulesIn(BaseModel):
     """规则四件套与场地参数修改：全可选字段，只更新显式给出的字段。
-    pairing 四档（按候场队序/均衡配对/轮换优先/胜负均衡）；streak_max 0=不限。"""
+    pairing 四档（签到顺序/积分均衡/轮换优先/胜负均衡）；streak_max 0=不限。"""
 
     doubles: bool | None = None
     down: Literal["all", "loser", "n1", "n2", "n3"] | None = None
