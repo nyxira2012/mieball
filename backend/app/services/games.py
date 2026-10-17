@@ -157,9 +157,10 @@ class GameBook:
         即锁定，不服务报名截止语义）、人数 4-12、仅邀请（约球列表藏起来，二维码
         即门）。空锁必打是硬前提：单人局永远凑不满最少人数，不锁会被截止懒判定
         判死、开账闸（现1 守卫②「必开∨成局」）也不放行。
-        场地号收拢（走查裁决）：片数唯一真值=场地号个数（写 game.courts，订场
-        登记同源），不吃人数回退；不填默认 1 号场一片。开账复用 LiveBook.start
-        单一路径（锁序沿 join→absorb_join 的局簿→现场单向嵌套先例）。"""
+        场地号必填：片数唯一真值=场地号个数（写 game.courts，订场登记同源），
+        不吃人数回退、不替人猜一片。开账复用 LiveBook.start 单一路径（锁序沿
+        join→absorb_join 的局簿→现场单向嵌套先例）；现场规则走开账的统一默认，
+        这里不另给。"""
         venue = venue_name.strip()
         if not venue:
             raise errors.booking_invalid("先填个场馆再开场")
@@ -170,6 +171,8 @@ class GameBook:
             n = c.strip()
             if n and n not in nums:
                 nums.append(n)
+        if not nums:
+            raise errors.booking_invalid("先填场地号再开场")
         if len(nums) > 8:
             raise errors.range_invalid("场地号最多 8 片")
         now = clock.now()
@@ -189,7 +192,7 @@ class GameBook:
                 rotation="rotate",
                 score_rule="rally",
                 manual_lock=True,
-                courts=nums or ["1号"],
+                courts=nums,
                 state="locked",
                 source="direct",
                 created_at=now,

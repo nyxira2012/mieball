@@ -17,7 +17,7 @@ from .test_live_score import live_call, live_get, write_body
 def open_direct(client: TestClient, seed: int, **over) -> tuple[dict, dict]:
     """组织者直接开场两小时局：返回 (org 账号, game_view)。"""
     org = signup(client, f"1380005{seed:04d}", "o")
-    body = {"venue_name": "朝阳匹克球馆", "hours": 2} | over
+    body = {"venue_name": "朝阳匹克球馆", "hours": 2, "courts": ["1号"]} | over
     r = client.post("/api/games/direct", headers=auth(org["token"]), json=body)
     assert r.status_code == 200, r.text
     return org, r.json()
@@ -39,7 +39,7 @@ def test_direct_open_defaults_and_opened_live(client: TestClient):
     # 名册只有组织者一行（absent——报到才进队），片全 idle
     assert len(v["players"]) == 1 and v["players"][0]["check"] == "absent"
     assert v["queue"] == [] and all(c["status"] == "idle" for c in v["courts"])
-    # 场地号收拢（走查裁决）：片数唯一真值=场地号个数，不填默认 1 号场一片
+    # 场地号收拢（走查裁决）：片数唯一真值=场地号个数
     assert g["courts"] == ["1号"] and v["courts_count"] == 1
     # 仅邀请：找局列表藏起来；组织者自己的「我的局」在场
     other = signup(client, "13800059999", "x")
@@ -71,15 +71,19 @@ def test_direct_open_courts_set_court_count(client: TestClient):
 def test_direct_open_validates_venue_and_hours(client: TestClient):
     org = signup(client, "13800054100", "o")
     bodies = [
-        {"venue_name": "  ", "hours": 2},  # 场馆空白
-        {"venue_name": "馆", "hours": 0},  # 时长下界
-        {"venue_name": "馆", "hours": 9},  # 时长上界
+        {"venue_name": "  ", "hours": 2, "courts": ["1号"]},  # 场馆空白
+        {"venue_name": "馆", "hours": 2, "courts": []},  # 场地号必填
+        {"venue_name": "馆", "hours": 2, "courts": ["  "]},  # 场地号全空白
+        {"venue_name": "馆", "hours": 0, "courts": ["1号"]},  # 时长下界
+        {"venue_name": "馆", "hours": 9, "courts": ["1号"]},  # 时长上界
     ]
     for body in bodies:
         r = client.post("/api/games/direct", headers=auth(org["token"]), json=body)
         assert r.status_code == 422, body
     # 未登录不放行（先看后报：游客走建号卡，属前端编排）
-    r = client.post("/api/games/direct", json={"venue_name": "馆", "hours": 2})
+    r = client.post(
+        "/api/games/direct", json={"venue_name": "馆", "hours": 2, "courts": ["1号"]}
+    )
     assert r.status_code == 401
 
 

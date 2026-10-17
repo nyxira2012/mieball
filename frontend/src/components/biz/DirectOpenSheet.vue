@@ -23,7 +23,7 @@
           {{
             courts.length
               ? `识别到 ${courts.length} 片：${courts.join("、")}`
-              : "不填先开一片"
+              : "至少填一个场地号"
           }}
         </view>
       </AppField>
@@ -44,7 +44,7 @@
       <AppButton
         variant="pri"
         block
-        :disabled="!venue.trim() || opening"
+        :disabled="!venue.trim() || !courts.length || opening"
         @click="onOpen"
         >开场 ▸</AppButton
       >

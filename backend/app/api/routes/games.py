@@ -47,7 +47,7 @@ class DirectOpenIn(BaseModel):
     hours: int = 2
     courts: list[
         str
-    ] = []  # 场地号（如 ["3号","5号"]）：片数=场地号个数；缺省 1 号场一片
+    ] = []  # 场地号（如 ["3号","5号"]）必填：片数=场地号个数，空则服务层拒
 
 
 class JoinIn(BaseModel):

@@ -395,7 +395,7 @@ export interface DirectOpenInput {
   venue_name: string;
   venue_address: string | null;
   hours: number; // 时长 1-8 小时，默认 2
-  courts: string[]; // 场地号（如 ["3号","5号"]）——片数唯一真值=个数；缺省后端落 1 号场一片
+  courts: string[]; // 场地号（如 ["3号","5号"]）必填——片数唯一真值=个数，空则后端拒
 }
 
 /** 全局单例弹层 payload（§2.2：P2 全量预定义，后续阶段只消费不改） */
