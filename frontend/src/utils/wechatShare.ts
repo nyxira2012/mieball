@@ -123,8 +123,13 @@ function loadJweixin(): Promise<WxSdk> {
     );
     s.onload = () => {
       clearTimeout(timer);
-      const wx = (globalThis as unknown as { wx?: WxSdk }).wx;
-      if (wx) resolve(wx);
+      /* uni-app H5 运行时把 window.wx 占成 uni 的别名（可写可配置、无 config
+         方法），和 jweixin 撞名——加载后两者虽都被覆盖成 SDK，但取谁不能赌
+         脚本覆盖顺序：优先拿专属的 jWeixin，退回 wx，且验过 config 是函数
+         才算真 SDK（纯浏览器 H5 里 wx 可能根本不是分享 SDK） */
+      const g = globalThis as unknown as { wx?: WxSdk; jWeixin?: WxSdk };
+      const sdk = g.jWeixin ?? g.wx;
+      if (sdk && typeof sdk.config === "function") resolve(sdk);
       else reject(new Error("jweixin-missing"));
     };
     s.onerror = () => {
@@ -168,14 +173,22 @@ function ensureWxReady(): Promise<WxSdk> {
   return configPromise;
 }
 
+/** 上次成功登记的卡片指纹（JSON 串）：同内容不重登的账本，失败不记 */
+let lastRegisteredFp: string | null = null;
+
 /** 登记本页分享卡：不在微信直接返回；在微信里 config 就绪后两个 update 一起调
     （朋友卡全四件、朋友圈卡只 title/link/imgUrl——朋友圈没有描述行，微信的规矩）。
+    同内容不重登：卡片 JSON 指纹等于上次成功登记的指纹就直接返回——done 局详情
+    onLoad+onShow 双拉、现场页轮询重建都会喂来一模一样的卡，SDK 侧重复登记纯浪费；
+    指纹只在两个 update 都落地后才记，中途失败不记，下次照常重试。
     任何一步失败 catch 静默——转出去退微信默认样，不弹错不打扰；签名请求只在
     微信内才发，开发期零噪声。 */
 export async function registerWechatShare(
   card: WechatShareCard,
 ): Promise<void> {
   if (!isWeChatBrowser()) return;
+  const fp = JSON.stringify(card); // 卡片都经 buildShareCard 产出，键序固定，串即指纹
+  if (fp === lastRegisteredFp) return;
   try {
     const wx = await ensureWxReady();
     wx.updateAppMessageShareData(card);
@@ -184,6 +197,7 @@ export async function registerWechatShare(
       link: card.link,
       imgUrl: card.imgUrl,
     });
+    lastRegisteredFp = fp;
   } catch {
     /* 静默降级（埋点在 http 层，够排障） */
   }

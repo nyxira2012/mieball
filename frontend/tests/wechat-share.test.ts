@@ -173,7 +173,7 @@ describe("registerWechatShare（登记编排）", () => {
     });
   });
 
-  it("签名接口抛错：静默收场不炸（卡退微信默认样），两 update 不调", async () => {
+  it("签名接口抛错：静默收场不炸（卡退微信默认样），两 update 不调；失败不记指纹，修好后同卡照常重试", async () => {
     const wx = {
       config: vi.fn(),
       ready: vi.fn((fn: () => void) => fn()),
@@ -187,9 +187,39 @@ describe("registerWechatShare（登记编排）", () => {
     await expect(registerWechatShare(CARD)).resolves.toBeUndefined();
     expect(wx.updateAppMessageShareData).not.toHaveBeenCalled();
     expect(wx.updateTimelineShareData).not.toHaveBeenCalled();
+    authApi.apiWechatJsapiSign.mockResolvedValue({
+      app_id: "wx1",
+      timestamp: 123,
+      nonce_str: "n",
+      signature: "sig",
+    });
+    await registerWechatShare(CARD);
+    expect(wx.updateAppMessageShareData).toHaveBeenCalledTimes(1);
   });
 
-  it("同一地址只签一次：二次登记吃 config 缓存，签名零新请求、update 照常", async () => {
+  it("同一地址只签一次：换卡重登吃 config 缓存，签名零新请求、update 照常", async () => {
+    const wx = {
+      config: vi.fn(),
+      ready: vi.fn((fn: () => void) => fn()),
+      error: vi.fn(),
+      updateAppMessageShareData: vi.fn(),
+      updateTimelineShareData: vi.fn(),
+    };
+    stubWechatEnv(wx);
+    authApi.apiWechatJsapiSign.mockResolvedValue({
+      app_id: "wx1",
+      timestamp: 123,
+      nonce_str: "n",
+      signature: "sig",
+    });
+    const { registerWechatShare } = await fresh();
+    await registerWechatShare(CARD);
+    await registerWechatShare({ ...CARD, title: "t2" });
+    expect(authApi.apiWechatJsapiSign).toHaveBeenCalledTimes(1);
+    expect(wx.updateAppMessageShareData).toHaveBeenCalledTimes(2);
+  });
+
+  it("同卡连登两次只登记一次；内容变了再登记（详情页双拉/现场页轮询不再重复打 SDK）", async () => {
     const wx = {
       config: vi.fn(),
       ready: vi.fn((fn: () => void) => fn()),
@@ -207,7 +237,48 @@ describe("registerWechatShare（登记编排）", () => {
     const { registerWechatShare } = await fresh();
     await registerWechatShare(CARD);
     await registerWechatShare(CARD);
-    expect(authApi.apiWechatJsapiSign).toHaveBeenCalledTimes(1);
+    expect(wx.updateAppMessageShareData).toHaveBeenCalledTimes(1);
+    expect(wx.updateTimelineShareData).toHaveBeenCalledTimes(1);
+    await registerWechatShare({ ...CARD, desc: "换了卡面" });
     expect(wx.updateAppMessageShareData).toHaveBeenCalledTimes(2);
+  });
+
+  it("wx 全局被占成别的对象（无 config，uni-app H5 的 uni 别名情形）且无 jWeixin：静默不炸", async () => {
+    stubWechatEnv({ uniAlias: true });
+    const { registerWechatShare } = await fresh();
+    await expect(registerWechatShare(CARD)).resolves.toBeUndefined();
+    expect(authApi.apiWechatJsapiSign).not.toHaveBeenCalled();
+  });
+
+  it("wx 被占成 uni 别名（无 config）时优先取 jWeixin：照常登记", async () => {
+    const jw = {
+      config: vi.fn(),
+      ready: vi.fn((fn: () => void) => fn()),
+      error: vi.fn(),
+      updateAppMessageShareData: vi.fn(),
+      updateTimelineShareData: vi.fn(),
+    };
+    vi.stubGlobal("navigator", { userAgent: "MicroMessenger/8.0.49" });
+    vi.stubGlobal("location", {
+      href: "https://x.y/#/pages/detail/detail?id=5",
+      origin: "https://x.y",
+    });
+    vi.stubGlobal("wx", { uniAlias: true });
+    vi.stubGlobal("jWeixin", jw);
+    vi.stubGlobal("document", {
+      createElement: () => ({ src: "", onload: null, onerror: null }),
+      head: {
+        appendChild: (s: { onload?: (() => void) | null }) => s.onload?.(),
+      },
+    });
+    authApi.apiWechatJsapiSign.mockResolvedValue({
+      app_id: "wx1",
+      timestamp: 123,
+      nonce_str: "n",
+      signature: "sig",
+    });
+    const { registerWechatShare } = await fresh();
+    await registerWechatShare(CARD);
+    expect(jw.updateAppMessageShareData).toHaveBeenCalledWith(CARD);
   });
 });
