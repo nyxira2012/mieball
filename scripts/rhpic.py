@@ -4,13 +4,21 @@ mieball 项目 - RunningHub 生图客户端 (单文件脚本)
 文件: rhpic.py
 
 功能与规范：
-1. 分类生图与默认存放路径：
-   - 人物形象 (avatar)：默认保存至 temp/形象/
-   - 卡片背景 (card_bg)：默认保存至 temp/卡片背景/
+1. 槽位预设（仿 comfy.py 分工纪律：工程归脚本，内容归调用方）：
+   - 人物形象 (avatar)：1024x1024 方图，2D 二头身动漫大头贴纸、粗白描边、
+     纯天蓝抠图底；默认保存至 temp/形象/
+   - 卡片背景 (card_bg)：1536x640 超宽横幅（战力卡横条构图、左侧安静区
+     留给 UI 文字）；默认保存至 temp/卡片背景/
 2. Prompt 架构分层：
-   - 规范部分：内置固定风格（如人物统一 2D二头身动漫大头、粗白描边、纯天蓝抠图底；背景统一运动卡片纹理、无人物）
-   - 内容部分：由 CLI 传入（如 "阿拉斯加犬，戴着红色围兜写着凶字"）
-3. 纯 Python 标准库编写，零三方包依赖，支持 --dry-run 免费预览。
+   - 规范部分（画风/画布/底色）：按槽位预设内置，尺寸字样由预设画布派生
+   - 内容部分：由 CLI 传入（如 "阿拉斯加犬，戴着红色围兜写着凶字"），只写
+     「谁/穿什么/神态」，不写画风与构图
+3. 画布尺寸同步纪律（远程工作流画布不在本脚本手里，改尺寸两处需同步）：
+   - 路线 A：每槽位一个专用工作流（RUNNINGHUB_WORKFLOW_ID_AVATAR /
+     RUNNINGHUB_WORKFLOW_ID_CARD_BG），画布在工作流里建好
+   - 路线 B：共用一个工作流 + --canvas-node-id 指出空潜空间画布节点，
+     脚本直接下发 width/height 覆盖
+4. 纯 Python 标准库编写，零三方包依赖，支持 --dry-run 免费预览与 --list-presets。
 """
 
 import argparse
@@ -23,51 +31,98 @@ import urllib.request
 from pathlib import Path
 
 # ==========================================
-# 1. 规范提示词模版 (固定规范)
+# 1. 槽位预设（工程参数 + 规范提示词模版）
 # ==========================================
+# 分工纪律仿 comfy.py：画风/画布/底色/落盘目录归脚本管，「谁/穿什么/神态」
+# 内容词全由 -c 调用方传入。提示词里的尺寸字样由 width/height 派生注入，
+# 预设改尺寸不会与提示词各说各话；远程工作流画布须与预设一致（同步纪律
+# 见模块 docstring：专用工作流或 --canvas-node-id 下发覆盖）。
 
-# 人物形象规范：2D 二头身动漫大头、1024x1024、粗白色描边、纯天蓝背景
-# （蓝幕色 #4A90E2 是 process_avatar.py 角点采样抠图的期望底色，改色两处需同步）
-AVATAR_SPEC_PREFIX = (
-    "2D anime chibi sticker style, 2-head-tall big head cute character, "
-    "bold thick crisp white outline contour surrounding the entire character, "
-    "isolated solid pure sky blue background (#4A90E2), vector sticker art, clean smooth lines, "
-    "centered 1024x1024 square avatar"
-)
-AVATAR_SPEC_SUFFIX = (
-    "vibrant colorful palette, high quality illustration, masterwork, no complex scenery, "
-    "no text watermark, sharp details"
-)
-AVATAR_NEGATIVE_PROMPT = (
-    "realistic photograph, complex background, gradient background, shadows on background, "
-    "messy lines, blurry, watermark, signature, low quality, bad anatomy, deformed"
-)
+PRESETS: dict = {
+    # 蓝幕色 #4A90E2 是 process_avatar.py 角点采样抠图的期望底色；
+    # 改色需 grep #4A90E2 同步全部出现处（含 comfy.py 的 sky_blue 短语）
+    "avatar": {
+        "title": "球员头像（二头身大头贴纸）",
+        "width": 1024,
+        "height": 1024,
+        "size_phrase": "centered {w}x{h} square avatar",
+        "role": "subject",
+        "workflow_env": "RUNNINGHUB_WORKFLOW_ID_AVATAR",
+        "out_dirname": "形象",
+        "spec_prefix": (
+            "2D anime chibi sticker style, 2-head-tall big head cute character, "
+            "bold thick crisp white outline contour surrounding the entire character, "
+            "isolated solid pure sky blue background (#4A90E2), vector sticker art, "
+            "clean smooth lines"
+        ),
+        "spec_suffix": (
+            "vibrant colorful palette, high quality illustration, masterwork, "
+            "no complex scenery, no text watermark, sharp details"
+        ),
+        "neg_prompt": (
+            "realistic photograph, complex background, gradient background, "
+            "shadows on background, messy lines, blurry, watermark, signature, "
+            "low quality, bad anatomy, deformed"
+        ),
+        # 生成成功后的指路提示（{save_path}/{w}/{h} 在打印时注入）
+        "post_hint": (
+            '可使用 python3 scripts/process_avatar.py "{save_path}" 进行自动抠图与 WebP 压缩。'
+        ),
+    },
+    # 1536x640：战力卡约 480x190 逻辑像素、@3x 清晰铺满的最小整画布；
+    # 左侧安静暗部与主体光效居右是卡面文字排版硬约束，属工程规范不属内容词；
+    # 改尺寸须与 comfy.py mb_cardbg 及 process_asset.CARD_SIZE 同步（跨脚本契约）
+    "card_bg": {
+        "title": "战力卡背横幅",
+        "width": 1536,
+        "height": 640,
+        "size_phrase": "ultra-wide {w}x{h} horizontal banner composition",
+        "layout_phrase": (
+            "key visuals spread across the central horizontal band, "
+            "left half kept as quiet low-contrast dark zone reserved for UI text overlay, "
+            "focal glow concentrated on the right side"
+        ),
+        "role": "theme",
+        "workflow_env": "RUNNINGHUB_WORKFLOW_ID_CARD_BG",
+        "out_dirname": "卡片背景",
+        "spec_prefix": (
+            "Abstract modern sports UI card background wallpaper, elegant texture, "
+            "sleek minimalist geometric shapes, stylish lighting and soft glow, "
+            "sports aesthetic, pickleball court dynamic atmosphere, clean composition"
+        ),
+        "spec_suffix": (
+            "smooth visual gradient, premium dark and neon mood, 8k resolution, "
+            "graphic design backdrop"
+        ),
+        "neg_prompt": (
+            "human, person, characters, face, text, letters, words, logo, typography, "
+            "watermark, noisy, messy, photographic human, cluttered"
+        ),
+        "post_hint": (
+            "卡背 {w}x{h} 直出即用；体积大时可用 "
+            'python3 scripts/process_asset.py --optimize --quality 52 "{save_path}" 压缩，'
+            '也可随时跑 python3 scripts/process_asset.py "{save_path}" 复验规格闸门。'
+        ),
+    },
+}
 
-# 卡片背景规范：无人物、无文字、高级运动UI卡片材质与光影
-CARDBG_SPEC_PREFIX = (
-    "Abstract modern sports UI card background wallpaper, elegant texture, sleek minimalist geometric shapes, "
-    "stylish lighting and soft glow, sports aesthetic, pickleball court dynamic atmosphere, "
-    "1024x1024, clean composition"
-)
-CARDBG_SPEC_SUFFIX = "smooth visual gradient, premium dark and neon mood, 8k resolution, graphic design backdrop"
-CARDBG_NEGATIVE_PROMPT = (
-    "human, person, characters, face, text, letters, words, logo, typography, watermark, "
-    "noisy, messy, photographic human, cluttered"
-)
+# --type 简称 → 正式槽位名（argparse choices 与 main 归一化都从这里派生）
+TYPE_ALIASES: dict = {"bg": "card_bg"}
 
 
 def build_prompt(item_type: str, content: str) -> tuple[str, str]:
-    """拼装规范部分与内容部分，生成最终提交给 RunningHub 的提示词"""
+    """按槽位预设拼装规范部分与内容部分，生成最终提交给 RunningHub 的提示词"""
+    preset = PRESETS[item_type]
     content = content.strip()
-
-    if item_type == "avatar":
-        prompt = f"{AVATAR_SPEC_PREFIX}, subject: {content}, {AVATAR_SPEC_SUFFIX}"
-        neg_prompt = AVATAR_NEGATIVE_PROMPT
-    else:
-        prompt = f"{CARDBG_SPEC_PREFIX}, theme: {content}, {CARDBG_SPEC_SUFFIX}"
-        neg_prompt = CARDBG_NEGATIVE_PROMPT
-
-    return prompt, neg_prompt
+    canvas = preset["size_phrase"].format(w=preset["width"], h=preset["height"])
+    parts = [
+        preset["spec_prefix"],
+        canvas,
+        preset.get("layout_phrase", ""),
+        f"{preset['role']}: {content}",
+        preset["spec_suffix"],
+    ]
+    return ", ".join(p for p in parts if p), preset["neg_prompt"]
 
 
 # ==========================================
@@ -106,8 +161,14 @@ class RunningHubClient:
         neg_prompt: str = "",
         prompt_node_id: str = "6",
         prompt_field: str = "text",
+        *,
+        canvas=None,
     ) -> str:
-        """调用 ComfyUI 工作流任务端点（负向提示词固定写节点 7 的 text 字段）"""
+        """调用 ComfyUI 工作流任务端点（负向提示词固定写节点 7 的 text 字段）。
+
+        canvas=(画布节点 ID, 宽, 高) 时对该节点（空潜空间画布节点）追加下发
+        width/height，一个远程工作流即可承载多尺寸预设，无需每预设各建一份。
+        """
         node_info_list = [
             {
                 "nodeId": str(prompt_node_id),
@@ -122,6 +183,22 @@ class RunningHubClient:
                     "fieldName": "text",
                     "fieldValue": neg_prompt,
                 }
+            )
+        if canvas:
+            node_id, width, height = canvas
+            node_info_list.extend(
+                [
+                    {
+                        "nodeId": str(node_id),
+                        "fieldName": "width",
+                        "fieldValue": str(width),
+                    },
+                    {
+                        "nodeId": str(node_id),
+                        "fieldName": "height",
+                        "fieldValue": str(height),
+                    },
+                ]
             )
 
         payload = {
@@ -234,25 +311,31 @@ def main():
   # 1. 免点数预览人物形象提示词与落盘路径
   python3 scripts/rhpic.py --type avatar -c "阿拉斯加犬，戴着红色围兜写着凶字" --dry-run
 
-  # 2. 正式生成人物形象 (默认保存在 temp/形象/)
+  # 2. 正式生成人物形象 (1024x1024 方图，默认保存在 temp/形象/)
   python3 scripts/rhpic.py --type avatar -c "阿拉斯加犬，戴着红色围兜写着凶字" --name "alaska_dog"
 
-  # 3. 生成卡片背景 (默认保存在 temp/卡片背景/)
+  # 3. 生成卡片背景 (1536x640 超宽横幅，默认保存在 temp/卡片背景/)
   python3 scripts/rhpic.py --type card_bg -c "赛博朋克极光，幽蓝与金黄粒子流光" --name "bg_cyber_aurora"
+
+  # 4. 共用一个工作流时，让脚本按预设尺寸直接覆盖远程画布节点
+  python3 scripts/rhpic.py --type card_bg -c "暗金熔炉，琥珀色流光" --canvas-node-id 3
+
+  # 5. 查看全部槽位预设（画布尺寸/落盘目录/专用工作流环境变量）
+  python3 scripts/rhpic.py --list-presets
 """,
     )
     parser.add_argument(
         "--type",
         "-t",
-        choices=["avatar", "card_bg", "bg"],
+        choices=[*PRESETS, *TYPE_ALIASES],
         default="avatar",
         help="生图类型: avatar(人物形象, 默认) 或 card_bg/bg(卡片背景)",
     )
     parser.add_argument(
         "--content",
         "-c",
-        required=True,
-        help="生图内容描述 (例如: '阿拉斯加犬，戴着红色围兜写着凶字' 或 '朝阳反手王')",
+        default="",
+        help="生图内容描述，只写「谁/穿什么/神态」 (例如: '阿拉斯加犬，戴着红色围兜写着凶字')",
     )
     parser.add_argument(
         "--name",
@@ -267,8 +350,8 @@ def main():
     )
     parser.add_argument(
         "--workflow-id",
-        default=os.getenv("RUNNINGHUB_WORKFLOW_ID", ""),
-        help="RunningHub ComfyUI 工作流 ID",
+        default="",
+        help="RunningHub ComfyUI 工作流 ID (缺省按优先级读槽位专用与通用环境变量)",
     )
     parser.add_argument(
         "--webapp-id",
@@ -284,6 +367,16 @@ def main():
         "--prompt-field",
         default="text",
         help="工作流中提示词输入字段 (默认 text)",
+    )
+    parser.add_argument(
+        "--canvas-node-id",
+        default="",
+        help="工作流中空潜空间画布节点 ID (如 EmptyLatentImage 节点号)；提供时脚本按预设尺寸下发 width/height 覆盖",
+    )
+    parser.add_argument(
+        "--list-presets",
+        action="store_true",
+        help="列出全部槽位预设 (画布/落盘目录/专用工作流环境变量) 后退出",
     )
     parser.add_argument(
         "--host",
@@ -303,18 +396,33 @@ def main():
 
     args = parser.parse_args()
 
-    # 规范化类型
-    item_type = "card_bg" if args.type in ("card_bg", "bg") else "avatar"
+    # --list-presets：打印槽位清单后退出（无需 -c 与 API Key）
+    if args.list_presets:
+        print("=" * 68)
+        print("【rhpic.py - 槽位预设清单】")
+        print("=" * 68)
+        for key, p in PRESETS.items():
+            print(f"  {key:8s} {p['title']}")
+            print(
+                f"          画布: {p['width']}x{p['height']}   落盘: temp/{p['out_dirname']}/"
+            )
+            print(f"          专用工作流环境变量: {p['workflow_env']}")
+        print("=" * 68)
+        return
+
+    if not args.content:
+        parser.error("参数 --content/-c 为必填（--list-presets 除外）")
+
+    # 规范化类型与槽位预设（别名表兜住简称，加新槽位只改 PRESETS 与 TYPE_ALIASES）
+    item_type = TYPE_ALIASES.get(args.type, args.type)
+    preset = PRESETS[item_type]
 
     # 确定保存路径 (脚本位于 scripts/ 下，项目根目录为父级的父级)
     workspace_root = Path(__file__).resolve().parent.parent
     if args.output_dir:
         out_dir = Path(args.output_dir).resolve()
     else:
-        if item_type == "avatar":
-            out_dir = workspace_root / "temp" / "形象"
-        else:
-            out_dir = workspace_root / "temp" / "卡片背景"
+        out_dir = workspace_root / "temp" / preset["out_dirname"]
 
     # 确定文件名
     if args.name:
@@ -331,8 +439,13 @@ def main():
     print("=" * 68)
     print("【rhpic.py - 生图任务配置】")
     print("=" * 68)
+    print(f"  模式分类: {preset['title']} ({item_type})")
     print(
-        f"  模式分类: {'人物形象 (avatar)' if item_type == 'avatar' else '卡片背景 (card_bg)'}"
+        f"  预设画布: {preset['width']}x{preset['height']}"
+        "（远程工作流画布须与此一致；不一致时用 --canvas-node-id 由脚本下发覆盖）"
+    )
+    print(
+        f"  画布覆盖: {'节点 ' + args.canvas_node_id if args.canvas_node_id else '未启用'}"
     )
     print(f"  传入内容: {args.content}")
     print(
@@ -353,23 +466,43 @@ def main():
             "\n[错误] 未检测到 API Key！请使用 --api-key 传入，或设置环境变量 export RUNNINGHUB_API_KEY='你的Key'"
         )
         sys.exit(1)
-    if not args.workflow_id and not args.webapp_id:
+    # 工作流 ID 解析优先级：命令行 > 槽位专用环境变量 > 通用环境变量回退
+    # （通用回退时画布未必匹配本槽位预设，输出里带提示人工把关）
+    workflow_id = args.workflow_id
+    workflow_src = "命令行 --workflow-id" if workflow_id else ""
+    if not workflow_id:
+        for env, note in (
+            (preset["workflow_env"], "槽位专用"),
+            ("RUNNINGHUB_WORKFLOW_ID", "通用回退，注意画布是否匹配预设"),
+        ):
+            workflow_id = os.getenv(env, "")
+            if workflow_id:
+                workflow_src = f"环境变量 {env} ({note})"
+                break
+
+    if not workflow_id and not args.webapp_id:
         print(
-            "\n[错误] 请提供 --workflow-id (工作流模式) 或 --webapp-id (AI App 模式)！"
+            f"\n[错误] 请提供 --workflow-id / 环境变量 {preset['workflow_env']} (工作流模式) 或 --webapp-id (AI App 模式)！"
         )
         sys.exit(1)
 
     client = RunningHubClient(api_key=args.api_key, host=args.host)
-    print("\n正在向 RunningHub 发起生图请求...")
+    src_note = f"（工作流来源: {workflow_src}）" if workflow_src else "（AI App 模式）"
+    print(f"\n正在向 RunningHub 发起生图请求{src_note}...")
 
     try:
-        if args.workflow_id:
+        if workflow_id:
             task_id = client.create_workflow_task(
-                workflow_id=args.workflow_id,
+                workflow_id=workflow_id,
                 prompt=final_prompt,
                 neg_prompt=neg_prompt,
                 prompt_node_id=args.prompt_node_id,
                 prompt_field=args.prompt_field,
+                canvas=(
+                    (args.canvas_node_id, preset["width"], preset["height"])
+                    if args.canvas_node_id
+                    else None
+                ),
             )
         else:
             task_id = client.create_ai_app_task(
@@ -381,12 +514,14 @@ def main():
         print("正在下载图片至本地...")
         client.download_image(img_url, save_path)
         print(f"\n√ 生成成功！已落盘至: {save_path}")
-        if item_type == "avatar":
-            print(
-                f'提示: 可使用 python3 process_avatar.py "{save_path}" 进行自动抠图与 WebP 压缩。'
+        print(
+            "提示: "
+            + preset["post_hint"].format(
+                save_path=save_path, w=preset["width"], h=preset["height"]
             )
+        )
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 —— CLI 顶层兜底，任何生图故障转成人话退出
         print(f"\n× 生图失败: {e}")
         sys.exit(1)
 
