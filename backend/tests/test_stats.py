@@ -53,12 +53,15 @@ def test_leaderboard_anonymous_sorted_and_shaped(client: TestClient):
     ratings = [r["dupr_rating"] for r in rows]
     assert ratings == sorted(ratings, reverse=True)  # 全表降序
     top = rows[0]
-    # 行形状：身份四件 + 战绩六件 + elo 一件，snake_case（契约总则 §1）
+    # 行形状：身份四件 + 装扮三键（1.9）+ 战绩六件 + elo 一件，snake_case（契约总则 §1）
     assert set(top) == {
         "id",
         "name",
         "chibi",
         "card_bg",
+        "avatar",
+        "avatar_url",
+        "back",
         "dupr_rating",
         "dupr_provisional",
         "dupr_games",

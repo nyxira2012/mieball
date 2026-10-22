@@ -43,6 +43,7 @@ from ..db.models import (
 from . import live_rotation
 from .accounts import person_view
 from .bills import bill_heads
+from .cosmetics import dress_fields
 from .game_views import derive, is_forced
 from .live_rotation import ARRIVED
 from .live_sweep import LiveSweepMixin
@@ -991,18 +992,22 @@ class LiveBook(LiveSweepMixin):
         is_organizer = viewer_id is not None and game.organizer_id == viewer_id
         stats = StatsLedger(self.db)
         roster = self._roster(game_id)
-        # 代位分与小人一次查齐（3s 轮询 + 每个写动作响应都走这里，逐人查会放大成 N+1；
-        # chibi 随行下发——前端名册头像不再向演示世界借位，2026-10-10 mock 退役）
+        # 代位分与小人/装扮一次查齐（3s 轮询 + 每个写动作响应都走这里，逐人查会放大成 N+1；
+        # chibi 随行下发——前端名册头像不再向演示世界借位，2026-10-10 mock 退役；
+        # 装扮三键同吃这行账号，_player_row 只透传不查库）
         rates = stats.pairing_ratings([p.account_id for p in roster])
         elo_rates = self._ratings_of([p.account_id for p in roster])
-        chibis = {
-            a.id: a.chibi
-            for a in self.db.execute(
+        acct_rows = (
+            self.db.execute(
                 select(Account).where(
                     Account.id.in_([p.account_id for p in roster if p.account_id])
                 )
-            ).scalars()
-        }
+            )
+            .scalars()
+            .all()
+        )
+        chibis = {a.id: a.chibi for a in acct_rows}
+        dresses = {a.id: dress_fields(a) for a in acct_rows}
         match_rows = (
             self.db.execute(
                 select(LiveMatch)
@@ -1021,6 +1026,7 @@ class LiveBook(LiveSweepMixin):
                 viewer_id=viewer_id,
                 dupr_value=rates[p.account_id],
                 chibi=chibis.get(p.account_id),
+                dress=dresses.get(p.account_id),
                 tonight=facts["tonight"].get(p.id, 0),
             )
             for p in roster
@@ -1704,6 +1710,7 @@ class LiveBook(LiveSweepMixin):
         viewer_id: int | None,
         dupr_value: float,
         chibi: str | None = None,
+        dress: dict | None = None,
         tonight: int = 0,
     ) -> dict:
         # 考勤分权（2.3 裁决 Q2）：早退迟到不展示给随便扫到的人
@@ -1714,6 +1721,11 @@ class LiveBook(LiveSweepMixin):
             "name": p.display_name,
             # 开账时定格的账号小人（访客无账号行 → None，前端按缺省形象渲染）
             "chibi": json.loads(chibi) if chibi else None,
+            # 装扮三键：注册球友由 view 预取递入；访客无账号行全 None——
+            # 前端兜指定公共款素材/素卡，访客不占个人衣柜
+            "avatar": dress["avatar"] if dress else None,
+            "avatar_url": dress["avatar_url"] if dress else None,
+            "back": dress["back"] if dress else None,
             "guest": p.guest,
             # DUPR 配平代位分（1.4 §6 修订：访客/无派分行统一 2.5、有派分行吃派生分）——
             # 值由 view 用 pairing_ratings 批量预算后递入

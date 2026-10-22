@@ -91,6 +91,18 @@ class Account(Base):
         Boolean, default=False, nullable=False
     )
     wechat_bound_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # ---- 装扮账本 ----
+    # 旧 chibi/card_bg 列保留不写不删（存量老数据原样躺着）；本组列全可空，
+    # NULL 统一由读侧兜默认公共款（services/cosmetics.py dress_fields）——零迁移
+    # dress_avatar：当前头像值 = 册子编号或 'wechat'（穿微信头像）
+    dress_avatar: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dress_back: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 解锁清单 JSON 数组 [{"id":cid,"new":bool}]——荣誉+定制入册；公共款人人
+    # 可用不占个人清单；注销时一并清 NULL
+    unlocks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 微信头像 URL：只在授权登录时刻顺手记录/刷新（绑定早未记录过的恒 NULL，
+    # 'wechat' 穿戴值读到 NULL 时回退默认公共款）
+    wechat_avatar: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class DeviceKey(Base):

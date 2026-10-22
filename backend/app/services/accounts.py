@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from ..core import clock, errors
 from ..core.logs import audit
 from ..db.models import Account
+from .cosmetics import default_dress, dress_fields
 from .keys import KeyVault
 from .passwords import PasswordMixin
 from .sms import SmsGate
@@ -76,18 +77,22 @@ def new_account(
 
 
 def person_view(account: Account | None) -> dict:
-    """名单里的一人：昵称+小人（1.1 隐私口径）；已注销/不存在 → 占位形象。
-    球局域名单（game_views）与意向列表（intents）共用的"对外一个人"形状。"""
+    """名单里的一人：昵称+小人+装扮三键（1.1 隐私口径 + 展示位直发）。
+    已注销/不存在 → 占位形象穿默认公共款（不读其穿戴列——清空靠 deactivate
+    写侧保证，读侧直接兜死更稳）。球局域名单（game_views）与意向列表
+    （intents）共用的"对外一个人"形状。"""
     if account is None or account.status != "active":
         return {
             "id": account.id if account else 0,
             "nickname": ANON_NAME,
             "chibi": dict(DEFAULT_CHIBI),
+            **default_dress(),
         }
     return {
         "id": account.id,
         "nickname": account.nickname,
         "chibi": json.loads(account.chibi),
+        **dress_fields(account),
     }
 
 
@@ -223,6 +228,12 @@ class AccountBook(PasswordMixin, WechatMixin):
         account.nickname = ANON_NAME
         account.chibi = json.dumps(DEFAULT_CHIBI)
         account.card_bg = None
+        # 装扮四列随账号消亡一并清空：解锁与穿戴不带入任何新账号（重新注册从零
+        # 开始）；历史名单里的注销者由读侧兜默认公共款，微信头像 URL 不残留
+        account.dress_avatar = None
+        account.dress_back = None
+        account.unlocks = None
+        account.wechat_avatar = None
         account.status = "deactivated"
         account.deactivated_at = clock.now()
         self.db.commit()
@@ -321,6 +332,7 @@ class AccountBook(PasswordMixin, WechatMixin):
                 "name": ANON_NAME,
                 "chibi": dict(DEFAULT_CHIBI),
                 "deactivated": True,
+                **default_dress(),
             }
         dupr_card = StatsLedger(self.db).card_flat(account.id)
         out: dict[str, Any] = {
@@ -329,6 +341,8 @@ class AccountBook(PasswordMixin, WechatMixin):
             "chibi": json.loads(account.chibi),
             "card_bg": account.card_bg,
             "deactivated": False,
+            # 装扮三键：头像值/解析好的素材路径/卡背编号，名片与档案随身份直发
+            **dress_fields(account),
             # 设置页/名片卡判"密码未设置/已设置"的唯一依据（1.6 A1）
             "has_password": account.password_hash is not None,
             # 名片主数字 → DUPR（1.4 §6）：六键平铺单一源 card_flat（榜单同吃），

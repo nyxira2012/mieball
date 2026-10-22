@@ -62,6 +62,12 @@ _NEW_COLUMNS = {
         "wechat_openid": "VARCHAR(64)",
         "wechat_verified": "BOOLEAN NOT NULL DEFAULT 0",
         "wechat_bound_at": "DATETIME",
+        # 装扮账本四列：存量库自动补列（穿戴/解锁清单/微信头像；存量行 NULL=
+        # 默认公共款兜底，零迁移——读侧见 services/cosmetics.py）
+        "dress_avatar": "TEXT",
+        "dress_back": "TEXT",
+        "unlocks": "TEXT",
+        "wechat_avatar": "TEXT",
     },
     # 6.1 批5：规则版本记号（明细/账单落账时的口径版本，值见 dupr.RULES_VERSION
     # 与 bills.SPLIT_VERSION；存量行 NULL=不回填——旧数据按当时的规矩算的不追认）
