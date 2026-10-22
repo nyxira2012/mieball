@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 from ..core import clock, errors
 from ..core.logs import audit
 from ..db.models import Account
-from .cosmetics import default_dress, dress_fields
+from .cosmetics import by_id, default_dress, dress_fields
 from .keys import KeyVault
 from .passwords import PasswordMixin
 from .sms import SmsGate
@@ -60,11 +60,12 @@ def new_account(
     nickname: str,
     chibi_json: str,
     device_marker: str,
+    dress_avatar: str | None = None,
     **wechat_cols: Any,
 ) -> Account:
-    """建号行工厂（signup 手填建号与微信快进 _fast_create 同吃）：基础六件一处
-    定形，快进支多带的微信三列经 **wechat_cols 透传——新增带非库默认值的账号列
-    时改这里一处，两条建号路不漂。"""
+    """建号行工厂（signup 手填建号与微信快进 _fast_create 同吃）：基础件一处
+    定形，注册卡挑的形象与快进支多带的微信列经参数透传——新增带非库默认值的
+    账号列时改这里一处，两条建号路不漂。"""
     return Account(
         phone=phone,
         nickname=nickname,
@@ -72,6 +73,7 @@ def new_account(
         status="active",
         device_marker=device_marker,
         created_at=clock.now(),
+        dress_avatar=dress_avatar,
         **wechat_cols,
     )
 
@@ -118,8 +120,7 @@ class AccountBook(PasswordMixin, WechatMixin):
         device_marker: str,
         nickname: str | None = None,
         nickname_set: bool = False,
-        chibi: dict[str, Any] | None = None,
-        chibi_set: bool = False,
+        avatar: str | None = None,
         bind_token: str | None = None,
     ) -> tuple[dict, str, bool]:
         """返回 (本人视图, 钥匙原文, 微信绑没绑上)。手机号已被占用且不可续接时抛
@@ -128,7 +129,9 @@ class AccountBook(PasswordMixin, WechatMixin):
 
         self._check_phone(phone)
         nickname = _resolve_nickname(nickname if nickname_set else None)
-        chibi_json = json.dumps(_validate_chibi(chibi) if chibi_set else DEFAULT_CHIBI)
+        avatar_id = _validate_public_avatar(avatar)
+        # 旧小人列退役只兜 NOT NULL；没挑形象存 NULL，读侧兜默认第一款
+        chibi_json = json.dumps(DEFAULT_CHIBI)
 
         existing = self._active_by_phone(phone)
         if existing is not None:
@@ -141,6 +144,7 @@ class AccountBook(PasswordMixin, WechatMixin):
             nickname=nickname,
             chibi_json=chibi_json,
             device_marker=device_marker,
+            dress_avatar=avatar_id,
         )
         self.db.add(account)
         try:
@@ -381,14 +385,14 @@ class AccountBook(PasswordMixin, WechatMixin):
             raise errors.phone_invalid()
 
     def _merge_card(self, account: Account, card: dict[str, Any] | None) -> None:
-        """D5：接管只覆盖本人明确填过的名片字段（*_set 显式标志，不做值推断）。
+        """D5：接管只覆盖本人明确填过的名片字段（不做值推断——头像 None=没挑）。
         短信接管与密码接管（PasswordMixin.redeem_password）共用。"""
         if not card:
             return
         if card.get("nickname_set"):
             account.nickname = _resolve_nickname(str(card.get("nickname") or ""))
-        if card.get("chibi_set"):
-            account.chibi = json.dumps(_validate_chibi(card.get("chibi")))
+        if card.get("avatar") is not None:
+            account.dress_avatar = _validate_public_avatar(str(card["avatar"]))
 
     def _resume_or_taken(self, existing: Account, device_marker: str) -> str:
         """占用分支：同设备且在续接窗口内 → 直接再发一把未验证钥匙续上；否则报占用。"""
@@ -420,6 +424,18 @@ def resolve_nickname_report(raw: str | None) -> tuple[str, bool]:
         return _resolve_nickname(raw), False
     except errors.ApiError:
         return _resolve_nickname(None), True
+
+
+def _validate_public_avatar(value: str | None) -> str | None:
+    """名片卡头像把关（手填建号/微信快进/接管合并三路共用）：注册与占卡界面
+    只有公共款可选，其余一律按「查无这件」拒——跨栏编号与荣誉/定制款对这张卡
+    而言等于不存在，不区分报错免得给越权试探递话。None=没挑，读侧兜默认。"""
+    if value is None:
+        return None
+    item = by_id(value)
+    if item is None or item.kind != "avatar" or item.tier != "common":
+        raise errors.cosmetic_not_found()
+    return value
 
 
 def _validate_chibi(chibi: Any) -> dict[str, int]:

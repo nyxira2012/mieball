@@ -220,13 +220,7 @@ def test_redeem_password_takeover_semantics(client: TestClient, sent):
         PHONE,
         "333333",
         "d-new",
-        card={
-            "phone": PHONE,
-            "nickname": "真主人",
-            "nickname_set": True,
-            "chibi": None,
-            "chibi_set": False,
-        },
+        card={"phone": PHONE, "nickname": "真主人", "nickname_set": True},
     )
     assert r["account"]["name"] == "真主人"  # 亲填覆盖、跳过沿用（D5）
     assert me(client, old) is None  # 全设备钥匙作废

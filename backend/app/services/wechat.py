@@ -1,9 +1,10 @@
 """wechat —— 微信钥匙的通道与策略（docs/1.7，1.6 §4.12 预留位的点亮册；1.8 快进建号/验证收编）。
 
 两层，与 sms.py（SmsGate 通道）/ passwords.py（PasswordMixin 策略）同构：
-- WeChatGate：微信官方网页授权的换脸（code→openid+昵称）与授权地址拼装，含假通道
-  （provider=fake，开发零资质全链可测——凭证即身份号，「|」后可带测试昵称；real 未配
-  AppID/Secret 时通道按 wechat_off 关死，绝不能拿假通道上生产）；绑定凭条的签发与核销
+- WeChatGate：微信官方网页授权的换脸（code→openid+昵称+头像）与授权地址拼装，
+  含假通道（provider=fake，开发零资质全链可测——凭证即身份号，「|」后可带
+  测试昵称与头像 URL，第三段可缺省；real 未配 AppID/Secret 时通道按
+  wechat_off 关死，绝不能拿假通道上生产）；绑定凭条的签发与核销
   （指纹制、10 分钟一次性，同钥匙/验证码规矩）。
 - WechatMixin：混入 AccountBook 的微信钥匙策略。绑定两档制（verified=绑定那一刻
   手机号是否验过）与 device_keys.verified 完全镜像——验明正身杀"顺手绑"（D4 的
@@ -70,16 +71,20 @@ class WeChatGate:
         )
         return f"{WX_AUTH_URL}?{params}#wechat_redirect"
 
-    def exchange(self, code: str, want_profile: bool = False) -> tuple[str, str | None]:
-        """授权凭证换 (openid, 微信昵称|None)。凭证侧 5 分钟一次性：过期/用过报
-        可自愈的 wechat_code_invalid，其余（服务不通/配置错）报 wechat_unavailable。
-        昵称只在快进建号路要（want_profile，1.8 §4.1 snsapi_userinfo 一步）——
-        直进/落卡/占卡验证三支拿到即扔，不白付一趟 userinfo 往返；任何抓取失败
-        只回 None 不拦路（§4.2）。"""
+    def exchange(
+        self, code: str, want_profile: bool = False
+    ) -> tuple[str, str | None, str | None]:
+        """授权凭证换 (openid, 微信昵称|None, 微信头像URL|None)。凭证侧 5 分钟
+        一次性：过期/用过报可自愈的 wechat_code_invalid，其余（服务不通/配置错）
+        报 wechat_unavailable。画像（昵称+头像）只在 want_profile 时取——认人门
+        与占卡验证现在每次授权都要（顺手刷新微信头像）；任何抓取失败只回 None
+        不拦路（§4.2）。"""
         if not self.real:
-            # 假通道：凭证即身份号；「|」后可选携带测试昵称（1.8 快进测试矩阵用）
-            openid, _, nick = code.partition("|")
-            return openid, (nick or None)
+            # 假通道：凭证即身份号；「|」后可选携带测试昵称与头像 URL（第三段可
+            # 缺省，两段/一段旧格式照旧）
+            openid, _, rest = code.partition("|")
+            nick, _, head = rest.partition("|")
+            return openid, (nick or None), (head or None)
         if not self._configured():
             raise errors.wechat_off()
         try:
@@ -104,29 +109,27 @@ class WeChatGate:
                 openid = data.get("openid")
                 if not openid:
                     raise errors.wechat_unavailable()
-                nick = (
-                    self._fetch_nickname(
+                nick = head = None
+                if want_profile:
+                    nick, head = self._fetch_profile(
                         client,
                         str(data.get("access_token") or ""),
                         str(openid),
                     )
-                    if want_profile
-                    else None
-                )
         except errors.ApiError:
             raise
         except Exception:  # noqa: BLE001 - 网络/解析故障统一明示，不静默
             raise errors.wechat_unavailable() from None
-        return str(openid), nick
+        return str(openid), nick, head
 
-    def _fetch_nickname(
+    def _fetch_profile(
         self, client: httpx.Client, access_token: str, openid: str
-    ) -> str | None:
-        """snsapi_userinfo 抓微信昵称（scope 已具备）：拿不到/没给一律 None，
-        建号路自会走随机名兜底（1.8 §4.2），绝不拖垮授权本身。
+    ) -> tuple[str | None, str | None]:
+        """snsapi_userinfo 抓微信昵称与头像（scope 已具备）：拿不到/没给一律
+        (None, None)，建号路自会走随机名兜底（1.8 §4.2），绝不拖垮授权本身。
         client 由 exchange 传入——与 token 调用共用一条连接。"""
         if not access_token:
-            return None
+            return None, None
         try:
             resp = client.get(
                 WX_USERINFO_URL,
@@ -137,12 +140,13 @@ class WeChatGate:
                 },
             )
             data = resp.json()
-        except Exception:  # noqa: BLE001 - 昵称是锦上添花，任何故障静默放弃
-            return None
+        except Exception:  # noqa: BLE001 - 画像是锦上添花，任何故障静默放弃
+            return None, None
         if data.get("errcode"):
-            return None
+            return None, None
         nick = data.get("nickname")
-        return str(nick) if nick else None
+        head = data.get("headimgurl")
+        return (str(nick) if nick else None, str(head) if head else None)
 
     # ---- 绑定凭条（生面孔转名片/验明正身时顺手绑的凭据） ----
 
@@ -207,8 +211,7 @@ class WechatMixin:
         fast: bool = False,
         nickname: str | None = None,
         phone: str | None = None,
-        chibi: dict[str, Any] | None = None,
-        chibi_set: bool = False,
+        avatar: str | None = None,
     ) -> WechatLoginOut:
         """认人门（1.7 §4.1/4.2 + 1.8 §4.1~§4.3 + 修订二）。
         回话字段义见 WechatLoginOut：
@@ -218,15 +221,17 @@ class WechatMixin:
         - "created"：fast=True 的快进建号（1.8）——微信生而正式绑、不发凭条（绑定一次
           完成）；修订二：卡上手机号没人用则建带号账号，选了头像落档。
         - 快进带号撞占用（异机/过窗）：抛 phone_taken，整体不生效（凭据作废，重点走三出口）。"""
-        # 昵称只在快进路要（fast+未绑才消费）；已绑+fast 的 ok 支多抓一趟就多抓——
-        # 换它一分支的简明，不值拆两段通道调用
-        openid, wx_nickname = self.wechat.exchange(code, want_profile=fast)
+        # 每次授权都取画像：ok 支要顺手刷新微信头像（只刷新不抹掉），昵称仍只在
+        # 快进路消费——不为省一趟 userinfo 拆两段通道调用
+        openid, wx_nickname, wx_avatar = self.wechat.exchange(code, want_profile=True)
         account = self._active_by_openid(openid)
         if account is not None:
             bind_token = self.wechat.issue_bind_token(openid)
             if account.wechat_verified:
                 self.keys.revoke_unverified(account.id)
                 self.db.commit()
+            # 落库随随后 keys.issue 的 commit 带走
+            self._refresh_wechat_avatar(account, wx_avatar)
             token = self.keys.issue(
                 account.id, device_marker, verified=account.wechat_verified
             )
@@ -249,36 +254,36 @@ class WechatMixin:
         return self._fast_create(
             openid,
             wx_nickname,
+            wx_avatar,
             nickname=nickname,
             device_marker=device_marker,
             phone=phone,
-            chibi=chibi,
-            chibi_set=chibi_set,
+            avatar=avatar,
         )
 
     def _fast_create(
         self,
         openid: str,
         wx_nickname: str | None,
+        wx_avatar: str | None,
         *,
         nickname: str | None,
         device_marker: str,
         phone: str | None = None,
-        chibi: dict[str, Any] | None = None,
-        chibi_set: bool = False,
+        avatar: str | None = None,
     ) -> WechatLoginOut:
         """快进建号（1.8 §4.1~§4.3 + 修订二「卡上填过的都算数」）：授权那一刻即
         本人——生而正式绑（§8 裁决 A）。手机号两支：没填→无号快进号（phone=None，
         注销预留的空位）；填了没人用→带号建号（两把钥匙一步到位）。昵称三优先级：
         卡上手填（strip 空视同没填）→ 微信昵称过清洗规矩（不合格视同拿不到，§4.2）
-        → 随机名；头像选了落档、没选默认小人（与手填建号同一条 D2 规矩）。
+        → 随机名；头像选了落档、没选默认款（与手填建号同一条 D2 规矩）。
         原子性（§4.9-3）：账号行 flush（openid/phone 唯一索引撞在此暴露）后由
         keys.issue 的 commit 一并落账，任何失败整体回滚不留半个账号。"""
         # 循环导入（accounts 先 import 本模块）：混入方运行时取用建号模块级件
         from .accounts import (
             DEFAULT_CHIBI,
             _resolve_nickname,
-            _validate_chibi,
+            _validate_public_avatar,
             new_account,
             resolve_nickname_report,
         )
@@ -291,6 +296,8 @@ class WechatMixin:
             self._check_phone(phone)
             existing = self._active_by_phone(phone)
             if existing is not None:
+                # 授权时刻的头像刷新随 _resume_or_taken 里发钥匙的 commit 落账
+                self._refresh_wechat_avatar(existing, wx_avatar)
                 token = self._resume_or_taken(existing, device_marker)
                 self._rebind(existing, openid, verified=True)
                 return WechatLoginOut(
@@ -309,16 +316,19 @@ class WechatMixin:
         else:
             # 微信昵称空/清洗不合格 → 落随机名并如实报（判据单一源在 accounts）
             final_name, nickname_random = resolve_nickname_report(wx_nickname)
-        chibi_json = json.dumps(_validate_chibi(chibi) if chibi_set else DEFAULT_CHIBI)
-        # 建号行基础六件走 accounts.new_account 工厂（手填建号同源），微信三列就地透传
+        # 旧小人列退役只兜 NOT NULL；注册形象落 dress_avatar，微信头像授权即记录
+        chibi_json = json.dumps(DEFAULT_CHIBI)
+        # 建号行基础件走 accounts.new_account 工厂（手填建号同源），微信列就地透传
         account = new_account(
             phone=phone,
             nickname=final_name,
             chibi_json=chibi_json,
             device_marker=device_marker,
+            dress_avatar=_validate_public_avatar(avatar),
             wechat_openid=openid,
             wechat_verified=True,
             wechat_bound_at=clock.now(),
+            wechat_avatar=wx_avatar,
         )
         self.db.add(account)
         try:
@@ -363,7 +373,8 @@ class WechatMixin:
         account = self._active_by_phone(phone)
         if account is None:
             raise errors.no_account()
-        openid, _ = self.wechat.exchange(code)
+        # 占卡微信验证进入也是一次授权：画像照取，头像顺手刷新（None 不抹已有）
+        openid, _, wx_avatar = self.wechat.exchange(code, want_profile=True)
         holder = self._active_by_openid(openid)
         if holder is None:
             raise errors.wechat_unbound()
@@ -375,6 +386,7 @@ class WechatMixin:
         self._wipe_password(account)
         self._merge_card(account, card)
         self._grant_grace(account)
+        self._refresh_wechat_avatar(account, wx_avatar)
         self.db.commit()
         token = self.keys.issue(account.id, device_marker, verified=True)
         return self.view(account.id, viewer="self"), token
@@ -412,6 +424,13 @@ class WechatMixin:
         target.wechat_verified = verified
         target.wechat_bound_at = clock.now()
         self.db.commit()
+
+    def _refresh_wechat_avatar(self, account: Account, url: str | None) -> None:
+        """每次授权顺手刷新微信头像：只刷新不抹掉——拿不到头像（None）别把已有
+        记录清了，清了装扮页「微信头像」选项就凭空消失。落库时机交给调用方既有
+        的 commit（发钥匙/换绑都会 commit），不为此单付一次磁盘同步。"""
+        if url:
+            account.wechat_avatar = url
 
     def _active_by_openid(self, openid: str) -> Account | None:
         return self.db.execute(

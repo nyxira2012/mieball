@@ -1,12 +1,15 @@
+# ruff: noqa: B008
 """auth 路由 —— 纯参数搬运：HTTP ↔ AccountBook/SmsGate，不写业务规则。
 
 响应约定：成功体 {"token"?, "account"?, "ok"}；失败体 {"error": {"code", "message"}}，
 前端按 error.code 分支（phone_taken / no_account / sms_* / ...）。
+Depends 参数默认值是全项目路由的 FastAPI 惯例写法（cosmetics/bills 等同款
+触发 B008），不单独迁移 Annotated 风格。
 """
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal  # Any 供 ProfileIn.chibi（改名片路仍收小人配置）
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
@@ -26,13 +29,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class CardIn(BaseModel):
-    """名片三行（4.2）。*_set 是"用户确实填了这一项"的显式标志（D5：不做值推断）。"""
+    """名片卡（4.2）。昵称沿用 *_set 显式标志（D5：不做值推断）；头像 None=没挑，
+    读侧兜默认第一款公共款——校验（只许公共款头像编号）收口在服务层。"""
 
     phone: str
     nickname: str | None = None
     nickname_set: bool = False
-    chibi: dict[str, Any] | None = None
-    chibi_set: bool = False
+    avatar: str | None = None
 
 
 class SignupIn(BaseModel):
@@ -129,8 +132,7 @@ class WechatLoginIn(BaseModel):
     fast: bool = False
     nickname: str | None = None
     phone: str | None = None
-    chibi: dict[str, Any] | None = None
-    chibi_set: bool = False
+    avatar: str | None = None
 
 
 class WechatRedeemIn(BaseModel):
@@ -160,8 +162,7 @@ def signup(
         device_marker=body.device_marker,
         nickname=body.card.nickname,
         nickname_set=body.card.nickname_set,
-        chibi=body.card.chibi,
-        chibi_set=body.card.chibi_set,
+        avatar=body.card.avatar,
         bind_token=body.bind_token,
     )
     return _session_out(view, token, wechat_bound)
@@ -355,8 +356,7 @@ def wechat_login(
         fast=body.fast,
         nickname=body.nickname,
         phone=body.phone,
-        chibi=body.chibi,
-        chibi_set=body.chibi_set,
+        avatar=body.avatar,
     )
     if out.status == "unbound":
         return {"status": "unbound", "bind_token": out.bind_token}

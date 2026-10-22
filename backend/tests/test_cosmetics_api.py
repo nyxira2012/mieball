@@ -135,6 +135,20 @@ def test_new_account_page_shape(client: TestClient):
     assert page["wechat_avatar_available"] is False
 
 
+def test_scalar_shaped_unlocks_column_opens_page(client: TestClient):
+    """unlocks 列被直插成 JSON 标量（合法 JSON、非清单形状）→ 按空清单开门，
+    不 TypeError 500——坏数据不拦装扮页的容错承诺兑现。"""
+    out = signup(client, "13920001002", "d")
+    with db_of(client) as db:
+        db.get(Account, out["account"]["id"]).unlocks = "42"
+        db.commit()
+    page = page_of(client, out["token"])
+    assert all(u["unlocked"] is False for u in page["unlocks"].values())
+    # dress 关卡同吃这只容错读：不炸、照常按零解锁把关
+    r = dress_call(client, out["token"], avatar="a-p2")
+    assert r.status_code == 200 and r.json()["avatar"] == "a-p2"
+
+
 # ---- 三类解锁 ----
 
 

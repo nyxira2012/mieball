@@ -117,67 +117,32 @@ def main() -> None:
     def travel(t: datetime) -> None:
         clock.now = lambda: t
 
-    # ---- 账号（9 名演示球友；chibi 值都在 CHIBI_RANGES 界内）----
+    # ---- 账号（9 名演示球友；形象=公共头像 6 款轮换）----
     roster = [
-        (
-            "海淀反手王",
-            "13900000001",
-            {"skin": 0, "hair": 2, "hc": 5, "shirt": 7, "face": 3, "acc": 1},
-        ),
-        (
-            "二环吊球手",
-            "13900000002",
-            {"skin": 1, "hair": 5, "hc": 0, "shirt": 1, "face": 1, "acc": 2},
-        ),
-        (
-            "朝阳扣杀王",
-            "13900000003",
-            {"skin": 0, "hair": 0, "hc": 0, "shirt": 5, "face": 0, "acc": 0},
-        ),
-        (
-            "回龙观搭子",
-            "13900000004",
-            {"skin": 1, "hair": 1, "hc": 2, "shirt": 2, "face": 0, "acc": 0},
-        ),
-        (
-            "老周",
-            "13900000005",
-            {"skin": 2, "hair": 0, "hc": 1, "shirt": 4, "face": 1, "acc": 1},
-        ),
-        (
-            "小雨",
-            "13900000006",
-            {"skin": 0, "hair": 3, "hc": 4, "shirt": 0, "face": 3, "acc": 0},
-        ),
-        (
-            "Kevin",
-            "13900000007",
-            {"skin": 1, "hair": 4, "hc": 3, "shirt": 6, "face": 2, "acc": 0},
-        ),
-        (
-            "板鸭",
-            "13900000008",
-            {"skin": 0, "hair": 1, "hc": 5, "shirt": 3, "face": 0, "acc": 1},
-        ),
-        (
-            "五道口教练",
-            "13900000009",
-            {"skin": 2, "hair": 2, "hc": 0, "shirt": 7, "face": 1, "acc": 0},
-        ),
+        ("海淀反手王", "13900000001"),
+        ("二环吊球手", "13900000002"),
+        ("朝阳扣杀王", "13900000003"),
+        ("回龙观搭子", "13900000004"),
+        ("老周", "13900000005"),
+        ("小雨", "13900000006"),
+        ("Kevin", "13900000007"),
+        ("板鸭", "13900000008"),
+        ("五道口教练", "13900000009"),
     ]
     # 两周前建号：局 6 的报名发生在上周，建号必须更早才是正序
     travel(
         (base - timedelta(days=14)).replace(hour=12, minute=0, second=0, microsecond=0)
     )
     tokens: dict[str, tuple[int, str]] = {}  # nickname -> (id, token)
-    for nickname, phone, chibi in roster:
-        view, token, _bound = accounts.signup(  # 三元组（1.8 快进：微信绑没绑上，seed 不消费）
-            phone=phone,
-            device_marker=f"seed-{phone}",
-            nickname=nickname,
-            nickname_set=True,
-            chibi=chibi,
-            chibi_set=True,
+    for i, (nickname, phone) in enumerate(roster):
+        view, token, _bound = (
+            accounts.signup(  # 三元组（1.8 快进：微信绑没绑上，seed 不消费）
+                phone=phone,
+                device_marker=f"seed-{phone}",
+                nickname=nickname,
+                nickname_set=True,
+                avatar=f"a-p{i % 6 + 1}",
+            )
         )
         tokens[nickname] = (view["id"], token)
 

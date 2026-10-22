@@ -198,6 +198,9 @@ def _unlocked_rows(account) -> list[dict]:
         rows = json.loads(raw)
     except ValueError:
         return []
+    # JSON 标量/字典形状不是清单：迭代标量会 TypeError 炸 500，容错承诺在此兑现
+    if not isinstance(rows, list):
+        return []
     return [r for r in rows if isinstance(r, dict) and r.get("id")]
 
 

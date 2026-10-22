@@ -60,8 +60,7 @@ def test_takeover_kills_even_verified_keys_and_merges_card(
             "phone": "13800003333",
             "nickname": "真主人",
             "nickname_set": True,
-            "chibi": {"skin": 2},
-            "chibi_set": False,
+            "avatar": "a-p5",
         },
     )
     acc = new_owner["account"]
@@ -70,8 +69,10 @@ def test_takeover_kills_even_verified_keys_and_merges_card(
         me(client, old_verified["token"]) is None
     )  # 前主人已验证钥匙也被清（号码回收场景）
     assert me(client, new_owner["token"]) is not None
-    # chibi_set=False → 不覆盖：形象保持原账号的默认（D5：只动用户明确填过的字段）
-    from app.services.accounts import DEFAULT_CHIBI  # noqa: PLC0415
+    # 挑了的头像随接管落档（D5：明确填过的才覆盖——avatar=None=没挑不动穿戴）
+    assert acc["avatar"] == "a-p5" and acc["avatar_url"] == "/cosmetics/a-p5.png"
+    # 旧小人列不被接管触碰（捏小人退役后该列只兜 NOT NULL）
+    from app.services.accounts import DEFAULT_CHIBI
 
     assert acc["chibi"] == DEFAULT_CHIBI
 

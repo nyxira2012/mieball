@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 
 from fastapi.testclient import TestClient
@@ -451,16 +450,15 @@ def wechat_fast(
     device: str = "d-fast",
     nickname: str | None = None,
     phone: str | None = None,
-    chibi: dict | None = None,
+    avatar: str | None = None,
 ) -> dict:
     body = {"code": code, "device_marker": device, "fast": True}
     if nickname is not None:
         body["nickname"] = nickname
     if phone is not None:
         body["phone"] = phone
-    if chibi is not None:
-        body["chibi"] = chibi
-        body["chibi_set"] = True
+    if avatar is not None:
+        body["avatar"] = avatar
     r = client.post("/api/auth/wechat/login", json=body)
     assert r.status_code == 200, r.text
     return r.json()
@@ -561,14 +559,15 @@ def test_fast_with_free_phone_creates_phone_account(client: TestClient):
         "wx_p1|阿号",
         device="d-p1",
         phone="13900001111",
-        chibi={"skin": 1, "hair": 2, "hc": 0, "shirt": 3, "face": 0, "acc": 0},
+        avatar="a-p2",
     )
     assert res["status"] == "created"
     acc = account_row(client, device_marker="d-p1")
     assert acc.phone == "13900001111"
     assert acc.wechat_openid == "wx_p1" and acc.wechat_verified is True
-    assert json.loads(acc.chibi)["skin"] == 1  # 选了落档，不吃默认小人
+    assert acc.dress_avatar == "a-p2"  # 选了落档，没选读侧兜 a-p1
     v = me(client, res["token"])
+    assert v["avatar"] == "a-p2" and v["avatar_url"] == "/cosmetics/a-p2.png"
     assert v.get("phone_tail") == "1111"  # 有号即有尾号（与无号支互为镜像）
 
 
@@ -846,3 +845,74 @@ def test_login_password_does_not_adopt(client: TestClient, sent: list):
     assert r.status_code == 200, r.text
     assert account_row(client, id=old["account"]["id"]).wechat_openid is None
     assert account_row(client, id=fast["account"]["id"]).wechat_openid == "wx_np"
+
+
+# ---- 1.9 §4.8 微信头像：授权时刻顺手记录、每次授权顺手刷新、只刷新不抹掉 ----
+
+
+def test_fast_create_records_wechat_avatar_and_dress_wears_it(client: TestClient):
+    """三段假通道（openid|昵称|头像URL）：快进建号从授权时刻就记下头像；
+    装扮页穿「微信头像」后，/me 的 avatar_url 直出该 URL。"""
+    res = wechat_fast(client, "wx_av1|阿微|http://wx/av.png")
+    assert res["status"] == "created"
+    assert account_row(client, id=res["account"]["id"]).wechat_avatar == (
+        "http://wx/av.png"
+    )
+    r = client.post(
+        "/api/cosmetics/dress",
+        json={"avatar": "wechat"},
+        headers=auth(res["token"]),
+    )
+    assert r.status_code == 200, r.text
+    v = me(client, res["token"])
+    assert v["avatar"] == "wechat" and v["avatar_url"] == "http://wx/av.png"
+
+
+def test_ok_login_refreshes_wechat_avatar(client: TestClient):
+    """已绑账号再次授权登录（ok 支）：微信里换了头像，站内跟着刷新。"""
+    first = wechat_fast(client, "wx_av2|阿二|http://wx/old.png")
+    acc_id = first["account"]["id"]
+    assert account_row(client, id=acc_id).wechat_avatar == "http://wx/old.png"
+    again = wechat_login(client, "wx_av2|阿二|http://wx/new.png")
+    assert again["status"] == "ok"
+    assert account_row(client, id=acc_id).wechat_avatar == "http://wx/new.png"
+
+
+def test_avatar_missing_in_authorize_keeps_record(client: TestClient):
+    """两段旧格式（第三段缺省）/一段纯 openid 都不炸；没拿到头像不抹已有记录
+    ——只刷新不抹掉，否则装扮页「微信头像」选项凭空消失。"""
+    first = wechat_fast(client, "wx_av3|阿三|http://wx/keep.png")
+    acc_id = first["account"]["id"]
+    again = wechat_login(client, "wx_av3|阿三")  # 两段旧格式
+    assert again["status"] == "ok"
+    assert account_row(client, id=acc_id).wechat_avatar == "http://wx/keep.png"
+    third = wechat_login(client, "wx_av3")  # 一段纯 openid
+    assert third["status"] == "ok"
+    assert account_row(client, id=acc_id).wechat_avatar == "http://wx/keep.png"
+
+
+def test_fast_rejects_avatar_outside_public_pool(client: TestClient):
+    """快进建号头像与手填建号同校验：非公共款一律查无这件，不半建。"""
+    r = client.post(
+        "/api/auth/wechat/login",
+        json={"code": "wx_bad", "device_marker": "d", "fast": True, "avatar": "a-x1"},
+    )
+    assert r.status_code == 404 and r.json()["error"]["code"] == "cosmetic_not_found"
+
+
+def test_wechat_redeem_refreshes_wechat_avatar(client: TestClient, sent: list):
+    """占卡微信验证进入也是一次授权：头像同样顺手刷新。"""
+    out = _bind_account(client, sent, "13800000071", "wx_rav")
+    assert account_row(client, id=out["account"]["id"]).wechat_avatar is None
+    r = client.post(
+        "/api/auth/wechat/redeem",
+        json={
+            "code": "wx_rav|新面|http://wx/re.png",
+            "phone": "13800000071",
+            "device_marker": "d-new",
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert (
+        account_row(client, id=out["account"]["id"]).wechat_avatar == "http://wx/re.png"
+    )

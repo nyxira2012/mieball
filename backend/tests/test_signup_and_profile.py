@@ -126,3 +126,37 @@ def test_profile_update_rules(client: TestClient):
     assert r.status_code == 422
     # 未带钥匙改名片 → 401
     assert client.post("/api/auth/profile", json={"nickname": "x"}).status_code == 401
+
+
+# ---- 1.9 §4.1 注册卡挑形象：只许公共款头像，选了落档、没选兜默认 ----
+
+
+def test_signup_with_public_avatar_lands_dress_column(client: TestClient):
+    out = signup(client, "13800001121", "dev-a", avatar="a-p3")
+    acc = out["account"]
+    assert acc["avatar"] == "a-p3"
+    assert acc["avatar_url"] == "/cosmetics/a-p3.png"
+    assert me(client, out["token"])["avatar"] == "a-p3"  # /me 同源
+    pub = client.get(f"/api/users/{acc['id']}").json()["account"]
+    assert pub["avatar"] == "a-p3"  # 公开视图（档案弹层）同一直发源
+
+
+def test_signup_without_avatar_defaults_first_public(client: TestClient):
+    out = signup(client, "13800001122", "dev-a")  # 头像没挑
+    acc = out["account"]
+    assert acc["avatar"] == "a-p1"  # 读侧兜默认第一款，不另写死列值
+    assert acc["avatar_url"] == "/cosmetics/a-p1.png"
+
+
+def test_signup_rejects_avatar_outside_public_pool(client: TestClient):
+    """注册卡不出现荣誉/定制/跨栏/不在册（§4.1 禁止）——一律按查无这件拒。"""
+    for bad in ("a-x1", "a-m5", "b-c1", "a-nope"):
+        r = client.post(
+            "/api/auth/signup",
+            json={
+                "device_marker": "d",
+                "card": {"phone": "13800001123", "avatar": bad},
+            },
+        )
+        assert r.status_code == 404, bad
+        assert r.json()["error"]["code"] == "cosmetic_not_found"
