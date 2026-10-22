@@ -355,6 +355,26 @@ def live_too_early() -> ApiError:
     return ApiError(403, "live_too_early", "开打前两小时内才能进现场")
 
 
+# ---- 装扮域 ----
+
+
+def cosmetic_not_found() -> ApiError:
+    # 编号不在册；跨栏编号（头像栏传了卡背号）对该栏而言同样查无
+    return ApiError(404, "cosmetic_not_found", "没有这件装扮")
+
+
+def cosmetic_not_unlocked() -> ApiError:
+    # 未达标的荣誉款 / 未被授予的定制款不能存成穿戴（能不能保存的真值在服务端）
+    return ApiError(403, "cosmetic_not_unlocked", "这件装扮还没解锁，不能穿")
+
+
+def wechat_avatar_missing() -> ApiError:
+    # 穿「微信头像」的前提是授权登录那一刻记下过头像；绑定早未记录的暂不给穿
+    return ApiError(
+        403, "wechat_avatar_missing", "微信头像还没记录过，下次微信授权登录后可用"
+    )
+
+
 # ---- 运维接口读取鉴权 ----
 
 

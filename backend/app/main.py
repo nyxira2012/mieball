@@ -11,7 +11,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import inspect, text
 
-from .api.routes import auth, bills, games, intents, live, logs, stats, users, wechat
+from .api.routes import (
+    auth,
+    bills,
+    cosmetics,
+    games,
+    intents,
+    live,
+    logs,
+    stats,
+    users,
+    wechat,
+)
 from .core.config import Settings, get_settings
 from .core.errors import ApiError
 from .core.logs import AccessLogMiddleware, Journal, internal_error_handler
@@ -189,6 +200,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(stats.router, prefix="/api")
     app.include_router(logs.router, prefix="/api")  # ops 读取口（6.1 批4）
     app.include_router(wechat.router, prefix="/api")
+    app.include_router(cosmetics.router, prefix="/api")
 
     @app.get("/")
     def root():
