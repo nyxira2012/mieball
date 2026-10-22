@@ -6,6 +6,7 @@
   - 📋 列表展示：查看最新注册用户或全部在册用户
   - 🔑 重置密码：一键为指定用户（或批量为全部用户）设置密码（默认 123456）
   - 🔓 账号解锁：清空连续输错密码导致的 15 分钟锁定状态
+  - 🎁 发卡收卡：往解锁清单发放/收回定制款装扮（可顺手穿上；收回时正穿着自动退默认）
   - 🌐 环境自由切换：默认操作阿里云 ECS 线上生产库，加 --local 切换至本地开发库
 
 常见用法：
@@ -18,6 +19,8 @@
   python3 scripts/manage_users.py -r 13300009999 -p 666888 # 为手机号重置密码为 666888
   python3 scripts/manage_users.py -u 4                     # 单独解除用户 4 的登录锁定
   python3 scripts/manage_users.py --reset-all              # 批量重置所有用户密码为 123456
+  python3 scripts/manage_users.py -g 4 --cid a-x1 --wear   # 给用户 4 发定制头像并顺手穿上
+  python3 scripts/manage_users.py --revoke 4 --cid b-x1    # 收回用户 4 的定制卡背（穿着自动退默认）
   python3 scripts/manage_users.py --local -l               # 操作本地开发库
 """
 
@@ -41,6 +44,12 @@ from datetime import datetime
 sys.path.insert(0, '/work/mieball/backend')
 
 from app.core import security
+from app.services.cosmetics import (
+    DEFAULT_AVATAR,
+    DEFAULT_BACK,
+    by_id,
+    parse_unlocks,
+)
 from app.services.passwords import PWD_MIN_LEN
 
 db_path = '/work/mieball/data/mieball.db'
@@ -86,6 +95,7 @@ def ser(r):
 action = sys.argv[1] if len(sys.argv) > 1 else 'list'
 param1 = sys.argv[2] if len(sys.argv) > 2 else ''
 param2 = sys.argv[3] if len(sys.argv) > 3 else '123456'
+param3 = sys.argv[4] if len(sys.argv) > 4 else ''
 
 CUR_COLS = 'id, phone, nickname, status, created_at, password_hash, pwd_fail_count, pwd_locked_until'
 
@@ -172,6 +182,79 @@ elif action == 'reset_all':
     rows = [ser(r) for r in cur.fetchall()]
     print(json.dumps({'success': True, 'action': 'reset_all', 'users': rows, 'password': pwd, 'count': len(rows)}, ensure_ascii=False))
 
+elif action in ('grant', 'revoke'):
+    # 发卡/收卡：编号校验单一源在后端装扮册子（by_id/tier/默认款都从册子取，
+    # 不在本脚本抄第二份清单——加款改档只改册子一处，运维口自动跟随）
+    target = param1.strip()
+    cid = param2.strip()
+    wear = param3.strip() == 'wear'
+    acc = find_account(target)
+    if not acc:
+        die(f'未找到目标用户: {target}')
+    item = by_id(cid)
+    if item is None:
+        die(f'编号不存在: {cid}')
+    if item.tier != 'custom':
+        # 荣誉款进出只走达标核算（收了会被核算复活、发了等于绕过达标后门），公共款人人可用无需发
+        if item.tier == 'honor':
+            die(f'只支持定制款: {cid} 是荣誉款，荣誉款进出只走达标核算')
+        die(f'只支持定制款: {cid} 是公共款，公共款人人可用无需发放')
+    uid = acc['id']
+    cur.execute("SELECT unlocks, dress_avatar, dress_back FROM accounts WHERE id = ?", (uid,))
+    row = cur.fetchone()
+    rows = parse_unlocks(row['unlocks'])
+    owned = [r['id'] for r in rows]
+
+    if action == 'grant':
+        # 幂等：已有该款不再追加（「新」标保持首次发放那一行原样）
+        already = cid in owned
+        if not already:
+            rows.append({'id': cid, 'new': True})
+            cur.execute(
+                "UPDATE accounts SET unlocks = ? WHERE id = ?",
+                (json.dumps(rows, ensure_ascii=False), uid),
+            )
+        worn = False
+        if wear:
+            # 穿哪列看册子 kind（avatar/back 前缀的语义真值在册子，不在此另判一遍）
+            col = 'dress_avatar' if item.kind == 'avatar' else 'dress_back'
+            cur.execute(f"UPDATE accounts SET {col} = ? WHERE id = ?", (cid, uid))
+            worn = True
+        conn.commit()
+        out = {'success': True, 'action': 'grant', 'cid': cid, 'already': already, 'worn': worn}
+    else:
+        had = cid in owned
+        if had:
+            rows = [r for r in rows if r['id'] != cid]
+            cur.execute(
+                "UPDATE accounts SET unlocks = ? WHERE id = ?",
+                (json.dumps(rows, ensure_ascii=False), uid),
+            )
+        # 正穿着该件才退默认，头像退头像的、卡背退卡背的（互不影响）；默认款取册子
+        # 常量。安静收回：纯库操作无通知，对方下次进装扮页自然见不到
+        undressed = False
+        if item.kind == 'avatar' and row['dress_avatar'] == cid:
+            cur.execute("UPDATE accounts SET dress_avatar = ? WHERE id = ?", (DEFAULT_AVATAR, uid))
+            undressed = True
+        if item.kind == 'back' and row['dress_back'] == cid:
+            cur.execute("UPDATE accounts SET dress_back = ? WHERE id = ?", (DEFAULT_BACK, uid))
+            undressed = True
+        conn.commit()
+        out = {'success': True, 'action': 'revoke', 'cid': cid, 'had': had, 'undressed': undressed}
+
+    cur.execute("SELECT id, phone, nickname, dress_avatar, dress_back, unlocks FROM accounts WHERE id = ?", (uid,))
+    r = cur.fetchone()
+    final = [x['id'] for x in parse_unlocks(r['unlocks'])]
+    out['user'] = {
+        'id': r['id'],
+        'phone': r['phone'] or '无',
+        'nickname': r['nickname'],
+        'dress_avatar': r['dress_avatar'],
+        'dress_back': r['dress_back'],
+        'unlocks': final,
+    }
+    print(json.dumps(out, ensure_ascii=False))
+
 conn.close()
 """
 
@@ -188,21 +271,22 @@ def parse_json_tail(text: str, err_label: str) -> dict:
     return {"error": f"未能解析{err_label}: {text}"}
 
 
-def run_local(action: str, param1: str = "", param2: str = "") -> dict:
-    """在本地环境（Mac 开发机或 ECS 本机）直接执行"""
-    local_backend = (
-        "/work/mieball/backend"
-        if os.path.exists("/work/mieball/backend")
-        else "/Users/dupidupi/mieball/backend"
-    )
-    local_db = (
+def run_local(
+    action: str, param1: str = "", param2: str = "", param3: str = ""
+) -> dict:
+    """在本地环境（Mac 开发机或 ECS 本机）直接执行。库址可被 MIEBALL_MANAGE_DB
+    环境变量改指（测试与临时操作别库用，不碰默认库）；后端代码目录按脚本自身
+    所在位置定位，不写死开发机绝对路径。"""
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    local_db = os.environ.get("MIEBALL_MANAGE_DB") or (
+        # ECS 本机运维把库放数据目录；开发机库在 backend 内
         "/work/mieball/data/mieball.db"
         if os.path.exists("/work/mieball/data/mieball.db")
-        else "/Users/dupidupi/mieball/backend/mieball.db"
+        else os.path.join(backend_dir, "mieball.db")
     )
 
     local_script = REMOTE_WORKER_SCRIPT.replace(
-        "/work/mieball/backend", local_backend
+        "/work/mieball/backend", backend_dir
     ).replace("/work/mieball/data/mieball.db", local_db)
 
     cmd = [
@@ -212,6 +296,7 @@ def run_local(action: str, param1: str = "", param2: str = "") -> dict:
         action,
         param1,
         param2,
+        param3,
     ]
     # 路径已由 local_script 里的 sys.path.insert 改写覆盖，不再另设 PYTHONPATH
     res = subprocess.run(cmd, capture_output=True, text=True, check=False)
@@ -221,20 +306,22 @@ def run_local(action: str, param1: str = "", param2: str = "") -> dict:
     return parse_json_tail(res.stdout, "执行输出")
 
 
-def run_ecs(action: str, param1: str = "", param2: str = "") -> dict:
+def run_ecs(action: str, param1: str = "", param2: str = "", param3: str = "") -> dict:
     """通过阿里云云助手在 ECS 执行"""
     b64_worker = base64.b64encode(REMOTE_WORKER_SCRIPT.encode("utf-8")).decode("utf-8")
 
     # 对参数做转义或 base64 处理
     b64_p1 = base64.b64encode(param1.encode("utf-8")).decode("utf-8")
     b64_p2 = base64.b64encode(param2.encode("utf-8")).decode("utf-8")
+    b64_p3 = base64.b64encode(param3.encode("utf-8")).decode("utf-8")
 
     remote_shell = f"""#!/bin/bash
 export LC_ALL=C
 PARAM1=$(echo "{b64_p1}" | base64 -d)
 PARAM2=$(echo "{b64_p2}" | base64 -d)
+PARAM3=$(echo "{b64_p3}" | base64 -d)
 echo "{b64_worker}" | base64 -d > /tmp/mieball_user_worker.py
-cd /work/mieball/backend && .venv/bin/python3 /tmp/mieball_user_worker.py "{action}" "$PARAM1" "$PARAM2"
+cd /work/mieball/backend && .venv/bin/python3 /tmp/mieball_user_worker.py "{action}" "$PARAM1" "$PARAM2" "$PARAM3"
 rm -f /tmp/mieball_user_worker.py
 """
 
@@ -332,12 +419,21 @@ def print_help_footer(env_flag: str) -> None:
         f"  • 单独解除锁定：      python3 scripts/manage_users.py {env_flag}-u <用户ID或手机号>"
     )
     print(
+        f"  • 发定制款装扮：      python3 scripts/manage_users.py {env_flag}-g <用户ID或手机号> --cid a-x1 [--wear]"
+    )
+    print(
+        f"  • 收定制款装扮：      python3 scripts/manage_users.py {env_flag}--revoke <用户ID或手机号> --cid b-x1"
+    )
+    print(
         f"  • 批量重置所有用户：  python3 scripts/manage_users.py {env_flag}--reset-all\n"
     )
 
 
 def fail(res: dict, verb: str) -> None:
-    """动作回话的失败出口单一源（五路动作共用）：报错并退出"""
+    """动作回话的失败出口单一源（六路动作共用）：有错报错并退出，无错原样放行。
+    出口必须放行成功回话——动作分支紧随其后读 res['user'] 等成功字段。"""
+    if "error" not in res:
+        return
     print(f"❌ {verb}失败: {res['error']}\n")
     sys.exit(1)
 
@@ -370,6 +466,27 @@ def main() -> None:
     )
     parser.add_argument(
         "-u", "--unlock", metavar="USER", help="解除指定用户的登录锁定 (清零连错计数)"
+    )
+    parser.add_argument(
+        "-g",
+        "--grant",
+        metavar="USER",
+        help="发定制款装扮到解锁清单 (输入 ID 或手机号，需配 --cid)",
+    )
+    parser.add_argument(
+        "--revoke",
+        metavar="USER",
+        help="从解锁清单收回定制款装扮 (输入 ID 或手机号，需配 --cid)",
+    )
+    parser.add_argument(
+        "--cid",
+        metavar="CID",
+        help="装扮编号 (grant/revoke 必填，只收定制款如 a-x1/b-x1)",
+    )
+    parser.add_argument(
+        "--wear",
+        action="store_true",
+        help="grant 时顺手帮穿上 (效果即刻全站可见)",
     )
     parser.add_argument(
         "--reset-all", action="store_true", help="一键重置所有在册用户的密码为指定密码"
@@ -410,7 +527,41 @@ def main() -> None:
         )
         return
 
-    # 3. 批量重置所有用户密码
+    # 3. 发卡 / 收卡（仅定制款；荣誉款进出只走达标核算）
+    if args.grant or args.revoke:
+        action = "grant" if args.grant else "revoke"
+        target = args.grant or args.revoke
+        verb = "发卡" if action == "grant" else "收卡"
+        if not args.cid:
+            print(f"❌ {verb}需要 --cid 指定装扮编号 (如 a-x1)\n")
+            sys.exit(1)
+        print(f"🔄 正在向 [{env_name}] 下发{verb}请求...")
+        res = runner(action, target, args.cid, "wear" if args.wear else "")
+        fail(res, verb)
+        u = res["user"]
+        print(f"\n🎉 {verb}成功！用户 #{u['id']} ({u['nickname']} · {u['phone']})")
+        if action == "grant":
+            if res.get("already"):
+                print(f"ℹ️ {res['cid']} 已在其解锁清单，未重复发放")
+            else:
+                print(f"👉 已发放定制款 {res['cid']}，对方下次打开装扮页即见")
+            if res.get("worn"):
+                print(f"👕 已顺手穿上 {res['cid']}，效果即刻全站可见")
+        else:
+            if res.get("had"):
+                print(f"👉 已从解锁清单收回 {res['cid']}")
+            else:
+                print(f"ℹ️ 其清单里本就没有 {res['cid']}，未动清单")
+            if res.get("undressed"):
+                print("👕 其正穿着该件，已自动退回默认公共款 (头像、卡背各退各的)")
+            print("🤫 安静收回：不另发通知，对方下次进装扮页自然见不到")
+        print(f"🎁 当前解锁清单: {'、'.join(u['unlocks']) or '（空）'}")
+        print(
+            f"👕 当前穿戴: 头像={u['dress_avatar'] or '默认'} · 卡背={u['dress_back'] or '默认'}\n"
+        )
+        return
+
+    # 4. 批量重置所有用户密码
     if args.reset_all:
         print(f"🔄 正在向 [{env_name}] 下发全量用户密码重置请求...")
         res = runner("reset_all", "", args.password)
@@ -422,7 +573,7 @@ def main() -> None:
         print_table(users, "重置后的在册用户", env_name)
         return
 
-    # 4. 搜索用户
+    # 5. 搜索用户
     if args.search:
         print(f"🔍 正在检索 [{env_name}] 用户 (关键字: {args.search})...")
         res = runner("search", args.search)
@@ -432,7 +583,7 @@ def main() -> None:
         print_help_footer(env_flag)
         return
 
-    # 5. 默认或 --list
+    # 6. 默认或 --list
     limit_str = "10"
     if args.list is not None:
         limit_str = str(args.list)

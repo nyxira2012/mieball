@@ -77,6 +77,22 @@ def test_takeover_kills_even_verified_keys_and_merges_card(
     assert acc["chibi"] == DEFAULT_CHIBI
 
 
+def test_takeover_card_without_avatar_keeps_dressing(client: TestClient, sent, fake):
+    """接管卡不带 avatar（D5 的 skip 支）：不明确填过就不动穿戴，头像保持原样。"""
+    signup(client, "13800005555", "d-old", avatar="a-p3")
+    fake.advance(seconds=61)
+    send_code(client, "13800005555", "takeover")
+    new_owner = redeem(
+        client,
+        "13800005555",
+        _code(sent, "13800005555", "takeover"),
+        "takeover",
+        "dev-new",
+        card={"phone": "13800005555", "nickname": "新主", "nickname_set": True},
+    )
+    assert new_owner["account"]["avatar"] == "a-p3"
+
+
 def test_signup_key_is_unverified_and_dies_on_any_sms_verify(client: TestClient, sent):
     """自己首台设备（报名直发、未验证）在首次短信验证后也要重拿钥匙（D4 的已知代价）。"""
     first = signup(client, "13800004444", "dev-1")

@@ -189,9 +189,10 @@ def dress_fields(account) -> dict:
 _FAMILY_PROGRESS_KEY = {"matches": "matches", "organize": "organizes"}
 
 
-def _unlocked_rows(account) -> list[dict]:
-    """unlocks 列的容错读：NULL/空/坏 JSON → 空清单——坏数据不拦装扮页开门。"""
-    raw = getattr(account, "unlocks", None)
+def parse_unlocks(raw: str | None) -> list[dict]:
+    """服务层与运维 worker 共吃的 unlocks 容错解析单一源：NULL/空串/坏 JSON/
+    非清单形状/无 id 行 → 空清单——坏数据不拦装扮页开门，也不崩运维回显。
+    （json.loads(None) 抛的是 TypeError 不是 ValueError，NULL 必须靠前置兜。）"""
     if not raw:
         return []
     try:
@@ -202,6 +203,11 @@ def _unlocked_rows(account) -> list[dict]:
     if not isinstance(rows, list):
         return []
     return [r for r in rows if isinstance(r, dict) and r.get("id")]
+
+
+def _unlocked_rows(account) -> list[dict]:
+    """账号行的取行入口：读列（鸭子类型）转交 parse_unlocks。"""
+    return parse_unlocks(getattr(account, "unlocks", None))
 
 
 def _threshold_met(item: Cosmetic, progress: dict) -> bool:

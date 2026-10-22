@@ -20,7 +20,7 @@ from app.core import clock
 from app.db.models import Account, DuprRating, Game, LiveMatch
 from app.services import cosmetics as cosmetics_service
 
-from .conftest import auth, signup
+from .conftest import auth, code_of, redeem, send_code, signup
 from .test_bills_generate import db_of, end_live
 from .test_live_score import deal_one
 from .test_playlog import settle, stage
@@ -297,3 +297,30 @@ def test_recount_failure_shows_last_state(client: TestClient, monkeypatch):
         "rating_provisional": True,
         "organizes": 0,
     }
+
+
+# ---- 隐私缺口（验收 Nit 修复）：清绑定连带清头像记录 ----
+
+
+def test_takeover_clears_wechat_avatar_flag(client: TestClient, sent, fake):
+    """接管清场四列一致（1.9 §4.8 口径）：前主人记下的微信头像随清绑定一并清，
+    号码回收后新主人装扮页不得见/穿它——wechat_avatar_available 归 False。"""
+    out = signup(client, "13920001008", "d-old")
+    token, uid = out["token"], out["account"]["id"]
+    with db_of(client) as db:
+        db.get(Account, uid).wechat_avatar = "https://wx.qlogo.cn/old.png"
+        db.commit()
+    assert page_of(client, token)["wechat_avatar_available"] is True
+
+    fake.advance(seconds=61)
+    send_code(client, "13920001008", "takeover")
+    new_owner = redeem(
+        client,
+        "13920001008",
+        code_of(sent, "13920001008", "takeover"),
+        "takeover",
+        "dev-new",
+    )
+    assert page_of(client, new_owner["token"])["wechat_avatar_available"] is False
+    with db_of(client) as db:
+        assert db.get(Account, uid).wechat_avatar is None

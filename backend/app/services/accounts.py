@@ -58,7 +58,6 @@ def new_account(
     *,
     phone: str | None,
     nickname: str,
-    chibi_json: str,
     device_marker: str,
     dress_avatar: str | None = None,
     **wechat_cols: Any,
@@ -69,7 +68,8 @@ def new_account(
     return Account(
         phone=phone,
         nickname=nickname,
-        chibi=chibi_json,
+        # 旧小人列退役只兜 NOT NULL，默认件工厂自置——调用方不再各拼一遍
+        chibi=json.dumps(DEFAULT_CHIBI),
         status="active",
         device_marker=device_marker,
         created_at=clock.now(),
@@ -130,8 +130,6 @@ class AccountBook(PasswordMixin, WechatMixin):
         self._check_phone(phone)
         nickname = _resolve_nickname(nickname if nickname_set else None)
         avatar_id = _validate_public_avatar(avatar)
-        # 旧小人列退役只兜 NOT NULL；没挑形象存 NULL，读侧兜默认第一款
-        chibi_json = json.dumps(DEFAULT_CHIBI)
 
         existing = self._active_by_phone(phone)
         if existing is not None:
@@ -142,7 +140,6 @@ class AccountBook(PasswordMixin, WechatMixin):
         account = new_account(
             phone=phone,
             nickname=nickname,
-            chibi_json=chibi_json,
             device_marker=device_marker,
             dress_avatar=avatar_id,
         )
@@ -232,12 +229,11 @@ class AccountBook(PasswordMixin, WechatMixin):
         account.nickname = ANON_NAME
         account.chibi = json.dumps(DEFAULT_CHIBI)
         account.card_bg = None
-        # 装扮四列随账号消亡一并清空：解锁与穿戴不带入任何新账号（重新注册从零
-        # 开始）；历史名单里的注销者由读侧兜默认公共款，微信头像 URL 不残留
+        # 装扮三列随账号消亡一并清空：解锁与穿戴不带入任何新账号（重新注册从零
+        # 开始）；历史名单里的注销者由读侧兜默认公共款，微信头像已随上方清位走
         account.dress_avatar = None
         account.dress_back = None
         account.unlocks = None
-        account.wechat_avatar = None
         account.status = "deactivated"
         account.deactivated_at = clock.now()
         self.db.commit()
