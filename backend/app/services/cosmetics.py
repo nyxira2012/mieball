@@ -7,7 +7,7 @@
 - a-m*/b-m* 场数族（参与对局 5/20/50 场）·a-t*/b-t* 台阶族（DUPR×10）·
   a-o*/b-o* 组局族（张罗正常散场局 3/10/30 局）——荣誉款只走达标核算
 - a-x*/b-x* 定制款（仅运维授予；册子整本一份，未授予者的装扮页不显示该节）
-素材按约定路径摆放（约定优于配置，册子不存路径）：/cosmetics/{cid}.png
+素材按约定路径摆放（约定优于配置，册子不存路径）：/cosmetics/{cid}.png（头像）/ .webp（卡背）
 """
 
 from __future__ import annotations
@@ -145,7 +145,11 @@ def honor_thresholds(family: str) -> tuple[int, ...]:
 
 
 def asset_url(cid: str) -> str:
-    return f"/cosmetics/{cid}.png"
+    # 扩展名按 kind 分流：头像 .png / 卡背 .webp（素材管线按此落盘
+    # frontend/public/cosmetics/）；编号首段即种类（a- 头像 / b- 卡背，册子
+    # 测试锁死的不变量），不必回表查 kind
+    ext = ".webp" if cid.startswith("b-") else ".png"
+    return f"/cosmetics/{cid}{ext}"
 
 
 def default_dress() -> dict:

@@ -121,6 +121,7 @@ def test_new_account_page_shape(client: TestClient):
     assert len(items) == 30
     assert "a-x1" not in items and "b-x1" not in items
     assert items["a-p1"]["asset"] == "/cosmetics/a-p1.png"
+    assert items["b-c1"]["asset"] == "/cosmetics/b-c1.webp"
     assert items["a-m20"]["lock_text"] == "参与 20 场对局解锁"
     assert len(page["unlocks"]) == 20  # 荣誉款全部列出（含未解锁），定制款不列
     for u in page["unlocks"].values():

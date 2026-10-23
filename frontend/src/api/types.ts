@@ -40,6 +40,10 @@ export interface User {
   shadow?: boolean; // 随行访客 · 不计积分不进榜（对局按新人初始等级代入算分，2.3 修订②）
   chibi: ChibiConfig;
   cardBg?: CardBg;
+  // 装扮三键（后端 person_view 单一源直出；chibi/cardBg 旧字段暂保留待清退）
+  avatar?: string; // 穿戴值原样（册子编号或 'wechat'）
+  avatarUrl?: string | null; // 后端解析好的素材 URL（wechat=授权时记下的原图；null=默认公共款）
+  back?: string | null; // 卡背编号（null=默认公共卡背，宿主素卡兜底）
   check?: CheckStatus;
   skip?: number; // 剩余歇轮数：歇两轮=2（2.1 文档+原型「候场区点人可设歇两轮」）。
   // 轮到发牌给他时递减 1（后端 live_rotation 取队消耗），归 0 自动归队；0=不在歇
