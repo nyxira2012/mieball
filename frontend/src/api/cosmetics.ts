@@ -34,6 +34,9 @@ export interface CosmeticsPageApi {
     organizes: number;
   };
   wechat_avatar_available: boolean;
+  /** 本人微信头像原图（有记录直出 URL、没记录 null）——试穿预览真图来源，
+      有选项（available）必有值；接口旧响应可缺省 */
+  wechat_avatar_url?: string | null;
 }
 
 /** 保存穿戴响应（后端 dress_fields 兜底后的穿戴三键：avatar='wechat' 时

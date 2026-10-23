@@ -19,6 +19,10 @@ export interface LeaderboardRowApi {
   dupr_last5: string[];
   dupr_month_net: number;
   elo_rating: number;
+  // 装扮三键（dress_fields 单一源直出，榜单行全量带——批7 展示位铺卡背的原料）
+  avatar: string;
+  avatar_url: string;
+  back: string;
 }
 
 /** 他人档案（可匿名）：隐私口径在后端（尾号只给同局打过的人，前端不补） */

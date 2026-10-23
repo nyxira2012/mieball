@@ -37,6 +37,9 @@ const view: AccountView = {
   name: "海淀反手王",
   chibi: { skin: 2, hair: 3, hc: 1, shirt: 4, face: 2, acc: 1 },
   card_bg: "gold",
+  avatar: "a-p3",
+  avatar_url: "/cosmetics/a-p3.png",
+  back: "b-c2",
   deactivated: false,
   has_password: false,
   phone: "13800001111",
@@ -293,11 +296,7 @@ describe("改名片（A3）", () => {
     const session = useSessionStore();
     session.$patch({ status: "ready", account: view });
 
-    await session.saveProfile({
-      nickname: " 亮马河快攻 ",
-      chibi: view.chibi,
-      card_bg: "gold",
-    });
+    await session.saveProfile({ nickname: " 亮马河快攻 " });
 
     expect(authApi.apiUpdateProfile).toHaveBeenCalledWith(
       expect.objectContaining({ nickname: "亮马河快攻" }), // 去首尾空格
@@ -330,6 +329,9 @@ describe("补绑手机号（1.8 §4.4）", () => {
     name: "球友8421",
     chibi: view.chibi,
     card_bg: "gold",
+    avatar: "wechat",
+    avatar_url: "https://wx.example/head.jpg",
+    back: "b-c1",
     deactivated: false,
     has_password: false,
     wechat_bound: true,
@@ -425,7 +427,7 @@ describe("微信钥匙（1.7）", () => {
       fast: true,
       nickname: "阿强",
       phone: "13800001234",
-      chibi: { skin: 1, hair: 2, hc: 0, shirt: 3, face: 0, acc: 0 },
+      avatar: "a-p2",
     });
     expect(r).toEqual({ status: "created", randomName: true });
     // 修订二：卡上手填字段（昵称/手机号/头像）如数透传 API 层
@@ -433,7 +435,7 @@ describe("微信钥匙（1.7）", () => {
       fast: true,
       nickname: "阿强",
       phone: "13800001234",
-      chibi: { skin: 1, hair: 2, hc: 0, shirt: 3, face: 0, acc: 0 },
+      avatar: "a-p2",
     });
     expect(session.status).toBe("ready");
     expect(useUserStore().me.name).toBe("球友8421");

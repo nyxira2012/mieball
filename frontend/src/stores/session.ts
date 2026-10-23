@@ -30,7 +30,6 @@ import {
   type WechatCardFields,
 } from "@/api/auth";
 import { clearCardDraft, deviceMarker, getToken, setToken } from "@/api/http";
-import type { CardBg, ChibiConfig } from "@/api/types";
 import { useUiStore } from "./ui";
 import { useUserStore } from "./user";
 
@@ -292,12 +291,9 @@ export const useSessionStore = defineStore("session", () => {
     return out;
   }
 
-  /** 改名片（A3）：昵称/小人/卡背随时可改。游客态走本地演示保存（不接后端） */
-  async function saveProfile(patch: {
-    nickname?: string;
-    chibi?: ChibiConfig;
-    card_bg?: CardBg;
-  }): Promise<string> {
+  /** 改名片（A3）：只剩昵称一件——头像/卡背的穿戴走装扮页专属口
+      （POST /cosmetics/dress），本口不再捎带。游客态走本地演示保存（不接后端） */
+  async function saveProfile(patch: { nickname?: string }): Promise<string> {
     const n = (patch.nickname ?? "").trim();
     if (!n) {
       const m = "昵称不能为空";
@@ -310,11 +306,7 @@ export const useSessionStore = defineStore("session", () => {
       ui.toast(msg);
       return msg;
     }
-    const { account: view } = await apiUpdateProfile({
-      nickname: n,
-      chibi: patch.chibi,
-      card_bg: patch.card_bg,
-    });
+    const { account: view } = await apiUpdateProfile({ nickname: n });
     applySelfView(view);
     const msg = "已保存 · 全局同步换新";
     ui.toast(msg);

@@ -34,7 +34,8 @@ export const GUEST_USER: User = {
 
 /** 账号视图（AccountView/榜单行同形）→ 档案 User：elo 只在榜单行有
     （elo_rating 直读，无行后端回 1200）；账号视图不带 elo，保留现场
-    结算行的回填值（live store 落） */
+    结算行的回填值（live store 落）。装扮三键的 snake→camel 单点也在这
+    （avatar_url→avatarUrl），两视图同形不分支 */
 function accountToUser(view: AccountView | LeaderboardRowApi): User {
   return {
     id: view.id,
@@ -48,6 +49,9 @@ function accountToUser(view: AccountView | LeaderboardRowApi): User {
     last5: [...(view.dupr_last5 || [])] as ("W" | "L")[],
     chibi: { ...view.chibi },
     cardBg: view.card_bg ?? undefined,
+    avatar: view.avatar,
+    avatarUrl: view.avatar_url,
+    back: view.back,
   };
 }
 
@@ -144,10 +148,17 @@ export const useUserStore = defineStore("user", () => {
     Object.assign(me, accountToUser(view), { elo });
   }
 
-  /** 退出/注销回落游客：占位身份原位复位；喜欢是本地态，换了身份不带走 */
+  /** 退出/注销回落游客：占位身份原位复位；喜欢是本地态，换了身份不带走。
+      装扮三键显式清 undefined——GUEST_USER 没带这三键，不清会穿着上一具
+      身份的形象当访客（游客的脸面批9 另定，先不残留） */
   function resetGuest(): void {
     likedIds.value.clear();
-    Object.assign(me, GUEST_USER, { chibi: { ...GUEST_USER.chibi } });
+    Object.assign(me, GUEST_USER, {
+      chibi: { ...GUEST_USER.chibi },
+      avatar: undefined,
+      avatarUrl: undefined,
+      back: undefined,
+    });
   }
 
   /* —— 5.1 我的页纯增量：装扮页即点即换 —— */

@@ -115,6 +115,7 @@ def test_new_account_page_shape(client: TestClient):
         "wearing",
         "progress",
         "wechat_avatar_available",
+        "wechat_avatar_url",
     }
     items = {i["cid"]: i for i in page["items"]}
     # 公共 10 + 荣誉 10 档×2 两族 = 30；定制款 2 件未授予不出现
@@ -134,6 +135,7 @@ def test_new_account_page_shape(client: TestClient):
         "organizes": 0,
     }
     assert page["wechat_avatar_available"] is False
+    assert page["wechat_avatar_url"] is None  # 新号没记过微信头像：无真图可出
 
 
 def test_scalar_shaped_unlocks_column_opens_page(client: TestClient):
@@ -256,6 +258,7 @@ def test_dress_guards_and_save(client: TestClient):
     page = page_of(client, token)
     assert page["wearing"] == {"avatar": "wechat", "back": "b-c2"}
     assert page["wechat_avatar_available"] is True
+    assert page["wechat_avatar_url"] == "https://wx.qlogo.cn/me.png"
 
 
 # ---- 定制款隐身（4.7 条目层裁剪） ----
@@ -312,6 +315,7 @@ def test_takeover_clears_wechat_avatar_flag(client: TestClient, sent, fake):
         db.get(Account, uid).wechat_avatar = "https://wx.qlogo.cn/old.png"
         db.commit()
     assert page_of(client, token)["wechat_avatar_available"] is True
+    assert page_of(client, token)["wechat_avatar_url"] == "https://wx.qlogo.cn/old.png"
 
     fake.advance(seconds=61)
     send_code(client, "13920001008", "takeover")
@@ -323,5 +327,6 @@ def test_takeover_clears_wechat_avatar_flag(client: TestClient, sent, fake):
         "dev-new",
     )
     assert page_of(client, new_owner["token"])["wechat_avatar_available"] is False
+    assert page_of(client, new_owner["token"])["wechat_avatar_url"] is None
     with db_of(client) as db:
         assert db.get(Account, uid).wechat_avatar is None

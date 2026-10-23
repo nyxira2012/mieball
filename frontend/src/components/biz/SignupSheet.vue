@@ -27,13 +27,13 @@
       <AppField label="选个头像">
         <view class="presets">
           <view
-            v-for="(p, i) in CHIBI_PRESETS"
-            :key="i"
+            v-for="(cid, i) in PUBLIC_AVATARS"
+            :key="cid"
             class="ptile"
             :class="{ on: picked === i }"
             @click="pick(i)"
           >
-            <ChibiAvatar :chibi="p.c" :size="44" />
+            <AvatarBadge :url="avatarUrl(cid)" :size="44" />
           </view>
         </view>
       </AppField>
@@ -166,12 +166,13 @@ import type { PropType } from "vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import AppField from "@/components/ui/AppField.vue";
 import AppInput from "@/components/ui/AppInput.vue";
-import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
 import WechatButton from "@/components/biz/WechatButton.vue";
 import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import { runPendingResume } from "@/composables/pendingResume";
-import { CHIBI_PRESETS, PHONE_USE_NOTE } from "@/api/dict";
+import { PUBLIC_AVATARS, PHONE_USE_NOTE } from "@/api/dict";
+import { avatarUrl } from "@/utils/cardbg";
 import { cardPayloadOf, type CardPayload } from "@/api/auth";
 import {
   ApiError,
@@ -184,11 +185,7 @@ import { useSmsCountdown } from "@/composables/useSmsCountdown";
 import { phoneInputError, smsCodeError } from "@/utils/validate";
 import { isWeChatBrowser, goWechatAuth } from "@/utils/wechat";
 import { goLogin } from "@/utils/nav";
-import type {
-  ChibiConfig,
-  DirectOpenInput,
-  PublishGameInput,
-} from "@/api/types";
+import type { DirectOpenInput, PublishGameInput } from "@/api/types";
 
 const props = defineProps({
   pendingJoin: {
@@ -231,7 +228,7 @@ const code = ref("");
 const pwd = ref("");
 /** password_locked 后亮「改用短信验证」出口：锁只锁密码路一刻钟，短信路照常（§4.9 边缘） */
 const pwdLocked = ref(false);
-/** 选中的预设下标；null=没选（跳过 → 服务端默认小人） */
+/** 选中的公共头像下标；null=没选（跳过 → 服务端兜默认第一款） */
 const picked = ref<number | null>(null);
 const busy = ref(false);
 const { countdown, start: startCountdown } = useSmsCountdown();
@@ -312,7 +309,7 @@ function pick(i: number): void {
 }
 
 /** 名片草稿_payload（D5 合并用）：建号 / 短信接管 / 密码接管三路同形，收一处防漂移；
-    旗标拼装与预设映射在 api/auth cardPayloadOf 单一源（与微信回跳重建路共用） */
+    旗标拼装与公共头像下标→编号映射在 api/auth cardPayloadOf 单一源（与微信回跳重建路共用） */
 function cardPayload(): CardPayload {
   return cardPayloadOf(phone.value.trim(), nickname.value, picked.value);
 }
@@ -354,7 +351,7 @@ function onWechatFast(): void {
   void goWechatAuth({
     fast: true,
     nickname: card.nickname?.trim() || undefined,
-    chibi: card.chibi,
+    avatar: card.avatar,
     phone: card.phone || undefined,
     pending: pendingSnapshot(),
   });
@@ -533,7 +530,7 @@ function afterSuccess(msg: string): void {
   flex: 1;
 }
 
-/* 预设头像组：横向滚动一屏可选（1.1 A2 空状态） */
+/* 公共头像组：横向滚动一屏可选（注册卡恰 6 款，可不选默认第一款） */
 .presets {
   display: flex;
   gap: 10px;

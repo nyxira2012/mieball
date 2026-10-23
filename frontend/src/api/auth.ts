@@ -1,7 +1,7 @@
 /* 账号域 API（1.1 基础 + 1.6 密码钥匙）—— 只做类型化取数与错误透传，业务态在 stores/session。
    响应里的 account 是后端"隐私出口"视图：本人视图含 phone/phone_tail。 */
 import { request } from "./http";
-import { CHIBI_PRESETS } from "./dict";
+import { PUBLIC_AVATARS } from "./dict";
 import type { CardBg, ChibiConfig } from "./types";
 
 export type SmsPurpose =
@@ -27,21 +27,27 @@ export interface AccountView {
   deactivated: boolean;
   has_password: boolean; // 密码钥匙已设（1.6）：设置页「设/改密」与占卡「用密码进入」的唯一判定依据
   wechat_bound?: boolean; // 微信登记位有无（1.8 批3）：我的页「微信已绑定」行两态唯一判定（仅本人视图给）
+  // 装扮三键（后端 dress_fields 单一源直出，任何态都有值：'wechat'=微信头像、
+  // avatar_url 是解析好的素材路径；注销/缺省兜默认公共款）
+  avatar: string;
+  avatar_url: string;
+  back: string;
   phone?: string;
   phone_tail?: string;
 }
 
-/** 名片三行。*_set 是"用户确实填了这一项"的显式标志（接管合并 D5 用，不做值推断） */
+/** 名片三行。*_set 是"用户确实填了这一项"的显式标志（接管合并 D5 用，不做值推断）；
+    头像不设 _set 旗——None=没挑即不覆盖，与后端 _merge_card 口径一致 */
 export interface CardPayload {
   phone: string;
   nickname?: string;
   nickname_set?: boolean;
-  chibi?: ChibiConfig;
-  chibi_set?: boolean;
+  /** 公共头像编号（a-p1..a-p6）；不传=没挑（建号落默认第一款） */
+  avatar?: string;
 }
 
 /** 名片草稿 → CardPayload（D5 显式旗标单一源）：SignupSheet 表单路与 login.vue
-    微信回跳重建路共用——「明确填过的才置位」与预设下标映射只此一份，防两处漂移 */
+    微信回跳重建路共用——「明确填过的才置位」与公共头像下标→编号映射只此一份，防两处漂移 */
 export function cardPayloadOf(
   phone: string,
   nickname: string,
@@ -51,8 +57,7 @@ export function cardPayloadOf(
     phone,
     nickname,
     nickname_set: !!nickname.trim(),
-    chibi: picked != null ? CHIBI_PRESETS[picked].c : undefined,
-    chibi_set: picked != null,
+    avatar: picked != null ? PUBLIC_AVATARS[picked] : undefined,
   };
 }
 
@@ -248,8 +253,8 @@ export type WechatCardFields = {
   nickname?: string;
   /** 卡上手机号——没人用建带号账号、撞占用后端拒 phone_taken */
   phone?: string;
-  /** 卡上选中的预设小人；不传=默认小人 */
-  chibi?: ChibiConfig;
+  /** 卡上选的公共头像编号；不传=没挑（后端落默认第一款） */
+  avatar?: string;
 };
 
 export function apiWechatLogin(
@@ -261,7 +266,6 @@ export function apiWechatLogin(
     code,
     device_marker: device,
     ...opts,
-    chibi_set: opts?.chibi != null,
   });
 }
 

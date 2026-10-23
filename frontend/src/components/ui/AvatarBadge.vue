@@ -25,10 +25,12 @@
    「半身填圆、圆外透明、描边随圆」规格到位后撤掉取景模拟、改直摆——届时只改
    本组件样式。 */
 import { computed, ref, watch } from "vue";
+import { avatarUrl } from "@/utils/cardbg";
 
 /* 后端册子 DEFAULT_AVATAR='a-p1' 的镜像：url=null（访客/未记微信头像的老球友/
-   异常编号兜底）一律指定公共款素材，不露破图（访客与示例局人物同款公共头） */
-const DEFAULT_AVATAR_URL = "/cosmetics/a-p1.png";
+   异常编号兜底）一律指定公共款素材，不露破图（访客与示例局人物同款公共头）；
+   路径拼接收口 cardbg 的 avatarUrl 单一源 */
+const DEFAULT_AVATAR_URL = avatarUrl("a-p1");
 
 const props = withDefaults(
   defineProps<{

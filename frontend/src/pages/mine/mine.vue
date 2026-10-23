@@ -9,10 +9,12 @@
       <view class="brand">我<text class="bem">的</text>球场</view>
     </view>
 
-    <!-- 头部形象区（5.1 页面设计）：点形象即进装扮页 -->
+    <!-- 头部形象区（5.1 页面设计）：点形象即进装扮页。名片铺我的卡背（'f' 档全幅，
+         无卡背/访客素卡渐变兜底）、头像换圆章（me.avatarUrl 后端解析直出） -->
     <view class="mecard">
+      <CardBackdrop :cid="me.back ?? null" mode="f" />
       <view class="av" @click="go('/pages/mine/dress')">
-        <ChibiAvatar :chibi="me.chibi" :size="88" />
+        <AvatarBadge :url="me.avatarUrl ?? null" :size="88" />
       </view>
       <view class="minfo">
         <view class="mname">{{ meName }}</view>
@@ -270,7 +272,8 @@
 import { computed, ref, watch } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import PageShell from "@/components/biz/PageShell.vue";
-import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
+import CardBackdrop from "@/components/ui/CardBackdrop.vue";
 import AppChip from "@/components/ui/AppChip.vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import AppField from "@/components/ui/AppField.vue";
@@ -564,7 +567,12 @@ async function onBindConfirm(): Promise<void> {
 }
 
 /* ---------- mecard ---------- */
+/* 宿主契约（CardBackdrop）：relative+hidden 裁圆角出血；z-index:0 立层叠上下文，
+   让负 z-index 的卡底层垫在卡底渐变之上、文字之下。渐变即素卡兜底（访客/无卡背） */
 .mecard {
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
   display: flex;
   gap: 16px;
   align-items: center;

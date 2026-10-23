@@ -346,4 +346,8 @@ def dressing_page(db: Session, account) -> dict:
         "wearing": {"avatar": wearing["avatar"], "back": wearing["back"]},
         "progress": progress,
         "wechat_avatar_available": bool(account.wechat_avatar),
+        # 本人视角直出自己的微信头像原图（本人装扮页专用，不进任何他人视图）：
+        # 身份下发的 avatar_url 只在正穿着 'wechat' 时才是微信图，试穿预览
+        # （还没穿上）取不到，故页视图另出此键
+        "wechat_avatar_url": account.wechat_avatar,
     }

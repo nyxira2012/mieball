@@ -227,7 +227,7 @@ describe("beginWechatAuth（出发编排）", () => {
     expect(ctx?.fast).toBe(true);
     expect(ctx?.phone).toBeUndefined(); // 没填不落位（修订二：填了才带）
     expect(ctx?.nickname).toBeUndefined();
-    expect(ctx?.chibi).toBeUndefined();
+    expect(ctx?.avatar).toBeUndefined();
     expect(ctx?.back).toBe("/pages/detail/detail?id=9");
   });
 
@@ -240,11 +240,10 @@ describe("beginWechatAuth（出发编排）", () => {
     authApi.apiWechatUrl.mockResolvedValue({
       url: "https://open.weixin.qq.com/xxx",
     });
-    const chibi = { skin: 1, hair: 2, hc: 0, shirt: 3, face: 0, acc: 0 };
     await beginWechatAuth({
       fast: true,
       nickname: "阿强",
-      chibi,
+      avatar: "a-p2",
       phone: "13800001234",
       pending: { pendingJoin: { gameId: 9, bring: 0 } },
       toast: vi.fn(),
@@ -252,7 +251,7 @@ describe("beginWechatAuth（出发编排）", () => {
     const ctx = readWechatCtx();
     expect(ctx?.fast).toBe(true);
     expect(ctx?.nickname).toBe("阿强");
-    expect(ctx?.chibi).toEqual(chibi);
+    expect(ctx?.avatar).toBe("a-p2");
     expect(ctx?.phone).toBe("13800001234");
   });
 

@@ -516,7 +516,7 @@ async function handleWechatReturn(code: string, state: string): Promise<void> {
         ? {
             fast: true,
             nickname: ctx.nickname,
-            chibi: ctx.chibi,
+            avatar: ctx.avatar,
             phone: ctx.phone,
           }
         : undefined,

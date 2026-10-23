@@ -7,7 +7,6 @@ import { errText } from "@/api/http";
 import { useUiStore } from "@/stores/ui";
 import type { SignupPending } from "@/stores/ui";
 import { TAB_ROUTES } from "@/utils/nav";
-import type { ChibiConfig } from "@/api/types";
 
 /** 出发去授权可带的字段（快进卡三件 + 挂起动作）——begin/go 两入口同形 */
 type WechatAuthOpts = WechatCardFields & { pending?: SignupPending };
@@ -34,8 +33,8 @@ export interface WechatAuthCtx {
   phone?: string;
   /** 快进卡「叫什么」手填值（修订二随表单回归）：空手填不存 */
   nickname?: string;
-  /** 快进卡选中的预设小人（修订二随表单回归）：没选不存（后端落默认小人） */
-  chibi?: ChibiConfig;
+  /** 快进卡选的公共头像编号（修订二随表单回归）：没选不存（后端落默认第一款） */
+  avatar?: string;
   /** 动作弹卡主钮出发=true（1.8 快进建号）；登录页微信键出发不存——
       回跳后端默认 False，unbound 仍发凭条落卡（4.7 找回面不快进护栏） */
   fast?: boolean;
@@ -148,7 +147,7 @@ export async function beginWechatAuth(
     phone: opts.phone,
     fast: opts.fast,
     nickname: opts.nickname,
-    chibi: opts.chibi,
+    avatar: opts.avatar,
     pending: opts.pending,
     ts: Date.now(),
   });
