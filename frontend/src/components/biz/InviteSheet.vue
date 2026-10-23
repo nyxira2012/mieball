@@ -23,7 +23,7 @@
         >
           <view class="mnm">
             <view class="mav"
-              ><ChibiAvatar :chibi="i.account.chibi" :size="26"
+              ><AvatarBadge :url="i.account.avatarUrl ?? null" :size="26"
             /></view>
             <text>{{ i.account.nickname }}</text>
             <AppChip v-if="i.known" kind="dim">打过</AppChip>
@@ -69,7 +69,7 @@
 import { computed, onMounted, ref } from "vue";
 import type { PropType } from "vue";
 import AppChip from "@/components/ui/AppChip.vue";
-import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useGameStore } from "@/stores/game";
 import { useUserStore } from "@/stores/user";
@@ -173,7 +173,7 @@ async function onInvite(gid: number, uid: number): Promise<void> {
   gap: 8px;
   align-items: center;
 }
-/* alpha:350 小头像（miniav 的 26px 圆形容器，ChibiAvatar 填充） */
+/* alpha:350 小头像（miniav 的 26px 圆形容器，AvatarBadge 填充；挑人行工具清单不铺卡背，A6 #12） */
 .mav {
   width: 26px;
   height: 26px;

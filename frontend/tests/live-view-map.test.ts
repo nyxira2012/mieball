@@ -86,3 +86,68 @@ describe("toLiveView 战报边序（sideA/sideB 与 sa/sb 同序）", () => {
     expect(m.eloRows.map((r) => r.delta)).toEqual([12, -7]);
   });
 });
+
+/* 1.9 装扮三键透传：名册行身份块 snake→camel 单点直落（snake_url→avatarUrl），
+   访客三键 null 原样——展示组件各兜各的默认（圆章公共款/素卡） */
+describe("toLiveView 装扮三键（avatar/avatarUrl/back）", () => {
+  it("注册球友三键直落、访客 null 原样", () => {
+    const v = view("a");
+    v.players = [
+      {
+        id: 7,
+        account_id: 5,
+        name: "老金",
+        chibi: null,
+        avatar: "a-p3",
+        avatar_url: "/cosmetics/a-p3.png",
+        back: "b-c2",
+        guest: false,
+        dupr: 3.1,
+        guarantor_account_id: null,
+        dropin: false,
+        check: "ok",
+        arrive_at: null,
+        left_at: null,
+        court_no: null,
+        court_side: null,
+        skip: 0,
+        fire: false,
+        queue_pos: null,
+        tonight: 0,
+      },
+      {
+        id: 8,
+        account_id: null,
+        name: "访客8",
+        chibi: null,
+        avatar: null,
+        avatar_url: null,
+        back: null,
+        guest: true,
+        dupr: 2.5,
+        guarantor_account_id: 5,
+        dropin: false,
+        check: "ok",
+        arrive_at: null,
+        left_at: null,
+        court_no: null,
+        court_side: null,
+        skip: 0,
+        fire: false,
+        queue_pos: null,
+        tonight: 0,
+      },
+    ];
+    const ps = toLiveView(v).players;
+    expect(ps[0]).toMatchObject({
+      avatar: "a-p3",
+      avatarUrl: "/cosmetics/a-p3.png",
+      back: "b-c2",
+    });
+    expect(ps[1]).toMatchObject({
+      avatar: null,
+      avatarUrl: null,
+      back: null,
+    });
+  });
+});

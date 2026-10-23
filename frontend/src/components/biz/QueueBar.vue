@@ -4,7 +4,8 @@
        原文「＋ 到场」——点它开代办签到抽屉，语义是替还没到的人办到场）。
        点队列区开完整队列抽屉，我到了走自签到链（页面编排）。
        「下一场 · 预计序」：队列是后端按排位算好的快照（无人手动换人时排前几位的
-       即下一场上场人选，手动换人后以现场为准）；歇/连战角标吃名册行 skip/fire。 -->
+       即下一场上场人选，手动换人后以现场为准）；歇/连战角标吃名册行 skip/fire。
+       1.9：头像换 26px 圆章（脸特写档）；候场条多人共用屏不铺卡背（A6 #12）。 -->
   <view v-if="L" class="queuebar">
     <view class="q-mid" @click="emit('queue')">
       <view class="q-label">{{
@@ -19,7 +20,7 @@
         >
           <text v-if="byId(id).fire" class="badge fire q-tag">连</text>
           <text v-else-if="byId(id).skip" class="badge rest q-tag">歇</text>
-          <ChibiAvatar :chibi="byId(id).chibi" :size="26" />
+          <AvatarBadge :url="byId(id).avatarUrl ?? null" :size="26" />
         </view>
       </view>
     </view>
@@ -36,7 +37,7 @@
    由页面开对应抽屉/走自签到。下一场头像数=每片人数（courtSize：双打 4 / 单打 2，单一源在引擎）。
    我的轮次三态：队列里「还有 N 轮到我」（=1 加粗强调）/ 场上「场上打拼中」/ 未签到「还没签到」。 */
 import { computed } from "vue";
-import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
 import { useLiveStore, isArrived } from "@/stores/live";
 import { courtSize } from "@/utils/rotate";
 

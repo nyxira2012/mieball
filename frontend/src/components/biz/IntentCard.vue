@@ -30,7 +30,7 @@
           >
           <view class="sp" />
           <!-- alpha:1045 .stack 单头像 -->
-          <AvatarStack :avatars="[intent.account.chibi]" />
+          <AvatarStack :urls="[intent.account.avatarUrl ?? null]" />
         </view>
       </view>
     </view>

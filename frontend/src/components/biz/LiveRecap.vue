@@ -5,7 +5,9 @@
        昵称随机定格，用户拍板）；「已结束」全页只说一遍（REPLAY + 已散场戳）；完成/
        分享为动作行正常按钮、只 emit 不执行——编排归页面；去向提示行只给现场门牌·
        这局的人（door prop）；知情小字随分享降级走不常驻（shareLink copyMsg）；
-       名单行全场 ±分=eloTotals 加总落账行；页脚出路钮 emit meet。 -->
+       名单行全场 ±分=eloTotals 加总落账行；页脚出路钮 emit meet。
+       1.9：名单行/积分行头像换圆章（数据吃 live view 身份块）；战报行（对局
+       比分行）多人行无单一行主，不铺卡背不换头像——纯文字行保持（已裁决）。 -->
   <view class="recap-root">
     <view class="rp-banner">
       <view class="rp-kick">
@@ -58,10 +60,13 @@
             （2026-10-17 走查修复：此前「访客·不计积分」旁照样挂 ±，自相矛盾） -->
         <view v-if="m.eloRows.length" class="m-elo">
           <view v-for="(r, j) in m.eloRows" :key="j" class="e-row">
-            <text class="e-nm"
-              >{{ r.name
-              }}<text v-if="r.guest" class="gtag">访客 · 不计积分</text></text
-            >
+            <view class="e-who">
+              <AvatarBadge :url="eloAvatar(r.accountId)" :size="22" />
+              <text class="e-nm"
+                >{{ r.name
+                }}<text v-if="r.guest" class="gtag">访客 · 不计积分</text></text
+              >
+            </view>
             <text
               v-if="!r.guest"
               class="e-d"
@@ -77,11 +82,14 @@
     <!-- 名单（含访客挂谁名下；注册球员行尾全场 ±合计，没上过场/访客不显） -->
     <view class="rp-sec-t">名单</view>
     <view v-for="row in rosterRows" :key="row.p.id" class="rp-row">
-      <view class="r-nm"
-        >{{ row.p.name
-        }}<text v-if="row.p.guest" class="gtag">访客 · 不计积分</text
-        ><text v-if="row.p.dropin" class="gtag dropin">空降</text></view
-      >
+      <view class="r-lead">
+        <AvatarBadge :url="row.p.avatarUrl ?? null" :size="30" />
+        <view class="r-nm"
+          >{{ row.p.name
+          }}<text v-if="row.p.guest" class="gtag">访客 · 不计积分</text
+          ><text v-if="row.p.dropin" class="gtag dropin">空降</text></view
+        >
+      </view>
       <view class="r-meta">
         <text v-if="row.eloTxt" class="r-elo" :class="row.eloCls">{{
           row.eloTxt
@@ -116,6 +124,7 @@
    名单全场 ±分吃 utils/recap.eloTotals（落账行加总不重算）。 */
 import { computed, type PropType } from "vue";
 import AppButton from "@/components/ui/AppButton.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import MemeHeadline from "@/components/biz/MemeHeadline.vue";
 import { isoHm, isoHmOrDash } from "@/utils/time";
@@ -162,6 +171,15 @@ const rosterRows = computed(() => {
 /** ±分统一格式（战报行与名单行同一副面孔） */
 function fmtDelta(d: number): string {
   return d > 0 ? `+${d}` : d < 0 ? `−${Math.abs(d)}` : "±0";
+}
+
+/** 积分行头像：结算行只带账号 id（开账定格快照无装扮键），回名册身份块按账号
+    对表取圆章素材；访客账号 null 无行可对 → AvatarBadge 公共款兜底 */
+function eloAvatar(accountId: number | null): string | null {
+  if (accountId == null) return null;
+  return (
+    props.view.players.find((p) => p.accountId === accountId)?.avatarUrl ?? null
+  );
 }
 
 /** 一侧名单拼句：两侧名单按边随视图下发（toLiveView 反推好的 sideA/sideB），
@@ -354,6 +372,13 @@ const attendRows = computed(() =>
   justify-content: space-between;
   padding: 2px 0;
 }
+/* 积分行左组：22px 小圆章 + 名字（行高由头像撑起，对齐右侧 ±分） */
+.e-who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 .e-nm {
   font-size: 11px;
   color: var(--cream);
@@ -379,6 +404,13 @@ const attendRows = computed(() =>
   margin-bottom: 6px;
   border: 1px solid rgba(245, 241, 232, 0.08);
   background: var(--ink2);
+}
+/* 名单行左组：30px 圆章 + 名字（gtag 随名字行内排） */
+.r-lead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 .r-nm {
   font-size: 13px;

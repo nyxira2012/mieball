@@ -297,6 +297,9 @@ export function toLiveView(v: LiveViewApi): LiveView {
       accountId: p.account_id,
       name: p.name,
       chibi: p.chibi ?? undefined,
+      avatar: p.avatar, // 装扮三键透传（访客 null，展示组件各兜各的默认）
+      avatarUrl: p.avatar_url,
+      back: p.back,
       guest: p.guest,
       dupr: p.dupr, // DUPR 配平代位分（1.4 §6 修订：访客/无派分行统一 2.5、有派分行吃派生分）
       guarantorAccountId: p.guarantor_account_id,

@@ -10,7 +10,7 @@
     <template v-if="rows.length">
       <view v-for="r in rows" :key="r.id" class="lg-row">
         <view class="row-av">
-          <ChibiAvatar :chibi="r.chibi" :size="30" />
+          <AvatarBadge :url="r.avatarUrl" :size="30" />
         </view>
         <view class="info">
           <view class="nm"
@@ -37,11 +37,11 @@
 </template>
 
 <script setup lang="ts">
-/* 底账抽屉（2.2 批4）：无本地态；头像借名册同 id 者（byId 兜底空配置纯防御）。
+/* 底账抽屉（2.2 批4）：无本地态；头像借名册同 id 者（工具清单不铺卡背，A6 #12）。
    时刻 isoHm 北京墙钟（未落 = 「—」）。 */
 import { computed } from "vue";
 import AppSheet from "@/components/ui/AppSheet.vue";
-import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
 import { isoHmOrDash } from "@/utils/time";
@@ -71,7 +71,8 @@ const rows = computed(() =>
         : undefined,
     arriveAt: p.arriveAt ?? undefined,
     leftAt: p.leftAt ?? undefined,
-    chibi: liveStore.byId(p.id).chibi,
+    // 头像借名册同 id 者（byId 兜底查无行 → AvatarBadge 公共款默认）
+    avatarUrl: liveStore.byId(p.id).avatarUrl ?? null,
   })),
 );
 </script>

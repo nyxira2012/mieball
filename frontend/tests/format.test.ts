@@ -89,7 +89,7 @@ describe("newGameCard（真局 → 卡面模型：定值直读，时间现场换
       expect(card.timeSub).toBe("3号场"); // 场上号进时间列固定槽（courtDisplayName 补号场），优先于空锁文案
       expect(card.slotsLeft).toBe(3);
       // 候补不进头像叠层；带的人不计入头像数
-      expect(card.stackAvatars).toHaveLength(2);
+      expect(card.stackAvatarUrls).toHaveLength(2);
       expect(card.stackPlus).toBe("+");
     } finally {
       vi.useRealTimers();

@@ -193,7 +193,7 @@ export interface GameCardModel {
   countdown?: string; // 开打倒计时灰字（2.5 §4.1；文案 2026-10-10 用户定紧凑口径：'还有12时48分'/'还有48分'/'还有1天'；仅在办局且没到入场窗才派生）
   liveEnter?: boolean; // 「进入现场」入口（2.5 §4.2/4.4：账已开 ∨ 必开且进两小时窗；waitlist/游客永无）
   orgBack?: string | null; // 组织者卡背编号（1.9 A6 #6：每张局卡铺该局组织者；null=素卡不铺）
-  stackAvatars: ChibiConfig[];
+  stackAvatarUrls: (string | null)[]; // 正式名单头像素材 URL 前 5（1.9 圆章叠层；null=公共款兜底）
   stackPlus: string; // 头像叠层溢出文案：'+' / '+N'（第 6 人起计数）
 }
 
@@ -458,6 +458,11 @@ export interface LivePlayerApi {
   account_id: number | null; // 访客 null
   name: string; // 开账定格名（注销者占位名；访客=担保人前两字+编号）
   chibi: ChibiConfig | null; // 开账时定格的账号小人（访客无账号行 → null）
+  // 装扮三键（后端 _player_row 每拍随装扮现值直发，非开账定格；访客三键 null
+  // → 前端 AvatarBadge 公共款兜底/行素卡）
+  avatar: string | null;
+  avatar_url: string | null; // 解析好的素材 URL
+  back: string | null; // 卡背编号（null=访客素卡兜底）
   guest: boolean; // 随行访客：代入 1200 算分但不落积分账（1.4 §4）
   dupr: number; // DUPR 配平代位分（1.4 §6 修订：访客/无派分行统一 2.5、有派分行吃派生分）
   guarantor_account_id: number | null; // 访客挂谁名下（考勤底账「谁带的」）
@@ -582,6 +587,10 @@ export interface LivePlayer {
   accountId: number | null;
   name: string;
   chibi: ChibiConfig | undefined; // 开账定格小人（访客 undefined → 缺省形象）
+  // 装扮三键（1.9 展示位：AvatarBadge 圆章/抽屉行卡背的原料；访客 null 由组件兜底）
+  avatar: string | null;
+  avatarUrl: string | null;
+  back: string | null;
   guest: boolean;
   dupr: number;
   guarantorAccountId: number | null;

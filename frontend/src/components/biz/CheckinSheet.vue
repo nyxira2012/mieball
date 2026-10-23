@@ -16,7 +16,7 @@
       <template v-if="absents.length">
         <view v-for="row in absents" :key="row.id" class="ck-row">
           <view class="row-av"
-            ><ChibiAvatar :chibi="row.chibi" :size="30"
+            ><AvatarBadge :url="row.avatarUrl ?? null" :size="30"
           /></view>
           <view class="who">
             <view class="nm"
@@ -50,7 +50,7 @@
       <template v-if="arriveds.length">
         <view v-for="row in arriveds" :key="row.id" class="ck-row done">
           <view class="row-av"
-            ><ChibiAvatar :chibi="row.chibi" :size="30"
+            ><AvatarBadge :url="row.avatarUrl ?? null" :size="30"
           /></view>
           <view class="who">
             <view class="nm"
@@ -125,7 +125,7 @@ import AppStepper from "@/components/ui/AppStepper.vue";
 import OptionChips from "@/components/ui/OptionChips.vue";
 import NoteCard from "@/components/ui/NoteCard.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
-import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
 import { useLiveStore, isArrived } from "@/stores/live";
 import { isoHm } from "@/utils/time";
 

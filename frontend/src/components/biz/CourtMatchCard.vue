@@ -9,7 +9,7 @@
      各的互不影响），故与撤回并列在记分框中列、不设全权门槛；「本场完成」开本地上传窗、
      「上一场 · 改分」开覆盖重落窗（均全站唯一 settleWindow，组件直开——
      与 SweepSheet/EndSettleModal 同一扇）；取消对局是全权手柄，先弹后果确认（A3，
-     确认槽在页面层）。 -->
+     确认槽在页面层）。1.9：场上头像换圆章（44px 半身档）；多人共用屏不铺卡背（A6 #12）。 -->
   <view class="court-matchcard" :class="{ idle: !playing }">
     <!-- ---------- playing：对阵区 ---------- -->
     <template v-if="playing">
@@ -36,7 +36,7 @@
                 @click="emit('person', pl.id)"
               >
                 <view class="avatar-wrap"
-                  ><ChibiAvatar :chibi="pl.p.chibi" :size="44"
+                  ><AvatarBadge :url="pl.p.avatarUrl ?? null" :size="44"
                 /></view>
                 <text class="pname">{{ pl.p.name }}</text>
                 <text class="pelo">DUPR {{ fmtDupr1(duprOf(pl.p)) }}</text>
@@ -143,7 +143,7 @@
    bump 弹跳 = Scoreboard 的 watch+key 方案移植（连点同侧重触发）。 */
 import { computed, onUnmounted, ref, watch } from "vue";
 import type { PropType } from "vue";
-import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import type { LiveCourt } from "@/api/types";
 import { courtSize, idleHint } from "@/utils/rotate";

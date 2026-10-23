@@ -43,7 +43,7 @@
           <text class="loc-txt">{{ card.venueText }}</text>
           <!-- 头像叠层（缩小）挂场馆行右端：谁在局里仍在卡面一眼可见 -->
           <view class="loc-stack">
-            <AvatarStack :avatars="card.stackAvatars" :max="5" />
+            <AvatarStack :urls="card.stackAvatarUrls" :max="5" />
             <text class="plusn">{{ card.stackPlus }}</text>
           </view>
         </view>

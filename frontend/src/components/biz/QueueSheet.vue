@@ -2,7 +2,10 @@
   <!-- 完整候场队列抽屉（temp/打球页原型 sh-queue 逐字）：首 N 行 .next 高亮（预计序
      里排最前的下 N 位，N=每片人数，双打 4 / 单打 2——2.4 批2 size-aware），每行
      mono 小注（今晚 N 场 · DUPR 一位小数——吃名册行 tonight 战报派生真值，档案
-     play 是生涯数不顶用）+ 右侧 tag（下一场 / 我还有 N 轮）；点行开点人抽屉（页面编排）。 -->
+     play 是生涯数不顶用）+ 右侧 tag（下一场 / 我还有 N 轮）；点行开点人抽屉（页面编排）。
+     1.9 A6 #11：每行铺行主卡背（r 档窄条与榜单行同一配方，访客素行）；「下一场」
+     高亮让位卡背——黄底撤掉，语义由黄边框+右侧「下一场」标签承担；抽屉头部
+     不铺（工具面无个人印记）。 -->
   <AppSheet
     :visible="visible"
     title="候场队列"
@@ -17,8 +20,9 @@
         :class="{ next: i < nextN }"
         @click="emit('person', r.id)"
       >
+        <CardBackdrop :cid="r.u.back ?? null" mode="r" />
         <view class="row-av"
-          ><ChibiAvatar :chibi="r.u.chibi" :size="30"
+          ><AvatarBadge :url="r.u.avatarUrl ?? null" :size="30"
         /></view>
         <view class="info">
           <view class="nm"
@@ -51,7 +55,8 @@
    点行 emit person 由页面开点人抽屉。 */
 import { computed } from "vue";
 import AppSheet from "@/components/ui/AppSheet.vue";
-import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
+import CardBackdrop from "@/components/ui/CardBackdrop.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import { useLiveStore } from "@/stores/live";
 import { useUserStore } from "@/stores/user";
@@ -78,7 +83,8 @@ const myRound = computed(() => liveStore.myRound);
 </script>
 
 <style lang="scss" scoped>
-/* ---------- 原型 .qs-row（逐字换 tokens） ---------- */
+/* ---------- 原型 .qs-row（逐字换 tokens）；宿主契约（CardBackdrop）：relative+hidden
+   裁窄条出血、z-index:0 立层叠上下文垫负 z 卡底层（不立层会被行自己的 background 盖死） ---------- */
 .qs-row {
   display: flex;
   align-items: center;
@@ -89,10 +95,14 @@ const myRound = computed(() => liveStore.myRound);
   border: 1px solid rgba(245, 241, 232, 0.08);
   background: var(--ink2);
   cursor: pointer;
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
 }
+/* 「下一场」让位卡背（A6 #11）：黄底撤掉不与卡背抢对比度，高亮语义只剩黄边框
+   （右侧「下一场」标签在模板里，与边框同色系承担另一半） */
 .qs-row.next {
   border-color: rgba(255, 212, 0, 0.4);
-  background: rgba(255, 212, 0, 0.05);
 }
 .row-av {
   width: 36px;

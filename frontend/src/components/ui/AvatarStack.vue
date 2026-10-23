@@ -1,7 +1,7 @@
 <template>
   <view class="stack">
-    <view v-for="(c, i) in shown" :key="i" class="stack-av">
-      <ChibiAvatar :chibi="c" :size="26" />
+    <view v-for="(u, i) in shown" :key="i" class="stack-av">
+      <AvatarBadge :url="u" :size="26" />
     </view>
     <text v-if="rest > 0" class="plusn">+{{ rest }}</text>
   </view>
@@ -9,21 +9,22 @@
 
 <script setup lang="ts">
 /* alpha.html:127-132 .gcard .stack 头像叠层（前 N + +N；N 默认 5，
-   「含随行」的名单展开由业务层传入 heads 数组完成） */
-import { computed } from 'vue'
-import type { PropType } from 'vue'
-import ChibiAvatar from './ChibiAvatar.vue'
-import type { ChibiConfig } from '@/utils/chibi'
+   「含随行」的名单展开由业务层传入 heads 数组完成）。
+   1.9 换芯：吃素材 URL 数组（null 项由 AvatarBadge 兜默认公共款），
+   26px 小位自动走脸特写档 */
+import { computed } from "vue";
+import type { PropType } from "vue";
+import AvatarBadge from "./AvatarBadge.vue";
 
 const props = defineProps({
-  /** 名单 chibi 配置数组（含随行展开后的完整名单） */
-  avatars: { type: Array as PropType<ChibiConfig[]>, default: () => [] },
+  /** 名单头像素材 URL（含随行展开后的完整名单；null=默认公共款） */
+  urls: { type: Array as PropType<(string | null)[]>, default: () => [] },
   /** 展示上限，超出部分折叠为 +N */
   max: { type: Number, default: 5 },
-})
+});
 
-const shown = computed(() => props.avatars.slice(0, props.max))
-const rest = computed(() => Math.max(0, props.avatars.length - props.max))
+const shown = computed(() => props.urls.slice(0, props.max));
+const rest = computed(() => Math.max(0, props.urls.length - props.max));
 </script>
 
 <style lang="scss" scoped>
@@ -45,12 +46,6 @@ const rest = computed(() => Math.max(0, props.avatars.length - props.max))
 }
 .stack-av:first-child {
   margin-left: 0;
-}
-/* alpha:131 叠层小头像里 svg 放大 150% 并下移，只露脸 */
-.stack-av :deep(svg) {
-  width: 150%;
-  height: 150%;
-  margin-top: 16%;
 }
 .plusn {
   font-family: var(--mono);
