@@ -29,8 +29,10 @@ export interface WechatShareCard {
   imgUrl: string;
 }
 
-/** 方图固定地址段：放本站根、地址不改名——换图只换内容同路径覆盖，旧卡不会变空白 */
-const SHARE_CARD_PATH = "/share-card.png";
+/** 方图地址段：路径部分永不变名（历史卡片引用的老地址永远有图，不会空白）；
+    但微信按完整 URL 缓存缩略图——只换文件不换 URL，新发卡片仍拿旧图。
+    所以换图内容时必须同步 bump 日期参数逼微信重抓，路径不动、只动 v。 */
+const SHARE_CARD_PATH = "/share-card.png?v=20261024";
 
 /** 卡片描述句：未散场说收人要点、散场说场数、死局各说各的。
    pending（组织者眼里的待处置）与 terminated 同句——对非组织者它本就被 mask 成

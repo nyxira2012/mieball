@@ -80,7 +80,7 @@ describe("cardDesc（A4 六态文案）", () => {
 });
 
 describe("buildShareCard（卡片四件）", () => {
-  it("title=局名 · imgUrl=origin+/share-card.png · desc 由 cardDesc 拼 · link 透传", () => {
+  it("title=局名 · imgUrl=origin+方图地址(带日期版本参) · desc 由 cardDesc 拼 · link 透传", () => {
     vi.stubGlobal("location", {
       href: "https://x.y/#/pages/detail/detail?id=5",
       origin: "https://x.y",
@@ -98,7 +98,7 @@ describe("buildShareCard（卡片四件）", () => {
       title: "周六夜球",
       desc: cardDesc(src),
       link: "https://x.y/#/pages/detail/detail?id=5",
-      imgUrl: "https://x.y/share-card.png",
+      imgUrl: "https://x.y/share-card.png?v=20261024",
     });
   });
 });
