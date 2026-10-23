@@ -9,7 +9,7 @@
     故不设 negative 参数。
 
 用法示例：
-    # mieball 槽位（天蓝底+白描边贴纸头像直出 PNG，抠图走 process_avatar.py；
+    # mieball 槽位（天蓝底+白描边贴纸头像直出 PNG，抠图走 gen_avatars.py；
     # 卡背 1536x640 居中生成，出图自动裁切对位 (68,37) + 规格闸门 + 压 WebP）：
     python scripts/comfy.py -p mb_avatar "阿拉斯加犬，戴红色围兜，神气叉腰"
     python scripts/comfy.py -p mb_cardbg "霓虹夜场，金黄与青色光斑"
@@ -172,9 +172,9 @@ DEFAULT_WORKFLOW_TEMPLATE: dict[str, Any] = json.loads(r"""
 # 选了色就必须让模型画出对应纯色底
 BACKGROUND_PRESETS = {
     "none": "",
-    # mieball 头像专用：与 process_avatar.py 角点采样泛洪抠图互为硬契约
+    # mieball 头像专用：与 gen_avatars.py 角点采样泛洪抠图互为硬契约
     # （天蓝 #4A90E2 期望底色，白描边阻断泛洪侵入主体内部）；
-    # 改色需 grep #4A90E2 同步全部出现处（含 rhpic.py 的 avatar 预设）
+    # 改色需 grep #4A90E2 同步全部出现处（gen_avatars.py 抠图与 picfit.html 页内同款算法）
     "sky_blue": "纯天蓝色背景 (#4A90E2)，背景无渐变无阴影，干净单一天蓝色背景，背景完全纯色空白无杂物",
 }
 
@@ -198,22 +198,24 @@ DEFAULT_TIMEOUT = 600.0
 # ==============================================================================
 
 PRESETS: dict[str, dict[str, Any]] = {
-    # ---- mieball 槽位（口径与 scripts/rhpic.py 预设同源：蓝幕抠图契约、
-    # 卡背文字排版硬约束；本机直连 ComfyUI 走这份，云端 RunningHub 走 rhpic）----
+    # ---- mieball 槽位（蓝幕抠图契约、卡背文字排版硬约束；本机直连 ComfyUI）----
     "mb_avatar": {
-        "title": "mieball 球员头像（二头身大头贴纸）",
+        "title": "mieball 球员头像（半身胸像贴纸）",
         "width": 1024,
         "height": 1024,
         "background": "sky_blue",
         "orientation": "front",
         "spec_prefix": (
-            "2D动漫贴纸风，二头身大头的Q版可爱角色，整个角色外围包着粗而干净的白描边，"
-            "居中构图，干净流畅的线条，画面中不出现任何文字、字母、数字与标志"
+            "2D动漫贴纸风，Q版可爱角色半身胸像贴纸（chibi bust sticker），"
+            "整个半身胸像外围包着粗而干净的完整白描边，居中完整构图，"
+            "四周留有安全边距（centered with margin, floating in solid sky blue background），"
+            "干净流畅的线条，正面正向视角（facing viewer, frontal view），姿态端正自然无外展大道具，"
+            "底部自然圆润收边不贴边，画面中不出现任何文字、字母、数字与标志"
         ),
         "out_dir": "temp/形象",
         "file_prefix": "avatar",
         "out_ext": ".png",
-        # 抠图/居中/512 WebP 全走 process_avatar.py 蓝幕流水线，
+        # 抠图/居中/512 WebP 全走 gen_avatars.py 蓝幕流水线，
         # 本槽直出无损 PNG（白描边细节是抠图保护层，有损压缩会伤边缘）
         "skip_optimize": True,
     },
@@ -498,7 +500,7 @@ def postprocess_and_save(
                 )
 
         # 5. 自动调色板压缩优化与等比缩放（skip_optimize 槽位跳过：
-        #    mieball 头像直出无损 PNG，WebP 压缩留给 process_avatar.py 流水线）
+        #    mieball 头像直出无损 PNG，WebP 压缩留给 gen_avatars.py 流水线）
         if not preset.get("skip_optimize"):
             try:
                 scheme, payload = process_asset.optimize_image_bytes(
@@ -534,7 +536,7 @@ def postprocess_and_save(
 
 
 def default_output_dir(preset: dict[str, Any]) -> Path:
-    """槽位落盘目录：锚定项目根（scripts/ 的父级），与 process_avatar.py 默认目录同根。
+    """槽位落盘目录：锚定项目根（scripts/ 的父级），与 gen_avatars.py 的生图暂存目录同根。
 
     本 CLI 与批量调用方都从这里取目录，目录口径只认这一处。
     """
@@ -723,7 +725,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--background",
         choices=sorted(BACKGROUND_PRESETS),
         default=None,
-        help="覆盖背景色预设（sky_blue 与 process_avatar.py 抠图为硬契约）",
+        help="覆盖背景色预设（sky_blue 与 gen_avatars.py 抠图为硬契约）",
     )
     parser.add_argument(
         "--dry-run",

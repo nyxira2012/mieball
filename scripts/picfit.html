@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mieball · picfit · 头像取景工具</title>
+<style>
+  :root {
+    --ink: #0e0e12;
+    --ink2: #16161d;
+    --ink3: #1e1e27;
+    --ink4: #282834;
+    --line: rgba(255, 212, 0, 0.16);
+    --line-soft: rgba(245, 241, 232, 0.08);
+    --lemon: #ffd400;
+    --ice: #6fe7ff;
+    --green: #3ddc84;
+    --cream: #f5f1e8;
+    --dim: #9b96a6;
+    --mono: ui-monospace, 'JetBrains Mono', monospace;
+    --sans: 'PingFang SC', 'HarmonyOS Sans SC', -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #08080b;
+    color: var(--cream);
+    font-family: var(--sans);
+    min-height: 100vh;
+    user-select: none;
+  }
+  .topbar {
+    background: rgba(14, 14, 18, 0.96);
+    border-bottom: 1px solid var(--line-soft);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+  .brand h1 { font-size: 16px; color: var(--lemon); letter-spacing: 0.02em; }
+  .brand span { font-size: 11px; color: var(--dim); font-family: var(--mono); margin-left: 10px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    background: var(--ink3);
+    color: var(--cream);
+    border: 1px solid rgba(245, 241, 232, 0.14);
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--sans);
+  }
+  .btn:hover { background: var(--ink4); }
+  .btn.primary { background: var(--lemon); color: #16161d; border-color: var(--lemon); }
+  .btn.primary:hover { background: #ffe033; }
+  .btn.green { background: rgba(61,220,132,0.14); color: var(--green); border-color: rgba(61,220,132,0.4); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* 文件条 */
+  .filestrip {
+    display: flex; gap: 8px; padding: 10px 20px 4px;
+    overflow-x: auto; align-items: center;
+  }
+  .fchip {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--ink2); border: 1.5px solid var(--line-soft);
+    border-radius: 12px; padding: 5px 8px 5px 6px; cursor: pointer; flex: none;
+  }
+  .fchip.active { border-color: var(--lemon); background: rgba(255,212,0,0.08); }
+  .fchip .thumb {
+    width: 36px; height: 36px; border-radius: 50%; overflow: hidden;
+    background: var(--ink); border: 1px solid rgba(255,255,255,0.12); position: relative;
+  }
+  .fchip .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .fchip .meta { text-align: left; }
+  .fchip .name {
+    font-family: var(--mono); font-size: 11px; color: var(--cream);
+    cursor: text; border-bottom: 1px dashed rgba(255,255,255,0.18);
+    min-width: 46px;
+  }
+  .fchip .name:hover { color: var(--lemon); }
+  .fchip .name input {
+    width: 90px; font-family: var(--mono); font-size: 11px;
+    background: var(--ink); color: var(--lemon);
+    border: 1px solid var(--line-soft); border-radius: 4px; padding: 1px 4px;
+    outline: none;
+  }
+  .fchip .state { font-size: 10px; }
+  .st-none { color: var(--dim); }
+  .st-fit { color: var(--green); }
+  .st-dirty { color: var(--lemon); }
+  .fchip .rm {
+    color: var(--dim); font-size: 13px; padding: 0 4px; border-radius: 6px;
+  }
+  .fchip .rm:hover { color: #ff5a36; }
+  .fchip.add { border-style: dashed; color: var(--dim); font-size: 12px; padding: 12px 14px; }
+
+  .workspace {
+    display: grid;
+    grid-template-columns: minmax(360px, 1fr) minmax(300px, 420px);
+    gap: 16px; padding: 14px 20px 30px;
+    max-width: 1500px; margin: 0 auto; width: 100%;
+    align-items: start;
+  }
+  @media (max-width: 1080px) { .workspace { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--ink2); border: 1px solid var(--line-soft);
+    border-radius: 18px; padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .panel-title {
+    font-size: 13px; font-weight: 700;
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding-bottom: 8px; border-bottom: 1px solid var(--line-soft);
+  }
+  .panel-title .tag { font-family: var(--mono); font-size: 10px; color: var(--dim); font-weight: 400; }
+
+  .editors { display: grid; grid-template-columns: auto auto; gap: 16px; justify-content: center; }
+  @media (max-width: 760px) { .editors { grid-template-columns: 1fr; } }
+  .editor { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .editor .cap { font-size: 12px; font-weight: 600; }
+  .editor .cap small { color: var(--dim); font-weight: 400; font-size: 10px; display: block; text-align: center; }
+  .editor .cap.b { color: var(--lemon); }
+  .editor .cap.f { color: var(--ice); }
+  .stage {
+    position: relative; border-radius: 50%;
+    box-shadow: 0 10px 34px rgba(0,0,0,0.55);
+    border: 2.5px solid var(--lemon);
+    overflow: hidden; cursor: grab; touch-action: none;
+    background: var(--ink2);
+  }
+  .stage.face { border-color: var(--ice); }
+  .stage:active { cursor: grabbing; }
+  .stage canvas { display: block; width: 100%; height: 100%; }
+  .readout {
+    font-family: var(--mono); font-size: 11px; color: var(--dim);
+    display: flex; gap: 10px;
+  }
+  .readout b { color: var(--cream); font-weight: 600; }
+  .ctrls {
+    width: 100%; background: var(--ink); border: 1px solid var(--line-soft);
+    border-radius: 12px; padding: 8px 10px; display: flex; gap: 8px; align-items: center;
+  }
+  .ctrls label { font-size: 11px; color: var(--dim); white-space: nowrap; }
+  .ctrls input[type=range] { flex: 1; accent-color: var(--lemon); height: 4px; min-width: 60px; }
+  .ctrls .reset { font-size: 11px; padding: 3px 8px; border-radius: 6px; }
+
+  /* 预览墙：与线上 AvatarBadge 同机制（img 铺满 + transform），非画布模拟 */
+  .preview-wall { display: flex; flex-direction: column; gap: 12px; }
+  .sizes-row {
+    display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+    background: var(--ink); border: 1px solid var(--line-soft);
+    border-radius: 14px; padding: 12px;
+  }
+  .size-item { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .size-item .cap { font-size: 10px; color: var(--dim); font-family: var(--mono); text-align: center; line-height: 1.3; }
+  .badge-chip {
+    border-radius: 50%; overflow: hidden; background: var(--ink2);
+    border: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;
+  }
+  .badge-chip img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .json-box {
+    background: var(--ink); border: 1px solid var(--line-soft); border-radius: 12px;
+    padding: 10px 12px; font-family: var(--mono); font-size: 11px; color: var(--ice);
+    line-height: 1.55; word-break: break-all; white-space: pre-wrap;
+  }
+  .note {
+    font-size: 11.5px; color: var(--dim); line-height: 1.7;
+    background: rgba(255,212,0,0.05); border: 1px solid rgba(255,212,0,0.15);
+    padding: 10px 12px; border-radius: 10px;
+  }
+  .note b { color: var(--lemon); }
+  .toast {
+    position: fixed; bottom: 22px; right: 22px;
+    background: rgba(22,22,29,0.96); border: 1.5px solid var(--lemon);
+    padding: 12px 18px; border-radius: 12px; font-size: 13px; font-weight: 600;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6); z-index: 100;
+    transform: translateY(130%); opacity: 0; transition: all 0.25s;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .empty {
+    padding: 60px 20px; text-align: center; color: var(--dim); font-size: 13px; line-height: 2;
+  }
+  .drop-hover::after {
+    content: '松手载入图片'; position: fixed; inset: 0; z-index: 200;
+    background: rgba(8,8,11,0.85); display: grid; place-items: center;
+    color: var(--lemon); font-size: 20px; font-weight: 700;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <h1>mieball · 头像取景工具</h1>
+    <span>像素不动 · 参数写进 webp · 授权一次目录后保存全自动进项目</span>
+  </div>
+  <div class="actions">
+    <button class="btn green" id="btnDir" title="选一次 frontend/public/cosmetics，之后每次保存直接覆盖项目文件">📁 关联 cosmetics 目录</button>
+    <button class="btn" id="btnSaveCur" disabled>💾 保存当前</button>
+    <button class="btn primary" id="btnSaveAll" disabled>✨ 全部保存</button>
+  </div>
+</div>
+
+<div class="filestrip" id="filestrip"></div>
+
+<div class="workspace" id="workspace" style="display:none">
+  <div class="panel">
+    <div class="panel-title">
+      <span>双档取景（拖动挪位 · 滚轮缩放 · 双击把点到的位置吸到圆心）</span>
+      <span class="tag" id="curName"></span>
+    </div>
+    <div class="editors">
+      <div class="editor">
+        <div class="cap b">大位 · 半身圆章<small>≥40px：名片 88 · 试穿 140 · 战力卡 76 · 对局卡 44</small></div>
+        <div class="stage" id="stageBust" style="width:300px;height:300px"><canvas></canvas></div>
+        <div class="ctrls">
+          <label>放大</label>
+          <input type="range" id="rngBust" min="0.5" max="8" step="0.01" value="1">
+          <button class="btn reset" data-rst="bust">复位</button>
+        </div>
+        <div class="readout" id="roBust"></div>
+      </div>
+      <div class="editor">
+        <div class="cap f">小位 · 脸特写<small>&lt;40px：候场条 26 · 叠层 20~26 · 候场抽屉行 30</small></div>
+        <div class="stage face" id="stageFace" style="width:180px;height:180px"><canvas></canvas></div>
+        <div class="ctrls">
+          <label>放大</label>
+          <input type="range" id="rngFace" min="0.5" max="8" step="0.01" value="1.25">
+          <button class="btn reset" data-rst="face">复位</button>
+        </div>
+        <div class="readout" id="roFace"></div>
+      </div>
+    </div>
+    <div class="ctrls" style="justify-content:space-between">
+      <label>圆窗底色</label>
+      <button class="btn reset" id="btnBg">线上深底（#16161d）</button>
+      <label style="margin-left:auto">方向键微调 · Shift 加速 · ⌘S 保存</label>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>全站真实尺寸预览</span><span class="tag">与线上同机制渲染</span></div>
+    <div class="preview-wall">
+      <div class="sizes-row" id="rowBust"></div>
+      <div class="sizes-row" id="rowFace"></div>
+      <div class="panel-title" style="padding-top:2px"><span>将写入图片的取景参数（XMP）</span><span class="tag">保存后拖回可复原</span></div>
+      <div class="json-box" id="jsonBox"></div>
+      <div class="note">
+        <b>工作方式：</b>保存只把上方参数写进 webp 的 XMP 块，原始像素一个字节不动（反复保存不损画质）；
+        前端圆章读参数逐图复现这里的画面。<b>文件名自动按册子编号命名</b>（avatar-6410 源图 → a-p2.webp，
+        点文件名可改），<b>首次保存会让你选一次 cosmetics 目录</b>（Chrome/Edge），之后保存直达项目文件、
+        刷新页面即生效；不授权则走浏览器下载。<b>取景参数在本机留底</b>——就算 webp 文件丢了，
+        把同一张源图再拖进来，上次的取景参数自动复原。
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="empty" id="empty">
+  拖入 <b style="color:var(--cream)">.webp</b> 成品或 <b style="color:var(--cream)">.png</b> 生图原图（天蓝底自动抠图归一），可多张<br>
+  保存首次选一次 cosmetics 目录，之后全自动直写项目；文件自动按册子编号命名
+</div>
+
+<div class="toast" id="toast"></div>
+<input type="file" id="fileInput" accept=".webp,.png" multiple style="display:none">
+
+<script>
+/* 头像取景工具——「参数随图走」路线的写入方。跨模块契约（改一头必须改另一头）：
+   读取方 frontend/src/utils/avatarfit.ts（parseWebpFit + frameTransform），
+   消费方 AvatarBadge.vue（≥40px 吃 bust 档、<40px 吃 face 档）。
+   参数口径：k=窗内放大倍数（窗口显示画布中央 1/k 见方）、x/y=位移（窗口边长
+   比例，正右移/下移）；窗口显示画布以 (0.5−x/k, 0.5−y/k) 为中心。保存只写
+   XMP 块、像素零改动。 */
+
+/* ---------- 取景参数：编辑态（k + 画布中心 cx/cy）⇆ 契约态（k/x/y） ---------- */
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const r3 = v => Math.round(v * 1000) / 1000;
+const r4 = v => Math.round(v * 10000) / 10000;
+const toContract = f => ({ k: r3(f.k), x: r4((0.5 - f.cx) * f.k), y: r4((0.5 - f.cy) * f.k) });
+const fromContract = t => ({ k: t.k, cx: 0.5 - t.x / t.k, cy: 0.5 - t.y / t.k });
+/* 老素材（无参数）的起步值 = 线上回落档现状：大位 100% 直摆、小位 125% 居中 */
+const defaultWork = () => ({
+  bust: { k: 1, cx: 0.5, cy: 0.5 },
+  face: { k: 1.25, cx: 0.5, cy: 0.5 },
+});
+
+/* ---------- 册子编号命名：源图名 → cid.webp（用户不再手改名手对号） ---------- */
+/* 生图 seed → 册子编号（对应 scripts/gen_avatars.py 的 AVATARS 表） */
+const SEED_CID = { 1189: 'a-p1', 6410: 'a-p2', 8145: 'a-p3', 5644: 'a-p4', 4427: 'a-p5', 9850: 'a-p6' };
+function resolveName(raw) {
+  const stem = raw.replace(/\.(webp|png)$/i, '');
+  let m = stem.match(/^(a-[a-z]+\d+|g-\d+)(?:[_-]|$)/i); // a-p1 / a-p1_bust_v1 → a-p1；g-00（默认款段）→ g-00
+  if (m) return m[1].toLowerCase() + '.webp';
+  m = stem.match(/^avatar-(\d+)-v\d+$/i); // avatar-6410-v1 → 查 seed 表
+  if (m && SEED_CID[m[1]]) return SEED_CID[m[1]] + '.webp';
+  return stem + '.webp';
+}
+
+/* ---------- 取景参数本机留底（localStorage）：文件丢了拖回源图即复原 ---------- */
+const LS_KEY = 'mieball_avatar_fit_params_v1';
+const lsLoad = () => {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}') || {}; } catch { return {}; }
+};
+let lsTimer = null;
+function lsRemember() { // 防抖：拖动/缩放的高频 renderAll 不刷盘
+  if (!files.length) return; // 空列表不写，防止开空工具把留底清空
+  clearTimeout(lsTimer);
+  lsTimer = setTimeout(() => {
+    const map = {};
+    for (const f of files) {
+      map[f.name.replace(/\.webp$/i, '')] = {
+        fit: { v: 1, bust: toContract(f.work.bust), face: toContract(f.work.face) },
+        at: Date.now(),
+      };
+    }
+    try { localStorage.setItem(LS_KEY, JSON.stringify(map)); } catch { /* 私隐模式等写不进就算了 */ }
+  }, 600);
+}
+
+/* ---------- WebP RIFF 块的解析 / 组装 / XMP 读写（读取侧与 avatarfit.ts 同口径） ---------- */
+function parseChunks(bytes) {
+  if (bytes.length < 12) throw new Error('文件太小，不是 webp');
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const tag = (p) => String.fromCharCode(bytes[p], bytes[p + 1], bytes[p + 2], bytes[p + 3]);
+  if (tag(0) !== 'RIFF' || tag(8) !== 'WEBP') throw new Error('不是 webp 文件');
+  const chunks = [];
+  let pos = 12;
+  while (pos + 8 <= bytes.length) {
+    const size = dv.getUint32(pos + 4, true);
+    if (pos + 8 + size > bytes.length) throw new Error('webp 尾块不完整');
+    chunks.push({ fourcc: tag(pos), off: pos + 8, size });
+    pos += 8 + size + (size & 1);
+  }
+  return chunks;
+}
+
+function assemble(payloads) { // [{fourcc, data:Uint8Array}]
+  let total = 4;
+  for (const p of payloads) total += 8 + p.data.length + (p.data.length & 1);
+  const out = new Uint8Array(8 + total);
+  const dv = new DataView(out.buffer);
+  out.set([0x52, 0x49, 0x46, 0x46], 0); // 'RIFF'
+  dv.setUint32(4, total, true);
+  out.set([0x57, 0x45, 0x42, 0x50], 8); // 'WEBP'
+  let pos = 12;
+  for (const p of payloads) {
+    for (let i = 0; i < 4; i++) out[pos + i] = p.fourcc.charCodeAt(i);
+    dv.setUint32(pos + 4, p.data.length, true);
+    out.set(p.data, pos + 8);
+    pos += 8 + p.data.length + (p.data.length & 1);
+  }
+  return out;
+}
+
+/* 画面尺寸：造 VP8X 时要用（有损 VP8 关键帧头 / 无损 VP8L 尺寸位） */
+function readDims(bytes, chunks) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  for (const c of chunks) {
+    if (c.fourcc === 'VP8 ' && c.size >= 10) {
+      return { w: dv.getUint16(c.off + 6, true) & 0x3fff, h: dv.getUint16(c.off + 8, true) & 0x3fff };
+    }
+    if (c.fourcc === 'VP8L' && c.size >= 5) {
+      const v = dv.getUint32(c.off + 1, true);
+      return { w: (v & 0x3fff) + 1, h: ((v >> 14) & 0x3fff) + 1 };
+    }
+  }
+  return null;
+}
+
+function buildVp8x(w, h) {
+  const p = new Uint8Array(10);
+  p[0] = 0x04; // 只立 XMP 存在旗标
+  p[4] = (w - 1) & 255; p[5] = ((w - 1) >> 8) & 255; p[6] = ((w - 1) >> 16) & 255;
+  p[7] = (h - 1) & 255; p[8] = ((h - 1) >> 8) & 255; p[9] = ((h - 1) >> 16) & 255;
+  return p;
+}
+
+function buildXmpXml(contract) {
+  const json = JSON.stringify(contract);
+  return '<x:xmpmeta xmlns:x="adobe:ns:meta/">' +
+    '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">' +
+    `<rdf:Description rdf:about="" xmlns:m="urn:mieball:fit"><m:fit>${json}</m:fit></rdf:Description>` +
+    '</rdf:RDF></x:xmpmeta>';
+}
+
+/* 参数写入：剥旧 XMP → 开/造 VP8X 的 XMP 旗标 → 追加新 XMP 块。像素块原样保留 */
+function withFitXmp(bytes, contract) {
+  const chunks = parseChunks(bytes);
+  const payloads = chunks
+    .filter(c => c.fourcc !== 'XMP ')
+    .map(c => ({ fourcc: c.fourcc, data: bytes.subarray(c.off, c.off + c.size) }));
+  const vx = payloads.find(p => p.fourcc === 'VP8X');
+  if (vx) {
+    const d = new Uint8Array(vx.data);
+    d[0] |= 0x04; // XMP 旗标位
+    vx.data = d;
+  } else {
+    const dims = readDims(bytes, chunks);
+    if (!dims || !dims.w || !dims.h) throw new Error('读不出画面尺寸（动图或非标准 webp），写不进参数');
+    payloads.unshift({ fourcc: 'VP8X', data: buildVp8x(dims.w, dims.h) });
+  }
+  payloads.push({ fourcc: 'XMP ', data: new TextEncoder().encode(buildXmpXml(contract)) });
+  return assemble(payloads);
+}
+
+function parseFit(bytes) {
+  try {
+    const x = parseChunks(bytes).find(c => c.fourcc === 'XMP ');
+    if (!x) return null;
+    const txt = new TextDecoder().decode(bytes.subarray(x.off, x.off + x.size));
+    const m = txt.match(/<m:fit>([\s\S]*?)<\/m:fit>/);
+    if (!m) return null;
+    const raw = JSON.parse(m[1]);
+    if (raw.v !== 1) return null;
+    const ok = f => f && isFinite(f.k) && f.k > 0 && isFinite(f.x) && isFinite(f.y);
+    return ok(raw.bust) && ok(raw.face) ? raw : null;
+  } catch { return null; }
+}
+
+/* ---------- 天蓝幕抠图（生图 PNG 直接拖入时的一次性归一；算法同 gen_avatars.py，互为硬契约） ---------- */
+function cutoutSkyBlue(img) {
+  const w = img.width, h = img.height;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const corners = [0, (w - 1) * 4, (h - 1) * w * 4, ((h - 1) * w + w - 1) * 4];
+  let r0 = 0, g0 = 0, b0 = 0;
+  for (const i of corners) { r0 += d[i]; g0 += d[i + 1]; b0 += d[i + 2]; }
+  r0 /= 4; g0 /= 4; b0 /= 4;
+  const isBlueBg = d[3] > 240 && b0 > r0 + 30 && g0 > r0 + 15;
+  if (isBlueBg) {
+    const isSky = i => {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      if (r >= 210 && g >= 210 && b >= 210 && Math.abs(r - g) < 25 && Math.abs(r - b) < 25) return false; // 白描边阻断
+      if (b > r + 30 && g > r + 15) {
+        const dr = r - r0, dg = g - g0, db = b - b0;
+        return dr * dr + dg * dg + db * db < 65 * 65 || (b > 140 && r < 140);
+      }
+      return false;
+    };
+    const visited = new Uint8Array(w * h);
+    const queue = new Int32Array(w * h);
+    let head = 0, tail = 0;
+    const push = (x, y) => {
+      const p = y * w + x;
+      if (!visited[p]) { visited[p] = 1; if (isSky(p * 4)) queue[tail++] = p; }
+    };
+    for (let x = 0; x < w; x++) { push(x, 0); push(x, h - 1); }
+    for (let y = 0; y < h; y++) { push(0, y); push(w - 1, y); }
+    const dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
+    while (head < tail) {
+      const p = queue[head++];
+      d[p * 4 + 3] = 0;
+      const x = p % w, y = (p / w) | 0;
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx, ny = y + dy;
+        if (nx >= 0 && nx < w && ny >= 0 && ny < h) push(nx, ny);
+      }
+    }
+    ctx.putImageData(new ImageData(d, w, h), 0, 0);
+  }
+  // 透明边裁掉
+  let minX = w, minY = h, maxX = 0, maxY = 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (d[(y * w + x) * 4 + 3] > 16) {
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < minX) return c;
+  const bw = maxX - minX + 1, bh = maxY - minY + 1;
+  const out = document.createElement('canvas');
+  out.width = bw; out.height = bh;
+  out.getContext('2d').drawImage(c, minX, minY, bw, bh, 0, 0, bw, bh);
+  return out;
+}
+
+/* PNG 归一：抠图 → 主体居中带 4% 安全边 → 512×512 透明底 webp（基底一次性烘焙，之后调景不再碰像素） */
+async function normalizePngToWebp(blob) {
+  const bmp = await createImageBitmap(blob);
+  const cut = cutoutSkyBlue(bmp);
+  const side = Math.max(cut.width, cut.height) / 0.92;
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  const s = 512 / side;
+  ctx.drawImage(cut, (512 - cut.width * s) / 2, (512 - cut.height * s) / 2, cut.width * s, cut.height * s);
+  bmp.close();
+  const outBlob = await new Promise(res => canvas.toBlob(res, 'image/webp', 0.92));
+  if (!outBlob) throw new Error('当前浏览器编不出 webp（换 Chrome 即可）');
+  return new Uint8Array(await outBlob.arrayBuffer());
+}
+
+/* ---------- 文件档案 ---------- */
+const files = []; // {name, bytes, bitmap, padded, side, objUrl, fitSaved, work}
+let cur = -1;
+let darkBg = true;
+let dirHandle = null; // File System Access：关联目录后保存直写项目文件（句柄存 IndexedDB 记住）
+
+async function addFile(rawName, bytes) {
+  const name = resolveName(rawName); // 自动落册子编号名（avatar-6410-v1 → a-p2.webp）
+  const blob = new Blob([bytes], { type: 'image/webp' });
+  let bitmap = await createImageBitmap(blob);
+  // 超大图只缩显示副本身（保存仍写原始 bytes，像素不动）；契约是比例口径，与分辨率无关
+  if (Math.min(bitmap.width, bitmap.height) > 1024) {
+    const s = 1024 / Math.min(bitmap.width, bitmap.height);
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(bitmap.width * s));
+    c.height = Math.max(1, Math.round(bitmap.height * s));
+    const cc = c.getContext('2d');
+    cc.imageSmoothingQuality = 'high';
+    cc.drawImage(bitmap, 0, 0, c.width, c.height);
+    bitmap.close();
+    bitmap = await createImageBitmap(c);
+  }
+  const side = Math.min(bitmap.width, bitmap.height);
+  // 取样底：3S 透明垫画布，图中央 S 见方居中——编辑器取样永远在界内
+  const sx = (bitmap.width - side) / 2;
+  const sy = (bitmap.height - side) / 2;
+  const padded = document.createElement('canvas');
+  padded.width = padded.height = side * 3;
+  const pctx = padded.getContext('2d');
+  pctx.imageSmoothingQuality = 'high';
+  pctx.drawImage(bitmap, sx, sy, side, side, side, side, side, side);
+  const fitSaved = parseFit(bytes);
+  const entry = {
+    name, bytes, bitmap, padded, side,
+    objUrl: URL.createObjectURL(blob),
+    fitSaved,
+    work: fitSaved
+      ? { bust: fromContract(fitSaved.bust), face: fromContract(fitSaved.face) }
+      : defaultWork(),
+  };
+  // 图内没参数 → 查本机留底（上一次调的取景），拖回源图即复原
+  let restored = false;
+  if (!fitSaved) {
+    const keep = lsLoad()[name.replace(/\.webp$/i, '')];
+    if (keep && keep.fit && keep.fit.bust && keep.fit.face) {
+      try {
+        entry.work = {
+          bust: fromContract(keep.fit.bust),
+          face: fromContract(keep.fit.face),
+        };
+        restored = true;
+      } catch { /* 留底坏了就用默认档 */ }
+    }
+  }
+  files.push(entry);
+  cur = files.length - 1;
+  renderAll();
+  if (restored) toast(`已按本机留底复原 ${name} 上次的取景，确认后保存即可`);
+  return entry;
+}
+
+async function ingest(file) {
+  try {
+    if (/\.webp$/i.test(file.name)) {
+      await addFile(file.name, new Uint8Array(await file.arrayBuffer()));
+      toast(`已载入 → 自动命名 ${files[files.length - 1].name}`);
+    } else if (/\.png$/i.test(file.name)) {
+      const bytes = await normalizePngToWebp(file);
+      await addFile(file.name, bytes);
+      toast(`已抠图归一 512 → 自动命名 ${files[files.length - 1].name}`);
+    } else {
+      toast('只收 .webp（成品调景）和 .png（生图原图）');
+    }
+  } catch (e) {
+    toast(`载入失败：${e.message}`);
+  }
+}
+
+/* ---------- 渲染 ---------- */
+const editors = [
+  { tier: 'bust', el: null, css: 300 },
+  { tier: 'face', el: null, css: 180 },
+];
+
+function drawStage(ed) {
+  const file = files[cur];
+  const stage = ed.el;
+  const dpr = window.devicePixelRatio || 1;
+  const cv = stage.querySelector('canvas');
+  if (cv.width !== ed.css * dpr) { cv.width = cv.height = ed.css * dpr; }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = ed.css;
+  ctx.clearRect(0, 0, W, W);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(W / 2, W / 2, W / 2 - 1, 0, Math.PI * 2);
+  ctx.clip();
+  if (darkBg) {
+    ctx.fillStyle = '#16161d';
+    ctx.fillRect(0, 0, W, W);
+  } else {
+    ctx.fillStyle = '#1d1d26';
+    ctx.fillRect(0, 0, W, W);
+    ctx.fillStyle = '#23232e';
+    for (let y = 0; y < W; y += 14) {
+      for (let x = ((y / 14) % 2) * 14; x < W; x += 28) ctx.fillRect(x, y, 14, 14);
+    }
+  }
+  if (file) {
+    const f = file.work[ed.tier];
+    const P = file.padded.width;
+    const srcSide = file.side / f.k;
+    const cx = P / 2 + (f.cx - 0.5) * file.side;
+    const cy = P / 2 + (f.cy - 0.5) * file.side;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(file.padded, cx - srcSide / 2, cy - srcSide / 2, srcSide, srcSide, 0, 0, W, W);
+  }
+  ctx.restore();
+}
+
+/* 预览墙：与 AvatarBadge 同机制（img 铺满窗口 + transform），非画布模拟 */
+const PREVIEW_SIZES = {
+  bust: [[140, '试穿框 140'], [88, '名片 88'], [76, '战力卡 76'], [56, '通用 56'], [44, '对局卡 44']],
+  face: [[30, '候场抽屉 30'], [26, '叠层/候场条 26'], [20, '小位 20']],
+};
+const previewImgs = {}; // [tier][size] -> img
+
+function buildPreviewWall() {
+  for (const [tier, sizes] of Object.entries(PREVIEW_SIZES)) {
+    const row = document.getElementById(tier === 'bust' ? 'rowBust' : 'rowFace');
+    row.innerHTML = '';
+    previewImgs[tier] = {};
+    for (const [px, cap] of sizes) {
+      const item = document.createElement('div');
+      item.className = 'size-item';
+      const chip = document.createElement('div');
+      chip.className = 'badge-chip';
+      chip.style.width = chip.style.height = px + 'px';
+      const img = document.createElement('img');
+      img.alt = '';
+      chip.appendChild(img);
+      const label = document.createElement('div');
+      label.className = 'cap';
+      label.textContent = cap;
+      item.appendChild(chip);
+      item.appendChild(label);
+      row.appendChild(item);
+      previewImgs[tier][px] = img;
+    }
+  }
+}
+
+function frameTransformCss(t) { // 与前端 frameTransform 同式
+  return `translate(${(t.x * 100).toFixed(2)}%, ${(t.y * 100).toFixed(2)}%) scale(${t.k.toFixed(3)})`;
+}
+
+function renderAll() {
+  const has = files.length > 0;
+  document.getElementById('workspace').style.display = has ? '' : 'none';
+  document.getElementById('empty').style.display = has ? 'none' : '';
+  document.getElementById('btnSaveCur').disabled = !has;
+  document.getElementById('btnSaveAll').disabled = !has;
+  renderFilestrip();
+  const file = files[cur];
+  for (const ed of editors) drawStage(ed);
+  lsRemember(); // 本机留底（防抖）
+  if (!file) return;
+  document.getElementById('curName').textContent = file.name;
+  for (const tier of ['bust', 'face']) {
+    const t = toContract(file.work[tier]);
+    document.getElementById(tier === 'bust' ? 'rngBust' : 'rngFace').value = file.work[tier].k;
+    document.getElementById(tier === 'bust' ? 'roBust' : 'roFace').innerHTML =
+      `k <b>${t.k}</b> · x <b>${(t.x * 100).toFixed(1)}%</b> · y <b>${(t.y * 100).toFixed(1)}%</b>`;
+    for (const img of Object.values(previewImgs[tier])) {
+      if (img.src !== file.objUrl) img.src = file.objUrl;
+      img.style.transform = frameTransformCss(t);
+    }
+  }
+  document.getElementById('jsonBox').textContent =
+    JSON.stringify({ v: 1, bust: toContract(file.work.bust), face: toContract(file.work.face) });
+}
+
+function renderFilestrip() {
+  const strip = document.getElementById('filestrip');
+  strip.innerHTML = '';
+  files.forEach((f, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'fchip' + (i === cur ? ' active' : '');
+    const thumb = document.createElement('div');
+    thumb.className = 'thumb';
+    const img = document.createElement('img');
+    img.src = f.objUrl;
+    thumb.appendChild(img);
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const nm = document.createElement('div');
+    nm.className = 'name';
+    nm.textContent = f.name;
+    nm.title = '点击改名（保存时用这个名字）';
+    nm.onclick = e => {
+      e.stopPropagation();
+      if (nm.querySelector('input')) return;
+      const inp = document.createElement('input');
+      inp.value = f.name.replace(/\.webp$/i, '');
+      nm.textContent = '';
+      nm.appendChild(inp);
+      inp.focus();
+      inp.select();
+      const commit = () => {
+        let v = inp.value.trim().replace(/[\/\\]/g, '');
+        if (v) f.name = /\.webp$/i.test(v) ? v : v + '.webp';
+        renderAll();
+      };
+      inp.onblur = commit;
+      inp.onkeydown = ev => {
+        ev.stopPropagation(); // 改名输入不触发全局快捷键
+        if (ev.key === 'Enter') inp.blur();
+        if (ev.key === 'Escape') { inp.onblur = null; renderAll(); }
+      };
+    };
+    const st = document.createElement('div');
+    const dirty = isDirty(f);
+    st.className = 'state ' + (dirty ? 'st-dirty' : f.fitSaved ? 'st-fit' : 'st-none');
+    st.textContent = dirty ? '已修改未保存' : f.fitSaved ? '图内带参数' : '无参数（默认档）';
+    meta.appendChild(nm);
+    meta.appendChild(st);
+    const rm = document.createElement('span');
+    rm.className = 'rm';
+    rm.textContent = '×';
+    rm.title = '移出列表';
+    rm.onclick = e => { e.stopPropagation(); removeFile(i); };
+    chip.appendChild(thumb);
+    chip.appendChild(meta);
+    chip.appendChild(rm);
+    chip.onclick = () => { cur = i; renderAll(); };
+    strip.appendChild(chip);
+  });
+  const add = document.createElement('div');
+  add.className = 'fchip add';
+  add.textContent = '＋ 添加 / 拖入图片';
+  add.onclick = () => document.getElementById('fileInput').click();
+  strip.appendChild(add);
+}
+
+function isDirty(f) {
+  if (!f.fitSaved) {
+    const d = defaultWork();
+    return JSON.stringify(toContract(f.work.bust)) !== JSON.stringify(toContract(d.bust)) ||
+           JSON.stringify(toContract(f.work.face)) !== JSON.stringify(toContract(d.face));
+  }
+  return JSON.stringify({ v: 1, bust: toContract(f.work.bust), face: toContract(f.work.face) }) !== JSON.stringify(f.fitSaved);
+}
+
+function removeFile(i) {
+  URL.revokeObjectURL(files[i].objUrl);
+  files[i].bitmap.close();
+  files.splice(i, 1);
+  if (cur >= files.length) cur = files.length - 1;
+  renderAll();
+}
+
+/* ---------- 交互：拖动 / 滚轮（绕指针缩放）/ 双击吸心 / 滑杆 / 键盘 ---------- */
+function stagePos(stage, e) {
+  const r = stage.getBoundingClientRect();
+  return { x: clamp((e.clientX - r.left) / r.width, 0, 1), y: clamp((e.clientY - r.top) / r.height, 0, 1) };
+}
+
+function zoomAt(tier, px, py, factor) {
+  const f = files[cur].work[tier];
+  const k2 = clamp(r3(f.k * factor), 0.5, 8);
+  const cX = f.cx + (px - 0.5) / f.k;
+  const cY = f.cy + (py - 0.5) / f.k;
+  f.cx = clamp(cX - (px - 0.5) / k2, -1, 2);
+  f.cy = clamp(cY - (py - 0.5) / k2, -1, 2);
+  f.k = k2;
+}
+
+function initEditors() {
+  for (const ed of editors) {
+    ed.el = document.getElementById(ed.tier === 'bust' ? 'stageBust' : 'stageFace');
+    const stage = ed.el;
+    let dragging = null;
+    stage.addEventListener('pointerdown', e => {
+      if (cur < 0) return;
+      e.preventDefault();
+      stage.setPointerCapture(e.pointerId);
+      dragging = stagePos(stage, e);
+    });
+    stage.addEventListener('pointermove', e => {
+      if (!dragging || cur < 0) return;
+      const p = stagePos(stage, e);
+      const f = files[cur].work[ed.tier];
+      f.cx = clamp(f.cx - (p.x - dragging.x) / f.k, -1, 2);
+      f.cy = clamp(f.cy - (p.y - dragging.y) / f.k, -1, 2);
+      dragging = p;
+      renderAll();
+    });
+    stage.addEventListener('pointerup', () => { dragging = null; });
+    stage.addEventListener('pointercancel', () => { dragging = null; });
+    stage.addEventListener('wheel', e => {
+      if (cur < 0) return;
+      e.preventDefault();
+      const p = stagePos(stage, e);
+      zoomAt(ed.tier, p.x, p.y, e.deltaY < 0 ? 1.06 : 1 / 1.06);
+      renderAll();
+    }, { passive: false });
+    stage.addEventListener('dblclick', e => {
+      if (cur < 0) return;
+      const p = stagePos(stage, e);
+      const f = files[cur].work[ed.tier];
+      f.cx = clamp(f.cx + (p.x - 0.5) / f.k, -1, 2);
+      f.cy = clamp(f.cy + (p.y - 0.5) / f.k, -1, 2);
+      renderAll();
+    });
+  }
+  document.getElementById('rngBust').addEventListener('input', e => {
+    if (cur < 0) return;
+    zoomAt('bust', 0.5, 0.5, parseFloat(e.target.value) / files[cur].work.bust.k);
+    renderAll();
+  });
+  document.getElementById('rngFace').addEventListener('input', e => {
+    if (cur < 0) return;
+    zoomAt('face', 0.5, 0.5, parseFloat(e.target.value) / files[cur].work.face.k);
+    renderAll();
+  });
+  document.querySelectorAll('[data-rst]').forEach(btn => {
+    btn.onclick = () => {
+      if (cur < 0) return;
+      const d = defaultWork()[btn.dataset.rst];
+      files[cur].work[btn.dataset.rst] = { ...d };
+      renderAll();
+    };
+  });
+  document.getElementById('btnBg').onclick = () => {
+    darkBg = !darkBg;
+    document.getElementById('btnBg').textContent = darkBg ? '线上深底（#16161d）' : '透明棋盘';
+    for (const ed of editors) drawStage(ed);
+  };
+
+  window.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      saveCurrent();
+      return;
+    }
+    if (cur < 0 || e.target.tagName === 'INPUT') return;
+    const hovered = [...editors].find(ed => {
+      const r = ed.el.getBoundingClientRect();
+      return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    });
+    if (!hovered) return;
+    const step = (e.shiftKey ? 0.02 : 0.004);
+    const f = files[cur].work[hovered.tier];
+    let hit = true;
+    if (e.key === 'ArrowLeft') f.cx = clamp(f.cx - step, -1, 2);
+    else if (e.key === 'ArrowRight') f.cx = clamp(f.cx + step, -1, 2);
+    else if (e.key === 'ArrowUp') f.cy = clamp(f.cy - step, -1, 2);
+    else if (e.key === 'ArrowDown') f.cy = clamp(f.cy + step, -1, 2);
+    else hit = false;
+    if (hit) { e.preventDefault(); renderAll(); }
+  });
+}
+
+/* ---------- 目录直写：句柄存 IndexedDB 记住，权限到期在保存动作里一键续 ---------- */
+function idb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('mieball_avatar_fit', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbSet(k, v) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('kv', 'readwrite');
+    tx.objectStore('kv').put(v, k);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbGet(k) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('kv', 'readonly');
+    const rq = tx.objectStore('kv').get(k);
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+
+function updateDirBtn() {
+  const btn = document.getElementById('btnDir');
+  if (dirHandle) {
+    btn.textContent = '✅ 已关联：' + dirHandle.name + '（点此换目录）';
+  } else if (window.showDirectoryPicker) {
+    btn.textContent = '📁 关联 cosmetics 目录';
+  } else {
+    btn.textContent = '📁 此浏览器不支持直写（保存走下载）';
+  }
+}
+
+/* 保存前保证有目录：已关联→续权限；没关联→当场弹选框（用户选一次 frontend/public/cosmetics）。
+   拿不到目录返回 null，调用方回落浏览器下载。 */
+async function ensureDir() {
+  if (dirHandle) {
+    try {
+      if (await dirHandle.queryPermission({ mode: 'readwrite' }) === 'granted') return dirHandle;
+      if (await dirHandle.requestPermission({ mode: 'readwrite' }) === 'granted') return dirHandle;
+    } catch { /* 句柄失效（目录被移走等），走重选 */ }
+    dirHandle = null;
+  }
+  if (!window.showDirectoryPicker) return null;
+  try {
+    dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    await idbSet('cosmeticsDir', dirHandle); // 记住句柄，下次打开免再选
+    updateDirBtn();
+    return dirHandle;
+  } catch {
+    return null; // 用户取消选框
+  }
+}
+
+async function bindDir() {
+  // 换目录必须强制重开选框：ensureDir 对已授权的旧句柄会短路返回（点了没反应），这里绕开它
+  if (!window.showDirectoryPicker) {
+    toast('此浏览器不支持目录直写（保存走下载）');
+    return;
+  }
+  try {
+    dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    await idbSet('cosmeticsDir', dirHandle);
+    updateDirBtn();
+    toast('✅ 已关联 ' + dirHandle.name + '，保存直接写进这个目录');
+  } catch {
+    toast(dirHandle
+      ? '已取消更换，仍关联 ' + dirHandle.name
+      : '已取消，未关联目录（保存走下载）');
+  }
+}
+
+/* ---------- 保存：参数写进 XMP，像素不动 ---------- */
+async function writeOrDownload(name, blob) {
+  if (dirHandle) {
+    try {
+      const fh = await dirHandle.getFileHandle(name, { create: true });
+      const w = await fh.createWritable();
+      await w.write(blob);
+      await w.close();
+      return 'dir';
+    } catch (e) {
+      console.warn('目录写入失败，回退下载', e);
+      dirHandle = null;
+      updateDirBtn();
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+  return 'download';
+}
+
+async function saveFile(i) {
+  const f = files[i];
+  const contract = { v: 1, bust: toContract(f.work.bust), face: toContract(f.work.face) };
+  const out = withFitXmp(f.bytes, contract);
+  const back = parseFit(out); // 写完即读回自检：解不出说明字节拼坏了，不让坏文件出门
+  if (!back || JSON.stringify(back) !== JSON.stringify(contract)) {
+    throw new Error('写回自检失败：写入后读不出同样参数');
+  }
+  const blob = new Blob([out], { type: 'image/webp' });
+  const mode = await writeOrDownload(f.name, blob);
+  f.fitSaved = back;
+  renderAll();
+  return mode;
+}
+
+async function saveCurrent() {
+  if (cur < 0) return;
+  try {
+    const dir = await ensureDir(); // 首次保存即引导选目录：选完这张直接进项目
+    const mode = await saveFile(cur);
+    toast(mode === 'dir'
+      ? `✅ 已直接写入 ${dir.name}/${files[cur].name}，刷新页面即生效`
+      : `已下载 ${files[cur].name}（未关联目录）→ 手动放回 frontend/public/cosmetics/`);
+  } catch (e) {
+    toast(`保存失败：${e.message}`);
+  }
+}
+
+async function saveAll() {
+  const dir = await ensureDir();
+  let n = 0;
+  for (let i = 0; i < files.length; i++) {
+    if (!isDirty(files[i])) continue;
+    try {
+      await saveFile(i);
+      n++;
+      await new Promise(r => setTimeout(r, 120));
+    } catch (e) {
+      toast(`${files[i].name} 保存失败：${e.message}`);
+      return;
+    }
+  }
+  toast(!n ? '没有待保存的修改'
+    : dir ? `✅ ${n} 张已直接写入 ${dir.name}/，刷新页面即生效`
+          : `已下载 ${n} 张（未关联目录）→ 手动放回 frontend/public/cosmetics/`);
+}
+
+/* ---------- 载入入口 / 启动 ---------- */
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3400);
+}
+
+function initInput() {
+  const input = document.getElementById('fileInput');
+  input.addEventListener('change', () => {
+    [...input.files].forEach(ingest);
+    input.value = '';
+  });
+  ['dragenter', 'dragover'].forEach(ev =>
+    window.addEventListener(ev, e => { e.preventDefault(); document.body.classList.add('drop-hover'); }));
+  ['dragleave', 'drop'].forEach(ev =>
+    window.addEventListener(ev, e => { e.preventDefault(); document.body.classList.remove('drop-hover'); }));
+  window.addEventListener('drop', e => {
+    [...(e.dataTransfer?.files || [])].forEach(ingest);
+  });
+  document.getElementById('empty').addEventListener('dblclick', () => input.click());
+  document.getElementById('btnDir').onclick = bindDir;
+  document.getElementById('btnSaveCur').onclick = saveCurrent;
+  document.getElementById('btnSaveAll').onclick = saveAll;
+}
+
+async function boot() {
+  buildPreviewWall();
+  initEditors();
+  initInput();
+  // 记住的目录句柄：拿回来待用（权限若过期，保存动作里一键续，不用重选目录）
+  try {
+    dirHandle = (await idbGet('cosmeticsDir')) || null;
+  } catch { dirHandle = null; }
+  updateDirBtn();
+  renderAll();
+  // 开发便捷：?src=/cosmetics/a-p1.webp 直接拉素材（http 环境下用；file:// 下不可用）
+  const srcs = new URLSearchParams(location.search).getAll('src');
+  for (const s of srcs) {
+    try {
+      const res = await fetch(s);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const name = s.split('/').pop();
+      let bytes = new Uint8Array(await res.arrayBuffer());
+      if (/\.png$/i.test(name)) bytes = await normalizePngToWebp(new Blob([bytes]));
+      await addFile(name, bytes);
+    } catch (e) {
+      toast(`?src=${s} 拉取失败：${e.message}`);
+    }
+  }
+}
+
+boot();
+</script>
+</body>
+</html>

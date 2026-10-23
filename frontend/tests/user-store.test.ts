@@ -10,7 +10,7 @@ const dressedView: AccountView = {
   id: 42,
   name: "海淀反手王",
   avatar: "a-p3",
-  avatar_url: "/cosmetics/a-p3.png",
+  avatar_url: "/cosmetics/a-p3.webp",
   back: "b-t45",
   deactivated: false,
   has_password: false,
@@ -25,7 +25,7 @@ describe("applyAccount 装扮三键透传（登录换装全站读 me）", () => 
     const user = useUserStore();
     user.applyAccount(dressedView);
     expect(user.me.avatar).toBe("a-p3");
-    expect(user.me.avatarUrl).toBe("/cosmetics/a-p3.png");
+    expect(user.me.avatarUrl).toBe("/cosmetics/a-p3.webp");
     expect(user.me.back).toBe("b-t45");
   });
 

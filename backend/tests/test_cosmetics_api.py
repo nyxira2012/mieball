@@ -118,16 +118,17 @@ def test_new_account_page_shape(client: TestClient):
         "wechat_avatar_url",
     }
     items = {i["cid"]: i for i in page["items"]}
-    # 公共 10 + 荣誉 10 档×2 两族 = 30；定制款 2 件未授予不出现
-    assert len(items) == 30
+    # 公共 11（含默认款 g-00）+ 荣誉 10 档×2 两族 = 31；定制款 2 件未授予不出现
+    assert len(items) == 31
     assert "a-x1" not in items and "b-x1" not in items
-    assert items["a-p1"]["asset"] == "/cosmetics/a-p1.png"
+    assert items["a-p1"]["asset"] == "/cosmetics/a-p1.webp"
+    assert items["g-00"]["asset"] == "/cosmetics/g-00.webp"
     assert items["b-c1"]["asset"] == "/cosmetics/b-c1.webp"
     assert items["a-m20"]["lock_text"] == "参与 20 场对局解锁"
     assert len(page["unlocks"]) == 20  # 荣誉款全部列出（含未解锁），定制款不列
     for u in page["unlocks"].values():
         assert u == {"unlocked": False, "is_new": False}
-    assert page["wearing"] == {"avatar": "a-p1", "back": "b-c1"}
+    assert page["wearing"] == {"avatar": "g-00", "back": "b-c1"}
     assert page["progress"] == {
         "matches": 0,
         "rating": 2.5,
@@ -224,7 +225,7 @@ def test_dress_guards_and_save(client: TestClient):
     assert r.status_code == 200, r.text
     assert r.json() == {
         "avatar": "a-p3",
-        "avatar_url": "/cosmetics/a-p3.png",
+        "avatar_url": "/cosmetics/a-p3.webp",
         "back": "b-c2",
     }
     assert page_of(client, token)["wearing"] == {"avatar": "a-p3", "back": "b-c2"}

@@ -21,7 +21,7 @@ export interface SandSeed {
 /** 公共款轮换指派：假人各穿一款公共头像（同一人两卡同款）、你与访客吃默认
     第一款（防误认红线「默认形象」的真局同款口径） */
 const AV = {
-  def: avatarUrl("a-p1"), // 你 / 访客「朋友」
+  def: avatarUrl("g-00"), // 你 / 访客「朋友」（跟全站默认款）
   hao: avatarUrl("a-p2"),
   zhou: avatarUrl("a-p3"),
   qiu: avatarUrl("a-p4"),

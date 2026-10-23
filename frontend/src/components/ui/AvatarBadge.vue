@@ -1,7 +1,7 @@
 <template>
   <!--
     圆窗占位底色常显：出图前是素圆、onload 后 img 淡入（版面不跳）；
-    加载失败 img 永隐，素圆即兜底。取景是 CSS 放大裁切（过渡期模拟，见下）。
+    加载失败 img 永隐，素圆即兜底。正式素材按「半身填圆、圆外透明」直摆。
   -->
   <view
     class="avatar-badge"
@@ -20,17 +20,15 @@
 </template>
 
 <script setup lang="ts">
-/* 圆章头像：一枚圆章走全站，大小位只差取景远近，同一张素材同一规矩。
-   过渡期取景模拟：现有素材是全身方形，用圆窗放大裁切模拟圆章观感；正式素材按
-   「半身填圆、圆外透明、描边随圆」规格到位后撤掉取景模拟、改直摆——届时只改
-   本组件样式。 */
+/* 圆章头像：一枚圆章走全站。正式素材按「半身填圆、圆外透明、描边随圆」直出规范摆放。
+   单图单源（/cosmetics/{cid}.webp），前端零裁切，按 105% 饱满贴合圆窗边缘。 */
 import { computed, ref, watch } from "vue";
 import { avatarUrl } from "@/utils/cardbg";
 
-/* 后端册子 DEFAULT_AVATAR='a-p1' 的镜像：url=null（访客/未记微信头像的老球友/
-   异常编号兜底）一律指定公共款素材，不露破图（访客与示例局人物同款公共头）；
+/* 后端册子 DEFAULT_AVATAR='g-00' 的镜像：url=null（访客/未记微信头像的老球友/
+   异常编号兜底）一律落默认款素材，不露破图；
    路径拼接收口 cardbg 的 avatarUrl 单一源 */
-const DEFAULT_AVATAR_URL = avatarUrl("a-p1");
+const DEFAULT_AVATAR_URL = avatarUrl("g-00");
 
 const props = withDefaults(
   defineProps<{
@@ -43,8 +41,7 @@ const props = withDefaults(
 );
 
 const src = computed(() => props.url || DEFAULT_AVATAR_URL);
-/* 取景档位全站总规则（原型 av() 同款、无例外用例）：边长 ≥40px 半身圆章、
-   <40px 放大取脸特写。判定收在组件内，调用方只报 size、不各自复制规矩 */
+/* 取景档位兼容保留：正式素材到位后大位直摆（105%）、小位极微放大（112%）微聚焦脸部 */
 const framing = computed<"bust" | "face">(() =>
   props.size >= 40 ? "bust" : "face",
 );
@@ -72,18 +69,16 @@ watch(src, () => {
 .ab-img.on {
   opacity: 1;
 }
-/* 小位脸特写（原型 .zoomcrop img）：放大 230% 只取脸锚 (50%,32%) 一带 */
+/* 小位脸特写（<40px）：125% 聚焦圆心脸部特写 */
 .zoom-face {
-  width: 230%;
-  height: 230%;
+  width: 125%;
+  height: 125%;
   object-fit: cover;
-  margin-top: 38%;
 }
-/* 大位半身圆章（原型 .zoomcrop.zb img）：放大 190% 取半身 */
+/* 大位半身圆章（≥40px）：100% 原样直摆（由可视化调图工具定格烘焙） */
 .zoom-bust {
-  width: 190%;
-  height: 190%;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  margin-top: 30%;
 }
 </style>

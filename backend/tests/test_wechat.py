@@ -567,7 +567,7 @@ def test_fast_with_free_phone_creates_phone_account(client: TestClient):
     assert acc.wechat_openid == "wx_p1" and acc.wechat_verified is True
     assert acc.dress_avatar == "a-p2"  # 选了落档，没选读侧兜 a-p1
     v = me(client, res["token"])
-    assert v["avatar"] == "a-p2" and v["avatar_url"] == "/cosmetics/a-p2.png"
+    assert v["avatar"] == "a-p2" and v["avatar_url"] == "/cosmetics/a-p2.webp"
     assert v.get("phone_tail") == "1111"  # 有号即有尾号（与无号支互为镜像）
 
 

@@ -36,10 +36,10 @@ def user_view(client: TestClient, uid: int) -> dict:
 
 
 def test_view_null_columns_fall_back_to_defaults(client: TestClient):
-    """新建账号列全 NULL（=存量老账号同形）→ 默认第一款公共头像+默认公共卡背。"""
+    """新建账号列全 NULL（=存量老账号同形）→ 默认款公共头像+默认公共卡背。"""
     acc = signup(client, "13900001001", "d")["account"]
-    assert acc["avatar"] == "a-p1"
-    assert acc["avatar_url"] == "/cosmetics/a-p1.png"
+    assert acc["avatar"] == "g-00"
+    assert acc["avatar_url"] == "/cosmetics/g-00.webp"
     assert acc["back"] == "b-c1"
 
 
@@ -49,7 +49,7 @@ def test_view_passes_through_worn_ids(client: TestClient):
     set_dress(client, uid, dress_avatar="a-p3", dress_back="b-c2")
     acc = user_view(client, uid)
     assert acc["avatar"] == "a-p3"
-    assert acc["avatar_url"] == "/cosmetics/a-p3.png"
+    assert acc["avatar_url"] == "/cosmetics/a-p3.webp"
     assert acc["back"] == "b-c2"
 
 
@@ -60,7 +60,7 @@ def test_view_wechat_value_uses_recorded_url_or_falls_back(client: TestClient):
     set_dress(client, uid, dress_avatar="wechat")
     acc = user_view(client, uid)
     assert acc["avatar"] == "wechat"
-    assert acc["avatar_url"] == "/cosmetics/a-p1.png"
+    assert acc["avatar_url"] == "/cosmetics/g-00.webp"
     # 记下 URL 后直出微信图（头像值仍是 'wechat' 语义，不掺路径）
     set_dress(client, uid, wechat_avatar="https://wx.qlogo.cn/me.png")
     acc = user_view(client, uid)
@@ -84,7 +84,7 @@ def test_deactivated_shows_default_dress_and_clears_columns(client: TestClient, 
 
     acc = user_view(client, uid)
     assert acc["deactivated"] is True
-    assert acc["avatar"] == "a-p1" and acc["avatar_url"] == "/cosmetics/a-p1.png"
+    assert acc["avatar"] == "g-00" and acc["avatar_url"] == "/cosmetics/g-00.webp"
     assert acc["back"] == "b-c1"
 
     db = client.app.state.session_factory()
@@ -104,7 +104,7 @@ def test_deactivated_shows_default_dress_and_clears_columns(client: TestClient, 
 def test_person_view_shapes_for_missing_and_deactivated(client: TestClient):
     """person_view（game_views/intents 的"对外一个人"单一出口）三态形状：
     缺行/注销→默认公共款；在册→穿戴原样。"""
-    assert person_view(None)["avatar"] == "a-p1"
+    assert person_view(None)["avatar"] == "g-00"
     out = signup(client, "13900001005", "d")
     uid = out["account"]["id"]
     set_dress(client, uid, dress_avatar="a-p6", dress_back="b-c4")
@@ -114,14 +114,14 @@ def test_person_view_shapes_for_missing_and_deactivated(client: TestClient):
         p = person_view(acc)
         assert (p["avatar"], p["avatar_url"], p["back"]) == (
             "a-p6",
-            "/cosmetics/a-p6.png",
+            "/cosmetics/a-p6.webp",
             "b-c4",
         )
         acc.status = "deactivated"  # 不落库：单测注销分支的读侧形状
         p = person_view(acc)
         assert (p["avatar"], p["avatar_url"], p["back"]) == (
-            "a-p1",
-            "/cosmetics/a-p1.png",
+            "g-00",
+            "/cosmetics/g-00.webp",
             "b-c1",
         )
     finally:
@@ -135,12 +135,12 @@ def test_leaderboard_rows_carry_dress_keys(client: TestClient):
 
     rows = client.get("/api/stats/leaderboard").json()
     by_id = {r["id"]: r for r in rows}
-    assert by_id[a["account"]["id"]]["avatar"] == "a-p1"
+    assert by_id[a["account"]["id"]]["avatar"] == "g-00"
     assert by_id[a["account"]["id"]]["back"] == "b-c1"
     worn = by_id[b["account"]["id"]]
     assert (worn["avatar"], worn["avatar_url"], worn["back"]) == (
         "a-p4",
-        "/cosmetics/a-p4.png",
+        "/cosmetics/a-p4.webp",
         "b-c3",
     )
 
@@ -157,7 +157,7 @@ def test_live_roster_dress_guest_none_member_dressed(client: TestClient):
         p for p in view["players"] if p["account_id"] == env["org"]["account"]["id"]
     )
     assert org_row["avatar"] == "a-p2"
-    assert org_row["avatar_url"] == "/cosmetics/a-p2.png"
+    assert org_row["avatar_url"] == "/cosmetics/a-p2.webp"
     assert org_row["back"] == "b-c1"  # 只穿了头像，卡背兜默认
 
     guest_rows = [p for p in view["players"] if p["guest"]]

@@ -185,7 +185,7 @@ const busyLoad = ref(false);
 
 /* ---- 试穿态：sel 是本地草稿（拉到整页后初始=当前穿戴），保存成功才落云；
       点任一件即时试穿（含带锁款——试穿放开、保存把关，4.4） ---- */
-const sel = ref({ avatar: "a-p1", back: "b-c1" });
+const sel = ref({ avatar: "g-00", back: "b-c1" });
 function pick(kind: "avatar" | "back", cid: string): void {
   sel.value[kind] = cid;
 }

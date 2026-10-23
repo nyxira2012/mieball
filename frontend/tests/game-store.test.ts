@@ -51,7 +51,7 @@ function mkPerson(id: number, nickname: string) {
     id,
     nickname,
     avatar: "a-p1",
-    avatar_url: `/cosmetics/a-p${id}.png`,
+    avatar_url: `/cosmetics/a-p${id}.webp`,
     back: id % 2 ? "b-c1" : "b-t35",
   };
 }
@@ -575,10 +575,10 @@ describe("装扮三键透传（1.9 展示位：局卡铺组织者/意向卡铺�
     );
     const { store } = await loadStore();
     const g = await store.loadDetail(31);
-    expect(g.organizer.avatarUrl).toBe("/cosmetics/a-p7.png");
+    expect(g.organizer.avatarUrl).toBe("/cosmetics/a-p7.webp");
     expect(g.organizer.back).toBe("b-c1");
     // mkPerson 偶数 id 造另一档卡背，锁同格不同款也各自透传
-    expect(g.entries?.[0]?.account.avatarUrl).toBe("/cosmetics/a-p2.png");
+    expect(g.entries?.[0]?.account.avatarUrl).toBe("/cosmetics/a-p2.webp");
     expect(g.entries?.[0]?.account.back).toBe("b-t35");
     expect(g.dropins?.[0]?.account.back).toBe("b-t35");
   });
@@ -597,7 +597,7 @@ describe("装扮三键透传（1.9 展示位：局卡铺组织者/意向卡铺�
     ]);
     const { store } = await loadStore();
     await store.loadIntents();
-    expect(store.intents[0]?.account.avatarUrl).toBe("/cosmetics/a-p12.png");
+    expect(store.intents[0]?.account.avatarUrl).toBe("/cosmetics/a-p12.webp");
     expect(store.intents[0]?.account.back).toBe("b-t35"); // 偶数 id 造的荣誉款卡背
   });
 });

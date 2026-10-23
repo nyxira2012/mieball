@@ -3,6 +3,7 @@ import {
   BACK_SPEC,
   DEFAULT_FOCUS,
   WIN,
+  avatarUrl,
   backUrl,
   coverPos,
   slicePos,
@@ -17,6 +18,10 @@ describe("backUrl 约定拼路径（约定优于配置，册子不存路径）",
   it("卡背 /cosmetics/{cid}.webp", () => {
     expect(backUrl("b-c1")).toBe("/cosmetics/b-c1.webp");
     expect(backUrl("b-t45")).toBe("/cosmetics/b-t45.webp");
+  });
+  it("头像同格式 /cosmetics/{cid}.webp（与后端 asset_url 同口径）", () => {
+    expect(avatarUrl("a-p1")).toBe("/cosmetics/a-p1.webp");
+    expect(avatarUrl("a-t45")).toBe("/cosmetics/a-t45.webp");
   });
 });
 

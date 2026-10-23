@@ -44,10 +44,10 @@ export function backUrl(cid: string): string {
   return `/cosmetics/${cid}.webp`;
 }
 
-/** 头像素材 URL：同款约定单一源（/cosmetics/{cid}.png，与后端 asset_url 头像族
-    同口径）——默认款兜底与注册卡头像组的路径拼接收口到这里，不再各处手写 */
+/** 头像素材 URL：同款约定单一源（/cosmetics/{cid}.webp，与后端 asset_url
+    同口径同格式）——默认款兜底与注册卡头像组的路径拼接收口到这里，不再各处手写 */
 export function avatarUrl(cid: string): string {
-  return `/cosmetics/${cid}.png`;
+  return `/cosmetics/${cid}.webp`;
 }
 
 /* 钳 3~97% 后取 0.1% 精度——原型的落点精度（--bpx: xx.x%）收进公式层，

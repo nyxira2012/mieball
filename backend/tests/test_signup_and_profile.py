@@ -135,7 +135,7 @@ def test_signup_with_public_avatar_lands_dress_column(client: TestClient):
     out = signup(client, "13800001121", "dev-a", avatar="a-p3")
     acc = out["account"]
     assert acc["avatar"] == "a-p3"
-    assert acc["avatar_url"] == "/cosmetics/a-p3.png"
+    assert acc["avatar_url"] == "/cosmetics/a-p3.webp"
     assert me(client, out["token"])["avatar"] == "a-p3"  # /me 同源
     pub = client.get(f"/api/users/{acc['id']}").json()["account"]
     assert pub["avatar"] == "a-p3"  # 公开视图（档案弹层）同一直发源
@@ -144,8 +144,8 @@ def test_signup_with_public_avatar_lands_dress_column(client: TestClient):
 def test_signup_without_avatar_defaults_first_public(client: TestClient):
     out = signup(client, "13800001122", "dev-a")  # 头像没挑
     acc = out["account"]
-    assert acc["avatar"] == "a-p1"  # 读侧兜默认第一款，不另写死列值
-    assert acc["avatar_url"] == "/cosmetics/a-p1.png"
+    assert acc["avatar"] == "g-00"  # 读侧兜默认款，不另写死列值
+    assert acc["avatar_url"] == "/cosmetics/g-00.webp"
 
 
 def test_signup_rejects_avatar_outside_public_pool(client: TestClient):

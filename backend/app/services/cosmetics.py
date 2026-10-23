@@ -7,7 +7,10 @@
 - a-m*/b-m* 场数族（参与对局 5/20/50 场）·a-t*/b-t* 台阶族（DUPR×10）·
   a-o*/b-o* 组局族（张罗正常散场局 3/10/30 局）——荣誉款只走达标核算
 - a-x*/b-x* 定制款（仅运维授予；册子整本一份，未授予者的装扮页不显示该节）
-素材按约定路径摆放（约定优于配置，册子不存路径）：/cosmetics/{cid}.png（头像）/ .webp（卡背）
+- a-s* 系统款：a-s1 访客身份标记（不进册、装扮页选不到——人人可穿就失去
+  标记意义）；g-* 默认族例外：g-00 进册公共款（换走默认脸
+  的人能换回来——编号不循 a/b 分段，是用户点名的默认脸专属段）
+素材按约定路径摆放（约定优于配置，册子不存路径）：/cosmetics/{cid}.webp（头像卡背同格式）
 """
 
 from __future__ import annotations
@@ -26,7 +29,7 @@ from .playlog import playlog_source
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_AVATAR = "a-p1"
+DEFAULT_AVATAR = "g-00"  # 默认脸（g 族；注册卡不挑头像/兜底各态共用）
 DEFAULT_BACK = "b-c1"
 # 首批统一卡背焦点（素材管线就位后按图逐件登记，册子已留 per-item 位）
 FOCUS_X = 0.68
@@ -66,6 +69,11 @@ def _build_catalog() -> tuple[Cosmetic, ...]:
         Cosmetic(f"a-p{i}", "avatar", "common", f"球友{i}", None, None, None)
         for i in range(1, 7)
     ]
+    # 默认脸进册（公共款）：不挑头像的人显示它，换走了也能在装扮页换回来；
+    # 注册卡六选一的编号组不含它（前端 PUBLIC_AVATARS 常量）
+    items.append(
+        Cosmetic("g-00", "avatar", "common", "天使波利（默认）", None, None, None)
+    )
     items += [
         Cosmetic(
             f"b-c{i}",
@@ -145,11 +153,9 @@ def honor_thresholds(family: str) -> tuple[int, ...]:
 
 
 def asset_url(cid: str) -> str:
-    # 扩展名按 kind 分流：头像 .png / 卡背 .webp（素材管线按此落盘
-    # frontend/public/cosmetics/）；编号首段即种类（a- 头像 / b- 卡背，册子
-    # 测试锁死的不变量），不必回表查 kind
-    ext = ".webp" if cid.startswith("b-") else ".png"
-    return f"/cosmetics/{cid}{ext}"
+    # 全系统一 .webp（头像含透明通道的 RGBA webp，体积约为同图 PNG 的 1/5；
+    # 曾按 kind 分流 png/webp，2026-10-23 起并成一种扩展名，素材管线同此落盘）
+    return f"/cosmetics/{cid}.webp"
 
 
 def default_dress() -> dict:

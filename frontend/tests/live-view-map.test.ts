@@ -98,7 +98,7 @@ describe("toLiveView 装扮三键（avatar/avatarUrl/back）", () => {
         account_id: 5,
         name: "老金",
         avatar: "a-p3",
-        avatar_url: "/cosmetics/a-p3.png",
+        avatar_url: "/cosmetics/a-p3.webp",
         back: "b-c2",
         guest: false,
         dupr: 3.1,
@@ -139,7 +139,7 @@ describe("toLiveView 装扮三键（avatar/avatarUrl/back）", () => {
     const ps = toLiveView(v).players;
     expect(ps[0]).toMatchObject({
       avatar: "a-p3",
-      avatarUrl: "/cosmetics/a-p3.png",
+      avatarUrl: "/cosmetics/a-p3.webp",
       back: "b-c2",
     });
     expect(ps[1]).toMatchObject({

@@ -33,9 +33,9 @@ describe("cardPayloadOf（手填路/微信回跳重建路单一源）", () => {
     expect(picked).toEqual(["a-p1", "a-p2", "a-p3", "a-p4", "a-p5", "a-p6"]);
   });
 
-  it("默认款同值锁：PUBLIC_AVATARS 首款是 a-p1", () => {
-    // 没挑头像时后端兜册子 DEFAULT_AVATAR（a-p1）、前端镜像的第一款必须同值，
-    // 两侧劈叉则新号首屏形象不一致——后端半边 test_cosmetics_catalog 已锁
-    expect(PUBLIC_AVATARS[0]).toBe("a-p1");
+  it("注册卡六选一不含默认款（不挑才得默认）", () => {
+    // 后端兜 DEFAULT_AVATAR=g-00（后端半边 test_cosmetics_catalog
+    // 已锁），默认款不进注册卡编号组——挑与不挑语义分开，两侧不许悄悄并回
+    expect(PUBLIC_AVATARS).not.toContain("g-00");
   });
 });

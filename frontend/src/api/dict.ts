@@ -21,7 +21,7 @@ export const venueSuggestions = [
 
 /** 注册卡公共头像编号组（册子公共款头像恰 6 件；下标即名片草稿 picked 值）：
  *  编号语义归后端册子，这里只锁「第 N 款是哪件」的下标映射，供注册卡拼素材路径
- *  （/cosmetics/{cid}.png 约定）与 cardPayloadOf 下标→编号换算共用 */
+ *  （/cosmetics/{cid}.webp 约定）与 cardPayloadOf 下标→编号换算共用 */
 export const PUBLIC_AVATARS = [
   "a-p1",
   "a-p2",

@@ -23,14 +23,16 @@ def test_cids_unique_and_kind_matches_prefix():
     assert len(cids) == len(set(cids))
     for c in CATALOG:
         # 编号首段即种类：a- 头像 / b- 卡背
-        assert c.cid[0] == ("a" if c.kind == "avatar" else "b")
+        assert c.cid[0] == ("a" if c.kind == "avatar" else "b") or (
+            c.kind == "avatar" and c.cid[0] == "g"
+        )  # g 族=默认脸专属段（g-00），也是头像
         assert c.kind in ("avatar", "back")
         assert c.tier in ("common", "honor", "custom")
 
 
 def test_defaults_in_catalog_and_common():
     d_avatar, d_back = defaults()
-    assert d_avatar == DEFAULT_AVATAR == "a-p1"
+    assert d_avatar == DEFAULT_AVATAR == "g-00"
     assert d_back == DEFAULT_BACK == "b-c1"
     for cid, kind in ((d_avatar, "avatar"), (d_back, "back")):
         item = by_id(cid)
@@ -41,8 +43,8 @@ def test_defaults_in_catalog_and_common():
 def test_public_items_first_batch_shape():
     avatars = [c for c in public_items() if c.kind == "avatar"]
     backs = [c for c in public_items() if c.kind == "back"]
-    # 首批：公共头像 6 款（注册卡选一）、公共卡背 4 款
-    assert [c.cid for c in avatars] == [f"a-p{i}" for i in range(1, 7)]
+    # 首批：公共头像 7 款（注册卡六选一 a-p1..6 + 默认款 g-00 可换回）、公共卡背 4 款
+    assert [c.cid for c in avatars] == [f"a-p{i}" for i in range(1, 7)] + ["g-00"]
     assert [c.cid for c in backs] == [f"b-c{i}" for i in range(1, 5)]
 
 

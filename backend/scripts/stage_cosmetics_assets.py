@@ -1,7 +1,7 @@
 """一次性素材落位工具（1.9 批5）——把 temp/ 里的真素材按册子 cid 改名拷入
 frontend/public/cosmetics/，缺的用 PIL 程序占位图补齐，跑完产出全 32 件：
 
-- 头像 17 件 .png：公共 a-p1..a-p6 · 荣誉 a-{m5,m20,m50,t30,t35,t40,t45,o3,o10,o30} · 定制 a-x1
+- 头像 17 件 .webp：公共 a-p1..a-p6 · 荣誉 a-{m5,m20,m50,t30,t35,t40,t45,o3,o10,o30} · 定制 a-x1
 - 卡背 15 件 .webp：公共 b-c1..b-c4 · 荣誉 b-{...同族十件} · 定制 b-x1
 
 真素材来源（首批）：
@@ -10,7 +10,7 @@ frontend/public/cosmetics/，缺的用 PIL 程序占位图补齐，跑完产出�
 - 荣誉卡背十件 ← temp/卡片背景/ 其余主产物 webp 按文件名序分配
   （排除四件公共款的同号其他版本，避免荣誉款与公共款近似撞图）
 
-⚠ 占位图是临时物：正式素材批次逐张同名替换即可（约定路径 /cosmetics/{cid}.png|.webp
+⚠ 占位图是临时物：正式素材批次逐张同名替换即可（约定路径 /cosmetics/{cid}.webp，头像卡背同格式
 不变），前端与册子零改动。Pillow ≥10 支持 webp 直存（本机 12.2 实测），.webp 约定不动。
 """
 
@@ -157,7 +157,7 @@ def main() -> None:
     manifest: list[tuple[str, str]] = []
 
     for cid, src in REAL_AVATARS.items():
-        shutil.copy2(src, OUT_DIR / f"{cid}.png")
+        shutil.copy2(src, OUT_DIR / f"{cid}.webp")
         manifest.append((cid, f"真素材 ← {src.name}"))
     honor_sources = honor_back_sources(10)
     for cid, src in zip(BACK_CIDS[:4], PUBLIC_BACK_FILES):
@@ -169,8 +169,10 @@ def main() -> None:
 
     for cid in AVATAR_CIDS:
         if cid not in REAL_AVATARS:
-            placeholder_avatar(cid).save(OUT_DIR / f"{cid}.png")
-            manifest.append((cid, "占位（圆脸 PNG 透明底）"))
+            placeholder_avatar(cid).save(
+                OUT_DIR / f"{cid}.webp", format="WEBP", quality=82, method=6
+            )
+            manifest.append((cid, "占位（圆脸 WebP 透明底）"))
 
     made = {c for c, _ in manifest}
     for cid in BACK_CIDS:

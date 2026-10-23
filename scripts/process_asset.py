@@ -42,7 +42,7 @@ def encode_webp(image: Image.Image, quality: int) -> bytes:
     """以指定质量将图片编码为 WebP 字节流（method=6 深度搜索最佳压缩）。
 
     本项目生图管线统一从这里出 WebP，保证同一 quality 产出体积口径一致
-    （process_avatar.py 抠图流水线自带同参编码，是唯一例外）。
+    （gen_avatars.py 抠图流水线自带同参编码，是唯一例外）。
     """
     buf = BytesIO()
     image.save(buf, "WEBP", quality=quality, method=6)
@@ -62,15 +62,11 @@ def resize_to_max_side(image: Image.Image, max_side: int) -> Image.Image:
 
 def optimize_image_bytes(
     image: Image.Image,
-    colors: int | None = None,
+    colors: int | None = 128,
     quality: int = 90,
     max_side: int | None = None,
 ) -> tuple[str, bytes]:
-    """在内存中进行 WebP 调色板优化与编码。
-
-    colors 为 None 只出直转版；传色数才多编一份量化版择小——两次 method=6
-    编码是直转的 2.7 倍耗时，实景卡背量化版几乎不赢，所以缺省不量化。
-    """
+    """在内存中进行 WebP 调色板优化与编码。"""
     has_alpha = image.mode in ("RGBA", "LA") or "transparency" in image.info
     converted = image.convert("RGBA" if has_alpha else "RGB")
 
@@ -107,19 +103,14 @@ class CardbgQcError(RuntimeError):
     """卡背规格闸门拒绝的专用异常：批量出图侧只对它换种子重出，其余错误照常上抛。"""
 
 
-def card_subject_center(
-    image: Image.Image, gray: np.ndarray | None = None
-) -> tuple[float, float] | None:
+def card_subject_center(image: Image.Image) -> tuple[float, float] | None:
     """估主体核心：中央 64%×76% 内「局部对比×亮度」最高 1% 的加权质心。
 
     只搜中央是因为生成时主体被要求画在中间；边缘的光锥、右缘复制体再亮
-    也不参与——否则质心会被光斑/复制体拽走。
-    gray 可传调用方已算好的 0~255 float32 灰度阵，同一张图免二次转灰。
+    也不参与——否则质心会被光斑/复制体拽走（夜场登记 75 打空就是这么来的）。
     返回归一化坐标，找不到主体返回 None。
     """
-    if gray is None:
-        gray = np.asarray(image.convert("L"), dtype=np.float32)
-    g = gray / 255.0
+    g = np.asarray(image.convert("L"), dtype=np.float32) / 255.0
     h, w = g.shape
     hi = np.clip(g - ndimage.gaussian_filter(g, 10), 0, None)
     sal = hi * g
@@ -262,7 +253,7 @@ def cardbg_spec_qc(image: Image.Image, target: tuple[float, float] = CARD_CORE) 
     g = np.asarray(image.convert("L"), dtype=np.float32)
     _, w = g.shape
     problems: list[str] = []
-    center = card_subject_center(image, gray=g)
+    center = card_subject_center(image)
     if center is None:
         problems.append("找不到主体（中央没有高对比亮块）")
         center = (0.5, 0.5)
@@ -303,15 +294,6 @@ def cardbg_spec_qc(image: Image.Image, target: tuple[float, float] = CARD_CORE) 
         "edge_std": round(edge_std, 1),
         "seam_peak": round(peak, 1),
     }
-
-
-def print_reframe_report(name: str, info: dict) -> None:
-    """裁切对位一行报：comfy 落盘链与本 CLI 共用，量测口径与文案只此一份。"""
-    print(
-        f"[{name}] 裁切对位 · 主体({info['fx']:.2f},{info['fy']:.2f})"
-        f" → ({CARD_CORE[0]:.2f},{CARD_CORE[1]:.2f}) · 裁切 {info['crop'][2]:.0f}x{info['crop'][3]:.0f}"
-        f" · 缩放 {info['zoom']:.2f}x"
-    )
 
 
 def print_qc_report(name: str, qc: dict) -> None:
@@ -355,6 +337,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="通用 WebP 体积优化（量化版与直转版择优）",
     )
+    # 缺省模式 = 规格闸门复验：生图链路里闸门是硬的（comfy 抛错不落盘），
+    # 命令行复验以退出码报告，方便对存量图做巡检
+    mode_group.add_argument(
+        "--qc",
+        dest="qc",
+        action="store_true",
+        help="只跑规格闸门不裁不改（未指定任何模式时的缺省行为）",
+    )
 
     opt_group = parser.add_argument_group("优化参数选项")
     opt_group.add_argument(
@@ -365,6 +355,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--max-side", type=int, default=None, help="最长边像素上限，超出等比缩小"
     )
     args = parser.parse_args(argv)
+    if not (args.reframe or args.optimize or args.qc):
+        args.qc = True
     if args.output and len(args.inputs) > 1:
         parser.error("-o 只在单个输入时可用")
     return args
@@ -373,11 +365,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     rc = 0
-    # 三个模式是固定顺序的工序（裁切 → 优化 → 闸门），选中的各跑一次：
-    # 裁切自带闸门报告，尾部闸门不再对同一张图重复出报；
-    # 不选模式 = 缺省只复验存量图（生图链路里闸门是硬的，comfy 抛错不落盘；
-    # 命令行复验以退出码报告，方便对存量图做巡检）
-    run_qc = not (args.reframe or args.optimize)
 
     for path in args.inputs:
         if not path.exists():
@@ -389,7 +376,11 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.reframe:
             out_img, info = reframe_cardbg(img)
-            print_reframe_report(path.name, info)
+            print(
+                f"[{path.name}] 裁切对位 · 主体({info['fx']:.2f},{info['fy']:.2f})"
+                f" → ({CARD_CORE[0]:.2f},{CARD_CORE[1]:.2f}) · 裁切 {info['crop'][2]:.0f}x{info['crop'][3]:.0f}"
+                f" · 缩放 {info['zoom']:.2f}x"
+            )
             qc = cardbg_spec_qc(out_img)
             print_qc_report(path.name, qc)
             default_out = (
@@ -419,8 +410,9 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"[{path.name}] -> {out_target.name} ({raw_size / 1024:.0f}KB -> {len(payload) / 1024:.0f}KB, -{ratio:.0f}%, {scheme})"
             )
+            continue
 
-        if run_qc:
+        if args.qc:
             qc = cardbg_spec_qc(img)
             print_qc_report(path.name, qc)
             if not qc["ok"]:
