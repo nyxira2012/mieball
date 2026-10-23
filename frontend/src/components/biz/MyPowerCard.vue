@@ -1,12 +1,11 @@
 <template>
-  <!-- 我的战力卡：rank 位 #N / 未开局 — · ChibiAvatar 76
+  <!-- 我的战力卡：rank 位 #N / 未开局 — · AvatarBadge 76
        （点卡开我的档案、点头像去「我的」页）· 主数字随视图：DUPR 分层三位小数+
-       段位徽章 / Elo 整数无段位 · 底部数据行带本月涨跌。 -->
-  <view
-    class="mycardp"
-    :class="`bg-${me.cardBg || 'neon'}`"
-    @click="emit('profile')"
-  >
+       段位徽章 / Elo 整数无段位 · 底部数据行带本月涨跌。
+       1.9 A6 #1：完整铺我的卡背（f 档全幅+文字安全纱），无卡背（游客）素卡渐变兜底；
+       四档渐变卡背（bg-neon/gold/cyber/aurora）随旧装扮退役。 -->
+  <view class="mycardp" @click="emit('profile')">
+    <CardBackdrop :cid="me.back ?? null" mode="f" />
     <view class="top-row">
       <!-- rkbox：#N 或 —（未开局/未入榜参考区；Elo 视图名次跟 Elo 榜走） -->
       <view class="rkbox">
@@ -15,7 +14,7 @@
       </view>
       <!-- av：点头像切我的页，stopPropagation 防误触卡身的档案事件（goTab=nav 单一源） -->
       <view class="av" @click.stop="goTab('mine')">
-        <ChibiAvatar :chibi="me.chibi" :size="76" />
+        <AvatarBadge :url="me.avatarUrl ?? null" :size="76" />
       </view>
       <view class="info">
         <view class="nrow">
@@ -53,12 +52,13 @@
 </template>
 
 <script setup lang="ts">
-/* 我的战力卡。business 件：组合 ui 件（ChibiAvatar/TierBadge/DuprScore）+
+/* 我的战力卡。business 件：组合 ui 件（AvatarBadge/TierBadge/DuprScore）+
    业务数据。rank 位由 power 页按当前视图的榜算好传入
    （0=不在榜：未开局或 DUPR 视图未满 5 场的参考区）。 */
 import { computed } from "vue";
 import type { PropType } from "vue";
-import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
+import CardBackdrop from "@/components/ui/CardBackdrop.vue";
 import TierBadge from "@/components/ui/TierBadge.vue";
 import DuprScore from "@/components/ui/DuprScore.vue";
 import type { ScoreMode } from "@/api/types";
@@ -99,6 +99,9 @@ const telemetry = computed(() =>
 </script>
 
 <style lang="scss" scoped>
+/* 宿主契约（CardBackdrop）：relative+hidden 裁出血；z-index:0 立层叠上下文，
+   让负 z-index 的卡底层垫在卡底渐变之上、文字之下。渐变即素卡兜底（游客/无卡背）；
+   旧四档渐变 bg-* 随 1.9 换编号卡背退役 */
 .mycardp {
   margin-top: 14px;
   border: 1px solid var(--line);
@@ -107,6 +110,7 @@ const telemetry = computed(() =>
   background: linear-gradient(150deg, var(--ink3), var(--ink2));
   cursor: pointer;
   position: relative;
+  z-index: 0;
   overflow: hidden;
   transition:
     border-color 0.2s,
@@ -114,65 +118,6 @@ const telemetry = computed(() =>
 }
 .mycardp:active {
   border-color: rgba(255, 212, 0, 0.4);
-}
-.mycardp.bg-neon {
-  background:
-    radial-gradient(
-      circle at 90% 10%,
-      rgba(255, 212, 0, 0.15),
-      transparent 55%
-    ),
-    radial-gradient(
-      circle at 10% 90%,
-      rgba(111, 231, 255, 0.08),
-      transparent 60%
-    ),
-    linear-gradient(150deg, #1c1b26, var(--ink2));
-  border-color: rgba(255, 212, 0, 0.35);
-  box-shadow: inset 0 0 24px rgba(255, 212, 0, 0.04);
-}
-.mycardp.bg-gold {
-  background:
-    radial-gradient(
-      circle at 85% 15%,
-      rgba(255, 212, 0, 0.24),
-      transparent 55%
-    ),
-    linear-gradient(135deg, #2b2313 0%, #181512 60%, #0e0d0c 100%);
-  border-color: rgba(255, 212, 0, 0.5);
-  box-shadow: inset 0 0 30px rgba(255, 212, 0, 0.08);
-}
-.mycardp.bg-cyber {
-  background:
-    radial-gradient(
-      circle at 80% 20%,
-      rgba(255, 90, 54, 0.18),
-      transparent 50%
-    ),
-    radial-gradient(
-      circle at 20% 80%,
-      rgba(184, 169, 255, 0.12),
-      transparent 50%
-    ),
-    linear-gradient(150deg, #221426, var(--ink2));
-  border-color: rgba(255, 90, 54, 0.4);
-  box-shadow: inset 0 0 26px rgba(255, 90, 54, 0.06);
-}
-.mycardp.bg-aurora {
-  background:
-    radial-gradient(
-      circle at 85% 15%,
-      rgba(111, 231, 255, 0.2),
-      transparent 55%
-    ),
-    radial-gradient(
-      circle at 15% 85%,
-      rgba(184, 169, 255, 0.14),
-      transparent 55%
-    ),
-    linear-gradient(150deg, #10222b, var(--ink2));
-  border-color: rgba(111, 231, 255, 0.45);
-  box-shadow: inset 0 0 26px rgba(111, 231, 255, 0.06);
 }
 .top-row {
   display: flex;

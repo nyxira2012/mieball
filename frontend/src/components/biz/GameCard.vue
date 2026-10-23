@@ -10,6 +10,9 @@
        全部落时间列下方固定槽（.tsub，钉 max-width 不随长短撑宽挤压 chips 行）。
        人均 chip 已按用户要求移除（信息仍在局详情与报名弹层）。
        is-live：珊瑚描边 + LIVE 角标；is-inv：被邀请珊瑚描边（alpha:329）。
+       1.9 A6 #6：每张局卡铺该局组织者卡背（r 档右侧取景窗；组织者恒注册球友
+       后端兜默认公共卡背，orgBack 空仅旧快照——素卡渐变兜底）；描边/LIVE 角标
+       在 border 与内容层，负 z 卡底层盖不到。
        emit('tap')：进详情或 joinSheet 分支由父层决定（gameTapAction）；emit('enter')：卡片入场窗内
        的「进入现场」按钮（2.5 批2），父层 goLive（组织者成员同路）。 -->
   <view
@@ -17,6 +20,7 @@
     :class="{ 'is-live': live, 'is-inv': inv }"
     @click="emit('tap')"
   >
+    <CardBackdrop :cid="card.orgBack ?? null" mode="r" />
     <view class="gd">
       <!-- alpha:909 时间位：大字 = 时刻，小字 = 日段（今晚 / 10.06 周一） -->
       <view class="time">
@@ -77,6 +81,7 @@ import { computed } from "vue";
 import type { PropType } from "vue";
 import AppChip from "@/components/ui/AppChip.vue";
 import AvatarStack from "@/components/ui/AvatarStack.vue";
+import CardBackdrop from "@/components/ui/CardBackdrop.vue";
 import type { GameCardModel } from "@/api/types";
 
 const props = defineProps({
@@ -103,9 +108,12 @@ const roleTxt = computed(() =>
 
 <style lang="scss" scoped>
 /* gcard 家族样式（alpha:104-126）为本组件所有；chip/roletag 归 AppChip、stack 归 AvatarStack。
-   （DeadCard 的未成局卡壳同源，各自持有副本——styles/ 不允许新增文件。） */
+   （DeadCard 的未成局卡壳同源，各自持有副本——styles/ 不允许新增文件。）
+   宿主契约（CardBackdrop）：relative+hidden 裁取景窗出血；z-index:0 立层叠上下文，
+   负 z-index 卡底层垫在不透明渐变卡底之上、文字之下 */
 .gcard {
   position: relative;
+  z-index: 0;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: linear-gradient(160deg, var(--ink3), var(--ink2));

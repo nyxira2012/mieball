@@ -29,6 +29,7 @@ import {
   apiSaveIntent,
   type GameViewApi,
   type IntentViewApi,
+  type PersonApi,
 } from "@/api/games";
 import type {
   DirectOpenInput,
@@ -36,18 +37,25 @@ import type {
   Game,
   Intent,
   MyIntent,
+  Person,
   PublishGameInput,
 } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { deadRowKind, liveOngoing } from "@/utils/format";
 import { useUiStore } from "./ui";
 
+/** person_view（snake）→ Person（camel）：名单/组织者/意向者共用单点
+    （avatar_url→avatarUrl，1.9 展示位铺卡背的原料） */
+function toPerson(p: PersonApi): Person {
+  return { ...p, avatarUrl: p.avatar_url };
+}
+
 /** game_view（线上 snake）→ Game（store camel）：唯一映射点 */
 function toGame(v: GameViewApi): Game {
   return {
     id: v.id,
     name: v.name,
-    organizer: { ...v.organizer },
+    organizer: toPerson(v.organizer),
     startAt: v.start_at,
     endAt: v.end_at,
     deadlineAt: v.deadline_at,
@@ -85,12 +93,12 @@ function toGame(v: GameViewApi): Game {
     forced: v.forced,
     source: v.source ?? "plan",
     entries: v.entries?.map((e) => ({
-      account: { ...e.account },
+      account: toPerson(e.account),
       bring: e.bring,
       standing: e.standing,
       waitSeq: e.wait_seq,
     })),
-    dropins: v.dropins?.map((d) => ({ account: { ...d.account } })),
+    dropins: v.dropins?.map((d) => ({ account: toPerson(d.account) })),
     my: v.my
       ? {
           isOrganizer: v.my.is_organizer,
@@ -112,7 +120,7 @@ function toGame(v: GameViewApi): Game {
 /** intent_view → Intent */
 function toIntent(v: IntentViewApi): Intent {
   return {
-    account: { ...v.account },
+    account: toPerson(v.account),
     slots: [...v.slots],
     frequency: v.frequency,
     note: v.note,

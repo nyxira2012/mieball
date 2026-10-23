@@ -158,6 +158,7 @@ export function newGameCard(g: Game): GameCardModel {
           : null,
     stackAvatars: formal.slice(0, 5).map((e) => e.account.chibi),
     stackPlus: g.heads > 5 ? `+${g.heads - 5}` : "+",
+    orgBack: g.organizer.back ?? null, // 局卡铺组织者卡背（1.9 A6 #6；无卡背素卡）
     ...cardLiveEntry(g),
   };
 }

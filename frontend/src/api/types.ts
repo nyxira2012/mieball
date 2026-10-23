@@ -61,11 +61,15 @@ export type GameStatus =
 /** 谁能翻到（可见档；enum 真值=后端模型，档位只管列表翻不翻得到、不管链接进出） */
 export type Visibility = "played" | "public" | "invite_only";
 
-/** 名单里的一人（后端 person_view 镜像）：对外只显昵称+小人（1.1 隐私口径） */
+/** 名单里的一人（后端 person_view 镜像）：对外只显昵称+头像（1.1 隐私口径）；
+    装扮两键随行直发（1.9：名单墙铺格主卡背/意向卡铺意向者），穿戴值原样键
+    展示位用不到不带（avatarUrl/back 命名与 User 对齐） */
 export interface Person {
   id: number;
   nickname: string;
   chibi: ChibiConfig;
+  avatarUrl?: string | null;
+  back?: string | null;
 }
 
 /** 报名行：formal 按报名先后在前、候补按 seq 跟后（后端 entry_rows 保序，前端不再排序） */
@@ -188,6 +192,7 @@ export interface GameCardModel {
   myRole?: "org" | "inv" | "joined" | null;
   countdown?: string; // 开打倒计时灰字（2.5 §4.1；文案 2026-10-10 用户定紧凑口径：'还有12时48分'/'还有48分'/'还有1天'；仅在办局且没到入场窗才派生）
   liveEnter?: boolean; // 「进入现场」入口（2.5 §4.2/4.4：账已开 ∨ 必开且进两小时窗；waitlist/游客永无）
+  orgBack?: string | null; // 组织者卡背编号（1.9 A6 #6：每张局卡铺该局组织者；null=素卡不铺）
   stackAvatars: ChibiConfig[];
   stackPlus: string; // 头像叠层溢出文案：'+' / '+N'（第 6 人起计数）
 }

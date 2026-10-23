@@ -126,6 +126,13 @@ describe("newGameCard（真局 → 卡面模型：定值直读，时间现场换
     );
     expect(newGameCard(mkGame()).timeSub).toBeUndefined();
   });
+
+  it("orgBack 随组织者透传（1.9 A6 #6 局卡铺组织者卡背）；无卡背兜 null 素卡", () => {
+    expect(
+      newGameCard(mkGame({ organizer: { ...ken, back: "b-t35" } })).orgBack,
+    ).toBe("b-t35");
+    expect(newGameCard(mkGame()).orgBack).toBeNull(); // 旧形状 Person 无 back → 素卡不铺
+  });
 });
 
 /* 2.5 批2 卡片三态（§4.1 倒计时 / §4.2 两小时窗入口 / §4.4 账开即入口）：

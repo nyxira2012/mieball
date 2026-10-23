@@ -45,12 +45,23 @@ async function loadStore() {
 
 /* ---- game_view 造数（线上 snake 形状） ---- */
 let seq = 400;
+/** person_view 造数：装扮三键后端恒兜底直出（dress_fields 单一源，1.9 展示位） */
+function mkPerson(id: number, nickname: string) {
+  return {
+    id,
+    nickname,
+    chibi: {},
+    avatar: "a-p1",
+    avatar_url: `/cosmetics/a-p${id}.png`,
+    back: id % 2 ? "b-c1" : "b-t35",
+  };
+}
 function mkView(p: Partial<GameViewApi> = {}): GameViewApi {
   seq += 1;
   return {
     id: seq,
     name: `测试局 ${seq}`,
-    organizer: { id: 7, nickname: "朝阳反手王", chibi: {} },
+    organizer: mkPerson(7, "朝阳反手王"),
     start_at: "2026-10-08T19:00:00+08:00",
     end_at: "2026-10-08T21:00:00+08:00",
     deadline_at: "2026-10-08T17:00:00+08:00",
@@ -325,25 +336,25 @@ describe("editGame（改局 · 上限放宽反馈）", () => {
         max_players: 8,
         entries: [
           {
-            account: { id: 1, nickname: "甲", chibi: {} },
+            account: mkPerson(1, "甲"),
             bring: 0,
             standing: "formal",
             wait_seq: null,
           },
           {
-            account: { id: 2, nickname: "乙", chibi: {} },
+            account: mkPerson(2, "乙"),
             bring: 0,
             standing: "formal",
             wait_seq: null,
           },
           {
-            account: { id: 3, nickname: "丙", chibi: {} },
+            account: mkPerson(3, "丙"),
             bring: 0,
             standing: "formal",
             wait_seq: null,
           },
           {
-            account: { id: 4, nickname: "丁", chibi: {} },
+            account: mkPerson(4, "丁"),
             bring: 1,
             standing: "formal",
             wait_seq: null,
@@ -422,7 +433,7 @@ describe("restoreGame / inviteUser", () => {
   it("恢复 → 待处置文案；邀请 → 带名 toast + 意向列表重拉", async () => {
     api.apiListIntents.mockResolvedValue([
       {
-        account: { id: 12, nickname: "小张", chibi: {} },
+        account: mkPerson(12, "小张"),
         slots: ["wd"],
         frequency: 1,
         note: null,
@@ -458,7 +469,7 @@ describe("saveIntent / delIntent（意向簿）", () => {
   it("留/改：写 myIntent，两态文案", async () => {
     const { store, ui } = await loadStore();
     api.apiSaveIntent.mockResolvedValue({
-      account: { id: 0, nickname: "我", chibi: {} },
+      account: mkPerson(0, "我"),
       slots: ["we-n"],
       frequency: 2,
       note: "夜战优先",
@@ -474,7 +485,7 @@ describe("saveIntent / delIntent（意向簿）", () => {
       note: "夜战优先",
     });
     api.apiSaveIntent.mockResolvedValue({
-      account: { id: 0, nickname: "我", chibi: {} },
+      account: mkPerson(0, "我"),
       slots: ["wd"],
       frequency: 1,
       note: "",
@@ -543,6 +554,52 @@ describe("feePreview / setFee（补填链，1.3 §4.5）", () => {
     );
     await store.setFee(5, 0);
     expect(ui.toastMsg).toBe("费用已定为 ¥0 · 免费场，不出账");
+  });
+});
+
+describe("装扮三键透传（1.9 展示位：局卡铺组织者/意向卡铺意向者/名单墙铺格主）", () => {
+  it("toGame：organizer/entries/dropins 的 avatar_url→avatarUrl、back 原样（snake→camel 单点）", async () => {
+    api.apiGameDetail.mockResolvedValue(
+      mkView({
+        id: 31,
+        organizer: mkPerson(7, "朝阳反手王"),
+        entries: [
+          {
+            account: mkPerson(2, "乙"),
+            bring: 0,
+            standing: "formal",
+            wait_seq: null,
+          },
+        ],
+        dropins: [{ account: mkPerson(4, "丁") }],
+      }),
+    );
+    const { store } = await loadStore();
+    const g = await store.loadDetail(31);
+    expect(g.organizer.avatarUrl).toBe("/cosmetics/a-p7.png");
+    expect(g.organizer.back).toBe("b-c1");
+    // mkPerson 偶数 id 造另一档卡背，锁同格不同款也各自透传
+    expect(g.entries?.[0]?.account.avatarUrl).toBe("/cosmetics/a-p2.png");
+    expect(g.entries?.[0]?.account.back).toBe("b-t35");
+    expect(g.dropins?.[0]?.account.back).toBe("b-t35");
+  });
+
+  it("toIntent：意向者 avatarUrl/back 随列表透传（意向卡铺意向者卡背的原料）", async () => {
+    api.apiListIntents.mockResolvedValue([
+      {
+        account: mkPerson(12, "小张"),
+        slots: ["wd"],
+        frequency: 1,
+        note: null,
+        updated_at: "2026-10-06T10:00:00+08:00",
+        invited: false,
+        known: false,
+      },
+    ]);
+    const { store } = await loadStore();
+    await store.loadIntents();
+    expect(store.intents[0]?.account.avatarUrl).toBe("/cosmetics/a-p12.png");
+    expect(store.intents[0]?.account.back).toBe("b-t35"); // 偶数 id 造的荣誉款卡背
   });
 });
 

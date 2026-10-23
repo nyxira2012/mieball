@@ -12,9 +12,20 @@ import type {
   Visibility,
 } from "./types";
 
+/** 名单里的一人（person_view 镜像）：昵称+小人+装扮三键（1.9 展示位直发——
+    局卡铺组织者卡背/意向卡铺意向者/名单墙铺格主，键由后端 dress_fields 恒兜底非空） */
+export interface PersonApi {
+  id: number;
+  nickname: string;
+  chibi: ChibiConfig;
+  avatar: string;
+  avatar_url: string;
+  back: string;
+}
+
 /** 报名行（entry_rows 镜像）：formal 在前按报名先后、候补按 seq 跟后 */
 export interface EntryRowApi {
-  account: { id: number; nickname: string; chibi: ChibiConfig };
+  account: PersonApi;
   bring: number;
   standing: "formal" | "waitlist";
   wait_seq: number | null;
@@ -52,7 +63,7 @@ export interface FeePreviewApi {
 
 /** 空降名单行（game_view 镜像）：扫码进场的人不报名不进 entries——detail 单独带出 */
 export interface DropinRowApi {
-  account: { id: number; nickname: string; chibi: ChibiConfig };
+  account: PersonApi;
 }
 
 /** 局（game_view 镜像）。heads/slots_left/per_head/forced 是后端算好的定值（A4）；
@@ -60,7 +71,7 @@ export interface DropinRowApi {
 export interface GameViewApi {
   id: number;
   name: string;
-  organizer: { id: number; nickname: string; chibi: ChibiConfig };
+  organizer: PersonApi;
   start_at: string; // ISO 8601 +08:00
   end_at: string;
   deadline_at: string;
@@ -96,7 +107,7 @@ export interface GameViewApi {
 
 /** 意向（intent_view 镜像）；known 由 routes 组合（列表=与 viewer 同局打过，mine 恒 false） */
 export interface IntentViewApi {
-  account: { id: number; nickname: string; chibi: ChibiConfig };
+  account: PersonApi;
   slots: string[];
   frequency: number;
   note: string | null;

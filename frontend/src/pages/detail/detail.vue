@@ -126,28 +126,32 @@
         <template v-if="rosterMore" #more>{{ rosterMore }}</template>
       </SectionTitle>
       <view class="grid-p">
+        <!-- 1.9 A6 #8：名单墙格内居中铺格主卡背（p 档：头像坐垫暗椭圆+坐底名字
+             遮纱）；随行格随主人的头像带主人的卡背（带的人无账号）；加人位无人不铺 -->
         <template v-for="e in formalRows" :key="e.account.id">
           <view
             class="pcard"
             :class="{ me: e.account.id === meId }"
             @click="onPlayer(e.account.id)"
           >
+            <CardBackdrop :cid="e.account.back ?? null" mode="p" />
             <view v-if="e.bring" class="tag">带 {{ e.bring }} 人</view>
-            <view class="avatar"
-              ><ChibiAvatar :chibi="e.account.chibi" :size="56"
-            /></view>
+            <view class="avatar">
+              <AvatarBadge :url="e.account.avatarUrl ?? null" :size="56" />
+            </view>
             <view class="nm">{{ e.account.nickname }}</view>
           </view>
-          <!-- 带的人：用带他的人的头像，名 = 名字前两字+的球友 -->
+          <!-- 带的人：用带他的人的头像与卡背，名 = 名字前两字+的球友 -->
           <view
             v-for="i in e.bring || 0"
             :key="`${e.account.id}-b${i}`"
             class="pcard dim75"
           >
+            <CardBackdrop :cid="e.account.back ?? null" mode="p" />
             <view class="tag">随行</view>
-            <view class="avatar"
-              ><ChibiAvatar :chibi="e.account.chibi" :size="56"
-            /></view>
+            <view class="avatar">
+              <AvatarBadge :url="e.account.avatarUrl ?? null" :size="56" />
+            </view>
             <view class="nm">{{ e.account.nickname.slice(0, 2) }}的球友</view>
           </view>
         </template>
@@ -159,10 +163,11 @@
           :class="{ me: d.account.id === meId }"
           @click="onPlayer(d.account.id)"
         >
+          <CardBackdrop :cid="d.account.back ?? null" mode="p" />
           <view class="tag dropin">空降</view>
-          <view class="avatar"
-            ><ChibiAvatar :chibi="d.account.chibi" :size="56"
-          /></view>
+          <view class="avatar">
+            <AvatarBadge :url="d.account.avatarUrl ?? null" :size="56" />
+          </view>
           <view class="nm">{{ d.account.nickname }}</view>
         </view>
         <!-- 加人位（双角色共用：同一个位置同一个形状，点开各办各的事）——参加者=加入/
@@ -190,9 +195,10 @@
             :key="`w${e.account.id}`"
             class="pcard dim65"
           >
-            <view class="avatar"
-              ><ChibiAvatar :chibi="e.account.chibi" :size="56"
-            /></view>
+            <CardBackdrop :cid="e.account.back ?? null" mode="p" />
+            <view class="avatar">
+              <AvatarBadge :url="e.account.avatarUrl ?? null" :size="56" />
+            </view>
             <view class="nm">{{ e.account.nickname }}</view>
           </view>
         </view>
@@ -338,7 +344,8 @@ import PageShell from "@/components/biz/PageShell.vue";
 import BackRow from "@/components/biz/BackRow.vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import AppChip from "@/components/ui/AppChip.vue";
-import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
+import CardBackdrop from "@/components/ui/CardBackdrop.vue";
 import NoteCard from "@/components/ui/NoteCard.vue";
 import { useGameStore } from "@/stores/game";
 import { useUserStore } from "@/stores/user";
@@ -718,6 +725,9 @@ const onPlayer = (uid: number) => {
   grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
   gap: 10px;
 }
+/* 名单墙小格：宿主契约（CardBackdrop）relative（已有）+hidden 裁 p 档出血；
+   z-index:0 立层叠上下文，负 z 卡底层垫在 ink2 格底之上、角标/名字之下；
+   ink2 即无卡背素格兜底；「我」金描边在 border 上与卡底层互不覆盖 */
 .pcard {
   border: 1px solid rgba(245, 241, 232, 0.1);
   border-radius: var(--r-md);
@@ -725,6 +735,8 @@ const onPlayer = (uid: number) => {
   padding: 12px 8px 10px;
   text-align: center;
   position: relative;
+  z-index: 0;
+  overflow: hidden;
   transition: transform 0.15s;
 }
 .pcard:active {

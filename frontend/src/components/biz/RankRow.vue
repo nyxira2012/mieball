@@ -3,15 +3,18 @@
        unrated → 「—」不参与排名）· 头像 40 · 名 + 我徽章 + ♥ + 未定级 +
        TierBadge（段位/未定级是 DUPR 定级概念，Elo 视图不出现）·
        Last5Dots + 近 5 场 · N 战 · 右列主数字随视图：DUPR 分层三位小数 / Elo 整数 ·
-       本月涨跌。前三 top-1/2/3 高亮，新批次行 lazy-in 入场。 -->
+       本月涨跌。前三 top-1/2/3 高亮，新批次行 lazy-in 入场。
+       1.9 A6 #5：每行铺行主卡背（r 档右侧取景窗、左缘融进卡底）；金/橙/青语义
+       描边在行 border 上、卡背窗贴 padding box 之内，两不相盖；无卡背行素卡。 -->
   <view
     class="rank-row"
     :class="[topCls, { 'lazy-in': lazy }]"
     @click="emit('profile', user.id)"
   >
+    <CardBackdrop :cid="user.back ?? null" mode="r" />
     <!-- alpha:1769 名次（参考区行无位次） -->
     <view class="no">{{ unrated ? "—" : index + 1 }}</view>
-    <ChibiAvatar :chibi="user.chibi" :size="40" />
+    <AvatarBadge :url="user.avatarUrl ?? null" :size="40" />
     <view class="mid">
       <view class="nm">
         <text class="nm-t">{{ user.name }}</text>
@@ -46,11 +49,12 @@
 
 <script setup lang="ts">
 /* 评分排行单行 RankRow（alpha.html:1765-1773 · P9）。business 件：组合
-   ChibiAvatar/TierBadge/Last5Dots/DuprScore。unrated=参考区行（1.4 §6：
+   AvatarBadge/TierBadge/Last5Dots/DuprScore。unrated=参考区行（1.4 §6：
    未满 5 场不参与排名，位次列「—」、不吃前三高亮）。 */
 import { computed } from "vue";
 import type { PropType } from "vue";
-import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
+import CardBackdrop from "@/components/ui/CardBackdrop.vue";
 import TierBadge from "@/components/ui/TierBadge.vue";
 import Last5Dots from "@/components/ui/Last5Dots.vue";
 import DuprScore from "@/components/ui/DuprScore.vue";
@@ -90,7 +94,9 @@ const topCls = computed(() =>
 </script>
 
 <style lang="scss" scoped>
-/* alpha.html:495-498 .rank-row */
+/* alpha.html:495-498 .rank-row；宿主契约（CardBackdrop）：relative+hidden 裁
+   取景窗出血；z-index:0 立层叠上下文，负 z-index 卡底层垫在不透明行底之上、
+   文字之下（不立层会被行自己的 background 盖死） */
 .rank-row {
   display: flex;
   align-items: center;
@@ -101,6 +107,9 @@ const topCls = computed(() =>
   background: var(--ink2);
   margin-bottom: 8px;
   cursor: pointer;
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
   transition:
     border-color 0.15s,
     transform 0.12s;
