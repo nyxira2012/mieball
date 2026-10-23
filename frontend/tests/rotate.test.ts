@@ -30,7 +30,6 @@ function mkP(dupr: number, extra: Partial<User> = {}): User {
     play: 1,
     win: 0,
     month: 0,
-    chibi: {},
     check: "ok",
     skip: 0,
     fire: false,
@@ -55,7 +54,6 @@ function mkLive(
       organizer: {
         id: players[0]?.id ?? 99,
         nickname: players[0]?.name ?? "P0",
-        chibi: {},
       },
       startAt: "2026-10-06T19:00:00+08:00",
       endAt: "2026-10-06T21:00:00+08:00",

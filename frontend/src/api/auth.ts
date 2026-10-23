@@ -2,7 +2,6 @@
    响应里的 account 是后端"隐私出口"视图：本人视图含 phone/phone_tail。 */
 import { request } from "./http";
 import { PUBLIC_AVATARS } from "./dict";
-import type { CardBg, ChibiConfig } from "./types";
 
 export type SmsPurpose =
   | "recovery"
@@ -16,8 +15,6 @@ export type SmsPurpose =
 export interface AccountView {
   id: number;
   name: string;
-  chibi: ChibiConfig;
-  card_bg: CardBg | null;
   dupr_rating: number; // 1.4 DUPR 核心轨派生分（未定级=起步分，访客档语义 3.0）
   dupr_provisional: boolean; // 未定级（已结算 <5 场）
   dupr_games: number; // 已结算场数
@@ -86,8 +83,6 @@ export function apiMe(): Promise<{ account: AccountView | null }> {
 
 export function apiUpdateProfile(patch: {
   nickname?: string;
-  chibi?: ChibiConfig;
-  card_bg?: CardBg;
 }): Promise<{ account: AccountView }> {
   // POST 而非 PATCH：uni.request（尤其小程序端）不支持 PATCH 方法
   return request("POST", "/auth/profile", patch);

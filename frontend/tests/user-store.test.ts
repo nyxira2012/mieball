@@ -9,8 +9,6 @@ import { useUserStore } from "@/stores/user";
 const dressedView: AccountView = {
   id: 42,
   name: "海淀反手王",
-  chibi: { skin: 2, hair: 3, hc: 1, shirt: 4, face: 2, acc: 1 },
-  card_bg: null,
   avatar: "a-p3",
   avatar_url: "/cosmetics/a-p3.png",
   back: "b-t45",

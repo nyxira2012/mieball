@@ -4,7 +4,7 @@
        标题+hint · 头像 84 · 名+随行/我/♥ 徽章 · TierBadge+大分数+分制单位+本月涨跌 ·
        摘要行三态（已开局 / 访客 / 未开局，文案逐字）· Last5Dots 近 5 场 ·
        意向行（game store intents 查该用户）· 非我双按钮：喜欢(burn/ghost) + 邀请入局。
-       1.9 A6 #2：完整铺被看者卡背（f 档全幅，与战力卡/名片同一配方），无卡背素底。 -->
+       完整铺被看者卡背（f 档全幅，与战力卡/名片同一配方），无卡背素底。 -->
   <view v-if="u" class="pf">
     <CardBackdrop :cid="u.back ?? null" mode="f" />
     <!-- alpha:1900 h3 + hint（SheetHost 未传壳层 title，档案自带，样式同 AppSheet 壳 alpha:558-561） -->

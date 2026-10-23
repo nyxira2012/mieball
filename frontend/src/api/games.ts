@@ -3,7 +3,6 @@
    12 个 code 的合同表见 docs/开发日志.md 2026-10-06 收口条目（权威在 app/core/errors.py）。 */
 import { request } from "./http";
 import type {
-  ChibiConfig,
   DirectOpenInput,
   EditGameInput,
   GameStatus,
@@ -12,12 +11,11 @@ import type {
   Visibility,
 } from "./types";
 
-/** 名单里的一人（person_view 镜像）：昵称+小人+装扮三键（1.9 展示位直发——
-    局卡铺组织者卡背/意向卡铺意向者/名单墙铺格主，键由后端 dress_fields 恒兜底非空） */
+/** 名单里的一人（person_view 镜像）：昵称+装扮三键（展示位直发——局卡铺
+    组织者卡背/意向卡铺意向者/名单墙铺格主，键由后端 dress_fields 恒兜底非空） */
 export interface PersonApi {
   id: number;
   nickname: string;
-  chibi: ChibiConfig;
   avatar: string;
   avatar_url: string;
   back: string;

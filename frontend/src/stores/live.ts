@@ -157,7 +157,7 @@ function stubGame(v: LiveView): Game {
   return {
     id: v.gameId,
     name: "现场",
-    organizer: { id: -1, nickname: "—", chibi: {} },
+    organizer: { id: -1, nickname: "—" },
     startAt: v.startedAt,
     endAt: "",
     deadlineAt: "",
@@ -1047,7 +1047,6 @@ export const useLiveStore = defineStore("live", () => {
         play: 0,
         win: 0,
         month: 0,
-        chibi: {},
       }
     );
   }
@@ -1056,7 +1055,7 @@ export const useLiveStore = defineStore("live", () => {
 
   /** 总账视图 → 本地 LiveState 重建器（幂等、纯重建：不落牌不发 toast 不自动补片——
       发牌/轮换真值已归后端）：
-      - roster 整拷 mock U 同 accountId 者的展示位（chibi/elo/战绩）——不借引用：
+      - roster 整拷 mock U 同 accountId 者的展示位（elo/战绩/装扮）——不借引用：
         总账时代 elo 真值在后端，不往 mock U 回写；最近 matches[].eloRows 按人
         回填 elo 展示位（批6 P3：确认落账即显新等级，访客 rating_after 同吃）；
         访客/查无者补默认位（elo=ELO_INIT 1200、dupr 吃视图行——后端访客回 3.0）；
@@ -1107,14 +1106,12 @@ export const useLiveStore = defineStore("live", () => {
             play: 0,
             win: 0,
             month: 0,
-            chibi: {},
           };
       const elo = latestElo.get(
         p.accountId != null ? `a${p.accountId}` : `n${p.name}`,
       );
       if (elo != null) u.elo = elo; // 结算行真值优先（拷贝上改，访客同样回填）
       u.accountId = p.accountId ?? undefined; // 账号空间 id 随行带（档案卡从现场开时不撞行 id）
-      u.chibi = p.chibi ?? u.chibi; // 视图行开账定格小人直出，people 缓存兜底、访客缺省
       // 装扮三键随视图行直出（每拍现值非定格）：展示位圆章/行卡背的原料；
       // 访客 null 留给组件兜默认公共款/素卡，people 缓存只兜查档间隙的旧值
       u.avatar = p.avatar ?? u.avatar;

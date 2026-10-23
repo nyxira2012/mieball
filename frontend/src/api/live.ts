@@ -296,7 +296,6 @@ export function toLiveView(v: LiveViewApi): LiveView {
       id: p.id,
       accountId: p.account_id,
       name: p.name,
-      chibi: p.chibi ?? undefined,
       avatar: p.avatar, // 装扮三键透传（访客 null，展示组件各兜各的默认）
       avatarUrl: p.avatar_url,
       back: p.back,

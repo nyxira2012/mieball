@@ -194,7 +194,7 @@ function takeoverAs(id: number, name: string): void {
   Object.assign(useUserStore().me, { id, name });
 }
 
-const person = (id: number, nickname: string) => ({ id, nickname, chibi: {} });
+const person = (id: number, nickname: string) => ({ id, nickname });
 const entry = (id: number, nickname: string, bring = 0) => ({
   account: person(id, nickname),
   bring,

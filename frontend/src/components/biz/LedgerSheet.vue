@@ -37,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-/* 底账抽屉（2.2 批4）：无本地态；头像借名册同 id 者（工具清单不铺卡背，A6 #12）。
+/* 底账抽屉（2.2 批4）：无本地态；头像借名册同 id 者（工具清单不铺卡背）。
    时刻 isoHm 北京墙钟（未落 = 「—」）。 */
 import { computed } from "vue";
 import AppSheet from "@/components/ui/AppSheet.vue";

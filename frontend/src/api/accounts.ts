@@ -2,7 +2,6 @@
    形状原样镜像线上 snake（契约总则 §1）；camel 映射收在 user store 单点。 */
 import { request } from "./http";
 import type { AccountView } from "./auth";
-import type { CardBg } from "./types";
 
 /** 榜单行 = 账号身份四件 + DUPR 名片六件 + Elo 一件（与 AccountView 的 dupr
     字段同名同义，少 phone/phone_tail/deactivated——榜单是公开面，不漏号不列注销；
@@ -10,8 +9,6 @@ import type { CardBg } from "./types";
 export interface LeaderboardRowApi {
   id: number;
   name: string;
-  chibi: Record<string, number>;
-  card_bg: CardBg | null;
   dupr_rating: number;
   dupr_provisional: boolean;
   dupr_games: number;
@@ -19,7 +16,7 @@ export interface LeaderboardRowApi {
   dupr_last5: string[];
   dupr_month_net: number;
   elo_rating: number;
-  // 装扮三键（dress_fields 单一源直出，榜单行全量带——批7 展示位铺卡背的原料）
+  // 装扮三键（dress_fields 单一源直出，榜单行全量带——展示位铺卡背的原料）
   avatar: string;
   avatar_url: string;
   back: string;

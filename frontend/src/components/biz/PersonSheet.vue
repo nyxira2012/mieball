@@ -2,7 +2,7 @@
   <!-- 点人抽屉（temp/打球页原型 sh-person 逐字）：常规态 = 头像/战绩头 + 手柄钮（本人随时可、
        给他人需全权：换人/歇两轮/连战/退场）+ 设为/撤掉管理员（仅组织者可见）+ 战力档案链接；
        换人二段态 = 标题换「把 X 换成谁？」列对侧池（场上↔候场），点行即换。
-       1.9 A6 #10：头部一带铺被点者卡背（h 头带档——出血贴壳、底边羽化入素底，
+       头部一带铺被点者卡背（h 头带档——出血贴壳、底边羽化入素底，
        手柄钮区素底不动）；对侧池行是挑人工具清单不铺，头像换圆章。
        （待确认片换人锁已随 2.3 记分本地化删：pending 退役，playing 片换人本来就允许。） -->
   <AppSheet :visible="visible" @close="emit('close')">
@@ -238,7 +238,7 @@ const poolGroups = computed(() => {
 
 <style lang="scss" scoped>
 /* ---------- 原型 .ps-head/.ps-grid/.ps-act/.ps-link（逐字换 tokens） ---------- */
-/* 宿主契约（CardBackdrop h 头带档，A6 #10）：relative+hidden 裁出血、z-index:0
+/* 宿主契约（CardBackdrop h 头带档）：relative+hidden 裁出血、z-index:0
    立层叠上下文；负左右边距贴抽屉壳出血（20px=AppSheet 壳 padding）、底边由 cbd-h
    自带羽化渐隐入素底——手柄钮区（ps-grid）与顶部 grab 条不铺，工具面保信息密度 */
 .ps-head {

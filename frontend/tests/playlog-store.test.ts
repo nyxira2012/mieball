@@ -47,7 +47,7 @@ function mkView(p: Partial<GameViewApi> = {}): GameViewApi {
   return {
     id: seq,
     name: `测试局 ${seq}`,
-    organizer: { id: 7, nickname: "朝阳反手王", chibi: {} },
+    organizer: { id: 7, nickname: "朝阳反手王" },
     start_at: "2026-10-08T19:00:00+08:00",
     end_at: "2026-10-08T21:00:00+08:00",
     deadline_at: "2026-10-08T17:00:00+08:00",

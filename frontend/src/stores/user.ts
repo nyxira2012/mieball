@@ -7,7 +7,7 @@
    不触碰任何 uni.*；页面跳转由页面层做。 */
 import { reactive, ref } from "vue";
 import { defineStore } from "pinia";
-import type { CardBg, User } from "@/api/types";
+import type { User } from "@/api/types";
 import type { AccountView } from "@/api/auth";
 import {
   apiAccountView,
@@ -16,10 +16,9 @@ import {
 } from "@/api/accounts";
 import { useUiStore } from "./ui";
 
-import type { DressPart } from "@/utils/chibi";
-
 /** 游客占位身份（零战绩——假演示数字已随 mock 退役）：id 0 后端无此人，
-    各页按「未开局」口径渲染（还没开张 / 起步分 / —） */
+    各页按「未开局」口径渲染（还没开张 / 起步分 / —）。头像/卡背不带键——
+    AvatarBadge 默认公共款兜底、卡片素卡（访客的脸面口径） */
 export const GUEST_USER: User = {
   id: 0,
   name: "访客",
@@ -28,8 +27,6 @@ export const GUEST_USER: User = {
   win: 0,
   month: 0,
   last5: [],
-  chibi: { skin: 1, hair: 5, hc: 0, shirt: 0, face: 1, acc: 2 },
-  cardBg: "neon",
 };
 
 /** 账号视图（AccountView/榜单行同形）→ 档案 User：elo 只在榜单行有
@@ -47,8 +44,6 @@ function accountToUser(view: AccountView | LeaderboardRowApi): User {
     win: view.dupr_wins,
     month: view.dupr_month_net ?? 0,
     last5: [...(view.dupr_last5 || [])] as ("W" | "L")[],
-    chibi: { ...view.chibi },
-    cardBg: view.card_bg ?? undefined,
     avatar: view.avatar,
     avatarUrl: view.avatar_url,
     back: view.back,
@@ -57,7 +52,7 @@ function accountToUser(view: AccountView | LeaderboardRowApi): User {
 
 export const useUserStore = defineStore("user", () => {
   /** 我（reactive 原位换装：applyAccount/resetGuest Object.assign，全站引用联动） */
-  const me = reactive<User>({ ...GUEST_USER, chibi: { ...GUEST_USER.chibi } });
+  const me = reactive<User>({ ...GUEST_USER });
 
   /** 真人档案缓存（榜单灌入 + ensurePerson 单发补拉）：findUser 的非现场来源 */
   const people = reactive<Record<number, User>>({});
@@ -150,27 +145,14 @@ export const useUserStore = defineStore("user", () => {
 
   /** 退出/注销回落游客：占位身份原位复位；喜欢是本地态，换了身份不带走。
       装扮三键显式清 undefined——GUEST_USER 没带这三键，不清会穿着上一具
-      身份的形象当访客（游客的脸面批9 另定，先不残留） */
+      身份的形象当访客（访客的脸面：AvatarBadge 公共款兜底、卡片素卡） */
   function resetGuest(): void {
     likedIds.value.clear();
     Object.assign(me, GUEST_USER, {
-      chibi: { ...GUEST_USER.chibi },
       avatar: undefined,
       avatarUrl: undefined,
       back: undefined,
     });
-  }
-
-  /* —— 5.1 我的页纯增量：装扮页即点即换 —— */
-
-  /** 装扮页选件即换（5.1）：直接落 me.chibi，不 toast —— 预览即反馈，页面安静 */
-  function setVariant(part: DressPart, v: number): void {
-    me.chibi[part] = v;
-  }
-
-  /** 卡背背景即点即换（5.1）：落 me.cardBg 不 toast，即点即换全局同步（战力页卡背联动） */
-  function setCardBg(v: CardBg): void {
-    me.cardBg = v;
   }
 
   return {
@@ -187,7 +169,5 @@ export const useUserStore = defineStore("user", () => {
     ensurePerson,
     applyAccount,
     resetGuest,
-    setVariant,
-    setCardBg,
   };
 });

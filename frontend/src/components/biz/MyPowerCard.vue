@@ -2,7 +2,7 @@
   <!-- 我的战力卡：rank 位 #N / 未开局 — · AvatarBadge 76
        （点卡开我的档案、点头像去「我的」页）· 主数字随视图：DUPR 分层三位小数+
        段位徽章 / Elo 整数无段位 · 底部数据行带本月涨跌。
-       1.9 A6 #1：完整铺我的卡背（f 档全幅+文字安全纱），无卡背（游客）素卡渐变兜底；
+       完整铺我的卡背（f 档全幅+文字安全纱），无卡背（游客）素卡渐变兜底；
        四档渐变卡背（bg-neon/gold/cyber/aurora）随旧装扮退役。 -->
   <view class="mycardp" @click="emit('profile')">
     <CardBackdrop :cid="me.back ?? null" mode="f" />
@@ -101,7 +101,7 @@ const telemetry = computed(() =>
 <style lang="scss" scoped>
 /* 宿主契约（CardBackdrop）：relative+hidden 裁出血；z-index:0 立层叠上下文，
    让负 z-index 的卡底层垫在卡底渐变之上、文字之下。渐变即素卡兜底（游客/无卡背）；
-   旧四档渐变 bg-* 随 1.9 换编号卡背退役 */
+   旧四档渐变 bg-* 已随换编号卡背退役 */
 .mycardp {
   margin-top: 14px;
   border: 1px solid var(--line);

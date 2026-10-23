@@ -35,8 +35,6 @@ vi.mock("@/api/auth", () => ({
 const view: AccountView = {
   id: 42,
   name: "海淀反手王",
-  chibi: { skin: 2, hair: 3, hc: 1, shirt: 4, face: 2, acc: 1 },
-  card_bg: "gold",
   avatar: "a-p3",
   avatar_url: "/cosmetics/a-p3.png",
   back: "b-c2",
@@ -50,7 +48,6 @@ const view: AccountView = {
 const demo = {
   id: GUEST_USER.id,
   name: GUEST_USER.name,
-  chibi: { ...GUEST_USER.chibi },
 };
 
 beforeEach(() => {
@@ -74,8 +71,8 @@ describe("启动认人（4.3）", () => {
     const me = useUserStore().me;
     expect(me.id).toBe(42);
     expect(me.name).toBe("海淀反手王");
-    expect(me.chibi).toEqual(view.chibi);
-    expect(me.cardBg).toBe("gold");
+    expect(me.avatarUrl).toBe(view.avatar_url);
+    expect(me.back).toBe(view.back);
   });
 
   it("钥匙已作废（被接管/注销）→ 静默降级游客，不报错", async () => {
@@ -149,7 +146,9 @@ describe("名片建号与退出（4.2 / A3）", () => {
     const me = useUserStore().me;
     expect(me.id).toBe(demo.id);
     expect(me.name).toBe(demo.name);
-    expect(me.chibi).toEqual(demo.chibi);
+    // 回落游客不带上一具身份的脸面（装扮键显式清——公共款兜底）
+    expect(me.avatarUrl).toBeUndefined();
+    expect(me.back).toBeUndefined();
   });
 });
 
@@ -327,8 +326,6 @@ describe("补绑手机号（1.8 §4.4）", () => {
   const fastView: AccountView = {
     id: 43,
     name: "球友8421",
-    chibi: view.chibi,
-    card_bg: "gold",
     avatar: "wechat",
     avatar_url: "https://wx.example/head.jpg",
     back: "b-c1",

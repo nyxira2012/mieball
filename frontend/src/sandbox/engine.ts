@@ -11,7 +11,6 @@
    即得响应性；零框架 import、零网络（I3.2 解耦，可单测）。
    本地记分账不进 engine：比分在各手机本地记（localScores 同款），settle 只吃
    确认窗定死的终局比分。 */
-import type { ChibiConfig } from "@/utils/chibi";
 import {
   COURT_SIZE,
   ORGANIZE_ROSTER,
@@ -25,7 +24,7 @@ export type SandCheck = "none" | "ok" | "late" | "left";
 export interface SandPlayer {
   id: number; // engine 按名册行序编（1 起，稳定）；steps/tests 按名册序拿
   name: string;
-  chibi: ChibiConfig;
+  avatar: string; // 公共款素材 URL（种子行随迁；AvatarBadge 吃）
   you?: boolean;
   guest?: boolean; // 访客：照上场照摊费（份额归担保人），elo 只给展示值
   check: SandCheck;
@@ -374,7 +373,7 @@ function initState(seeds: SandSeed[]): SandState {
   const players: SandPlayer[] = seeds.map((sd, i) => ({
     id: i + 1,
     name: sd.name,
-    chibi: sd.chibi,
+    avatar: sd.avatar,
     you: sd.you,
     guest: sd.guest,
     check: sd.check,

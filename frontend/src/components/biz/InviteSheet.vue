@@ -173,7 +173,7 @@ async function onInvite(gid: number, uid: number): Promise<void> {
   gap: 8px;
   align-items: center;
 }
-/* alpha:350 小头像（miniav 的 26px 圆形容器，AvatarBadge 填充；挑人行工具清单不铺卡背，A6 #12） */
+/* alpha:350 小头像（miniav 的 26px 圆形容器，AvatarBadge 填充；挑人行工具清单不铺卡背） */
 .mav {
   width: 26px;
   height: 26px;

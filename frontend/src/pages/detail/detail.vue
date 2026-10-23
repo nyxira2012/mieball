@@ -126,7 +126,7 @@
         <template v-if="rosterMore" #more>{{ rosterMore }}</template>
       </SectionTitle>
       <view class="grid-p">
-        <!-- 1.9 A6 #8：名单墙格内居中铺格主卡背（p 档：头像坐垫暗椭圆+坐底名字
+        <!-- 名单墙格内居中铺格主卡背（p 档：头像坐垫暗椭圆+坐底名字
              遮纱）；随行格随主人的头像带主人的卡背（带的人无账号）；加人位无人不铺 -->
         <template v-for="e in formalRows" :key="e.account.id">
           <view

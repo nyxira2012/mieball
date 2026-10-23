@@ -6,7 +6,7 @@
        分享为动作行正常按钮、只 emit 不执行——编排归页面；去向提示行只给现场门牌·
        这局的人（door prop）；知情小字随分享降级走不常驻（shareLink copyMsg）；
        名单行全场 ±分=eloTotals 加总落账行；页脚出路钮 emit meet。
-       1.9：名单行/积分行头像换圆章（数据吃 live view 身份块）；战报行（对局
+       名单行/积分行头像换圆章（数据吃 live view 身份块）；战报行（对局
        比分行）多人行无单一行主，不铺卡背不换头像——纯文字行保持（已裁决）。 -->
   <view class="recap-root">
     <view class="rp-banner">
@@ -173,13 +173,16 @@ function fmtDelta(d: number): string {
   return d > 0 ? `+${d}` : d < 0 ? `−${Math.abs(d)}` : "±0";
 }
 
+/** 按账号回名册行对表帮手（结算行/担保人只带账号 id，圆章与名字住名册身份块） */
+function byAccount(accountId: number): LivePlayer | undefined {
+  return props.view.players.find((p) => p.accountId === accountId);
+}
+
 /** 积分行头像：结算行只带账号 id（开账定格快照无装扮键），回名册身份块按账号
     对表取圆章素材；访客账号 null 无行可对 → AvatarBadge 公共款兜底 */
 function eloAvatar(accountId: number | null): string | null {
   if (accountId == null) return null;
-  return (
-    props.view.players.find((p) => p.accountId === accountId)?.avatarUrl ?? null
-  );
+  return byAccount(accountId)?.avatarUrl ?? null;
 }
 
 /** 一侧名单拼句：两侧名单按边随视图下发（toLiveView 反推好的 sideA/sideB），
@@ -191,9 +194,7 @@ function names(rows: MatchPerson[]): string {
 /** 访客挂谁名下（§4.10）；正式球友带出场状态句 */
 function guarantorTxt(p: LivePlayer): string {
   if (p.guarantorAccountId != null) {
-    const g = props.view.players.find(
-      (x) => x.accountId === p.guarantorAccountId,
-    );
+    const g = byAccount(p.guarantorAccountId);
     return g ? `${g.name} 带的访客` : "随行访客";
   }
   if (p.check === "absent") return "未到场";

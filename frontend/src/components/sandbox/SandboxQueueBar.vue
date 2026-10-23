@@ -20,7 +20,7 @@
           :class="{ 'sb-glow': sandbox.spot === 'queue-kevin' }"
           @click.stop="emit('person', id)"
         >
-          <ChibiAvatar :chibi="pOf(s, id).chibi" :size="26" />
+          <AvatarBadge :url="pOf(s, id).avatar" :size="26" />
         </view>
       </view>
     </view>
@@ -42,7 +42,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
 import { useSandboxStore } from "@/stores/sandbox";
 import { roundsToPlay } from "@/utils/rotate";
 import { arrived, pOf } from "@/sandbox/engine";

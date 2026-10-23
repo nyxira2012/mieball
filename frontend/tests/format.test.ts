@@ -22,8 +22,8 @@ process.env.TZ = "Asia/Shanghai";
 /* 1.2 接线重写：人头/剩坑/人均/forced 等本地公式退役（改读后端定值），
    本文件只测换下来的纯展示口径：状态文案表、卡面映射（真局/快照）、点卡分支、词表。 */
 
-const ken: Person = { id: 11, nickname: "亮马河 Ken", chibi: {} };
-const me: Person = { id: 0, nickname: "我", chibi: {} };
+const ken: Person = { id: 11, nickname: "亮马河 Ken" };
+const me: Person = { id: 0, nickname: "我" };
 
 function mkGame(p: Partial<Game> = {}): Game {
   return {
@@ -75,7 +75,7 @@ describe("newGameCard（真局 → 卡面模型：定值直读，时间现场换
             { account: ken, bring: 0, standing: "formal", waitSeq: null },
             { account: me, bring: 1, standing: "formal", waitSeq: null },
             {
-              account: { id: 2, nickname: "乙", chibi: {} },
+              account: { id: 2, nickname: "乙" },
               bring: 0,
               standing: "waitlist",
               waitSeq: 1,

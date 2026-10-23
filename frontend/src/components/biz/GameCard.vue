@@ -10,7 +10,7 @@
        全部落时间列下方固定槽（.tsub，钉 max-width 不随长短撑宽挤压 chips 行）。
        人均 chip 已按用户要求移除（信息仍在局详情与报名弹层）。
        is-live：珊瑚描边 + LIVE 角标；is-inv：被邀请珊瑚描边（alpha:329）。
-       1.9 A6 #6：每张局卡铺该局组织者卡背（r 档右侧取景窗；组织者恒注册球友
+       每张局卡铺该局组织者卡背（r 档右侧取景窗；组织者恒注册球友
        后端兜默认公共卡背，orgBack 空仅旧快照——素卡渐变兜底）；描边/LIVE 角标
        在 border 与内容层，负 z 卡底层盖不到。
        emit('tap')：进详情或 joinSheet 分支由父层决定（gameTapAction）；emit('enter')：卡片入场窗内

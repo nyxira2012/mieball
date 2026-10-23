@@ -2,7 +2,7 @@
   <!-- 签到二维码浮层（temp/打球页原型 .qr-wrap/.qr-card 逐字）：全屏深遮罩 blur，点任意处关。
        码芯 = 真码（qrcode-generator 编码现场深链，前端直接做）。
        【v-html 例外登记】码图 SVG 串（utils/qr.ts qrSvg 产出）经 v-html 注入——
-       与 ChibiAvatar（Q 版头像）、TabBar（导航图标）、BrawlStage（球拍）并列的 v-html 出口；
+       与 TabBar（导航图标）、BrawlStage（球拍）并列的 v-html 出口；
        后续小程序化时集中替换为静态资源/canvas，调用方零改动。 -->
   <view class="qrwrap" :class="{ on: visible }" @click="emit('close')">
     <!-- 可见关闭钮（2026-10-11 替代说明书式「点一下关闭」）：整层本就点哪都关，这里给个看得见的把手 -->

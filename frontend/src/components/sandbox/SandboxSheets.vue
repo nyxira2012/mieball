@@ -20,7 +20,7 @@
         <template v-if="absents.length">
           <view v-for="row in absents" :key="row.id" class="sb-ckrow dim">
             <view class="sb-rav"
-              ><ChibiAvatar :chibi="row.chibi" :size="30"
+              ><AvatarBadge :url="row.avatar" :size="30"
             /></view>
             <view class="sb-who">
               <view class="sb-nm"
@@ -72,7 +72,7 @@
         <template v-if="!sandbox.personSwap">
           <view class="sb-pshead">
             <view class="sb-psav"
-              ><ChibiAvatar :chibi="p.chibi" :size="44"
+              ><AvatarBadge :url="p.avatar" :size="44"
             /></view>
             <view class="sb-psmeta">
               <view class="sb-psnm"
@@ -133,7 +133,7 @@
               @click="sandbox.swapWith(r.id)"
             >
               <view class="sb-rav"
-                ><ChibiAvatar :chibi="r.chibi" :size="32"
+                ><AvatarBadge :url="r.avatar" :size="32"
               /></view>
               <view class="sb-who">
                 <view class="sb-nm"
@@ -298,7 +298,7 @@ import AppField from "@/components/ui/AppField.vue";
 import AppSeg from "@/components/ui/AppSeg.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import NoteCard from "@/components/ui/NoteCard.vue";
-import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
 import { useSandboxStore } from "@/stores/sandbox";
 import { arrived, pOf, type SandPlayer } from "@/sandbox/engine";
 import { DOWN_NAMES, PAIRING_NAMES, SCORE_OPTS } from "@/utils/format";

@@ -3,19 +3,6 @@
    线上 snake_case 形状镜像在 api/games.ts（GameViewApi/IntentViewApi），映射收在 stores/game.ts 单点。
    mock 隔离线快照形状已随演示世界退役（2026-10-10）：账单/登记/记录/现场全量吃真数据。 */
 
-/** Q 版头像配置（alpha:719 chibi(c) 的参数对象；SVG 生成函数在 utils/chibi.ts，归 P1） */
-export interface ChibiConfig {
-  skin?: number;
-  hair?: number;
-  hc?: number;
-  shirt?: number;
-  face?: number;
-  acc?: number;
-}
-
-/** 我的战力卡卡背（alpha:1844 bg-neon/gold/cyber/aurora） */
-export type CardBg = "neon" | "gold" | "cyber" | "aurora";
-
 /** 战力页分数视图（4.1 分数切换）：'dupr'=榜单正式口径（默认——排序/段位/
     定级门槛全吃 DUPR）；'elo'=娱乐视图（按 Elo 重排，无段位无定级门槛） */
 export type ScoreMode = "dupr" | "elo";
@@ -38,9 +25,8 @@ export interface User {
   tonight?: number; // 今晚已打场数（现场名册行随视图带、战报实时派生）：队列抽屉「今晚 N 场」吃它——档案缓存的 play 是生涯数
   last5?: ("W" | "L")[];
   shadow?: boolean; // 随行访客 · 不计积分不进榜（对局按新人初始等级代入算分，2.3 修订②）
-  chibi: ChibiConfig;
-  cardBg?: CardBg;
-  // 装扮三键（后端 person_view 单一源直出；chibi/cardBg 旧字段暂保留待清退）
+  // 装扮三键（后端 person_view 单一源直出；后端包里仍带旧 chibi/card_bg 键——
+  // 旧列读侧保留，前端类型不再声明、运行时多余键无害）
   avatar?: string; // 穿戴值原样（册子编号或 'wechat'）
   avatarUrl?: string | null; // 后端解析好的素材 URL（wechat=授权时记下的原图；null=默认公共款）
   back?: string | null; // 卡背编号（null=默认公共卡背，宿主素卡兜底）
@@ -62,12 +48,11 @@ export type GameStatus =
 export type Visibility = "played" | "public" | "invite_only";
 
 /** 名单里的一人（后端 person_view 镜像）：对外只显昵称+头像（1.1 隐私口径）；
-    装扮两键随行直发（1.9：名单墙铺格主卡背/意向卡铺意向者），穿戴值原样键
+    装扮两键随行直发（名单墙铺格主卡背/意向卡铺意向者），穿戴值原样键
     展示位用不到不带（avatarUrl/back 命名与 User 对齐） */
 export interface Person {
   id: number;
   nickname: string;
-  chibi: ChibiConfig;
   avatarUrl?: string | null;
   back?: string | null;
 }
@@ -192,8 +177,8 @@ export interface GameCardModel {
   myRole?: "org" | "inv" | "joined" | null;
   countdown?: string; // 开打倒计时灰字（2.5 §4.1；文案 2026-10-10 用户定紧凑口径：'还有12时48分'/'还有48分'/'还有1天'；仅在办局且没到入场窗才派生）
   liveEnter?: boolean; // 「进入现场」入口（2.5 §4.2/4.4：账已开 ∨ 必开且进两小时窗；waitlist/游客永无）
-  orgBack?: string | null; // 组织者卡背编号（1.9 A6 #6：每张局卡铺该局组织者；null=素卡不铺）
-  stackAvatarUrls: (string | null)[]; // 正式名单头像素材 URL 前 5（1.9 圆章叠层；null=公共款兜底）
+  orgBack?: string | null; // 组织者卡背编号（每张局卡铺该局组织者；null=素卡不铺）
+  stackAvatarUrls: (string | null)[]; // 正式名单头像素材 URL 前 5（圆章叠层；null=公共款兜底）
   stackPlus: string; // 头像叠层溢出文案：'+' / '+N'（第 6 人起计数）
 }
 
@@ -347,7 +332,7 @@ export interface LiveCourt {
 }
 
 /** 已完成场次（alpha:1710）。alpha 的 txt 为含高亮的 HTML 字符串，这里存纯文本胜者名，
-    页面渲染时拼「names 胜」（v-html 例外出口：ChibiAvatar / TabBar / BrawlStage / QrOverlay，
+    页面渲染时拼「names 胜」（v-html 例外出口：TabBar / BrawlStage / QrOverlay，
     例外登记在各组件文件头，后续小程序化时集中替换）。 */
 export interface MatchHistory {
   names: string;
@@ -457,7 +442,6 @@ export interface LivePlayerApi {
   id: number; // 名册行 id——check/swap/tempo/封撤管理员写动作按它定靶
   account_id: number | null; // 访客 null
   name: string; // 开账定格名（注销者占位名；访客=担保人前两字+编号）
-  chibi: ChibiConfig | null; // 开账时定格的账号小人（访客无账号行 → null）
   // 装扮三键（后端 _player_row 每拍随装扮现值直发，非开账定格；访客三键 null
   // → 前端 AvatarBadge 公共款兜底/行素卡）
   avatar: string | null;
@@ -586,8 +570,7 @@ export interface LivePlayer {
   id: number;
   accountId: number | null;
   name: string;
-  chibi: ChibiConfig | undefined; // 开账定格小人（访客 undefined → 缺省形象）
-  // 装扮三键（1.9 展示位：AvatarBadge 圆章/抽屉行卡背的原料；访客 null 由组件兜底）
+  // 装扮三键（展示位：AvatarBadge 圆章/抽屉行卡背的原料；访客 null 由组件兜底）
   avatar: string | null;
   avatarUrl: string | null;
   back: string | null;

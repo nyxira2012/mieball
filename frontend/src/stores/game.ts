@@ -45,9 +45,10 @@ import { deadRowKind, liveOngoing } from "@/utils/format";
 import { useUiStore } from "./ui";
 
 /** person_view（snake）→ Person（camel）：名单/组织者/意向者共用单点
-    （avatar_url→avatarUrl，1.9 展示位铺卡背的原料） */
+    （解构挑键不带 snake 残键；avatarUrl 是展示位铺卡背的原料） */
 function toPerson(p: PersonApi): Person {
-  return { ...p, avatarUrl: p.avatar_url };
+  const { id, nickname, avatar_url, back } = p;
+  return { id, nickname, avatarUrl: avatar_url, back };
 }
 
 /** game_view（线上 snake）→ Game（store camel）：唯一映射点 */

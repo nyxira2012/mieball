@@ -2,7 +2,7 @@
    二维码 SVG 生成（qrcode-generator 矩阵编码 + 自拼 SVG 串）。
    真码前端直接做：编码的是明文深链、无私密信息（2026-10-10
    用户定稿，推翻旧「真码后端接」口径）。纯函数零 vue/uni 依赖
-   （I3.2 解耦，仿 chibi.ts 拼 SVG 串模式），供 QrOverlay 消费。
+   （I3.2 解耦，自拼 SVG 串模式），供 QrOverlay 消费。
    ========================================================== */
 import qrcode from "qrcode-generator";
 

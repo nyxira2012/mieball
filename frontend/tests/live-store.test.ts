@@ -100,7 +100,6 @@ const LI_CARD = {
   play: 52,
   win: 29,
   month: 14,
-  chibi: { skin: 1, hair: 0, hc: 0, shirt: 4, face: 0, acc: 2 },
 };
 const ME_CARD = {
   id: 0,
@@ -110,7 +109,6 @@ const ME_CARD = {
   play: 34,
   win: 19,
   month: 18,
-  chibi: { skin: 1, hair: 5, hc: 0, shirt: 0, face: 1, acc: 2 },
 };
 const ZHAO_CARD = {
   id: 10,
@@ -121,15 +119,14 @@ const ZHAO_CARD = {
   win: 0,
   month: 0,
   shadow: true,
-  chibi: { skin: 1, hair: 4, hc: 5, shirt: 0, face: 1, acc: 0 },
 };
 
 /** 预灌档案缓存（借位语义用例的靶人） */
 async function seedCards() {
   const us = (await import("@/stores/user")).useUserStore();
-  us.people[5] = { ...LI_CARD, chibi: { ...LI_CARD.chibi } };
-  us.people[0] = { ...ME_CARD, chibi: { ...ME_CARD.chibi } };
-  us.people[10] = { ...ZHAO_CARD, chibi: { ...ZHAO_CARD.chibi } };
+  us.people[5] = { ...LI_CARD };
+  us.people[0] = { ...ME_CARD };
+  us.people[10] = { ...ZHAO_CARD };
 }
 
 /** 局簿造一格（needOrg/isOrg/ensureLive 404 路读局簿 organizer/status） */
@@ -353,7 +350,7 @@ async function inPlay(v: LiveViewApi = vPlay()) {
   return apply(v);
 }
 
-const person = (id: number, nickname: string) => ({ id, nickname, chibi: {} });
+const person = (id: number, nickname: string) => ({ id, nickname });
 
 /** 900 局详情（snake，apiGameDetail 替身回包；与 g900 同一局的线上形状） */
 function d900(): GameViewApi {
@@ -436,13 +433,11 @@ describe("applyLiveView（批4 阶段2：总账视图 → 本地 LiveState 幂�
     expect(li.id).toBe(101); // User.id = 名册行 id（写动作靶位，与 queue/片位同键）
     expect(li.elo).toBe(1574); // accountId 5 → 借 people[5] 展示位
     expect(li.dupr).toBe(3.42); // dupr 吃视图行真值（> people[5] 借位 3.3）
-    expect(li.chibi).toEqual(LI_CARD.chibi);
     expect(li.check).toBe("ok");
     expect(li.arriveAt).toBe("2026-10-07T19:02:00+08:00");
     expect(guest.shadow).toBe(true); // 访客 shadow 标记
     expect(guest.elo).toBe(1200); // 查无者默认展示位＝后端初始等第（ELO_INIT）
     expect(guest.dupr).toBe(3.0); // 访客 dupr 后端回 GUEST_DUPR
-    expect(guest.chibi).toEqual({});
     expect(me.elo).toBe(1518); // accountId 0 → 借 people[0]
     expect(me.dupr).toBe(3.28); // 视图真值覆写 people[0] 的 3.2（整拷上改）
     expect(me.dropin).toBe(true);

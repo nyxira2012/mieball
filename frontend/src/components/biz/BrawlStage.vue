@@ -12,7 +12,7 @@
             <text v-if="p.pos === 'c'" class="crown">👑</text>
             <!-- 球拍 SVG（v-html 例外，见文件头登记） -->
             <view class="pd-slot" v-html="paddles[p.pos]" />
-            <!-- alpha:1758 chibi(u.chibi, is1?76:60) → 1.9 圆章（76/60 半身档） -->
+            <!-- 旧捏小人已退役：圆章 76/60 半身档（原 alpha:1758 位） -->
             <AvatarBadge
               :url="p.u.avatarUrl ?? null"
               :size="p.pos === 'c' ? 76 : 60"

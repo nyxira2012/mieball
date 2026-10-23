@@ -41,7 +41,8 @@ from .stats import StatsLedger
 from .wechat import WeChatGate, WechatMixin
 
 PHONE_RE = re.compile(r"^1[3-9]\d{9}$")
-# 与前端 utils/chibi.ts DRESS_RANGES 同一真值（六部件各自的变体数）
+# 六部件各自的变体数——chibi 渲染族退役后真值自持于后端（名片口改 chibi 的
+# 取值域校验独此一份，不再有前端镜像）
 CHIBI_RANGES = {"skin": 4, "hair": 6, "hc": 6, "shirt": 8, "face": 4, "acc": 3}
 DEFAULT_CHIBI = {"skin": 0, "hair": 0, "hc": 0, "shirt": 5, "face": 0, "acc": 0}
 CARD_BGS = {"neon", "gold", "cyber", "aurora"}

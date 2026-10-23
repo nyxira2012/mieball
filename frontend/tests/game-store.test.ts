@@ -50,7 +50,6 @@ function mkPerson(id: number, nickname: string) {
   return {
     id,
     nickname,
-    chibi: {},
     avatar: "a-p1",
     avatar_url: `/cosmetics/a-p${id}.png`,
     back: id % 2 ? "b-c1" : "b-t35",
@@ -320,7 +319,7 @@ describe("editGame（改局 · 上限放宽反馈）", () => {
         id: 5,
         entries: [
           {
-            account: { id: 1, nickname: "甲", chibi: {} },
+            account: { id: 1, nickname: "甲" },
             bring: 0,
             standing: "formal",
             wait_seq: null,

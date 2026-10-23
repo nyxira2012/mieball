@@ -1,21 +1,35 @@
 /* 沙盒示例数据单一源（2.7 批1）——两张教学卡画面上出现的每个名字/数字/句子都
    从这里来，进卡瞬间可用、零联网（规格 §7 A4「数据从哪来」）。零框架 import：
-   只带 ChibiConfig 类型（编译期擦除，头像 SVG 生成在 UI 层 ChibiAvatar）。
+   头像是公共款素材 URL（avatarUrl 拼约定路径，渲染在 UI 层 AvatarBadge）。
    防误认红线（规格 §6）：假名+小头像、局名场馆带「示例」、已登录也统一「你」
-   +默认小人。 */
-import type { ChibiConfig } from "@/utils/chibi";
+   +默认头像。 */
+import { avatarUrl } from "@/utils/cardbg";
 
 /** 名册种子行：check=进卡时的初始考勤（'ok' 开场已在候场 / 'none' 还没到，
     到场时机由 NPC 调度表或用户动作推进）。行序=名册序：资历并列时的先下判定
     按它稳定排序（engine byTenure），两张卡的剧本阵容靠行序锁定，别调换。 */
 export interface SandSeed {
   name: string;
-  chibi: ChibiConfig;
+  /** 公共头像素材 URL（示例局人物指定公共款，不占个人衣柜）；avatarUrl 单一源拼路径 */
+  avatar: string;
   check: "ok" | "none";
   you?: boolean; // 示例局里的「你」（两卡各一粒，id 由 engine 按行序编）
   guest?: boolean; // 访客行：带访客时才签到进场（待签列表不显示它，走「带访客」表单）
   organizer?: boolean; // 组织者（参与卡=阿豪、组织卡=你；engine 落 organizerId）
 }
+
+/** 公共款轮换指派：假人各穿一款公共头像（同一人两卡同款）、你与访客吃默认
+    第一款（防误认红线「默认形象」的真局同款口径） */
+const AV = {
+  def: avatarUrl("a-p1"), // 你 / 访客「朋友」
+  hao: avatarUrl("a-p2"),
+  zhou: avatarUrl("a-p3"),
+  qiu: avatarUrl("a-p4"),
+  jin: avatarUrl("a-p5"),
+  lu: avatarUrl("a-p6"),
+  min: avatarUrl("a-p2"), // 款少人多必有复用：小敏与阿豪分属两卡不撞面，老周/凯文同场同款 a-p3 属预期
+  kevin: avatarUrl("a-p3"),
+} as const;
 
 /** 假局信息（两卡共用）：分制 11 起步，组织卡第五步改 15；down/pairing 只作
     规则抽屉展示位——engine 的轮转口径固定 n2·按候场队序（教学局锁定，
@@ -38,29 +52,29 @@ export const COURT_SIZE = 4;
 export const PARTICIPATE_ROSTER: SandSeed[] = [
   {
     name: "阿豪",
-    chibi: { skin: 1, hair: 2, hc: 5, shirt: 1, face: 3 },
+    avatar: AV.hao,
     check: "ok",
     organizer: true,
   },
   {
     name: "老周",
-    chibi: { skin: 2, hair: 0, hc: 1, shirt: 4, face: 0 },
+    avatar: AV.zhou,
     check: "ok",
   },
-  { name: "你", chibi: {}, check: "none", you: true }, // 默认小人（§8 裁决：防「我真在局里」错觉）
+  { name: "你", avatar: AV.def, check: "none", you: true }, // 默认头像（§8 裁决：防「我真在局里」错觉）
   {
     name: "球球",
-    chibi: { skin: 0, hair: 1, hc: 3, shirt: 6, face: 1 },
+    avatar: AV.qiu,
     check: "none",
   },
   {
     name: "老金",
-    chibi: { skin: 3, hair: 5, hc: 0, shirt: 7, face: 2 },
+    avatar: AV.jin,
     check: "none",
   },
   {
     name: "小鹿",
-    chibi: { skin: 0, hair: 3, hc: 4, shirt: 3, face: 1, acc: 2 },
+    avatar: AV.lu,
     check: "none",
   },
 ];
@@ -71,36 +85,36 @@ export const PARTICIPATE_ROSTER: SandSeed[] = [
 export const ORGANIZE_ROSTER: SandSeed[] = [
   {
     name: "老周",
-    chibi: { skin: 2, hair: 0, hc: 1, shirt: 4, face: 0 },
+    avatar: AV.zhou,
     check: "ok",
   },
   {
     name: "小敏",
-    chibi: { skin: 1, hair: 4, hc: 2, shirt: 5, face: 1 },
+    avatar: AV.min,
     check: "ok",
   },
-  { name: "你", chibi: {}, check: "ok", you: true, organizer: true },
+  { name: "你", avatar: AV.def, check: "ok", you: true, organizer: true },
   {
     name: "球球",
-    chibi: { skin: 0, hair: 1, hc: 3, shirt: 6, face: 1 },
+    avatar: AV.qiu,
     check: "none",
   },
   {
     name: "老金",
-    chibi: { skin: 3, hair: 5, hc: 0, shirt: 7, face: 2 },
+    avatar: AV.jin,
     check: "none",
   },
   {
     name: "凯文",
-    chibi: { skin: 1, hair: 5, hc: 1, shirt: 0, face: 0, acc: 1 },
+    avatar: AV.kevin,
     check: "none",
   },
   {
     name: "小鹿",
-    chibi: { skin: 0, hair: 3, hc: 4, shirt: 3, face: 1, acc: 2 },
+    avatar: AV.lu,
     check: "none",
   },
-  { name: "朋友", chibi: {}, check: "none", guest: true }, // 访客无账号行→默认形象（真码 chibi null 同款）
+  { name: "朋友", avatar: AV.def, check: "none", guest: true }, // 访客无账号行→默认公共款头像（真码访客同款兜底）
 ];
 
 /* ───────── NPC 剧本调度表（store 批2 消费：按 when 挂定时器，到点调

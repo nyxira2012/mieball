@@ -38,7 +38,7 @@
                       sandbox.spot === 'court-avatar' ||
                       (sandbox.spot === 'my-avatar' && pl.you),
                   }"
-                  ><ChibiAvatar :chibi="pl.chibi" :size="44"
+                  ><AvatarBadge :url="pl.avatar" :size="44"
                 /></view>
                 <text class="sb-pname">{{ pl.name }}</text>
                 <text v-if="pl.guest" class="badge guest">访客</text>
@@ -143,7 +143,7 @@
    同侧也重触发）。SIZE=每片人数，单源 data.COURT_SIZE（教学局锁双打 4，engine fillIdle 同吃） */
 import { computed, onUnmounted, ref, watch } from "vue";
 import type { PropType } from "vue";
-import ChibiAvatar from "@/components/ui/ChibiAvatar.vue";
+import AvatarBadge from "@/components/ui/AvatarBadge.vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import type { SandCourt, SandPlayer } from "@/sandbox/engine";
 import { COURT_SIZE } from "@/sandbox/data";
