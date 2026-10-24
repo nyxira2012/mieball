@@ -9,7 +9,7 @@ Depends 参数默认值是全项目路由的 FastAPI 惯例写法（cosmetics/bi
 
 from __future__ import annotations
 
-from typing import Any, Literal  # Any 供 ProfileIn.chibi（改名片路仍收小人配置）
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
@@ -80,8 +80,6 @@ class DeactivateIn(BaseModel):
 
 class ProfileIn(BaseModel):
     nickname: str | None = None
-    chibi: dict[str, Any] | None = None
-    card_bg: str | None = None
 
 
 class PasswordSetIn(BaseModel):
@@ -185,11 +183,7 @@ def update_profile(
     account: Account = Depends(require_account),
     book: AccountBook = Depends(get_account_book),
 ):
-    return {
-        "account": book.update_profile(
-            account.id, nickname=body.nickname, chibi=body.chibi, card_bg=body.card_bg
-        )
-    }
+    return {"account": book.update_profile(account.id, nickname=body.nickname)}
 
 
 @router.post("/logout")

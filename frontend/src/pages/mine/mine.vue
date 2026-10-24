@@ -11,10 +11,10 @@
 
     <!-- 头部形象区（5.1 页面设计）：点形象即进装扮页。名片铺我的卡背（'f' 档全幅，
          无卡背/访客素卡渐变兜底）、头像换圆章（me.avatarUrl 后端解析直出） -->
-    <view class="mecard">
-      <CardBackdrop :cid="me.back ?? null" mode="f" />
+    <view class="mecard cbd-host">
+      <CardBackdrop :cid="me.back" mode="f" />
       <view class="av" @click="go('/pages/mine/dress')">
-        <AvatarBadge :url="me.avatarUrl ?? null" :size="88" />
+        <AvatarBadge :url="me.avatarUrl" :size="88" />
       </view>
       <view class="minfo">
         <view class="mname">{{ meName }}</view>
@@ -292,6 +292,7 @@ import { copyWithToast } from "@/utils/clipboard";
 import { ApiError, errText } from "@/api/http";
 import { PHONE_USE_NOTE } from "@/api/dict";
 import { duprOf, duprTier } from "@/utils/elo";
+import { displayMeName, meRecordText } from "@/utils/format";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
 import { newPwdError, phoneInputError, smsCodeError } from "@/utils/validate";
 import { goLogin } from "@/utils/nav";
@@ -313,19 +314,11 @@ onShow(() => {
 
 /** 我（身份位单一源在 user store：游客占位 ↔ 登录账号原位换装，全站同步） */
 const me = computed(() => user.me);
-/** 游客态或占位名显示为「访客」，登录后显示真实名片昵称 */
-const meName = computed(() => {
-  if (session.isGuest) return "访客";
-  return me.value.name === "我" || me.value.name === "访客"
-    ? "访客"
-    : me.value.name;
-});
-/** 战绩行：N 场 · N 胜 · 胜率 N%（0 场人话守卫） */
-const record = computed(() =>
-  me.value.play === 0
-    ? "还没开张"
-    : `${me.value.play} 场 · ${me.value.win} 胜 · 胜率 ${Math.round((me.value.win / me.value.play) * 100)}%`,
-);
+/** 游客态或占位名显示为「访客」，登录后显示真实名片昵称（单一源在 utils/format，
+    装扮页试穿框同吃） */
+const meName = computed(() => displayMeName(me.value.name, session.isGuest));
+/** 战绩行：N 场 · N 胜 · 胜率 N%（单一源在 utils/format，0 场人话守卫） */
+const record = computed(() => meRecordText(me.value.play, me.value.win));
 /** DUPR chip 的档名（utils/elo.ts duprTier；未填按 2.5 起步档） */
 const meTier = computed(() => duprTier(duprOf(me.value)));
 
@@ -567,12 +560,9 @@ async function onBindConfirm(): Promise<void> {
 }
 
 /* ---------- mecard ---------- */
-/* 宿主契约（CardBackdrop）：relative+hidden 裁圆角出血；z-index:0 立层叠上下文，
-   让负 z-index 的卡底层垫在卡底渐变之上、文字之下。渐变即素卡兜底（访客/无卡背） */
+/* 宿主契约三件套挂全局 .cbd-host（base.scss 收源），负 z-index 卡底层垫在卡底
+   渐变之上、文字之下。渐变即素卡兜底（访客/无卡背） */
 .mecard {
-  position: relative;
-  z-index: 0;
-  overflow: hidden;
   display: flex;
   gap: 16px;
   align-items: center;

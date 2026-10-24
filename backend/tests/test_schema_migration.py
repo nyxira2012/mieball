@@ -166,3 +166,49 @@ def test_drop_self_rating_keeps_accounts(tmp_path, fake: FakeClock, monkeypatch)
     create_app(
         Settings(db_url=url, pepper="p", sms_provider="console", sms_daily_budget=50)
     )  # 幂等空转
+
+
+def test_drop_chibi_columns_keeps_accounts(tmp_path, fake: FakeClock, monkeypatch):
+    """捏小人旧族退役（1.9 装扮重造下线）：旧库 accounts 还挂 chibi/card_bg 两列
+    ——chibi 在旧库 NOT NULL 且新代码建号不再写它，列若残留就是 10-09 live_courts
+    同款 INSERT 定时炸弹。锁三件事：二次启动清障后两列已清、存量账号无损、
+    清列后新建号（不带 chibi 的 INSERT 路）照常走通。"""
+    db = tmp_path / "chibi.db"
+    url = f"sqlite:///{db}"
+    app = create_app(
+        Settings(db_url=url, pepper="p", sms_provider="console", sms_daily_budget=50)
+    )
+    signup(TestClient(app), "13800048001", "d1")
+
+    eng = create_engine(url)
+    try:
+        with eng.begin() as c:
+            # ADD COLUMN 带 NOT NULL 必须给 DEFAULT（SQLite 规矩）；列内容无所谓，
+            # 占位值避开花括号——text() 会把 ':数字' 认成绑定参数
+            c.execute(
+                text("ALTER TABLE accounts ADD COLUMN chibi TEXT NOT NULL DEFAULT 'x'")
+            )
+            c.execute(text("ALTER TABLE accounts ADD COLUMN card_bg VARCHAR(16)"))
+        assert {"chibi", "card_bg"} <= {
+            x["name"] for x in inspect(eng).get_columns("accounts")
+        }
+    finally:
+        eng.dispose()
+
+    app = create_app(
+        Settings(db_url=url, pepper="p", sms_provider="console", sms_daily_budget=50)
+    )
+    eng = create_engine(url)
+    try:
+        cols = {x["name"] for x in inspect(eng).get_columns("accounts")}
+        assert not {"chibi", "card_bg"} & cols  # 退役两列已清
+        assert set(Base.metadata.tables["accounts"].columns.keys()) == cols
+        row = (
+            eng.connect().execute(text("SELECT phone FROM accounts LIMIT 1")).fetchone()
+        )
+        assert row is not None and row[0] == "13800048001"  # 存量账号无损
+    finally:
+        eng.dispose()
+
+    # 事故路径：清障后的库上新建号——不带 chibi 的 INSERT 必须通
+    assert signup(TestClient(app), "13800048002", "d2")["token"]

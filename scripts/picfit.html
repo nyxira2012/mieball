@@ -272,8 +272,9 @@
 
 <script>
 /* 头像取景工具——「参数随图走」路线的写入方。跨模块契约（改一头必须改另一头）：
-   读取方 frontend/src/utils/avatarfit.ts（parseWebpFit + frameTransform），
-   消费方 AvatarBadge.vue（≥40px 吃 bust 档、<40px 吃 face 档）。
+   读取方 frontend/src/utils/avatarfit.ts（parseWebpFit + frameTransform）；
+   规划消费方 AvatarBadge.vue（≥40px 吃 bust 档、<40px 吃 face 档）——当前
+   未接线（AvatarBadge 暂走 CSS 静态两档），此处参数目前只随素材留底。
    参数口径：k=窗内放大倍数（窗口显示画布中央 1/k 见方）、x/y=位移（窗口边长
    比例，正右移/下移）；窗口显示画布以 (0.5−x/k, 0.5−y/k) 为中心。保存只写
    XMP 块、像素零改动。 */

@@ -20,7 +20,7 @@
         >
           <text v-if="byId(id).fire" class="badge fire q-tag">连</text>
           <text v-else-if="byId(id).skip" class="badge rest q-tag">歇</text>
-          <AvatarBadge :url="byId(id).avatarUrl ?? null" :size="26" />
+          <AvatarBadge :url="byId(id).avatarUrl" :size="26" />
         </view>
       </view>
     </view>

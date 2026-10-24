@@ -31,7 +31,7 @@
       <template v-else>
         <!-- 大试穿框：全站最大形象展示位（卡背 'd' 档试穿取景 + 140 圆章 +
              名片数据沿用——名字/战绩行与我的页同源 me） -->
-        <view class="tryon">
+        <view class="tryon cbd-host">
           <CardBackdrop
             :cid="sel.back"
             mode="d"
@@ -51,7 +51,7 @@
              头像栏公共款节尾（头像被记下的老球友才见，4.8） -->
         <template v-for="col in COLUMNS" :key="col.kind">
           <SectionTitle :title="col.title" />
-          <view v-for="sec in sectionsOf(col.kind)" :key="sec.key" class="sec">
+          <view v-for="sec in sections[col.kind]" :key="sec.key" class="sec">
             <view class="sec-h">{{ sec.title }}</view>
             <view class="tiles">
               <view
@@ -76,13 +76,13 @@
                   <view v-else-if="newOf(it)" class="tag isNew">新</view>
                 </view>
                 <view class="tile-name">{{ it.name }}</view>
-                <!-- 带锁款：册子条件原文照显 + 可派生时再给一行「还差 X」 -->
-                <view v-if="lockedOf(it)" class="tile-cond">{{
-                  it.lock_text
-                }}</view>
-                <view v-if="lockedOf(it) && gapOf(it)" class="tile-cond gap">{{
-                  gapOf(it)
-                }}</view>
+                <!-- 带锁款：册子条件原文照显 + 可派生时再给一行「还差 X」（锁标行守卫同源） -->
+                <template v-if="lockedOf(it)">
+                  <view class="tile-cond">{{ it.lock_text }}</view>
+                  <view v-if="gapOf(it)" class="tile-cond gap">{{
+                    gapOf(it)
+                  }}</view>
+                </template>
               </view>
 
               <!-- 微信头像（4.8）：选项只在后端记下头像时渲染，挂在头像栏公共款节尾；
@@ -171,6 +171,7 @@ import {
   type CosmeticItemApi,
 } from "@/api/cosmetics";
 import { dressBlock, honorGap, isUnlocked } from "@/utils/dress";
+import { displayMeName, meRecordText } from "@/utils/format";
 
 const user = useUserStore();
 const session = useSessionStore();
@@ -184,8 +185,10 @@ const loadErr = ref(false);
 const busyLoad = ref(false);
 
 /* ---- 试穿态：sel 是本地草稿（拉到整页后初始=当前穿戴），保存成功才落云；
-      点任一件即时试穿（含带锁款——试穿放开、保存把关，4.4） ---- */
-const sel = ref({ avatar: "g-00", back: "b-c1" });
+      点任一件即时试穿（含带锁款——试穿放开、保存把关，4.4）。
+      初始空串占位：整页模板闸在 page 之后，onLoad 拉到整页即覆写为本人当前
+      穿戴，占位值不上屏（穿戴真值不另设常量镜像，全由 GET wearing 直出） ---- */
+const sel = ref({ avatar: "", back: "" });
 function pick(kind: "avatar" | "back", cid: string): void {
   sel.value[kind] = cid;
 }
@@ -212,30 +215,38 @@ const COLUMNS = [
   { kind: "back", title: "选卡背" },
 ] as const;
 
-function sectionsOf(kind: "avatar" | "back") {
-  const rows = (page.value?.items ?? []).filter((i) => i.kind === kind);
-  return [
-    {
-      key: "common",
-      title: "公共款",
-      rows: rows.filter((i) => i.tier === "common"),
-    },
-    {
-      key: "honor",
-      title: "荣誉款",
-      rows: rows.filter((i) => i.tier === "honor"),
-    },
-    // 定制款条目层裁剪在后端：未授予者的 items 里本来就没有，节自然不渲染（4.7）
-    {
-      key: "custom",
-      title: "专属定制",
-      rows: rows.filter((i) => i.tier === "custom"),
-    },
-  ].filter((s) => s.rows.length > 0);
-}
+/* 两栏分节（页数据加载后恒定，computed 缓存——点选试穿触发重渲染不再全册重筛；
+    定制款条目层裁剪在后端：未授予者的 items 里本来就没有，节自然不渲染（4.7）） */
+const sections = computed(() => {
+  const of = (kind: "avatar" | "back") => {
+    const rows = (page.value?.items ?? []).filter((i) => i.kind === kind);
+    return [
+      {
+        key: "common",
+        title: "公共款",
+        rows: rows.filter((i) => i.tier === "common"),
+      },
+      {
+        key: "honor",
+        title: "荣誉款",
+        rows: rows.filter((i) => i.tier === "honor"),
+      },
+      {
+        key: "custom",
+        title: "专属定制",
+        rows: rows.filter((i) => i.tier === "custom"),
+      },
+    ].filter((s) => s.rows.length > 0);
+  };
+  return { avatar: of("avatar"), back: of("back") };
+});
 
+/* 册子 cid → 条目对表（渲染期恒定，Map 一次建好；itemOf 背后的 .find 逐次线性扫） */
+const itemMap = computed(
+  () => new Map(page.value?.items.map((i) => [i.cid, i] as const)),
+);
 function itemOf(cid: string): CosmeticItemApi | undefined {
-  return page.value?.items.find((i) => i.cid === cid);
+  return itemMap.value.get(cid);
 }
 function lockedOf(it: CosmeticItemApi): boolean {
   return !isUnlocked(it.cid, page.value?.unlocks ?? {});
@@ -249,24 +260,18 @@ function gapOf(it: CosmeticItemApi): string | null {
 
 /** 微信头像预览图：装扮页全视图自带本人微信头像原图（有记录直出、没记录
     null）——有选项（available）必有真图，试穿不再吃 me.avatarUrl（那只在
-    正穿着时才是微信图）；null 走占位圆兜底 */
-const wechatUrl = computed(() => page.value?.wechat_avatar_url ?? null);
+    正穿着时才是微信图）；空走占位圆兜底 */
+const wechatUrl = computed(() => page.value?.wechat_avatar_url);
 
 /** 试穿框头像：册子编号直取 asset；'wechat' 有预览图用图、没有回落默认公共款 */
 const tryAvatarUrl = computed(() => {
   if (sel.value.avatar === "wechat") return wechatUrl.value;
-  return itemOf(sel.value.avatar)?.asset ?? null;
+  return itemOf(sel.value.avatar)?.asset;
 });
 
-/** 试穿框名片数据：与我的页同源 me（游客名兜「访客」同口径） */
-const meName = computed(() =>
-  session.isGuest || me.value.name === "我" ? "访客" : me.value.name,
-);
-const record = computed(() =>
-  me.value.play === 0
-    ? "还没开张"
-    : `${me.value.play} 场 · ${me.value.win} 胜 · 胜率 ${Math.round((me.value.win / me.value.play) * 100)}%`,
-);
+/** 试穿框名片数据：与我的页同源 me（显示名/战绩行单一源在 utils/format） */
+const meName = computed(() => displayMeName(me.value.name, session.isGuest));
+const record = computed(() => meRecordText(me.value.play, me.value.win));
 
 /* ---- 保存把关（4.4）：含未解锁件 → 钮灰 + 文字报差什么；全可保存 → 正常钮 ---- */
 const blockText = computed(() =>
@@ -299,21 +304,20 @@ async function onSave(): Promise<void> {
     const body: { avatar?: string; back?: string } = {};
     if (sel.value.avatar !== p.wearing.avatar) body.avatar = sel.value.avatar;
     if (sel.value.back !== p.wearing.back) body.back = sel.value.back;
-    let dressed = false;
-    if (body.avatar !== undefined || body.back !== undefined) {
-      const d = await apiCosmeticsDress(body);
-      // 本地镜像先行换新（me 原位赋值，返回我的页名片即点即新）；wearing 对表
-      // 同步，避免半成后重试把同一份穿戴再发一遍
-      me.value.avatar = d.avatar;
-      me.value.avatarUrl = d.avatar_url;
-      me.value.back = d.back;
+    const dressChanged = body.avatar !== undefined || body.back !== undefined;
+    const nameChanged = n !== me.value.name;
+    // 穿戴与昵称两口互不依赖，并行同发省一趟往返；失败留页可重试（成功的半边
+    // 本地已镜像，重试只补发另一边，仍是「最后保存的赢」）
+    const [d] = await Promise.all([
+      dressChanged ? apiCosmeticsDress(body) : null,
+      nameChanged ? session.saveProfile({ nickname: n }) : null, // toast 在 store
+    ]);
+    if (d) {
+      // 本地镜像先行换新（store 单点换装，返回我的页名片即点即新）；wearing 对表
+      // 同步，避免重试把同一份穿戴再发一遍
+      user.applyDress(d);
       p.wearing = { avatar: d.avatar, back: d.back };
-      dressed = true;
-    }
-    if (n !== me.value.name) {
-      await session.saveProfile({ nickname: n }); // toast 在 store
-    } else if (dressed) {
-      ui.toast("已保存 · 全局同步换新");
+      if (!nameChanged) ui.toast("已保存 · 全局同步换新");
     }
     uni.navigateBack();
   } catch (e) {
@@ -360,13 +364,9 @@ const nameDraft = ref(me.value.name);
   margin-top: 10px;
 }
 
-/* ---------- 大试穿框：卡背 'd' 档取景（宿主契约 relative+hidden；z-index:0
-     立层叠上下文——负 z-index 的取景层要垫在卡底之上、文字之下）；素卡渐变
-     兜底（没铺出图的空档） ---------- */
+/* ---------- 大试穿框：卡背 'd' 档取景（宿主契约三件套挂全局 .cbd-host，负 z-index
+   取景层垫在卡底之上、文字之下）；素卡渐变兜底（没铺出图的空档） ---------- */
 .tryon {
-  position: relative;
-  z-index: 0;
-  overflow: hidden;
   margin-top: 14px;
   border: 1px solid var(--line);
   border-radius: var(--r-lg);

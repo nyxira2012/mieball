@@ -71,10 +71,6 @@ def test_takeover_kills_even_verified_keys_and_merges_card(
     assert me(client, new_owner["token"]) is not None
     # 挑了的头像随接管落档（D5：明确填过的才覆盖——avatar=None=没挑不动穿戴）
     assert acc["avatar"] == "a-p5" and acc["avatar_url"] == "/cosmetics/a-p5.webp"
-    # 旧小人列不被接管触碰（捏小人退役后该列只兜 NOT NULL）
-    from app.services.accounts import DEFAULT_CHIBI
-
-    assert acc["chibi"] == DEFAULT_CHIBI
 
 
 def test_takeover_card_without_avatar_keeps_dressing(client: TestClient, sent, fake):

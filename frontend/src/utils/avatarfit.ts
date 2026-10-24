@@ -1,10 +1,11 @@
 /* 头像取景参数读取单一源：取景参数长在素材自己身上（webp 的 XMP 块），
    圆章渲染按参数逐图复现排版工具里的画面。跨模块契约（改一头必须改另一头）：
    - 写入方：scripts/picfit.html（把 JSON 包进 <m:fit> 标签写入 XMP 块，像素不动）
-   - 读取方：本模块 parseWebpFit；消费方 AvatarBadge（按大小位分档取 bust/face）
+   - 读取方：本模块 parseWebpFit；消费方 AvatarBadge（按大小位分档取 bust/face，
+     无参数素材回落 FALLBACK_FIT 静态两档）
    参数口径：k=窗内放大倍数（窗口显示画布中央 1/k 见方），x/y=位移（窗口边长
    的比例，正值右移/下移）。窗口显示的画布区域以 (0.5−x/k, 0.5−y/k) 为中心、
-   边长 1/k——排版工具的画布渲染与此公式同源，所见即线上所得。 */
+   边长 1/k——排版工具的画布渲染与此公式同源。 */
 
 /** 单档取景：k 放大倍数（>0）、x/y 位移（窗口边长比例） */
 export interface FrameFit {
@@ -18,6 +19,13 @@ export interface AvatarFit {
   bust: FrameFit;
   face: FrameFit;
 }
+
+/** 无参数素材的静态兜底两档（与静态 CSS 时代同值：大位原样直摆、小位 125%
+    居中聚脸）——默认脸 g-00 未带参/外链微信头像/读取失败都落这里 */
+export const FALLBACK_FIT: AvatarFit = {
+  bust: { k: 1, x: 0, y: 0 },
+  face: { k: 1.25, x: 0, y: 0 },
+};
 
 const FIT_TAG_RE = /<m:fit>([\s\S]*?)<\/m:fit>/;
 

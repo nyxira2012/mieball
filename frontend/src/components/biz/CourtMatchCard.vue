@@ -36,7 +36,7 @@
                 @click="emit('person', pl.id)"
               >
                 <view class="avatar-wrap"
-                  ><AvatarBadge :url="pl.p.avatarUrl ?? null" :size="44"
+                  ><AvatarBadge :url="pl.p.avatarUrl" :size="44"
                 /></view>
                 <text class="pname">{{ pl.p.name }}</text>
                 <text class="pelo">DUPR {{ fmtDupr1(duprOf(pl.p)) }}</text>

@@ -16,13 +16,13 @@
       <view
         v-for="(r, i) in rows"
         :key="r.id"
-        class="qs-row"
+        class="qs-row cbd-host"
         :class="{ next: i < nextN }"
         @click="emit('person', r.id)"
       >
-        <CardBackdrop :cid="r.u.back ?? null" mode="r" />
+        <CardBackdrop :cid="r.u.back" mode="r" />
         <view class="row-av"
-          ><AvatarBadge :url="r.u.avatarUrl ?? null" :size="30"
+          ><AvatarBadge :url="r.u.avatarUrl" :size="30"
         /></view>
         <view class="info">
           <view class="nm"
@@ -83,8 +83,8 @@ const myRound = computed(() => liveStore.myRound);
 </script>
 
 <style lang="scss" scoped>
-/* ---------- 原型 .qs-row（逐字换 tokens）；宿主契约（CardBackdrop）：relative+hidden
-   裁窄条出血、z-index:0 立层叠上下文垫负 z 卡底层（不立层会被行自己的 background 盖死） ---------- */
+/* ---------- 原型 .qs-row（逐字换 tokens）；宿主契约三件套挂全局 .cbd-host
+   （base.scss 收源）垫负 z 卡底层 ---------- */
 .qs-row {
   display: flex;
   align-items: center;
@@ -95,9 +95,6 @@ const myRound = computed(() => liveStore.myRound);
   border: 1px solid rgba(245, 241, 232, 0.08);
   background: var(--ink2);
   cursor: pointer;
-  position: relative;
-  z-index: 0;
-  overflow: hidden;
 }
 /* 「下一场」让位卡背：黄底撤掉不与卡背抢对比度，高亮语义只剩黄边框
    （右侧「下一场」标签在模板里，与边框同色系承担另一半） */

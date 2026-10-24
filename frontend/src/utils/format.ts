@@ -158,10 +158,21 @@ export function newGameCard(g: Game): GameCardModel {
           : null,
     stackAvatarUrls: formal.slice(0, 5).map((e) => e.account.avatarUrl ?? null),
     stackPlus: g.heads > 5 ? `+${g.heads - 5}` : "+",
-    orgBack: g.organizer.back ?? null, // 局卡铺组织者卡背（无卡背素卡）
+    orgBack: g.organizer.back ?? null, // 局卡铺组织者卡背（无卡背素卡；旧形状 Person 缺键归一 null）
     ...cardLiveEntry(g),
   };
 }
+
+/** 名片显示名单一源（我的页与装扮页试穿框同吃）：游客态或占位名（「我」/
+    「访客」）兜「访客」，登录后显示真实昵称——两页口径必须同源，改占位规则只动这里 */
+export const displayMeName = (name: string, isGuest: boolean): string =>
+  isGuest || name === "我" || name === "访客" ? "访客" : name;
+
+/** 战绩行单一源（同上两页同吃）：N 场 · N 胜 · 胜率 N%（0 场人话守卫） */
+export const meRecordText = (play: number, win: number): string =>
+  play === 0
+    ? "还没开张"
+    : `${play} 场 · ${win} 胜 · 胜率 ${Math.round((win / play) * 100)}%`;
 
 /** 时段名（alpha:890） */
 export const slotName = (k: string): string =>

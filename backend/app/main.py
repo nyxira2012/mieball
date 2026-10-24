@@ -119,8 +119,9 @@ _ENSURE_INDEXES = (
 _DROPPED_COLUMNS = {
     # 记分本地化：比分仅保留在各手机本地内存，数据库片行不再持久化进行中比分
     "live_courts": ("sa", "sb", "last_winner_side", "pending_origin"),
-    # 账号起步分统一为 2.5，清理不再使用的自评列
-    "accounts": ("self_rating",),
+    # 账号域退役列：起步分自评（1.4）+ 捏小人六部件/四档卡背（1.9 装扮重造下线）。
+    # chibi 在旧库是 NOT NULL——不登记清列则存量库首次建号 INSERT 必炸（10-09 事故形态）
+    "accounts": ("self_rating", "chibi", "card_bg"),
 }
 
 

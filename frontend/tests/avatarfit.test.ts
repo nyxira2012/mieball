@@ -2,7 +2,12 @@
    前端照读）。RIFF 块构造在测试里独立实现——写入方住在排版工具
    scripts/picfit.html，两侧不共码，字节对拍才是契约验证。 */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { frameTransform, loadAvatarFit, parseWebpFit } from "@/utils/avatarfit";
+import {
+  FALLBACK_FIT,
+  frameTransform,
+  loadAvatarFit,
+  parseWebpFit,
+} from "@/utils/avatarfit";
 
 function chunk(fourcc: string, payload: number[]): number[] {
   const cc = fourcc.split("").map((c) => c.charCodeAt(0));
@@ -121,6 +126,14 @@ describe("frameTransform（参数 → CSS transform）", () => {
   it("百分比位移以窗口边长为基、缩放三位小数", () => {
     expect(frameTransform({ k: 1.3, x: -0.05, y: 0.02 })).toBe(
       "translate(-5.00%, 2.00%) scale(1.300)",
+    );
+  });
+
+  it("无参数兜底两档与静态 CSS 时代同值（大位原样 k1、小位 125% 居中聚脸）", () => {
+    expect(FALLBACK_FIT.bust).toEqual({ k: 1, x: 0, y: 0 });
+    expect(FALLBACK_FIT.face).toEqual({ k: 1.25, x: 0, y: 0 });
+    expect(frameTransform(FALLBACK_FIT.face)).toBe(
+      "translate(0.00%, 0.00%) scale(1.250)",
     );
   });
 });

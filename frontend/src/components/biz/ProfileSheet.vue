@@ -5,8 +5,8 @@
        摘要行三态（已开局 / 访客 / 未开局，文案逐字）· Last5Dots 近 5 场 ·
        意向行（game store intents 查该用户）· 非我双按钮：喜欢(burn/ghost) + 邀请入局。
        完整铺被看者卡背（f 档全幅，与战力卡/名片同一配方），无卡背素底。 -->
-  <view v-if="u" class="pf">
-    <CardBackdrop :cid="u.back ?? null" mode="f" />
+  <view v-if="u" class="pf cbd-host">
+    <CardBackdrop :cid="u.back" mode="f" />
     <!-- alpha:1900 h3 + hint（SheetHost 未传壳层 title，档案自带，样式同 AppSheet 壳 alpha:558-561） -->
     <view class="sheet-t">球员档案</view>
     <view class="sheet-hint"
@@ -15,7 +15,7 @@
 
     <!-- alpha:1901-1913 头像 + 右列 -->
     <view class="hero">
-      <AvatarBadge :url="u.avatarUrl ?? null" :size="84" />
+      <AvatarBadge :url="u.avatarUrl" :size="84" />
       <view class="hr">
         <!-- alpha:1904-1905 名 + 随行/我/♥（liked 本地态） -->
         <view class="nmrow">
@@ -147,14 +147,8 @@ function onInvite(): void {
 
 <style lang="scss" scoped>
 /* 壳层标题/hint 走全局 .sheet-t/.sheet-hint（base.scss 收源）。
-   宿主契约（CardBackdrop）：relative+hidden+z-index:0 立层叠上下文——弹层面板
-   底色在外层 AppSheet .sheet（ink2），.pf 自身透明，负 z-index 卡底层垫在其上、
-   文字之下；无卡背时外层底色即素卡兜底 */
-.pf {
-  position: relative;
-  z-index: 0;
-  overflow: hidden;
-}
+   宿主契约三件套挂全局 .cbd-host：弹层面板底色在外层 AppSheet .sheet（ink2），
+   .pf 自身透明，负 z-index 卡底层垫在其上、文字之下；无卡背时外层底色即素卡兜底 */
 /* alpha:1901 hero 行 */
 .hero {
   display: flex;

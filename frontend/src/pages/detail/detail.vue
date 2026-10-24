@@ -130,14 +130,14 @@
              遮纱）；随行格随主人的头像带主人的卡背（带的人无账号）；加人位无人不铺 -->
         <template v-for="e in formalRows" :key="e.account.id">
           <view
-            class="pcard"
+            class="pcard cbd-host"
             :class="{ me: e.account.id === meId }"
             @click="onPlayer(e.account.id)"
           >
-            <CardBackdrop :cid="e.account.back ?? null" mode="p" />
+            <CardBackdrop :cid="e.account.back" mode="p" />
             <view v-if="e.bring" class="tag">带 {{ e.bring }} 人</view>
             <view class="avatar">
-              <AvatarBadge :url="e.account.avatarUrl ?? null" :size="56" />
+              <AvatarBadge :url="e.account.avatarUrl" :size="56" />
             </view>
             <view class="nm">{{ e.account.nickname }}</view>
           </view>
@@ -145,12 +145,12 @@
           <view
             v-for="i in e.bring || 0"
             :key="`${e.account.id}-b${i}`"
-            class="pcard dim75"
+            class="pcard cbd-host dim75"
           >
-            <CardBackdrop :cid="e.account.back ?? null" mode="p" />
+            <CardBackdrop :cid="e.account.back" mode="p" />
             <view class="tag">随行</view>
             <view class="avatar">
-              <AvatarBadge :url="e.account.avatarUrl ?? null" :size="56" />
+              <AvatarBadge :url="e.account.avatarUrl" :size="56" />
             </view>
             <view class="nm">{{ e.account.nickname.slice(0, 2) }}的球友</view>
           </view>
@@ -159,14 +159,14 @@
         <view
           v-for="d in dropins"
           :key="`d${d.account.id}`"
-          class="pcard"
+          class="pcard cbd-host"
           :class="{ me: d.account.id === meId }"
           @click="onPlayer(d.account.id)"
         >
-          <CardBackdrop :cid="d.account.back ?? null" mode="p" />
+          <CardBackdrop :cid="d.account.back" mode="p" />
           <view class="tag dropin">空降</view>
           <view class="avatar">
-            <AvatarBadge :url="d.account.avatarUrl ?? null" :size="56" />
+            <AvatarBadge :url="d.account.avatarUrl" :size="56" />
           </view>
           <view class="nm">{{ d.account.nickname }}</view>
         </view>
@@ -176,7 +176,7 @@
              @click 必须绑具名方法：绑三元表达式会编译成「返回函数」而非调用，点了没反应 -->
         <view
           v-if="game.joinable && (!joined || org)"
-          class="pcard join"
+          class="pcard cbd-host join"
           @click="onSeat"
         >
           <view class="plus">＋</view>
@@ -193,11 +193,11 @@
           <view
             v-for="e in waitlist"
             :key="`w${e.account.id}`"
-            class="pcard dim65"
+            class="pcard cbd-host dim65"
           >
-            <CardBackdrop :cid="e.account.back ?? null" mode="p" />
+            <CardBackdrop :cid="e.account.back" mode="p" />
             <view class="avatar">
-              <AvatarBadge :url="e.account.avatarUrl ?? null" :size="56" />
+              <AvatarBadge :url="e.account.avatarUrl" :size="56" />
             </view>
             <view class="nm">{{ e.account.nickname }}</view>
           </view>
@@ -725,18 +725,15 @@ const onPlayer = (uid: number) => {
   grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
   gap: 10px;
 }
-/* 名单墙小格：宿主契约（CardBackdrop）relative（已有）+hidden 裁 p 档出血；
-   z-index:0 立层叠上下文，负 z 卡底层垫在 ink2 格底之上、角标/名字之下；
-   ink2 即无卡背素格兜底；「我」金描边在 border 上与卡底层互不覆盖 */
+/* 名单墙小格：宿主契约三件套挂全局 .cbd-host（base.scss 收源），负 z 卡底层垫
+   在 ink2 格底之上、角标/名字之下；ink2 即无卡背素格兜底；「我」金描边在 border
+   上与卡底层互不覆盖 */
 .pcard {
   border: 1px solid rgba(245, 241, 232, 0.1);
   border-radius: var(--r-md);
   background: var(--ink2);
   padding: 12px 8px 10px;
   text-align: center;
-  position: relative;
-  z-index: 0;
-  overflow: hidden;
   transition: transform 0.15s;
 }
 .pcard:active {

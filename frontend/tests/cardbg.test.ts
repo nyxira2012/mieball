@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   BACK_SPEC,
+  DEFAULT_AVATAR_CID,
   DEFAULT_FOCUS,
   WIN,
-  avatarUrl,
-  backUrl,
+  assetUrl,
   coverPos,
   slicePos,
 } from "@/utils/cardbg";
@@ -14,14 +14,14 @@ import {
    公式：切片 px=(sx−k·fx)/(1−k) 钳 3~97%；cover 档 k=各轴溢出倍率同公式、
    k<1.02（位移不足 1px）兜 50%。 */
 
-describe("backUrl 约定拼路径（约定优于配置，册子不存路径）", () => {
-  it("卡背 /cosmetics/{cid}.webp", () => {
-    expect(backUrl("b-c1")).toBe("/cosmetics/b-c1.webp");
-    expect(backUrl("b-t45")).toBe("/cosmetics/b-t45.webp");
+describe("assetUrl 约定拼路径（约定优于配置，册子不存路径）", () => {
+  it("头像卡背同格式 /cosmetics/{cid}.webp（与后端 asset_url 同口径）", () => {
+    expect(assetUrl("b-c1")).toBe("/cosmetics/b-c1.webp");
+    expect(assetUrl("a-p1")).toBe("/cosmetics/a-p1.webp");
+    expect(assetUrl("a-t45")).toBe("/cosmetics/a-t45.webp");
   });
-  it("头像同格式 /cosmetics/{cid}.webp（与后端 asset_url 同口径）", () => {
-    expect(avatarUrl("a-p1")).toBe("/cosmetics/a-p1.webp");
-    expect(avatarUrl("a-t45")).toBe("/cosmetics/a-t45.webp");
+  it("默认脸编号与后端册子 DEFAULT_AVATAR 同值（卡背默认款前端无消费不镜像）", () => {
+    expect(DEFAULT_AVATAR_CID).toBe("g-00");
   });
 });
 

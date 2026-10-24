@@ -23,7 +23,7 @@ function item(over: Partial<CosmeticItemApi>): CosmeticItemApi {
     lock_text: null,
     fx: 0,
     fy: 0,
-    asset: "/cosmetics/x.png",
+    asset: "/cosmetics/x.webp",
     ...over,
   };
 }

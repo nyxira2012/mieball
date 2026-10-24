@@ -34,20 +34,12 @@ def phone_mismatch() -> ApiError:
     return ApiError(422, "phone_mismatch", "请输入本账号的手机号")
 
 
-def card_bg_invalid() -> ApiError:
-    return ApiError(422, "card_bg_invalid", "卡背不合法")
-
-
 def purpose_invalid() -> ApiError:
     return ApiError(422, "purpose_invalid", "验证码用途不合法")
 
 
 def nickname_invalid(msg: str = "昵称需 1-16 个字符") -> ApiError:
     return ApiError(422, "nickname_invalid", msg)
-
-
-def chibi_invalid() -> ApiError:
-    return ApiError(422, "chibi_invalid", "形象配置不合法")
 
 
 def sms_cooldown(retry_after: int) -> ApiError:

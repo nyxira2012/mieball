@@ -6,8 +6,8 @@
        每张意向卡铺意向者卡背（r 档取景窗，与局卡同款；留意向必登录，
        后端恒兜默认卡背，空仅旧快照——素卡渐变兜底）。
        整卡点击 → openProfileById（alpha:1029，emit 由父层开档案）。 -->
-  <view class="gcard" @click="emit('tap')">
-    <CardBackdrop :cid="intent.account.back ?? null" mode="r" />
+  <view class="gcard cbd-host" @click="emit('tap')">
+    <CardBackdrop :cid="intent.account.back" mode="r" />
     <view class="gd">
       <!-- alpha:1031 时间位：slotBig 拆两行（'工作日晚间' → 大字'晚间' + 小字'工作日'） -->
       <view class="time">
@@ -30,7 +30,7 @@
           >
           <view class="sp" />
           <!-- alpha:1045 .stack 单头像 -->
-          <AvatarStack :urls="[intent.account.avatarUrl ?? null]" />
+          <AvatarStack :urls="[intent.account.avatarUrl]" />
         </view>
       </view>
     </view>
@@ -66,11 +66,8 @@ const locLine = computed(
 
 <style lang="scss" scoped>
 /* gcard 家族样式（alpha:104-132）与 GameCard.vue 同源副本（styles/ 不允许新增文件）；
-   chip 归 AppChip、stack 归 AvatarStack。宿主契约（CardBackdrop）同 GameCard：
-   relative+hidden 裁取景窗出血；z-index:0 立层叠上下文垫负 z 卡底层 */
+   chip 归 AppChip、stack 归 AvatarStack。宿主契约三件套挂全局 .cbd-host（同 GameCard） */
 .gcard {
-  position: relative;
-  z-index: 0;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: linear-gradient(160deg, var(--ink3), var(--ink2));
@@ -84,7 +81,6 @@ const locLine = computed(
   transition:
     transform 0.18s ease,
     border-color 0.18s;
-  overflow: hidden;
   cursor: pointer;
 }
 .gcard:active {

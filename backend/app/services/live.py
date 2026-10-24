@@ -18,7 +18,6 @@ settle-overwrite/cancel），批3 2.2 域动作（check/swap/tempo/rules/封撤
 
 from __future__ import annotations
 
-import json
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -992,9 +991,8 @@ class LiveBook(LiveSweepMixin):
         is_organizer = viewer_id is not None and game.organizer_id == viewer_id
         stats = StatsLedger(self.db)
         roster = self._roster(game_id)
-        # 代位分与小人/装扮一次查齐（3s 轮询 + 每个写动作响应都走这里，逐人查会放大成 N+1；
-        # chibi 随行下发——前端名册头像不再向演示世界借位，2026-10-10 mock 退役；
-        # 装扮三键同吃这行账号，_player_row 只透传不查库）
+        # 代位分与装扮一次查齐（3s 轮询 + 每个写动作响应都走这里，逐人查会放大成 N+1；
+        # 装扮三键吃这行账号，_player_row 只透传不查库）
         rates = stats.pairing_ratings([p.account_id for p in roster])
         elo_rates = self._ratings_of([p.account_id for p in roster])
         acct_rows = (
@@ -1006,7 +1004,6 @@ class LiveBook(LiveSweepMixin):
             .scalars()
             .all()
         )
-        chibis = {a.id: a.chibi for a in acct_rows}
         dresses = {a.id: dress_fields(a) for a in acct_rows}
         match_rows = (
             self.db.execute(
@@ -1025,7 +1022,6 @@ class LiveBook(LiveSweepMixin):
                 is_organizer=is_organizer,
                 viewer_id=viewer_id,
                 dupr_value=rates[p.account_id],
-                chibi=chibis.get(p.account_id),
                 dress=dresses.get(p.account_id),
                 tonight=facts["tonight"].get(p.id, 0),
             )
@@ -1709,7 +1705,6 @@ class LiveBook(LiveSweepMixin):
         is_organizer: bool,
         viewer_id: int | None,
         dupr_value: float,
-        chibi: str | None = None,
         dress: dict | None = None,
         tonight: int = 0,
     ) -> dict:
@@ -1719,8 +1714,6 @@ class LiveBook(LiveSweepMixin):
             "id": p.id,
             "account_id": p.account_id,
             "name": p.display_name,
-            # 开账时定格的账号小人（访客无账号行 → None，前端按缺省形象渲染）
-            "chibi": json.loads(chibi) if chibi else None,
             # 装扮三键：注册球友由 view 预取递入；访客无账号行全 None——
             # 前端兜指定公共款素材/素卡，访客不占个人衣柜
             "avatar": dress["avatar"] if dress else None,

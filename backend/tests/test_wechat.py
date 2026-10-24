@@ -630,7 +630,6 @@ def test_fast_conflict_leaves_no_half_account(client: TestClient):
         Account(
             phone=None,
             nickname="占位壳",
-            chibi='{"skin":0}',
             status="deactivated",
             device_marker="d-ghost",
             created_at=clock.now(),

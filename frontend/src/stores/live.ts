@@ -1112,9 +1112,8 @@ export const useLiveStore = defineStore("live", () => {
       );
       if (elo != null) u.elo = elo; // 结算行真值优先（拷贝上改，访客同样回填）
       u.accountId = p.accountId ?? undefined; // 账号空间 id 随行带（档案卡从现场开时不撞行 id）
-      // 装扮三键随视图行直出（每拍现值非定格）：展示位圆章/行卡背的原料；
+      // 装扮两键随视图行直出（每拍现值非定格）：展示位圆章/行卡背的原料；
       // 访客 null 留给组件兜默认公共款/素卡，people 缓存只兜查档间隙的旧值
-      u.avatar = p.avatar ?? u.avatar;
       u.avatarUrl = p.avatarUrl ?? u.avatarUrl;
       u.back = p.back ?? u.back;
       // 缓存未命中的正式球友顺手补拉档案（战绩/形象展示位下一版视图即真）：

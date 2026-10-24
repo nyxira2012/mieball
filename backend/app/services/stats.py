@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 
 from sqlalchemy import func, select
@@ -130,8 +129,6 @@ class StatsLedger:
                 {
                     "id": a.id,
                     "name": a.nickname,
-                    "chibi": json.loads(a.chibi),
-                    "card_bg": a.card_bg,
                     # 装扮三键：榜单行人人铺头像/卡背——与 person_view 同源（accounts
                     # 单向依赖 stats 取 StatsLedger，stats 若反向 import accounts 即成
                     # 环，故 dress_fields 经 cosmetics 中转）

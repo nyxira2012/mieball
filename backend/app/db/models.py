@@ -65,9 +65,6 @@ class Account(Base):
     phone: Mapped[str | None] = mapped_column(String(11), unique=True, nullable=True)
     phone_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     nickname: Mapped[str] = mapped_column(String(32), nullable=False)
-    # Q 版小人六部件配置，JSON 字符串 {"skin":0,"hair":0,"hc":0,"shirt":5,"face":0,"acc":0}
-    chibi: Mapped[str] = mapped_column(Text, nullable=False)
-    card_bg: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # active=在册；deactivated=已注销（档案匿名化、历史封存）
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
     # 建号时用的设备标记：支撑"提交卡住重试"的续接窗口判断
@@ -92,8 +89,8 @@ class Account(Base):
     )
     wechat_bound_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # ---- 装扮账本 ----
-    # 旧 chibi/card_bg 列保留不写不删（存量老数据原样躺着）；本组列全可空，
-    # NULL 统一由读侧兜默认公共款（services/cosmetics.py dress_fields）——零迁移
+    # 本组列全可空，NULL 统一由读侧兜默认公共款（services/cosmetics.py dress_fields）
+    # ——零迁移
     # dress_avatar：当前头像值 = 册子编号或 'wechat'（穿微信头像）
     dress_avatar: Mapped[str | None] = mapped_column(Text, nullable=True)
     dress_back: Mapped[str | None] = mapped_column(Text, nullable=True)

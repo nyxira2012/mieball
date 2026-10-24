@@ -1,8 +1,9 @@
 """榜单端点（1.4 §8 欠账落账）：GET /api/stats/leaderboard。
 
 锁的契约：匿名可读（战力页游客照看）；裸数组、DUPR 降序同分 id 升序（稳定排序）；
-行形状 = 账号身份（id/name/chibi/card_bg）+ card 四件套（rating/provisional/games/
-wins/last5/month_net）+ elo_rating（Elo 娱乐轨只读，4.1 战力页切换的娱乐视图）；
+行形状 = 账号身份（id/name）+ 装扮三键（avatar/avatar_url/back）+ card 四件套
+（rating/provisional/games/wins/last5/month_net）+ elo_rating（Elo 娱乐轨只读，
+4.1 战力页切换的娱乐视图）；
 0 场新号在列（provisional=true、games=0——前端「参考」区）；
 注销账号不列（历史不留痕）；不漏手机号（榜单是公开面，比 /users/{id} 更紧）。
 战绩底数直插 DuprRating（seed_demo ④ 同一先例：演示底数没有服务层正路，
@@ -53,12 +54,10 @@ def test_leaderboard_anonymous_sorted_and_shaped(client: TestClient):
     ratings = [r["dupr_rating"] for r in rows]
     assert ratings == sorted(ratings, reverse=True)  # 全表降序
     top = rows[0]
-    # 行形状：身份四件 + 装扮三键（1.9）+ 战绩六件 + elo 一件，snake_case（契约总则 §1）
+    # 行形状：身份两件 + 装扮三键（1.9）+ 战绩六件 + elo 一件，snake_case（契约总则 §1）
     assert set(top) == {
         "id",
         "name",
-        "chibi",
-        "card_bg",
         "avatar",
         "avatar_url",
         "back",

@@ -16,7 +16,6 @@ def test_signup_creates_account_and_self_view(client: TestClient):
     assert acc["name"] == "海淀反手王"
     assert acc["phone"] == "13800001111"  # 本人见全号
     assert acc["phone_tail"] == "1111"
-    assert acc["chibi"]["shirt"] == 5  # 未选形象 → 默认小人
     assert acc["wechat_bound"] is False  # 纯手机号账号没绑微信（1.8 批3 微信行两态）
     # 建号直发的钥匙未验证：视图里不给验证标记（对外无此字段即无所谓，自我确认即可）
     assert me(client, out["token"])["name"] == "海淀反手王"
@@ -27,14 +26,6 @@ def test_signup_defaults_when_skipped(client: TestClient):
     assert (
         out["account"]["name"].startswith("球友") and len(out["account"]["name"]) == 6
     )
-    assert out["account"]["chibi"] == {
-        "skin": 0,
-        "hair": 0,
-        "hc": 0,
-        "shirt": 5,
-        "face": 0,
-        "acc": 0,
-    }
 
 
 def test_signup_phone_invalid(client: TestClient):
@@ -115,13 +106,11 @@ def test_profile_update_rules(client: TestClient):
     r = client.post(
         "/api/auth/profile",
         headers=h,
-        json={"nickname": "  亮马河快攻  ", "card_bg": "gold"},
+        json={"nickname": "  亮马河快攻  "},
     )
     assert r.status_code == 200
     acc = r.json()["account"]
-    assert acc["name"] == "亮马河快攻" and acc["card_bg"] == "gold"  # 昵称去首尾空格
-    r = client.post("/api/auth/profile", headers=h, json={"chibi": {"skin": 9}})
-    assert r.status_code == 422 and r.json()["error"]["code"] == "chibi_invalid"
+    assert acc["name"] == "亮马河快攻"  # 昵称去首尾空格
     r = client.post("/api/auth/profile", headers=h, json={"nickname": "平台客服"})
     assert r.status_code == 422
     # 未带钥匙改名片 → 401

@@ -4,8 +4,8 @@
        段位徽章 / Elo 整数无段位 · 底部数据行带本月涨跌。
        完整铺我的卡背（f 档全幅+文字安全纱），无卡背（游客）素卡渐变兜底；
        四档渐变卡背（bg-neon/gold/cyber/aurora）随旧装扮退役。 -->
-  <view class="mycardp" @click="emit('profile')">
-    <CardBackdrop :cid="me.back ?? null" mode="f" />
+  <view class="mycardp cbd-host" @click="emit('profile')">
+    <CardBackdrop :cid="me.back" mode="f" />
     <view class="top-row">
       <!-- rkbox：#N 或 —（未开局/未入榜参考区；Elo 视图名次跟 Elo 榜走） -->
       <view class="rkbox">
@@ -14,7 +14,7 @@
       </view>
       <!-- av：点头像切我的页，stopPropagation 防误触卡身的档案事件（goTab=nav 单一源） -->
       <view class="av" @click.stop="goTab('mine')">
-        <AvatarBadge :url="me.avatarUrl ?? null" :size="76" />
+        <AvatarBadge :url="me.avatarUrl" :size="76" />
       </view>
       <view class="info">
         <view class="nrow">
@@ -99,9 +99,8 @@ const telemetry = computed(() =>
 </script>
 
 <style lang="scss" scoped>
-/* 宿主契约（CardBackdrop）：relative+hidden 裁出血；z-index:0 立层叠上下文，
-   让负 z-index 的卡底层垫在卡底渐变之上、文字之下。渐变即素卡兜底（游客/无卡背）；
-   旧四档渐变 bg-* 已随换编号卡背退役 */
+/* 宿主契约三件套挂全局 .cbd-host（base.scss 收源），让负 z-index 的卡底层垫在
+   卡底渐变之上、文字之下。渐变即素卡兜底（游客/无卡背）；旧四档渐变 bg-* 已退役 */
 .mycardp {
   margin-top: 14px;
   border: 1px solid var(--line);
@@ -109,9 +108,6 @@ const telemetry = computed(() =>
   padding: 16px;
   background: linear-gradient(150deg, var(--ink3), var(--ink2));
   cursor: pointer;
-  position: relative;
-  z-index: 0;
-  overflow: hidden;
   transition:
     border-color 0.2s,
     background 0.3s;

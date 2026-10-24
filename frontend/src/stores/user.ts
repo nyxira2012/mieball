@@ -9,6 +9,7 @@ import { reactive, ref } from "vue";
 import { defineStore } from "pinia";
 import type { User } from "@/api/types";
 import type { AccountView } from "@/api/auth";
+import type { DressingApi } from "@/api/cosmetics";
 import {
   apiAccountView,
   apiLeaderboard,
@@ -31,8 +32,8 @@ export const GUEST_USER: User = {
 
 /** 账号视图（AccountView/榜单行同形）→ 档案 User：elo 只在榜单行有
     （elo_rating 直读，无行后端回 1200）；账号视图不带 elo，保留现场
-    结算行的回填值（live store 落）。装扮三键的 snake→camel 单点也在这
-    （avatar_url→avatarUrl），两视图同形不分支 */
+    结算行的回填值（live store 落）。装扮两键的 snake→camel 单点也在这
+    （avatar_url→avatarUrl；穿戴原值展示用不到不落，见 User 注），两视图同形不分支 */
 function accountToUser(view: AccountView | LeaderboardRowApi): User {
   return {
     id: view.id,
@@ -44,7 +45,6 @@ function accountToUser(view: AccountView | LeaderboardRowApi): User {
     win: view.dupr_wins,
     month: view.dupr_month_net ?? 0,
     last5: [...(view.dupr_last5 || [])] as ("W" | "L")[],
-    avatar: view.avatar,
     avatarUrl: view.avatar_url,
     back: view.back,
   };
@@ -143,13 +143,19 @@ export const useUserStore = defineStore("user", () => {
     Object.assign(me, accountToUser(view), { elo });
   }
 
+  /** 装扮保存成功：dress 响应原位换装（snake→camel 与 accountToUser 同一映射口径，
+    收在 store——页面手工逐键回写容易在响应加键时漏改） */
+  function applyDress(d: DressingApi): void {
+    me.avatarUrl = d.avatar_url;
+    me.back = d.back;
+  }
+
   /** 退出/注销回落游客：占位身份原位复位；喜欢是本地态，换了身份不带走。
-      装扮三键显式清 undefined——GUEST_USER 没带这三键，不清会穿着上一具
+      装扮两键显式清 undefined——GUEST_USER 没带这两键，不清会穿着上一具
       身份的形象当访客（访客的脸面：AvatarBadge 公共款兜底、卡片素卡） */
   function resetGuest(): void {
     likedIds.value.clear();
     Object.assign(me, GUEST_USER, {
-      avatar: undefined,
       avatarUrl: undefined,
       back: undefined,
     });
@@ -168,6 +174,7 @@ export const useUserStore = defineStore("user", () => {
     loadLeaderboard,
     ensurePerson,
     applyAccount,
+    applyDress,
     resetGuest,
   };
 });

@@ -44,9 +44,26 @@ function servePublicInDev(): Plugin {
   };
 }
 
+// 小程序包剔重：字体在小程序端由 uni 编译自动内嵌 base64 进 wxss，
+// src/static/fonts 的目录拷贝件在小程序全包零引用（H5 端仍靠它渲染，源目录不动），
+// 剔掉只为压主包体积（微信主包上限 2MB）。
+function pruneMpDupFonts(): Plugin {
+  return {
+    name: "mieball:prune-mp-dup-fonts",
+    apply: "build",
+    closeBundle() {
+      if (process.env.UNI_PLATFORM !== "mp-weixin") return;
+      for (const mode of ["build", "dev"]) {
+        const dir = path.resolve(__dirname, `dist/${mode}/mp-weixin/static/fonts`);
+        if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+      }
+    },
+  };
+}
+
 export default defineConfig({
   publicDir: path.resolve(__dirname, "public"),
-  plugins: [uni(), servePublicInDev()],
+  plugins: [uni(), servePublicInDev(), pruneMpDupFonts()],
   server: {
     // 端口约定：前端 12543 · 后端 16588（见 AGENTS.md）
     port: 12543,

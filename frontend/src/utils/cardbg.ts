@@ -39,16 +39,36 @@ export const WIN: Record<CardMode, SliceSpec | CoverSpec> = {
   p: { cover: true, ax: 0.5, ay: 0.42 }, // 名单格档（局详情名单墙小格）：内容居中，锚取中
 };
 
-/** 卡背素材 URL：约定优于配置（H5 同域直引 /cosmetics/{cid}.webp，册子不存路径） */
-export function backUrl(cid: string): string {
+/** 素材 URL 单一源：约定优于配置（H5 同域直引 /cosmetics/{cid}.webp，册子不存
+    路径）——头像卡背同格式同扩展名，与后端 asset_url 同名同义；换 CDN/扩展名
+    只改这里一行，全站自动对齐 */
+export function assetUrl(cid: string): string {
   return `/cosmetics/${cid}.webp`;
 }
 
-/** 头像素材 URL：同款约定单一源（/cosmetics/{cid}.webp，与后端 asset_url
-    同口径同格式）——默认款兜底与注册卡头像组的路径拼接收口到这里，不再各处手写 */
-export function avatarUrl(cid: string): string {
-  return `/cosmetics/${cid}.webp`;
+/* 卡背预载共享缓存：CSS 背景没有 onload，CardBackdrop 靠预载翻 shown——
+   而列表页每行一个实例（榜单/约球页/名单墙），同一 URL 逐实例 new Image
+   重复解码纯属浪费（多数人穿同一默认款）；按 URL 记一份 Promise，
+   首个实例暖图、其余实例即点即显。失败也记账：坏编号整会话兜素卡不反复试 */
+const preloadCache = new Map<string, Promise<boolean>>();
+export function preloadAsset(url: string): Promise<boolean> {
+  let p = preloadCache.get(url);
+  if (!p) {
+    p = new Promise<boolean>((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(true);
+      img.onerror = () => resolve(false);
+      img.src = url;
+    });
+    preloadCache.set(url, p);
+  }
+  return p;
 }
+
+/** 后端册子 cosmetics.py DEFAULT_AVATAR 的前端镜像（访客/无图兜底圆章吃它；
+    卡背默认款前端无处消费不镜像——穿戴真值由装扮页 GET 的 wearing 直出。
+    默认脸换编号时与后端同步改，cardbg.test 锁值 */
+export const DEFAULT_AVATAR_CID = "g-00";
 
 /* 钳 3~97% 后取 0.1% 精度——原型的落点精度（--bpx: xx.x%）收进公式层，
    组件与测试拿到即定值，不在 DOM 边缘各写一遍 toFixed */

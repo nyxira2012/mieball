@@ -110,7 +110,6 @@ def test_publish_organizer_is_first_row_and_fee_undecided(client: TestClient):
     assert g["organizer"] == {
         "id": acc["id"],
         "nickname": acc["name"],
-        "chibi": acc["chibi"],
         # 装扮三键（1.9 批1）：person_view 直发，未穿戴兜默认公共款
         "avatar": acc["avatar"],
         "avatar_url": acc["avatar_url"],

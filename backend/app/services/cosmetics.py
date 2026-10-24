@@ -180,15 +180,14 @@ def dress_fields(account) -> dict:
     if not wearing:
         return default_dress()
     if wearing == "wechat":
+        # 真值是授权时刻顺手记录的 URL；还没记录过（绑定早、功能上线后未再
+        # 授权）回退默认公共款路径，不露破图
         url = getattr(account, "wechat_avatar", None) or asset_url(DEFAULT_AVATAR)
-        return {
-            "avatar": "wechat",
-            "avatar_url": url,
-            "back": getattr(account, "dress_back", None) or DEFAULT_BACK,
-        }
+    else:
+        url = asset_url(wearing)
     return {
         "avatar": wearing,
-        "avatar_url": asset_url(wearing),
+        "avatar_url": url,
         "back": getattr(account, "dress_back", None) or DEFAULT_BACK,
     }
 
@@ -229,10 +228,13 @@ def _threshold_met(item: Cosmetic, progress: dict) -> bool:
     return progress[_FAMILY_PROGRESS_KEY[item.family]] >= (item.threshold or 0)
 
 
-def recount(db: Session, account) -> dict:
+def recount(db: Session, account) -> tuple[dict, list[dict]]:
     """打开装扮页时的顺手核算：三类进度各翻一笔现成账，过线的荣誉款追加进
     解锁清单。判定只看当下 + 只增不减（解锁后掉分/改账不收回——写入口只补
-    不删）。整个核算兜底：失败不拦路（按上次清单照常开门），只留 warn 记号。
+    不删）。返回 (进度定值, 补写后的解锁行)——dressing_page 同页共吃，同一份
+    unlocks 全链只解析这一趟；落库也归 dressing_page 统一一次写（含清「新」标，
+    不在核算里先写一笔半成品）。整个核算兜底：失败不拦路（按上次清单照常
+    开门），只留 warn 记号。
     """
     try:
         # stats 已依赖本模块的 dress_fields（身份下发三键单一源），此处反向
@@ -258,25 +260,27 @@ def recount(db: Session, account) -> dict:
             "rating_provisional": card["provisional"],
             "organizes": organizes,
         }
-        owned = {r["id"] for r in _unlocked_rows(account)}
+        rows = _unlocked_rows(account)
+        owned = {r["id"] for r in rows}
         fresh = [
             {"id": c.cid, "new": True}
             for c in CATALOG
             if c.tier == "honor" and c.cid not in owned and _threshold_met(c, progress)
         ]
         if fresh:
-            rows = _unlocked_rows(account) + fresh
-            account.unlocks = json.dumps(rows, ensure_ascii=False)
-            db.commit()
-        return progress
+            rows = rows + fresh  # 只在内存追加，落库归调用方 dressing_page 一次写
+        return progress, rows
     except Exception:  # 核算失败不拦路（装扮页照常按上次清单开门），只留 warn 记号
         logger.warning("cosmetics recount failed account=%s", account.id, exc_info=True)
-        return {
-            "matches": 0,
-            "rating": GUEST_DUPR,
-            "rating_provisional": True,
-            "organizes": 0,
-        }
+        return (
+            {
+                "matches": 0,
+                "rating": GUEST_DUPR,
+                "rating_provisional": True,
+                "organizes": 0,
+            },
+            _unlocked_rows(account),
+        )
 
 
 def dress(
@@ -314,8 +318,7 @@ def dressing_page(db: Session, account) -> dict:
     落库的 new 全置 False。定制款条目层裁剪：未授予者的 items/unlocks 都不含，
     连「别人有你没有」的暗示都不透出。
     """
-    progress = recount(db, account)
-    rows = _unlocked_rows(account)
+    progress, rows = recount(db, account)
     owned = {r["id"] for r in rows}
     fresh = {r["id"] for r in rows if r.get("new")}
     items = [
@@ -341,6 +344,8 @@ def dressing_page(db: Session, account) -> dict:
         if c.tier == "honor" or c.cid in owned
     }
     if fresh:
+        # unlocks 的唯一落库点：核算的新解锁在此带上（含当次「新」标语义的响应
+        # 已在上方组装）并以全 False 落定——「新」标口径：本次看到、下次进页即摘
         account.unlocks = json.dumps(
             [{"id": r["id"], "new": False} for r in rows], ensure_ascii=False
         )

@@ -14,7 +14,7 @@
             <view class="pd-slot" v-html="paddles[p.pos]" />
             <!-- 旧捏小人已退役：圆章 76/60 半身档（原 alpha:1758 位） -->
             <AvatarBadge
-              :url="p.u.avatarUrl ?? null"
+              :url="p.u.avatarUrl"
               :size="p.pos === 'c' ? 76 : 60"
             />
           </view>

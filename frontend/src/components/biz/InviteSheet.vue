@@ -23,7 +23,7 @@
         >
           <view class="mnm">
             <view class="mav"
-              ><AvatarBadge :url="i.account.avatarUrl ?? null" :size="26"
+              ><AvatarBadge :url="i.account.avatarUrl" :size="26"
             /></view>
             <text>{{ i.account.nickname }}</text>
             <AppChip v-if="i.known" kind="dim">打过</AppChip>

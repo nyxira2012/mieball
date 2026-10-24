@@ -1,16 +1,16 @@
 /* 沙盒示例数据单一源（2.7 批1）——两张教学卡画面上出现的每个名字/数字/句子都
    从这里来，进卡瞬间可用、零联网（规格 §7 A4「数据从哪来」）。零框架 import：
-   头像是公共款素材 URL（avatarUrl 拼约定路径，渲染在 UI 层 AvatarBadge）。
+   头像是公共款素材 URL（assetUrl 拼约定路径，渲染在 UI 层 AvatarBadge）。
    防误认红线（规格 §6）：假名+小头像、局名场馆带「示例」、已登录也统一「你」
    +默认头像。 */
-import { avatarUrl } from "@/utils/cardbg";
+import { DEFAULT_AVATAR_CID, assetUrl } from "@/utils/cardbg";
 
 /** 名册种子行：check=进卡时的初始考勤（'ok' 开场已在候场 / 'none' 还没到，
     到场时机由 NPC 调度表或用户动作推进）。行序=名册序：资历并列时的先下判定
     按它稳定排序（engine byTenure），两张卡的剧本阵容靠行序锁定，别调换。 */
 export interface SandSeed {
   name: string;
-  /** 公共头像素材 URL（示例局人物指定公共款，不占个人衣柜）；avatarUrl 单一源拼路径 */
+  /** 公共头像素材 URL（示例局人物指定公共款，不占个人衣柜）；assetUrl 单一源拼路径 */
   avatar: string;
   check: "ok" | "none";
   you?: boolean; // 示例局里的「你」（两卡各一粒，id 由 engine 按行序编）
@@ -21,14 +21,14 @@ export interface SandSeed {
 /** 公共款轮换指派：假人各穿一款公共头像（同一人两卡同款）、你与访客吃默认
     第一款（防误认红线「默认形象」的真局同款口径） */
 const AV = {
-  def: avatarUrl("g-00"), // 你 / 访客「朋友」（跟全站默认款）
-  hao: avatarUrl("a-p2"),
-  zhou: avatarUrl("a-p3"),
-  qiu: avatarUrl("a-p4"),
-  jin: avatarUrl("a-p5"),
-  lu: avatarUrl("a-p6"),
-  min: avatarUrl("a-p2"), // 款少人多必有复用：小敏与阿豪分属两卡不撞面，老周/凯文同场同款 a-p3 属预期
-  kevin: avatarUrl("a-p3"),
+  def: assetUrl(DEFAULT_AVATAR_CID), // 你 / 访客「朋友」（跟全站默认款）
+  hao: assetUrl("a-p2"),
+  zhou: assetUrl("a-p3"),
+  qiu: assetUrl("a-p4"),
+  jin: assetUrl("a-p5"),
+  lu: assetUrl("a-p6"),
+  min: assetUrl("a-p2"), // 款少人多必有复用：小敏与阿豪分属两卡不撞面，老周/凯文同场同款 a-p3 属预期
+  kevin: assetUrl("a-p3"),
 } as const;
 
 /** 假局信息（两卡共用）：分制 11 起步，组织卡第五步改 15；down/pairing 只作

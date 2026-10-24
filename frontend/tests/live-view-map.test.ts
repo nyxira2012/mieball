@@ -87,10 +87,11 @@ describe("toLiveView 战报边序（sideA/sideB 与 sa/sb 同序）", () => {
   });
 });
 
-/* 1.9 装扮三键透传：名册行身份块 snake→camel 单点直落（snake_url→avatarUrl），
-   访客三键 null 原样——展示组件各兜各的默认（圆章公共款/素卡） */
-describe("toLiveView 装扮三键（avatar/avatarUrl/back）", () => {
-  it("注册球友三键直落、访客 null 原样", () => {
+/* 1.9 装扮两键透传：名册行身份块 snake→camel 单点直落（snake_url→avatarUrl），
+   访客两键 null 原样——展示组件各兜各的默认（圆章公共款/素卡）；穿戴原值
+   不随名册行映射（前端展示用不到） */
+describe("toLiveView 装扮两键（avatarUrl/back）", () => {
+  it("注册球友两键直落、访客 null 原样", () => {
     const v = view("a");
     v.players = [
       {
@@ -138,12 +139,10 @@ describe("toLiveView 装扮三键（avatar/avatarUrl/back）", () => {
     ];
     const ps = toLiveView(v).players;
     expect(ps[0]).toMatchObject({
-      avatar: "a-p3",
       avatarUrl: "/cosmetics/a-p3.webp",
       back: "b-c2",
     });
     expect(ps[1]).toMatchObject({
-      avatar: null,
       avatarUrl: null,
       back: null,
     });

@@ -83,7 +83,7 @@
     <view class="rp-sec-t">名单</view>
     <view v-for="row in rosterRows" :key="row.p.id" class="rp-row">
       <view class="r-lead">
-        <AvatarBadge :url="row.p.avatarUrl ?? null" :size="30" />
+        <AvatarBadge :url="row.p.avatarUrl" :size="30" />
         <view class="r-nm"
           >{{ row.p.name
           }}<text v-if="row.p.guest" class="gtag">访客 · 不计积分</text
@@ -173,16 +173,25 @@ function fmtDelta(d: number): string {
   return d > 0 ? `+${d}` : d < 0 ? `−${Math.abs(d)}` : "±0";
 }
 
-/** 按账号回名册行对表帮手（结算行/担保人只带账号 id，圆章与名字住名册身份块） */
+/** 名册按账号对表（结算行/担保人只带账号 id，圆章与名字住名册身份块）；
+    players 渲染期恒定，Map 一次建好——积分行 v-for 逐行查不再线性扫名册 */
+const byAccountId = computed(() => {
+  const m = new Map<number, LivePlayer>();
+  for (const p of props.view.players) {
+    if (p.accountId != null) m.set(p.accountId, p);
+  }
+  return m;
+});
+
 function byAccount(accountId: number): LivePlayer | undefined {
-  return props.view.players.find((p) => p.accountId === accountId);
+  return byAccountId.value.get(accountId);
 }
 
 /** 积分行头像：结算行只带账号 id（开账定格快照无装扮键），回名册身份块按账号
     对表取圆章素材；访客账号 null 无行可对 → AvatarBadge 公共款兜底 */
-function eloAvatar(accountId: number | null): string | null {
-  if (accountId == null) return null;
-  return byAccount(accountId)?.avatarUrl ?? null;
+function eloAvatar(accountId: number | null): string | null | undefined {
+  if (accountId == null) return undefined;
+  return byAccount(accountId)?.avatarUrl;
 }
 
 /** 一侧名单拼句：两侧名单按边随视图下发（toLiveView 反推好的 sideA/sideB），

@@ -16,7 +16,7 @@
       <template v-if="absents.length">
         <view v-for="row in absents" :key="row.id" class="ck-row">
           <view class="row-av"
-            ><AvatarBadge :url="row.avatarUrl ?? null" :size="30"
+            ><AvatarBadge :url="row.avatarUrl" :size="30"
           /></view>
           <view class="who">
             <view class="nm"
@@ -50,7 +50,7 @@
       <template v-if="arriveds.length">
         <view v-for="row in arriveds" :key="row.id" class="ck-row done">
           <view class="row-av"
-            ><AvatarBadge :url="row.avatarUrl ?? null" :size="30"
+            ><AvatarBadge :url="row.avatarUrl" :size="30"
           /></view>
           <view class="who">
             <view class="nm"

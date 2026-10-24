@@ -16,8 +16,11 @@ import type { PropType } from "vue";
 import AvatarBadge from "./AvatarBadge.vue";
 
 const props = defineProps({
-  /** 名单头像素材 URL（含随行展开后的完整名单；null=默认公共款） */
-  urls: { type: Array as PropType<(string | null)[]>, default: () => [] },
+  /** 名单头像素材 URL（含随行展开后的完整名单；null/缺项=默认公共款） */
+  urls: {
+    type: Array as PropType<(string | null | undefined)[]>,
+    default: () => [],
+  },
   /** 展示上限（溢出折叠归消费方文案，这里只截断） */
   max: { type: Number, default: 5 },
 });

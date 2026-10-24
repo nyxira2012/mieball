@@ -20,19 +20,21 @@
    （f/d/h/p）溢出倍率随容器实际宽高变，锚点写死会在高卡上把焦点挤到文字底下，
    必须渲染后量测（onMounted 首帧 + ResizeObserver 重算）——公式收在 utils/cardbg.ts。 */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { tapEl } from "@/composables/blurOnBlank";
 import {
   BACK_SPEC,
   DEFAULT_FOCUS,
   WIN,
-  backUrl,
+  assetUrl,
   coverPos,
+  preloadAsset,
   slicePos,
   type CardMode,
 } from "@/utils/cardbg";
 
 const props = defineProps<{
-  /** 卡背编号；null=不渲染（宿主素卡兜底） */
-  cid: string | null;
+  /** 卡背编号；null/缺省=不渲染（宿主素卡兜底） */
+  cid?: string | null;
   /** 取景档位（六档语义见 cardbg.ts WIN 注释） */
   mode: CardMode;
   /** 卡背主体焦点（册子 per-item 留位；首批全统一走 DEFAULT_FOCUS） */
@@ -56,23 +58,17 @@ const sliceVars = computed<Record<string, string>>(() => {
 /** cover 档定位：量测后回填（宽高没量到前缺省 50%/50%，量测即覆写） */
 const coverVars = ref<Record<string, string>>({});
 
-/* uni-view 的模板 ref 可能是组件实例也可能是元素，两种都接（blurOnBlank 同口径） */
 const el = ref<unknown>(null);
 let ro: ResizeObserver | null = null;
-
-function nodeOf(v: unknown): HTMLElement | null {
-  return v instanceof HTMLElement
-    ? v
-    : ((v as { $el?: HTMLElement } | null)?.$el ?? null);
-}
 
 function remeasure() {
   const t = tier.value;
   if (!("cover" in t)) {
-    coverVars.value = {};
+    // 切片档定位走 computed，只需把历史量测清一次（重复赋新对象会触发无谓的响应式更新）
+    if (Object.keys(coverVars.value).length) coverVars.value = {};
     return;
   }
-  const node = nodeOf(el.value);
+  const node = tapEl(el.value);
   if (!node) return;
   const w = node.offsetWidth;
   const h = node.offsetHeight;
@@ -90,31 +86,48 @@ function remeasure() {
   coverVars.value = { "--bpx": pos.px + "%", "--bpy": pos.py + "%" };
 }
 
-onMounted(() => {
-  remeasure();
-  const node = nodeOf(el.value);
-  // 无 ResizeObserver 的环境（旧 webview）退化为首帧一次，拉伸窗口不重排可接受
-  if (node && typeof ResizeObserver !== "undefined") {
+/* 观察者只在 cover 档挂：切片档定位是纯公式、量测无活干，而 r 档全站量最大
+   （局卡/意向/榜单/候场每行一个），白挂 RO 只剩首回调+resize 的空转重赋值。
+   无 ResizeObserver 的环境（旧 webview）退化为首帧一次，拉伸窗口不重排可接受 */
+function syncObserver() {
+  const node = tapEl(el.value);
+  const want =
+    "cover" in tier.value && node && typeof ResizeObserver !== "undefined";
+  if (!want) {
+    ro?.disconnect();
+    ro = null;
+    return;
+  }
+  if (!ro) {
     ro = new ResizeObserver(remeasure);
     ro.observe(node);
   }
+}
+
+onMounted(() => {
+  remeasure();
+  syncObserver();
 });
 onBeforeUnmount(() => ro?.disconnect());
-// 试穿位换图换焦点换档（装扮页即点即换）都要重算；切片档走 computed 自动跟
-watch([fx, fy, tier], remeasure);
+// 试穿位换图换焦点换档（装扮页即点即换）都要重算；切片档走 computed 自动跟。
+// 换档同时补挂/摘观察者（cover↔slice 切换时 RO 跟着档位走）
+watch([fx, fy, tier], () => {
+  remeasure();
+  syncObserver();
+});
 
-/* 出图前整层隐藏、宿主素底占位不跳版；加载失败保持隐藏——异常编号兜素卡不露破图 */
+/* 出图前整层隐藏、宿主素底占位不跳版；加载失败保持隐藏——异常编号兜素卡不露破图。
+   预载走 cardbg 的 URL 级共享缓存：同款卡背第二个实例起免重复拉取解码，
+   已暖图的换装回看即点即显（免 0.25s 渐显等待） */
 const shown = ref(false);
 watch(
   () => props.cid,
   (cid) => {
     shown.value = false;
     if (!cid) return;
-    const img = new Image();
-    img.onload = () => {
-      shown.value = true;
-    };
-    img.src = backUrl(cid);
+    void preloadAsset(assetUrl(cid)).then((ok) => {
+      if (ok) shown.value = true;
+    });
   },
   { immediate: true },
 );
@@ -122,7 +135,7 @@ watch(
 const layerStyle = computed(() => {
   if (!props.cid) return {};
   return {
-    "--bimg": `url('${backUrl(props.cid)}')`,
+    "--bimg": `url('${assetUrl(props.cid)}')`,
     ...sliceVars.value,
     ...coverVars.value,
   };

@@ -33,7 +33,7 @@
             :class="{ on: picked === i }"
             @click="pick(i)"
           >
-            <AvatarBadge :url="avatarUrl(cid)" :size="44" />
+            <AvatarBadge :url="assetUrl(cid)" :size="44" />
           </view>
         </view>
       </AppField>
@@ -172,7 +172,7 @@ import { useSessionStore } from "@/stores/session";
 import { useUiStore } from "@/stores/ui";
 import { runPendingResume } from "@/composables/pendingResume";
 import { PUBLIC_AVATARS, PHONE_USE_NOTE } from "@/api/dict";
-import { avatarUrl } from "@/utils/cardbg";
+import { assetUrl } from "@/utils/cardbg";
 import { cardPayloadOf, type CardPayload } from "@/api/auth";
 import {
   ApiError,

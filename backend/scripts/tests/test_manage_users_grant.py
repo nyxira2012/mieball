@@ -56,7 +56,6 @@ def db(tmp_path, monkeypatch):
                 id=1,
                 phone=PHONE,
                 nickname="阿甲",
-                chibi="{}",
                 device_marker="ops-tool",
                 created_at=datetime(2026, 10, 1, 10, 0, 0, tzinfo=timezone.utc),
             )

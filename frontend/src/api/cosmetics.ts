@@ -16,8 +16,8 @@ export interface CosmeticItemApi {
   lock_text: string | null;
   fx: number;
   fy: number;
-  /** 素材约定路径，直出即用（卡背缩略/试穿直接吃它，不必 backUrl 自拼重复口径；
-      asset 由后端按 kind 出扩展名：头像 .png / 卡背 .webp） */
+  /** 素材约定路径，直出即用（卡背缩略/试穿直接吃它，不必 assetUrl 自拼重复
+      口径；全系统一 .webp，与后端 asset_url 同口径同扩展名） */
   asset: string;
 }
 

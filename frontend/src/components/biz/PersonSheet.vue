@@ -9,10 +9,10 @@
     <template v-if="p">
       <!-- ---------- 常规态 ---------- -->
       <template v-if="!swap">
-        <view class="ps-head">
-          <CardBackdrop :cid="p.back ?? null" mode="h" />
+        <view class="ps-head cbd-host">
+          <CardBackdrop :cid="p.back" mode="h" />
           <view class="ps-av"
-            ><AvatarBadge :url="p.avatarUrl ?? null" :size="44"
+            ><AvatarBadge :url="p.avatarUrl" :size="44"
           /></view>
           <view class="ps-meta">
             <view class="ps-nm"
@@ -91,7 +91,7 @@
                 @click="onPick(r)"
               >
                 <view class="row-av"
-                  ><AvatarBadge :url="r.u.avatarUrl ?? null" :size="32"
+                  ><AvatarBadge :url="r.u.avatarUrl" :size="32"
                 /></view>
                 <view class="row-info">
                   <view class="row-nm"
@@ -238,18 +238,15 @@ const poolGroups = computed(() => {
 
 <style lang="scss" scoped>
 /* ---------- 原型 .ps-head/.ps-grid/.ps-act/.ps-link（逐字换 tokens） ---------- */
-/* 宿主契约（CardBackdrop h 头带档）：relative+hidden 裁出血、z-index:0
-   立层叠上下文；负左右边距贴抽屉壳出血（20px=AppSheet 壳 padding）、底边由 cbd-h
-   自带羽化渐隐入素底——手柄钮区（ps-grid）与顶部 grab 条不铺，工具面保信息密度 */
+/* 宿主契约三件套挂全局 .cbd-host（base.scss 收源）。头带档专属：负左右边距贴
+   抽屉壳出血（20px=AppSheet 壳 padding）靠 hidden 裁直、底边由 cbd-h 自带羽化
+   渐隐入素底——手柄钮区（ps-grid）与顶部 grab 条不铺，工具面保信息密度 */
 .ps-head {
   display: flex;
   align-items: center;
   gap: 12px;
   margin: 0 -20px 16px;
   padding: 0 20px;
-  position: relative;
-  z-index: 0;
-  overflow: hidden;
 }
 .ps-av {
   width: 52px;

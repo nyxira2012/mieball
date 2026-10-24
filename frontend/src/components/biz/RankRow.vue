@@ -7,14 +7,14 @@
        每行铺行主卡背（r 档右侧取景窗、左缘融进卡底）；金/橙/青语义
        描边在行 border 上、卡背窗贴 padding box 之内，两不相盖；无卡背行素卡。 -->
   <view
-    class="rank-row"
+    class="rank-row cbd-host"
     :class="[topCls, { 'lazy-in': lazy }]"
     @click="emit('profile', user.id)"
   >
-    <CardBackdrop :cid="user.back ?? null" mode="r" />
+    <CardBackdrop :cid="user.back" mode="r" />
     <!-- alpha:1769 名次（参考区行无位次） -->
     <view class="no">{{ unrated ? "—" : index + 1 }}</view>
-    <AvatarBadge :url="user.avatarUrl ?? null" :size="40" />
+    <AvatarBadge :url="user.avatarUrl" :size="40" />
     <view class="mid">
       <view class="nm">
         <text class="nm-t">{{ user.name }}</text>
@@ -94,9 +94,8 @@ const topCls = computed(() =>
 </script>
 
 <style lang="scss" scoped>
-/* alpha.html:495-498 .rank-row；宿主契约（CardBackdrop）：relative+hidden 裁
-   取景窗出血；z-index:0 立层叠上下文，负 z-index 卡底层垫在不透明行底之上、
-   文字之下（不立层会被行自己的 background 盖死） */
+/* alpha.html:495-498 .rank-row；宿主契约三件套挂全局 .cbd-host（base.scss 收源），
+   负 z-index 卡底层垫在不透明行底之上、文字之下 */
 .rank-row {
   display: flex;
   align-items: center;
@@ -107,9 +106,6 @@ const topCls = computed(() =>
   background: var(--ink2);
   margin-bottom: 8px;
   cursor: pointer;
-  position: relative;
-  z-index: 0;
-  overflow: hidden;
   transition:
     border-color 0.15s,
     transform 0.12s;

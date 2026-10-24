@@ -16,11 +16,11 @@
        emit('tap')：进详情或 joinSheet 分支由父层决定（gameTapAction）；emit('enter')：卡片入场窗内
        的「进入现场」按钮（2.5 批2），父层 goLive（组织者成员同路）。 -->
   <view
-    class="gcard"
+    class="gcard cbd-host"
     :class="{ 'is-live': live, 'is-inv': inv }"
     @click="emit('tap')"
   >
-    <CardBackdrop :cid="card.orgBack ?? null" mode="r" />
+    <CardBackdrop :cid="card.orgBack" mode="r" />
     <view class="gd">
       <!-- alpha:909 时间位：大字 = 时刻，小字 = 日段（今晚 / 10.06 周一） -->
       <view class="time">
@@ -109,11 +109,9 @@ const roleTxt = computed(() =>
 <style lang="scss" scoped>
 /* gcard 家族样式（alpha:104-126）为本组件所有；chip/roletag 归 AppChip、stack 归 AvatarStack。
    （DeadCard 的未成局卡壳同源，各自持有副本——styles/ 不允许新增文件。）
-   宿主契约（CardBackdrop）：relative+hidden 裁取景窗出血；z-index:0 立层叠上下文，
-   负 z-index 卡底层垫在不透明渐变卡底之上、文字之下 */
+   宿主契约三件套挂全局 .cbd-host（base.scss 收源），负 z 卡底层垫在不透明渐变
+   卡底之上、文字之下 */
 .gcard {
-  position: relative;
-  z-index: 0;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: linear-gradient(160deg, var(--ink3), var(--ink2));
@@ -127,7 +125,6 @@ const roleTxt = computed(() =>
   transition:
     transform 0.18s ease,
     border-color 0.18s;
-  overflow: hidden;
   cursor: pointer;
 }
 .gcard:active {

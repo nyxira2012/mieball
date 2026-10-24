@@ -25,10 +25,9 @@ export interface User {
   tonight?: number; // 今晚已打场数（现场名册行随视图带、战报实时派生）：队列抽屉「今晚 N 场」吃它——档案缓存的 play 是生涯数
   last5?: ("W" | "L")[];
   shadow?: boolean; // 随行访客 · 不计积分不进榜（对局按新人初始等级代入算分，2.3 修订②）
-  // 装扮三键（后端 person_view 单一源直出；后端包里仍带旧 chibi/card_bg 键——
-  // 旧列读侧保留，前端类型不再声明、运行时多余键无害）
-  avatar?: string; // 穿戴值原样（册子编号或 'wechat'）
-  avatarUrl?: string | null; // 后端解析好的素材 URL（wechat=授权时记下的原图；null=默认公共款）
+  // 装扮两键（后端 person_view 单一源直出）；穿戴原值（册子编号或 'wechat'）
+  // 展示用不到不落前端——真值只在装扮页 GET 的 wearing 里（保存比对用）
+  avatarUrl?: string | null; // 后端解析好的素材 URL（null=默认公共款）
   back?: string | null; // 卡背编号（null=默认公共卡背，宿主素卡兜底）
   check?: CheckStatus;
   skip?: number; // 剩余歇轮数：歇两轮=2（2.1 文档+原型「候场区点人可设歇两轮」）。
@@ -570,8 +569,8 @@ export interface LivePlayer {
   id: number;
   accountId: number | null;
   name: string;
-  // 装扮三键（展示位：AvatarBadge 圆章/抽屉行卡背的原料；访客 null 由组件兜底）
-  avatar: string | null;
+  // 装扮两键（展示位：AvatarBadge 圆章/抽屉行卡背的原料；访客 null 由组件兜底；
+  // 穿戴原值前端展示用不到，不随名册行映射——口径与 User 一致）
   avatarUrl: string | null;
   back: string | null;
   guest: boolean;

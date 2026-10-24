@@ -14,13 +14,12 @@
 - 快进号补手机号（1.8）：send_code 按 purpose 分支（bind_phone 判定反转——
   有账号当场拒、指路登录页走短信验证）+ bind_phone 动作（收码才落号翻真）；
   redeem 找回复挂验证收编（当前设备登着的快进号上的微信自动迁绑回来）；
-- 隐私出口：对外只有昵称+小人；同局加尾号 4 位；本人见全号；已注销统一占位。
+- 隐私出口：对外只有昵称+头像；同局加尾号 4 位；本人见全号；已注销统一占位。
   全产品展示他人一律经 view()，别处不得直读 Account。
 """
 
 from __future__ import annotations
 
-import json
 import random
 import re
 from datetime import timedelta
@@ -41,11 +40,6 @@ from .stats import StatsLedger
 from .wechat import WeChatGate, WechatMixin
 
 PHONE_RE = re.compile(r"^1[3-9]\d{9}$")
-# 六部件各自的变体数——chibi 渲染族退役后真值自持于后端（名片口改 chibi 的
-# 取值域校验独此一份，不再有前端镜像）
-CHIBI_RANGES = {"skin": 4, "hair": 6, "hc": 6, "shirt": 8, "face": 4, "acc": 3}
-DEFAULT_CHIBI = {"skin": 0, "hair": 0, "hc": 0, "shirt": 5, "face": 0, "acc": 0}
-CARD_BGS = {"neon", "gold", "cyber", "aurora"}
 # 已注销账号的对外占位昵称——跨域单一源（保留名、view() 占位、球局域名单共用）
 ANON_NAME = "已注销球友"
 RESERVED_NICKNAMES = {ANON_NAME, "平台客服"}
@@ -69,8 +63,6 @@ def new_account(
     return Account(
         phone=phone,
         nickname=nickname,
-        # 旧小人列退役只兜 NOT NULL，默认件工厂自置——调用方不再各拼一遍
-        chibi=json.dumps(DEFAULT_CHIBI),
         status="active",
         device_marker=device_marker,
         created_at=clock.now(),
@@ -80,7 +72,7 @@ def new_account(
 
 
 def person_view(account: Account | None) -> dict:
-    """名单里的一人：昵称+小人+装扮三键（1.1 隐私口径 + 展示位直发）。
+    """名单里的一人：昵称+装扮三键（1.1 隐私口径 + 展示位直发）。
     已注销/不存在 → 占位形象穿默认公共款（不读其穿戴列——清空靠 deactivate
     写侧保证，读侧直接兜死更稳）。球局域名单（game_views）与意向列表
     （intents）共用的"对外一个人"形状。"""
@@ -88,13 +80,11 @@ def person_view(account: Account | None) -> dict:
         return {
             "id": account.id if account else 0,
             "nickname": ANON_NAME,
-            "chibi": dict(DEFAULT_CHIBI),
             **default_dress(),
         }
     return {
         "id": account.id,
         "nickname": account.nickname,
-        "chibi": json.loads(account.chibi),
         **dress_fields(account),
     }
 
@@ -228,8 +218,6 @@ class AccountBook(PasswordMixin, WechatMixin):
         account.phone = None  # 释放：同一号将来可注册全新账号（历史不继承）
         account.phone_verified = False
         account.nickname = ANON_NAME
-        account.chibi = json.dumps(DEFAULT_CHIBI)
-        account.card_bg = None
         # 装扮三列随账号消亡一并清空：解锁与穿戴不带入任何新账号（重新注册从零
         # 开始）；历史名单里的注销者由读侧兜默认公共款，微信头像已随上方清位走
         account.dress_avatar = None
@@ -300,27 +288,14 @@ class AccountBook(PasswordMixin, WechatMixin):
         """退出登录：只作废这一台的钥匙（服务端作废比只清本机稳，别台不受影响）。"""
         self.keys.revoke(token)
 
-    def update_profile(
-        self,
-        account_id: int,
-        *,
-        nickname: str | None = None,
-        chibi: dict[str, Any] | None = None,
-        card_bg: str | None = None,
-    ) -> dict:
+    def update_profile(self, account_id: int, *, nickname: str | None = None) -> dict:
         account = self._require_active(account_id)
         if nickname is not None:
             account.nickname = _resolve_nickname(nickname)
-        if chibi is not None:
-            account.chibi = json.dumps(_validate_chibi(chibi))
-        if card_bg is not None:
-            if card_bg not in CARD_BGS:
-                raise errors.card_bg_invalid()
-            account.card_bg = card_bg
         self.db.commit()
         return self.view(account_id, viewer="self")
 
-    # ---- 隐私出口（唯一对外视图：游客/陌生=昵称+小人，同局+尾号，本人=全号） ----
+    # ---- 隐私出口（唯一对外视图：游客/陌生=昵称+头像，同局+尾号，本人=全号） ----
 
     def view(self, account_id: int, *, viewer: Viewer) -> dict:
         account = self._by_id(account_id)
@@ -331,7 +306,6 @@ class AccountBook(PasswordMixin, WechatMixin):
             return {
                 "id": account.id,
                 "name": ANON_NAME,
-                "chibi": dict(DEFAULT_CHIBI),
                 "deactivated": True,
                 **default_dress(),
             }
@@ -339,8 +313,6 @@ class AccountBook(PasswordMixin, WechatMixin):
         out: dict[str, Any] = {
             "id": account.id,
             "name": account.nickname,
-            "chibi": json.loads(account.chibi),
-            "card_bg": account.card_bg,
             "deactivated": False,
             # 装扮三键：头像值/解析好的素材路径/卡背编号，名片与档案随身份直发
             **dress_fields(account),
@@ -433,17 +405,3 @@ def _validate_public_avatar(value: str | None) -> str | None:
     if item is None or item.kind != "avatar" or item.tier != "common":
         raise errors.cosmetic_not_found()
     return value
-
-
-def _validate_chibi(chibi: Any) -> dict[str, int]:
-    if not isinstance(chibi, dict):
-        raise errors.chibi_invalid()
-    out: dict[str, int] = {}
-    for part, size in CHIBI_RANGES.items():
-        v = chibi.get(part, 0)
-        if not isinstance(v, int) or isinstance(v, bool) or not 0 <= v < size:
-            raise errors.chibi_invalid()
-        out[part] = v
-    if set(chibi.keys()) - set(CHIBI_RANGES.keys()):
-        raise errors.chibi_invalid()
-    return out

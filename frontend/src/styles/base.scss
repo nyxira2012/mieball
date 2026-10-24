@@ -190,6 +190,17 @@ h1.brand em,
   line-height: 1.5;
 }
 
+/* ---------- CardBackdrop 宿主契约三件套（铺卡背的宿主收源——原各组件 scoped
+   副本删）：窗层 absolute 三边贴右靠宿主定位、出血靠宿主裁圆角，负 z-index 卡
+   底层要垫在卡底之上、文字之下——宿主必须 relative（定位）+hidden（裁出血）+
+   z-index:0（立层叠上下文，不立会被宿主自己的 background 盖死）。铺卡背的元素
+   挂本类即可，契约详情见 CardBackdrop.vue 头注 ---------- */
+.cbd-host {
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+}
+
 /* ---------- 小操作按钮（alpha:339-343，meet 意向条 / DeadCard 恢复撤局 / bills 结算收款
    三处收源；变体 on-in=主行动、on-no=危险，.rec 等页面私变体留各页 scoped） ---------- */
 .tbtn {

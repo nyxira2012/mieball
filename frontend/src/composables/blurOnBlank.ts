@@ -15,12 +15,13 @@ export function blurOnBlank(ev: Event): void {
   }
 }
 
-/** 挂/摘到包裹层元素上（uni-view 的模板 ref 可能是组件实例也可能是元素，两种都接） */
-function tapEl(v: unknown): Element | null {
+/** uni-view 模板 ref 解包单一源：ref 可能是组件实例也可能是元素，两种都接
+    （CardBackdrop 量测等别处同需求一律吃它，不再各抄一份） */
+export function tapEl(v: unknown): HTMLElement | null {
   if (typeof document === "undefined") return null;
-  return v instanceof Element
+  return v instanceof HTMLElement
     ? v
-    : ((v as { $el?: Element } | null)?.$el ?? null);
+    : ((v as { $el?: HTMLElement } | null)?.$el ?? null);
 }
 export function bindBlurOnBlank(el: unknown): void {
   tapEl(el)?.addEventListener("click", blurOnBlank);
