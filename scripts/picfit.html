@@ -201,7 +201,7 @@
     <span>像素不动 · 参数写进 webp · 授权一次目录后保存全自动进项目</span>
   </div>
   <div class="actions">
-    <button class="btn green" id="btnDir" title="选一次 frontend/public/cosmetics，之后每次保存直接覆盖项目文件">📁 关联 cosmetics 目录</button>
+    <button class="btn green" id="btnDir" title="选一次仓库顶层 cosmetics/（素材已出前端包），之后每次保存直接覆盖项目文件">📁 关联 cosmetics 目录</button>
     <button class="btn" id="btnSaveCur" disabled>💾 保存当前</button>
     <button class="btn primary" id="btnSaveAll" disabled>✨ 全部保存</button>
   </div>
@@ -254,7 +254,7 @@
       <div class="note">
         <b>工作方式：</b>保存只把上方参数写进 webp 的 XMP 块，原始像素一个字节不动（反复保存不损画质）；
         前端圆章读参数逐图复现这里的画面。<b>文件名自动按册子编号命名</b>（avatar-6410 源图 → a-p2.webp，
-        点文件名可改），<b>首次保存会让你选一次 cosmetics 目录</b>（Chrome/Edge），之后保存直达项目文件、
+        点文件名可改），<b>首次保存会让你选一次 cosmetics 目录</b>（仓库顶层，Chrome/Edge），之后保存直达项目文件、
         刷新页面即生效；不授权则走浏览器下载。<b>取景参数在本机留底</b>——就算 webp 文件丢了，
         把同一张源图再拖进来，上次的取景参数自动复原。
       </div>
@@ -264,7 +264,7 @@
 
 <div class="empty" id="empty">
   拖入 <b style="color:var(--cream)">.webp</b> 成品或 <b style="color:var(--cream)">.png</b> 生图原图（天蓝底自动抠图归一），可多张<br>
-  保存首次选一次 cosmetics 目录，之后全自动直写项目；文件自动按册子编号命名
+  保存首次选一次 cosmetics 目录（仓库顶层，素材出包后已不在 frontend/public 下），之后全自动直写项目；文件自动按册子编号命名
 </div>
 
 <div class="toast" id="toast"></div>
@@ -904,7 +904,7 @@ function updateDirBtn() {
   }
 }
 
-/* 保存前保证有目录：已关联→续权限；没关联→当场弹选框（用户选一次 frontend/public/cosmetics）。
+/* 保存前保证有目录：已关联→续权限；没关联→当场弹选框（用户选一次仓库顶层 cosmetics/）。
    拿不到目录返回 null，调用方回落浏览器下载。 */
 async function ensureDir() {
   if (dirHandle) {
@@ -991,7 +991,7 @@ async function saveCurrent() {
     const mode = await saveFile(cur);
     toast(mode === 'dir'
       ? `✅ 已直接写入 ${dir.name}/${files[cur].name}，刷新页面即生效`
-      : `已下载 ${files[cur].name}（未关联目录）→ 手动放回 frontend/public/cosmetics/`);
+      : `已下载 ${files[cur].name}（未关联目录）→ 手动放回仓库顶层 cosmetics/`);
   } catch (e) {
     toast(`保存失败：${e.message}`);
   }
@@ -1013,7 +1013,7 @@ async function saveAll() {
   }
   toast(!n ? '没有待保存的修改'
     : dir ? `✅ ${n} 张已直接写入 ${dir.name}/，刷新页面即生效`
-          : `已下载 ${n} 张（未关联目录）→ 手动放回 frontend/public/cosmetics/`);
+          : `已下载 ${n} 张（未关联目录）→ 手动放回仓库顶层 cosmetics/`);
 }
 
 /* ---------- 载入入口 / 启动 ---------- */

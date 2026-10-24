@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  ASSET_REV,
   BACK_SPEC,
   DEFAULT_AVATAR_CID,
   DEFAULT_FOCUS,
   WIN,
   assetUrl,
   coverPos,
+  isCosmeticUrl,
+  resolveAssetUrl,
   slicePos,
 } from "@/utils/cardbg";
 
@@ -22,6 +25,28 @@ describe("assetUrl 约定拼路径（约定优于配置，册子不存路径）"
   });
   it("默认脸编号与后端册子 DEFAULT_AVATAR 同值（卡背默认款前端无消费不镜像）", () => {
     expect(DEFAULT_AVATAR_CID).toBe("g-00");
+  });
+});
+
+describe("resolveAssetUrl 约定路径 → 取图真地址（基地址+版本号单点）", () => {
+  it("约定路径补版本号（H5 基地址为空即根相对）；非本站外链原样放行", () => {
+    expect(resolveAssetUrl("/cosmetics/a-p1.webp")).toBe(
+      `/cosmetics/a-p1.webp?v=${ASSET_REV}`,
+    );
+    expect(resolveAssetUrl("https://wx.example/head.jpg")).toBe(
+      "https://wx.example/head.jpg",
+    );
+  });
+
+  it("已带查询串不重复拼（幂等——宿主层重复解析不脏地址）", () => {
+    const once = resolveAssetUrl("/cosmetics/a-p1.webp");
+    expect(resolveAssetUrl(once)).toBe(once);
+  });
+
+  it("isCosmeticUrl 认约定路径与解析后的真地址（avatarfit 取参口径），不认外链", () => {
+    expect(isCosmeticUrl("/cosmetics/a-p1.webp")).toBe(true);
+    expect(isCosmeticUrl(resolveAssetUrl("/cosmetics/a-p1.webp"))).toBe(true);
+    expect(isCosmeticUrl("https://wx.example/head.jpg")).toBe(false);
   });
 });
 

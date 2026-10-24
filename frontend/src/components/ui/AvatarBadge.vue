@@ -26,7 +26,7 @@
    bust/face 两档（picfit 写入），按大小位取档套 transform 复现排版画面；
    无参数素材（默认脸 g-00 未带参/外链微信头像/读取失败）回落静态两档兜底。 */
 import { computed, ref, watch } from "vue";
-import { DEFAULT_AVATAR_CID, assetUrl } from "@/utils/cardbg";
+import { DEFAULT_AVATAR_CID, assetUrl, resolveAssetUrl } from "@/utils/cardbg";
 import {
   FALLBACK_FIT,
   frameTransform,
@@ -35,7 +35,8 @@ import {
 } from "@/utils/avatarfit";
 
 /* url 空（访客/未记微信头像的老球友/异常编号兜底）一律落默认款素材，不露破图；
-   路径拼接收口 cardbg 的 assetUrl 单一源 */
+   默认脸与后端 avatar_url 都先落成约定路径，取图真地址（基地址+版本号）在 src
+   这一口统一解析——全站圆章的后端下发地址由此一处拿到平台基地址 */
 const DEFAULT_AVATAR_URL = assetUrl(DEFAULT_AVATAR_CID);
 
 const props = withDefaults(
@@ -48,7 +49,7 @@ const props = withDefaults(
   { size: 56 },
 );
 
-const src = computed(() => props.url || DEFAULT_AVATAR_URL);
+const src = computed(() => resolveAssetUrl(props.url || DEFAULT_AVATAR_URL));
 /* 取景两档按大小位分：大位（≥40px）吃素材 bust 档、小位吃 face 档 */
 const framing = computed<"bust" | "face">(() =>
   props.size >= 40 ? "bust" : "face",

@@ -167,4 +167,12 @@ describe("loadAvatarFit（按 URL 取参 + 记忆）", () => {
     uni.request = vi.fn((opts: { fail: () => void }) => opts.fail());
     expect(await loadAvatarFit("/cosmetics/a-p8.webp")).toBeNull();
   });
+
+  it("带版本号的真地址（宿主 resolveAssetUrl 解析后的形态）同样认、同样取参", async () => {
+    uni.request = vi.fn((opts: { success: (r: unknown) => void }) => {
+      opts.success({ data: riff([chunk("XMP ", xmpPayload(FIT_JSON))]) });
+    });
+    const r = await loadAvatarFit("/cosmetics/a-p7.webp?v=1");
+    expect(r?.face.k).toBe(3.2);
+  });
 });

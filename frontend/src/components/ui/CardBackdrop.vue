@@ -28,6 +28,7 @@ import {
   assetUrl,
   coverPos,
   preloadAsset,
+  resolveAssetUrl,
   slicePos,
   type CardMode,
 } from "@/utils/cardbg";
@@ -118,14 +119,18 @@ watch([fx, fy, tier], () => {
 
 /* 出图前整层隐藏、宿主素底占位不跳版；加载失败保持隐藏——异常编号兜素卡不露破图。
    预载走 cardbg 的 URL 级共享缓存：同款卡背第二个实例起免重复拉取解码，
-   已暖图的换装回看即点即显（免 0.25s 渐显等待） */
+   已暖图的换装回看即点即显（免 0.25s 渐显等待）。
+   取图真地址（基地址+版本号）在此一处解析，预载与 CSS 背景用同一个串，缓存才记同一账 */
+const bgUrl = computed(() =>
+  props.cid ? resolveAssetUrl(assetUrl(props.cid)) : null,
+);
 const shown = ref(false);
 watch(
-  () => props.cid,
-  (cid) => {
+  bgUrl,
+  (url) => {
     shown.value = false;
-    if (!cid) return;
-    void preloadAsset(assetUrl(cid)).then((ok) => {
+    if (!url) return;
+    void preloadAsset(url).then((ok) => {
       if (ok) shown.value = true;
     });
   },
@@ -133,9 +138,9 @@ watch(
 );
 
 const layerStyle = computed(() => {
-  if (!props.cid) return {};
+  if (!bgUrl.value) return {};
   return {
-    "--bimg": `url('${assetUrl(props.cid)}')`,
+    "--bimg": `url('${bgUrl.value}')`,
     ...sliceVars.value,
     ...coverVars.value,
   };

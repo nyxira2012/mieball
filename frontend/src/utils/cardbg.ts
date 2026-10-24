@@ -39,11 +39,35 @@ export const WIN: Record<CardMode, SliceSpec | CoverSpec> = {
   p: { cover: true, ax: 0.5, ay: 0.42 }, // 名单格档（局详情名单墙小格）：内容居中，锚取中
 };
 
-/** 素材 URL 单一源：约定优于配置（H5 同域直引 /cosmetics/{cid}.webp，册子不存
-    路径）——头像卡背同格式同扩展名，与后端 asset_url 同名同义；换 CDN/扩展名
-    只改这里一行，全站自动对齐 */
+/* 素材地址单一源，两层分开（跨模块契约，改一头必须改另一头）：
+   - assetUrl 出约定路径 /cosmetics/{cid}.webp——与后端 asset_url 同名同义的
+     契约层，册子不存路径、不带平台与缓存信息；
+   - resolveAssetUrl 把约定路径变取图真地址（补基地址+版本号），只在渲染宿主
+     （AvatarBadge/CardBackdrop）各解析一次——后端下发的 avatar_url 入站地址
+     与前端自拼地址同走这一口，微信头像等外链原样放行 */
+/** 素材基地址：H5 两环境（dev 中间件/生产 nginx）都同域直引，空串即根相对；
+    小程序无同源概念，编译期由 VITE_ASSET_BASE 注入线上域名 */
+const ASSET_BASE: string = import.meta.env.VITE_ASSET_BASE ?? "";
+/** 素材修订号：/cosmetics/ 按 immutable 永久缓存，换新全靠它——同名替换
+    （改图/改取景参数）批次 +1 并随 fe 发版；上新新编号不必动 */
+export const ASSET_REV = 1;
+
 export function assetUrl(cid: string): string {
   return `/cosmetics/${cid}.webp`;
+}
+
+/** 约定路径 → 取图真地址；非约定路径（微信外链等）原样返回，已带查询串不重复拼 */
+export function resolveAssetUrl(url: string): string {
+  if (!url.startsWith("/cosmetics/") || url.includes("?")) return url;
+  return `${ASSET_BASE}${url}?v=${ASSET_REV}`;
+}
+
+/** 认不认作本站素材（avatarfit 据此决定要不要拉字节读取景参数）——
+    解析前的约定路径与解析后带基地址/版本号的真地址两种形态都认 */
+export function isCosmeticUrl(url: string): boolean {
+  return (
+    url.startsWith("/cosmetics/") || url.startsWith(`${ASSET_BASE}/cosmetics/`)
+  );
 }
 
 /* 卡背预载共享缓存：CSS 背景没有 onload，CardBackdrop 靠预载翻 shown——

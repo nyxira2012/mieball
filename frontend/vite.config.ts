@@ -9,8 +9,9 @@ import path from "node:path";
 // uni-h5 开发服务器会把 vite 自带的 public 中间件整个替换成「只服务 src/static」
 // 的版本（见 @dcloudio/uni-h5-vite configureServer/static.js），其余路径一律回退
 // index.html——而 /cosmetics/{编号}.png|.webp 这套根路径资产约定（前后端同口径，
-// 后端 asset_url 直拼同款路径）在开发期因此全部落空、圆章只出素底。这里把
-// public/ 的直出补回来：只挂 dev 服务器，build 期 vite 原生拷贝 publicDir 不经此路。
+// 后端 asset_url 直拼同款路径）与 public/ 根资产在开发期因此全部落空、圆章只出
+// 素底。这里补回来：双根映射，只挂 dev 服务器，build 期素材不入包（线上归
+// deploy 的素材通道直传 nginx 树）、public/ 仍由 vite 原生拷贝 publicDir。
 const DEV_MIME: Record<string, string> = {
   ".png": "image/png",
   ".webp": "image/webp",
@@ -23,7 +24,12 @@ const DEV_MIME: Record<string, string> = {
 };
 
 function servePublicInDev(): Plugin {
-  const root = path.resolve(__dirname, "public");
+  // /cosmetics/ 前缀须排在 / 前面（find 取首匹配）；素材目录在仓库顶层
+  // （frontend 之外），开发期由这里代 nginx 直出
+  const roots = [
+    { prefix: "/cosmetics/", dir: path.resolve(__dirname, "../cosmetics") },
+    { prefix: "/", dir: path.resolve(__dirname, "public") },
+  ];
   return {
     name: "mieball:serve-public-in-dev",
     apply: "serve",
@@ -32,9 +38,13 @@ function servePublicInDev(): Plugin {
         const url = decodeURIComponent((req.url ?? "").split("?")[0]);
         const type = DEV_MIME[path.extname(url)];
         if (!type) return next();
-        const file = path.join(root, url);
-        // startsWith 兜路径穿越（url 带 ../ 时 join 会跳出 root）
-        if (!file.startsWith(root + path.sep)) return next();
+        const root = roots.find((r) => url.startsWith(r.prefix));
+        if (!root) return next();
+        // 命中根后剥掉自身前缀再拼（/cosmetics/ 根映射到顶层素材目录本身，
+        // 完整 url 直接 join 会拼出双层 cosmetics 路径）
+        const file = path.join(root.dir, url.slice(root.prefix.length - 1));
+        // startsWith 兜路径穿越（url 带 ../ 时 join 会跳出所属 root）
+        if (!file.startsWith(root.dir + path.sep)) return next();
         if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return next();
         res.setHeader("Content-Type", type);
         res.setHeader("Cache-Control", "no-cache");
@@ -54,7 +64,10 @@ function pruneMpDupFonts(): Plugin {
     closeBundle() {
       if (process.env.UNI_PLATFORM !== "mp-weixin") return;
       for (const mode of ["build", "dev"]) {
-        const dir = path.resolve(__dirname, `dist/${mode}/mp-weixin/static/fonts`);
+        const dir = path.resolve(
+          __dirname,
+          `dist/${mode}/mp-weixin/static/fonts`,
+        );
         if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
       }
     },

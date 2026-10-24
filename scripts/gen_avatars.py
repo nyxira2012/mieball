@@ -4,7 +4,7 @@
 取景参数的人工定格在 scripts/picfit.html，不在本脚本。
 
 用法：
-  # 六款公共头像全流程（ComfyUI 生图 → 抠图归一 → frontend/public/cosmetics/{cid}.webp）
+  # 六款公共头像全流程（ComfyUI 生图 → 抠图归一 → 仓库顶层 cosmetics/{cid}.webp）
   python3 scripts/gen_avatars.py [--overwrite] [--only a-p1]
 
   # 只做后处理：把已有生图 PNG（天蓝底）抠图归一成 512 透明 WebP（不生图）
@@ -290,7 +290,8 @@ def run_generate(args: argparse.Namespace) -> None:
     """头像全流程：ComfyUI 生图 → 抠图归一 → 落位 cosmetics（条目可带槽位覆盖）。"""
     temp_dir = ROOT / "temp" / "形象"
     temp_dir.mkdir(parents=True, exist_ok=True)
-    out_dir = ROOT / "frontend" / "public" / "cosmetics"
+    # 仓库顶层素材目录：开发期由 vite 中间件直出、线上由部署素材通道直传 nginx 树
+    out_dir = ROOT / "cosmetics"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     items = [a for a in AVATARS if not args.only or a["cid"] == args.only]

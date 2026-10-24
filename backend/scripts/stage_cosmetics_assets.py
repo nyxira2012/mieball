@@ -1,5 +1,5 @@
 """一次性素材落位工具（1.9 批5）——把 temp/ 里的真素材按册子 cid 改名拷入
-frontend/public/cosmetics/，缺的用 PIL 程序占位图补齐。编号清单由后端册子
+仓库顶层 cosmetics/，缺的用 PIL 程序占位图补齐。编号清单由后端册子
 CATALOG 派生（册子加款/加族本脚本自动跟随，不在此抄第二份清单——编号校验
 单一源在后端册子，同 manage_users 的口径）。
 
@@ -28,7 +28,8 @@ from app.services.cosmetics import CATALOG
 
 BACK_DIR = ROOT / "temp" / "卡片背景"
 AVATAR_DIR = ROOT / "temp" / "形象"
-OUT_DIR = ROOT / "frontend" / "public" / "cosmetics"
+# 仓库顶层素材目录（开发期 vite 中间件直出、线上部署素材通道直传 nginx 树）
+OUT_DIR = ROOT / "cosmetics"
 
 # 册子单一源派生：分档清单按 tier 取（不依赖 CATALOG 组装序），真素材配额
 # 随册子走——公共款吃原型 CBG 四件（PUBLIC_BACK_FILES 定长，zip 自动截断）、

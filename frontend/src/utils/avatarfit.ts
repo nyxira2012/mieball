@@ -6,6 +6,7 @@
    参数口径：k=窗内放大倍数（窗口显示画布中央 1/k 见方），x/y=位移（窗口边长
    的比例，正值右移/下移）。窗口显示的画布区域以 (0.5−x/k, 0.5−y/k) 为中心、
    边长 1/k——排版工具的画布渲染与此公式同源。 */
+import { isCosmeticUrl } from "./cardbg";
 
 /** 单档取景：k 放大倍数（>0）、x/y 位移（窗口边长比例） */
 export interface FrameFit {
@@ -94,10 +95,11 @@ export function frameTransform(f: FrameFit): string {
 const fitCache = new Map<string, Promise<AvatarFit | null>>();
 
 /** 取某 URL 素材的取景参数（按 URL 记忆，同图多枚圆章只取一次字节）。
-    只认本站 /cosmetics/ 素材：微信头像等外链永不带参数，取一趟白费还涉跨域。
+    只认本站 /cosmetics/ 素材（口径收 cardbg isCosmeticUrl——小程序端基地址
+    拼接后的绝对地址也认）：微信头像等外链永不带参数，取一趟白费还涉跨域。
     取不到（请求失败/格式不认识）回 null，圆章回落默认摆放，不报错不拦渲染。 */
 export function loadAvatarFit(url: string): Promise<AvatarFit | null> {
-  if (!url.startsWith("/cosmetics/")) return Promise.resolve(null);
+  if (!isCosmeticUrl(url)) return Promise.resolve(null);
   let pending = fitCache.get(url);
   if (!pending) {
     pending = new Promise((resolve) => {

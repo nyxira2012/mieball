@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""mieball 一键自动化部署至阿里云 ECS 工具 (支持前端/后端/全量)"""
+"""mieball 一键自动化部署至阿里云 ECS 工具 (支持前端/后端/素材/全量)"""
 import os
 import sys
 import math
@@ -7,6 +7,7 @@ import time
 import base64
 import subprocess
 import json
+import hashlib
 
 REGION = "cn-shenzhen"
 INSTANCE_ID = "i-wz9864d167bjcvgk6mde"
@@ -121,16 +122,87 @@ def deploy_backend():
     run_remote_script("systemctl restart mieball")
     print("✨ 后端服务已成功更新并热重启！")
 
+
+# 素材与 H5 同住 /work/mieball/frontend 一棵树：fe 通道产物不含素材、且 tar 解压
+# 从不清目录——两通道互不踩，素材也不必赶在 fe 之前发（无顺序约束）。
+# nginx /cosmetics/ 走 immutable 永久缓存（配置在 aliyun-ocs 仓库），同名换图
+# 的换新全靠前端 ASSET_REV 版本号，这里检测到同名有变时负责提醒。
+COSMETICS_LOCAL_DIR = os.path.join(MIEBALL_ROOT, "cosmetics")
+COSMETICS_REMOTE_DIR = "/work/mieball/frontend/cosmetics"
+
+
+def _md5_of(path):
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def deploy_cosmetics():
+    local = {}
+    for name in sorted(os.listdir(COSMETICS_LOCAL_DIR)):
+        p = os.path.join(COSMETICS_LOCAL_DIR, name)
+        # 跳过 .DS_Store 之类系统隐藏文件（git 忽略它们，别当素材传上服务器）
+        if name.startswith(".") or not os.path.isfile(p):
+            continue
+        local[name] = _md5_of(p)
+    if not local:
+        print("❌ 本地素材目录为空，先跑生图/落位工具再发素材通道")
+        sys.exit(1)
+
+    # 远端逐件 md5 对账：只传新增+有变（上新几件就传几件），零变更直接收工
+    out = run_remote_script(
+        f"cd {COSMETICS_REMOTE_DIR} 2>/dev/null && md5sum * 2>/dev/null || true"
+    )
+    remote = {}
+    for line in (out or "").splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            remote[os.path.basename(parts[1])] = parts[0]
+
+    fresh = [n for n in local if n not in remote]
+    changed = [n for n in local if n in remote and remote[n] != local[n]]
+    gone = [n for n in remote if n not in local]
+    print(f"👕 [1/2] 素材对账：新增 {len(fresh)} 件 · 同名有变 {len(changed)} 件 · 远端独有 {len(gone)} 件")
+    if gone:
+        print(f"   （远端独有只报不删：{', '.join(gone)}）")
+    if not fresh and not changed:
+        print("✨ 远端已同步，无需上传。")
+        return
+
+    names = sorted(fresh + changed)
+    tar_path = "/tmp/mieball_cosmetics.tar.gz"
+    env = os.environ.copy()
+    env["COPYFILE_DISABLE"] = "1"
+    subprocess.run(
+        ["tar", "-czf", tar_path, "-C", MIEBALL_ROOT, *[f"cosmetics/{n}" for n in names]],
+        env=env,
+        check=True,
+    )
+    print(f"🚀 [2/2] 上传 {len(names)} 件素材至 ECS {COSMETICS_REMOTE_DIR}/ ...")
+    upload_and_extract(tar_path, "/work/mieball/frontend")
+    if os.path.exists(tar_path):
+        os.remove(tar_path)
+    if changed:
+        print(f"⚠️  同名替换 {len(changed)} 件：{', '.join(changed)}")
+        print("   /cosmetics/ 是永久缓存——同名换图必须把 frontend/src/utils/cardbg.ts")
+        print("   的 ASSET_REV +1 并走 fe 通道，否则老访客缓存不换新；纯上新新编号不受影响。")
+    print("✨ 素材发布成功！")
+
 if __name__ == "__main__":
     target = sys.argv[1] if len(sys.argv) > 1 else "all"
     if target in ["fe", "frontend"]:
         deploy_frontend()
     elif target in ["be", "backend"]:
         deploy_backend()
+    elif target in ["cosmetics", "assets"]:
+        deploy_cosmetics()
     elif target in ["all"]:
         deploy_frontend()
         deploy_backend()
+        deploy_cosmetics()
     else:
-        print("用法: python3 scripts/deploy_mieball.py [fe|be|all]")
+        print("用法: python3 scripts/deploy_mieball.py [fe|be|cosmetics|all]")
         sys.exit(1)
     print("\n🎉 访问地址: https://2win.s2g2b2c.com")
