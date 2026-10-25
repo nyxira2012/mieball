@@ -13,12 +13,10 @@ import threading
 from collections.abc import Callable
 from datetime import timedelta
 from functools import lru_cache
-from urllib.parse import urlencode
-
-import httpx
 
 from ..core import clock, errors, security
 from ..core.config import Settings, get_settings
+from .wechat_upstream import fetch_json_guarded, http_fetch_json
 
 logger = logging.getLogger(__name__)
 
@@ -44,16 +42,11 @@ class JsapiSigner:
         self, settings: Settings, fetch_json: Callable[[str], dict] | None = None
     ):
         self.settings = settings
-        # 注入式上游（测试零 httpx mock 债）；默认单连接短超时，与钥匙门通道同款
-        self._fetch_json = fetch_json or self._http_fetch_json
+        # 注入式上游（测试零 httpx mock 债）；默认取件器与小程序码族共用小件
+        self._fetch_json = fetch_json or http_fetch_json
         self._lock = threading.Lock()
         self._ticket: str | None = None
         self._ticket_exp = clock.now()
-
-    @staticmethod
-    def _http_fetch_json(url: str) -> dict:
-        with httpx.Client(timeout=5.0) as client:
-            return client.get(url).json()
 
     def sign(self, url: str) -> dict:
         """页面地址 → {app_id, timestamp, nonce_str, signature}（线上 snake_case）。
@@ -82,19 +75,24 @@ class JsapiSigner:
         with self._lock:
             if self._ticket is not None and now < self._ticket_exp:
                 return self._ticket
-            token = self._fetch_guarded(
+            token = fetch_json_guarded(
+                self._fetch_json,
                 CGI_TOKEN_URL,
                 {
                     "grant_type": "client_credential",
                     "appid": self.settings.wechat_app_id,
                     "secret": self.settings.wechat_app_secret,
                 },
+                log_tag="jsapi",
             ).get("access_token")
             if not token:
                 logger.warning("jsapi token ok-errcode 但缺 access_token")
                 raise errors.wechat_unavailable()
-            data = self._fetch_guarded(
-                CGI_TICKET_URL, {"access_token": token, "type": "jsapi"}
+            data = fetch_json_guarded(
+                self._fetch_json,
+                CGI_TICKET_URL,
+                {"access_token": token, "type": "jsapi"},
+                log_tag="jsapi",
             )
             ticket = data.get("ticket")
             try:
@@ -110,26 +108,6 @@ class JsapiSigner:
             self._ticket = str(ticket)
             self._ticket_exp = now + timedelta(seconds=expires_in) - TICKET_MARGIN
             return self._ticket
-
-    def _fetch_guarded(self, base: str, params: dict) -> dict:
-        """上游取件与把关：网络异常 / errcode≠0 → warn 记号后按 wechat_unavailable
-        挡回（不缓存，下次开页再试）。日志只记端点路径不记查询串——token 端点的
-        查询串带着 app_secret，进日志等于把钥匙写墙上。"""
-        url = f"{base}?{urlencode(params)}"
-        try:
-            data = self._fetch_json(url)
-        except Exception as exc:  # noqa: BLE001 - 网络层任何故障统一按上游不可用
-            logger.warning("jsapi upstream fetch failed url=%s err=%r", base, exc)
-            raise errors.wechat_unavailable() from None
-        if data.get("errcode"):
-            logger.warning(
-                "jsapi upstream rejected url=%s errcode=%s errmsg=%s",
-                base,
-                data.get("errcode"),
-                data.get("errmsg"),
-            )
-            raise errors.wechat_unavailable()
-        return data
 
 
 @lru_cache(maxsize=1)

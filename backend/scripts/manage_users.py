@@ -7,6 +7,7 @@
   - 🔑 重置密码：一键为指定用户（或批量为全部用户）设置密码（默认 123456）
   - 🔓 账号解锁：清空连续输错密码导致的 15 分钟锁定状态
   - 🎁 发卡收卡：往解锁清单发放/收回定制款装扮（可顺手穿上；收回时正穿着自动退默认）
+  - 🧩 跨端记号三动作：翻「跨端绑定不一致」清单 / 清记号 / 把小程序钥匙搬到该去的号
   - 🌐 环境自由切换：默认操作阿里云 ECS 线上生产库，加 --local 切换至本地开发库
 
 常见用法：
@@ -21,6 +22,9 @@
   python3 scripts/manage_users.py --reset-all              # 批量重置所有用户密码为 123456
   python3 scripts/manage_users.py -g 4 --cid a-x1 --wear   # 给用户 4 发定制头像并顺手穿上
   python3 scripts/manage_users.py --revoke 4 --cid b-x1    # 收回用户 4 的定制卡背（穿着自动退默认）
+  python3 scripts/manage_users.py --cross-flags            # 翻跨端绑定不一致记号清单
+  python3 scripts/manage_users.py --clear-flags 4          # 清掉账号 4 名下记号（双向）
+  python3 scripts/manage_users.py --move-mp-key 4 7        # 把账号 4 的小程序钥匙搬到账号 7
   python3 scripts/manage_users.py --local -l               # 操作本地开发库
 """
 
@@ -255,6 +259,83 @@ elif action in ('grant', 'revoke'):
     }
     print(json.dumps(out, ensure_ascii=False))
 
+elif action == 'cross_flags':
+    # 跨端绑定不一致记号清单：只翻不写，一行=一个号视角指向对方（一对冲突两行）
+    cur.execute(
+        "SELECT f.id, f.account_id, f.other_account_id, f.found_at, "
+        "a.nickname AS nickname, b.nickname AS other_nickname "
+        "FROM wechat_cross_flags f "
+        "JOIN accounts a ON a.id = f.account_id "
+        "JOIN accounts b ON b.id = f.other_account_id "
+        "ORDER BY f.id"
+    )
+    rows = [{
+        'id': r['id'],
+        'account_id': r['account_id'],
+        'nickname': r['nickname'],
+        'other_account_id': r['other_account_id'],
+        'other_nickname': r['other_nickname'],
+        'found_at': r['found_at'],
+    } for r in cur.fetchall()]
+    print(json.dumps({'success': True, 'action': 'cross_flags', 'flags': rows}, ensure_ascii=False))
+
+elif action == 'clear_flags':
+    # 双向清：该号不管站在记号哪一侧（account_id 或 other_account_id）都算它的记号
+    acc = find_account(param1.strip())
+    if not acc:
+        die(f'未找到目标用户: {param1.strip()}')
+    uid = acc['id']
+    cur.execute(
+        "DELETE FROM wechat_cross_flags WHERE account_id = ? OR other_account_id = ?",
+        (uid, uid),
+    )
+    n = cur.rowcount
+    conn.commit()
+    print(json.dumps({'success': True, 'action': 'clear_flags', 'account_id': uid, 'cleared': n}, ensure_ascii=False))
+
+elif action == 'move_mp_key':
+    # 人工把两个账号绑成一起的落手处：小程序钥匙三列整体搬家（to 原值被覆盖）、
+    # 两号记号全清——只搬微信钥匙不搬任何业务数据，与「不自动并号不搬数据」同口径
+    src = find_account(param1.strip())
+    dst = find_account(param2.strip())
+    if not src:
+        die(f'未找到来源账号: {param1.strip()}')
+    if not dst:
+        die(f'未找到目标账号: {param2.strip()}')
+    fid, tid = src['id'], dst['id']
+    if fid == tid:
+        die('来源与目标不能是同一个账号')
+    cur.execute(
+        "SELECT wechat_mp_openid, wechat_mp_bound_at, wechat_unionid FROM accounts WHERE id = ?",
+        (fid,),
+    )
+    r = cur.fetchone()
+    if not r or not r['wechat_mp_openid']:
+        die(f'账号 {fid} 名下没有小程序钥匙可搬')
+    cur.execute(
+        "UPDATE accounts SET wechat_mp_openid = ?, wechat_mp_bound_at = ?, wechat_unionid = ? WHERE id = ?",
+        (r['wechat_mp_openid'], r['wechat_mp_bound_at'], r['wechat_unionid'], tid),
+    )
+    cur.execute(
+        "UPDATE accounts SET wechat_mp_openid = NULL, wechat_mp_bound_at = NULL, wechat_unionid = NULL WHERE id = ?",
+        (fid,),
+    )
+    cur.execute(
+        "DELETE FROM wechat_cross_flags WHERE account_id IN (?, ?) OR other_account_id IN (?, ?)",
+        (fid, tid, fid, tid),
+    )
+    n = cur.rowcount
+    conn.commit()
+    print(json.dumps({
+        'success': True,
+        'action': 'move_mp_key',
+        'from_id': fid,
+        'to_id': tid,
+        'openid': r['wechat_mp_openid'],
+        'unionid': r['wechat_unionid'],
+        'flags_cleared': n,
+    }, ensure_ascii=False))
+
 conn.close()
 """
 
@@ -425,12 +506,15 @@ def print_help_footer(env_flag: str) -> None:
         f"  • 收定制款装扮：      python3 scripts/manage_users.py {env_flag}--revoke <用户ID或手机号> --cid b-x1"
     )
     print(
-        f"  • 批量重置所有用户：  python3 scripts/manage_users.py {env_flag}--reset-all\n"
+        f"  • 批量重置所有用户：  python3 scripts/manage_users.py {env_flag}--reset-all"
+    )
+    print(
+        f"  • 跨端绑定记号：      python3 scripts/manage_users.py {env_flag}--cross-flags / --clear-flags <ID> / --move-mp-key <FROM> <TO>\n"
     )
 
 
 def fail(res: dict, verb: str) -> None:
-    """动作回话的失败出口单一源（六路动作共用）：有错报错并退出，无错原样放行。
+    """动作回话的失败出口单一源（九路动作共用）：有错报错并退出，无错原样放行。
     出口必须放行成功回话——动作分支紧随其后读 res['user'] 等成功字段。"""
     if "error" not in res:
         return
@@ -490,6 +574,22 @@ def main() -> None:
     )
     parser.add_argument(
         "--reset-all", action="store_true", help="一键重置所有在册用户的密码为指定密码"
+    )
+    parser.add_argument(
+        "--cross-flags",
+        action="store_true",
+        help="列出全部「跨端绑定不一致」记号 (两端微信钥匙对不上号的账号清单)",
+    )
+    parser.add_argument(
+        "--clear-flags",
+        metavar="USER",
+        help="清掉指定账号名下的跨端绑定记号 (双向，输入 ID 或手机号)",
+    )
+    parser.add_argument(
+        "--move-mp-key",
+        nargs=2,
+        metavar=("FROM", "TO"),
+        help="把 FROM 账号的小程序钥匙搬到 TO 账号并清两号记号 (人工绑定归一)",
     )
     parser.add_argument(
         "--local",
@@ -573,7 +673,49 @@ def main() -> None:
         print_table(users, "重置后的在册用户", env_name)
         return
 
-    # 5. 搜索用户
+    # 5. 跨端绑定不一致记号三动作（群主人工处理口：翻清单 → 搬钥匙或清记号）
+    if args.cross_flags:
+        print(f"📋 正在向 [{env_name}] 翻查跨端绑定不一致记号...")
+        res = runner("cross_flags")
+        fail(res, "翻查")
+        flags = res.get("flags", [])
+        if not flags:
+            print("\n✅ 当前没有跨端绑定不一致的记号。\n")
+            return
+        print(f"\n📋 [{env_name}] 跨端绑定不一致记号（共 {len(flags)} 条）：")
+        print("-" * 72)
+        for f in flags:
+            print(
+                f"#{f['id']} 账号 #{f['account_id']} ({f['nickname']}) ↔ #{f['other_account_id']} ({f['other_nickname']}) · 发现于 {f['found_at']}"
+            )
+        print("-" * 72)
+        print(
+            "💡 联系本人确认后：--move-mp-key 搬钥匙到该去的号，或 --clear-flags 清记号\n"
+        )
+        return
+
+    if args.clear_flags:
+        print(f"🔄 正在向 [{env_name}] 下发清记号请求...")
+        res = runner("clear_flags", args.clear_flags)
+        fail(res, "清记号")
+        print(f"\n🎉 已清掉账号 #{res['account_id']} 名下记号 {res['cleared']} 条。\n")
+        return
+
+    if args.move_mp_key:
+        frm, to = args.move_mp_key
+        print(f"🔄 正在向 [{env_name}] 搬小程序钥匙: {frm} → {to} ...")
+        res = runner("move_mp_key", frm, to)
+        fail(res, "搬钥匙")
+        print(
+            f"\n🎉 搬钥匙成功！账号 #{res['from_id']} 的小程序钥匙已归到 #{res['to_id']}"
+        )
+        print(f"👉 openid={res['openid']} · unionid={res['unionid'] or '无'}")
+        print(
+            f"🧹 两号记号已清 {res['flags_cleared']} 条；两号其余数据各归各、互不搬迁\n"
+        )
+        return
+
+    # 6. 搜索用户
     if args.search:
         print(f"🔍 正在检索 [{env_name}] 用户 (关键字: {args.search})...")
         res = runner("search", args.search)
@@ -583,7 +725,7 @@ def main() -> None:
         print_help_footer(env_flag)
         return
 
-    # 6. 默认或 --list
+    # 7. 默认或 --list
     limit_str = "10"
     if args.list is not None:
         limit_str = str(args.list)
