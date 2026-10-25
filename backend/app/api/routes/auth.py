@@ -125,6 +125,9 @@ class WechatUrlIn(BaseModel):
 class WechatLoginIn(BaseModel):
     code: str
     device_marker: str
+    # 端别：h5=网页版公众号钥匙（默认，老请求体零变化）；mp=小程序钥匙（两端
+    # 各查各的钥匙登记位，认人顺序见服务层）
+    source: Literal["h5", "mp"] = "h5"
     # 微信快进建号：动作弹卡且在微信内传 fast=True；登录页不传（未绑定时下发绑定凭条落卡）。
     # 携带名片手填字段：手填昵称优先、所选头像落档、手机号未占用则建带号账号。
     fast: bool = False
@@ -134,12 +137,13 @@ class WechatLoginIn(BaseModel):
 
 
 class WechatRedeemIn(BaseModel):
-    """占卡后微信验证进入：phone 为占卡时填写的手机号。"""
+    """占卡后微信验证进入：phone 为占卡时填写的手机号。source 同 WechatLoginIn。"""
 
     code: str
     phone: str
     device_marker: str
     card: CardIn | None = None
+    source: Literal["h5", "mp"] = "h5"
 
 
 def _session_out(view: dict, token: str, wechat_bound: bool) -> dict:
@@ -351,6 +355,7 @@ def wechat_login(
         nickname=body.nickname,
         phone=body.phone,
         avatar=body.avatar,
+        source=body.source,
     )
     if out.status == "unbound":
         return {"status": "unbound", "bind_token": out.bind_token}
@@ -380,5 +385,6 @@ def wechat_redeem(
         phone=body.phone,
         device_marker=body.device_marker,
         card=body.card.model_dump(exclude_none=False) if body.card else None,
+        source=body.source,
     )
     return {"token": token, "account": view}

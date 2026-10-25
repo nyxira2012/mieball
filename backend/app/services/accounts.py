@@ -327,9 +327,13 @@ class AccountBook(PasswordMixin, WechatMixin):
         if viewer == "self" and account.phone:
             out["phone"] = account.phone
         if viewer == "self":
-            # 微信行两态（1.8 批3）：登记位有无=绑没绑（一次性回话旗 wechat_bound
-            # 只在发钥匙那一刻下发，/auth/me 刷新即失——持久态只能从这里出）
-            out["wechat_bound"] = account.wechat_openid is not None
+            # 微信行两态：任一端钥匙在档即「已绑定」（公众号/小程序各记各的，
+            # 对球友只报一个「微信已绑定」行；一次性回话旗 wechat_bound 只在发
+            # 钥匙那一刻下发，/auth/me 刷新即失——持久态只能从这里出）
+            out["wechat_bound"] = (
+                account.wechat_openid is not None
+                or account.wechat_mp_openid is not None
+            )
         return out
 
     # ---- 内部 ----

@@ -6,8 +6,10 @@
 - device_keys.fingerprint 存钥匙指纹不存原文；verified 标记发出时是否经短信验证，
   是短信验证作废未验证钥匙的依据。
 - phone_codes 一表三用：验证码本体 + 限频计数（60 秒/一天 N 条按行数统计，不另建计数表）。
-- 微信钥匙：accounts 三列登记位（openid 唯一索引 / verified 镜像钥匙两档 /
-  绑定时刻）+ wechat_pendings 绑定凭条（指纹制、10 分钟一次性）。
+- 微信钥匙：accounts 两组钥匙登记位（公众号三列：openid 唯一索引 / verified 镜像
+  钥匙两档 / 绑定时刻；小程序两列：静默换号恒正式绑、无两档）+ wechat_unionid
+  跨端认亲（不唯一——冲突期两行共存交人工）+ wechat_pendings 绑定凭条（指纹制、
+  10 分钟一次性）+ wechat_cross_flags 跨端绑定不一致记号（人工处理用）。
 
 球局域 games / entries / invites / intents：
 - games.state 只有 5 个存储值；locked 之后的“进行中/已结束”是读时由时间派生不落库。
@@ -88,6 +90,13 @@ class Account(Base):
         Boolean, default=False, nullable=False
     )
     wechat_bound_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 小程序钥匙登记位：与公众号钥匙并排存放、各记各的；wx.login 静默换号即微信
+    # 作证，只有正式绑一档，不设 verified 列（唯一索引同样走 main._ENSURE_INDEXES）
+    wechat_mp_openid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    wechat_mp_bound_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 微信统一编号（开放平台给同主体各应用的跨应用身份号）：只供后台跨端认人，
+    # 不对外可见；不设唯一——两端各绑了不同号的冲突期允许两行共存，交人工裁决
+    wechat_unionid: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # ---- 装扮账本 ----
     # 本组列全可空，NULL 统一由读侧兜默认公共款（services/cosmetics.py dress_fields）
     # ——零迁移
@@ -153,6 +162,23 @@ class WechatPending(Base):
     openid: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class WechatCrossFlag(Base):
+    """跨端绑定不一致记号：任一端认人时发现本端微信钥匙与统一编号指向两个不同
+    账号，两号各记一行指向对方（含发现时刻），只供后台运维翻查、人工处理完
+    手工清除，注销/接管连带清除。唯一约束保证同一对不叠加——清掉后再登录
+    才会重新记。"""
+
+    __tablename__ = "wechat_cross_flags"
+    __table_args__ = (UniqueConstraint("account_id", "other_account_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    other_account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id"), nullable=False
+    )
+    found_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
 class Game(Base):

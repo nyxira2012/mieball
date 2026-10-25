@@ -212,3 +212,79 @@ def test_drop_chibi_columns_keeps_accounts(tmp_path, fake: FakeClock, monkeypatc
 
     # 事故路径：清障后的库上新建号——不带 chibi 的 INSERT 必须通
     assert signup(TestClient(app), "13800048002", "d2")["token"]
+
+
+# 小程序钥匙三列上线前夜的存量 accounts 形状（公众号钥匙三列在、小程序两列与
+# 统一编号不在）
+_PRE_MP_ACCOUNTS_DDL = """
+CREATE TABLE accounts (
+    id INTEGER NOT NULL PRIMARY KEY,
+    phone VARCHAR(11),
+    phone_verified BOOLEAN NOT NULL,
+    nickname VARCHAR(32) NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    device_marker VARCHAR(64) NOT NULL,
+    created_at DATETIME NOT NULL,
+    deactivated_at DATETIME,
+    password_hash VARCHAR(128),
+    pwd_fail_count INTEGER NOT NULL,
+    pwd_locked_until DATETIME,
+    pwd_grace_until DATETIME,
+    wechat_openid VARCHAR(64),
+    wechat_verified BOOLEAN NOT NULL,
+    wechat_bound_at DATETIME,
+    dress_avatar TEXT,
+    dress_back TEXT,
+    unlocks TEXT,
+    wechat_avatar TEXT,
+    UNIQUE (phone)
+)
+"""
+
+
+def test_add_mp_columns_and_cross_flags_table_on_legacy_db(
+    tmp_path, fake: FakeClock, monkeypatch
+):
+    """存量 accounts（无小程序两列与统一编号）启动补列、记号新表建成、mp 唯一
+    索引就位；存量行无损、二次启动幂等（1.10 批1 的 _NEW_COLUMNS 登记意义）。"""
+    db = tmp_path / "pre_mp.db"
+    url = f"sqlite:///{db}"
+    eng = create_engine(url)
+    with eng.begin() as c:
+        c.execute(text(_PRE_MP_ACCOUNTS_DDL))
+        c.execute(
+            text(
+                "INSERT INTO accounts (id, phone, phone_verified, nickname, status, "
+                "device_marker, created_at, pwd_fail_count, wechat_verified) "
+                "VALUES (7, '13800049001', 1, '老球友', 'active', 'd-old', "
+                "'2026-10-01 08:00:00', 0, 0)"
+            )
+        )
+    eng.dispose()
+
+    create_app(
+        Settings(db_url=url, pepper="p", sms_provider="console", sms_daily_budget=50)
+    )
+    eng = create_engine(url)
+    try:
+        cols = {x["name"] for x in inspect(eng).get_columns("accounts")}
+        assert {"wechat_mp_openid", "wechat_mp_bound_at", "wechat_unionid"} <= cols
+        assert set(Base.metadata.tables["accounts"].columns.keys()) == cols
+        # 新表随 create_all 建成（列与唯一约束齐）
+        assert "wechat_cross_flags" in inspect(eng).get_table_names()
+        with eng.connect() as conn:
+            idx = {
+                r[1]: r[2] for r in conn.execute(text("PRAGMA index_list(accounts)"))
+            }
+            row = conn.execute(
+                text("SELECT phone, nickname FROM accounts WHERE id = 7")
+            ).fetchone()
+        assert idx.get("ix_accounts_wechat_mp_openid") == 1  # 唯一索引在
+        assert idx.get("ix_accounts_wechat_openid") == 1  # 老索引未受扰
+        assert tuple(row) == ("13800049001", "老球友")  # 存量行无损
+    finally:
+        eng.dispose()
+
+    create_app(
+        Settings(db_url=url, pepper="p", sms_provider="console", sms_daily_budget=50)
+    )  # 幂等空转

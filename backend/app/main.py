@@ -73,6 +73,11 @@ _NEW_COLUMNS = {
         "wechat_openid": "VARCHAR(64)",
         "wechat_verified": "BOOLEAN NOT NULL DEFAULT 0",
         "wechat_bound_at": "DATETIME",
+        # 小程序钥匙登记位两列 + 微信统一编号（存量行未绑；mp openid 唯一性同
+        # 上行走 _ENSURE_INDEXES——SQLite 的 ALTER ADD COLUMN 加不了 UNIQUE）
+        "wechat_mp_openid": "VARCHAR(64)",
+        "wechat_mp_bound_at": "DATETIME",
+        "wechat_unionid": "VARCHAR(64)",
         # 装扮账本四列：存量库自动补列（穿戴/解锁清单/微信头像；存量行 NULL=
         # 默认公共款兜底，零迁移——读侧见 services/cosmetics.py）
         "dress_avatar": "TEXT",
@@ -106,9 +111,10 @@ def _migrate_columns(bind) -> None:
 
 
 # 存量表补建索引（create_all 对已存在的表不建其索引；ALTER ADD COLUMN 又带不了
-# UNIQUE）——一律 IF NOT EXISTS，新库老库空转无害。1.7 批1：微信登记位唯一索引
+# UNIQUE）——一律 IF NOT EXISTS，新库老库空转无害。两组微信钥匙登记位各一个唯一索引
 _ENSURE_INDEXES = (
     "CREATE UNIQUE INDEX IF NOT EXISTS ix_accounts_wechat_openid ON accounts (wechat_openid)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ix_accounts_wechat_mp_openid ON accounts (wechat_mp_openid)",
 )
 
 

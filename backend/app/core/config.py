@@ -41,6 +41,12 @@ class Settings:
     wechat_provider: str = "fake"
     wechat_app_id: str = ""
     wechat_app_secret: str = ""
+    # 小程序钥匙与网页版各配各的 AppID/Secret（provider 共用 wechat_provider：real
+    # 下小程序一对未配只关死小程序通道，不牵连已配的网页版通道）
+    wechat_mp_app_id: str = ""
+    wechat_mp_app_secret: str = ""
+    # 小程序码版本：release=正式版 / trial=体验版（上线前对演用，发布时切回）
+    wechat_mp_env_version: str = "release"
     # 6.1 日志地基：目录 / 慢回应警告阈值 ms / 文件保留天数 / 读取口钥匙
     # （环境变量不带 MIEBALL_ 前缀：LOG_DIR / SLOW_MS / KEEP_DAYS / OPS_KEY；
     # 行为机制见 core/logs.py；ops_key 空=读取口关闭，见 api/routes/logs.py）
@@ -69,6 +75,11 @@ def get_settings() -> Settings:
         wechat_provider=wechat_provider,
         wechat_app_id=os.environ.get("MIEBALL_WECHAT_APP_ID", ""),
         wechat_app_secret=os.environ.get("MIEBALL_WECHAT_APP_SECRET", ""),
+        wechat_mp_app_id=os.environ.get("MIEBALL_WECHAT_MP_APP_ID", ""),
+        wechat_mp_app_secret=os.environ.get("MIEBALL_WECHAT_MP_APP_SECRET", ""),
+        wechat_mp_env_version=os.environ.get(
+            "MIEBALL_WECHAT_MP_ENV_VERSION", "release"
+        ),
         log_dir=os.environ.get("LOG_DIR", "./logs"),
         slow_ms=int(os.environ.get("SLOW_MS", "1000")),
         keep_days=int(os.environ.get("KEEP_DAYS", "14")),

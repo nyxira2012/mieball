@@ -16,7 +16,7 @@ from sqlalchemy import select
 
 from app.core import clock
 from app.core.config import Settings
-from app.db.models import Account, DeviceKey
+from app.db.models import Account, DeviceKey, WechatCrossFlag
 
 from .conftest import auth, code_of, me, password_set, redeem, send_code, signup
 
@@ -915,3 +915,250 @@ def test_wechat_redeem_refreshes_wechat_avatar(client: TestClient, sent: list):
     assert (
         account_row(client, id=out["account"]["id"]).wechat_avatar == "http://wx/re.png"
     )
+
+
+# ---- 小程序钥匙（1.10）：三支认人、统一编号认亲、跨端记号、清位连带 ----
+# 假通道 code 四段制：openid|昵称|头像|统一编号（后两段可缺省，旧三段/两段/一段
+# 照旧；小程序端忽略昵称头像——jscode2session 本就不给）
+
+
+def mp_login(client: TestClient, code: str, device: str = "d-mp", **extra) -> dict:
+    body = {"code": code, "device_marker": device, "source": "mp", **extra}
+    r = client.post("/api/auth/wechat/login", json=body)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def mp_fast(client: TestClient, code: str, device: str = "d-mp", **extra) -> dict:
+    return mp_login(client, code, device=device, fast=True, **extra)
+
+
+def cross_flags(client: TestClient) -> list[tuple[int, int]]:
+    s = client.app.state.session_factory()
+    try:
+        rows = s.execute(select(WechatCrossFlag).order_by(WechatCrossFlag.id)).scalars()
+        return [(r.account_id, r.other_account_id) for r in rows]
+    finally:
+        s.close()
+
+
+def test_mp_login_bound_key_enters_same_account(client: TestClient):
+    """B1 第 1 步：小程序钥匙已绑 → 直接进绑的那个号；ok 支回话形状与网页版一致。"""
+    created = mp_fast(client, "wxM1|甲一", device="d-m1")
+    assert created["status"] == "created"
+    again = mp_login(client, "wxM1|甲一", device="d-m1b")
+    assert again["status"] == "ok"
+    assert again["account"]["id"] == created["account"]["id"]
+    assert again["bind_token"]
+
+
+def test_mp_login_adopts_h5_account_by_unionid(client: TestClient):
+    """B1 第 2 步 / 4.2 主场景：网页版微信登过、已记统一编号的老球友第一次在小
+    程序点微信登录 → 直进原账号并顺手绑小程序钥匙（老账号其他记录不动）。"""
+    old = wechat_fast(client, "wxH_old|老王|http://wx/old.png|UNI_A", device="d-h5old")
+    assert account_row(client, id=old["account"]["id"]).wechat_unionid == "UNI_A"
+    res = mp_login(client, "wxM_new|n|a|UNI_A", device="d-mp")
+    assert res["status"] == "ok"
+    assert res["account"]["id"] == old["account"]["id"]
+    acc = account_row(client, id=old["account"]["id"])
+    assert acc.wechat_mp_openid == "wxM_new" and acc.wechat_mp_bound_at is not None
+    assert acc.wechat_openid == "wxH_old"  # 公众号钥匙原样
+    assert acc.wechat_unionid == "UNI_A"
+
+
+def test_mp_login_no_match_unbound_then_fast_writes_mp_columns(client: TestClient):
+    """B1 第 3 步 / 4.3：两样都没查到 → 落卡发凭条；快进建号只写小程序列族 +
+    统一编号，不碰网页版列（手机号三态规矩与网页版同一条 _fast_create）。"""
+    res = mp_login(client, "wxM2|n|a|UNI_B", device="d-mp3")
+    assert res["status"] == "unbound" and res["bind_token"]
+    created = mp_fast(client, "wxM2|n|a|UNI_B", device="d-mp3")
+    assert created["status"] == "created"
+    acc = account_row(client, id=created["account"]["id"])
+    assert acc.wechat_mp_openid == "wxM2" and acc.wechat_mp_bound_at is not None
+    assert acc.wechat_unionid == "UNI_B"
+    assert acc.wechat_openid is None and acc.wechat_verified is False
+    assert acc.wechat_bound_at is None
+    # 只绑小程序钥匙的号，「我的」页微信行同样亮「已绑定」（C2：同规同权一个行）
+    assert me(client, created["token"])["wechat_bound"] is True
+
+
+def test_h5_login_adopts_mp_created_account_by_unionid(client: TestClient):
+    """4.2 反向：先在小程序用微信建的号，日后网页版点微信登录凭统一编号直进
+    同号，公众号钥匙顺手正式绑上。"""
+    created = mp_fast(client, "wxM_r|n|a|UNI_R", device="d-mp-r")
+    res = wechat_login(client, "wxH_r|阿反|http://wx/r.png|UNI_R")
+    assert res["status"] == "ok"
+    assert res["account"]["id"] == created["account"]["id"]
+    acc = account_row(client, id=created["account"]["id"])
+    assert acc.wechat_openid == "wxH_r" and acc.wechat_verified is True
+    assert acc.wechat_mp_openid == "wxM_r"  # 小程序钥匙原样
+
+
+def test_cross_flag_on_mp_key_unionid_mismatch(client: TestClient):
+    """4.13：小程序钥匙绑甲、统一编号指向乙 → 进甲不换不并，两号各一笔记号；
+    再登一次同一对不重复新增（§5 幂等）。"""
+    jia = mp_fast(client, "wxM_jia|甲", device="d-jia")
+    yi = wechat_fast(client, "wxH_yi|乙|http://wx/y.png|UNI_X", device="d-yi")
+    res = mp_login(client, "wxM_jia|甲|a|UNI_X")
+    jia_id, yi_id = jia["account"]["id"], yi["account"]["id"]
+    assert res["status"] == "ok" and res["account"]["id"] == jia_id
+    assert sorted(cross_flags(client)) == sorted([(jia_id, yi_id), (yi_id, jia_id)])
+    # 冲突时不回填：甲的统一编号保持空白（记号在、数据不动）
+    assert account_row(client, id=jia_id).wechat_unionid is None
+    mp_login(client, "wxM_jia|甲|a|UNI_X")
+    assert len(cross_flags(client)) == 2
+
+
+def test_cross_flag_on_h5_login_too(client: TestClient):
+    """4.13 反向面：网页版钥匙命中甲、统一编号指向乙 → 同样只记号进甲。"""
+    jia = wechat_fast(client, "wxH_a2|甲二", device="d-a2")
+    yi = mp_fast(client, "wxM_b2|乙二|a|UNI_Y", device="d-b2")
+    res = wechat_login(client, "wxH_a2|甲二|a|UNI_Y")
+    jia_id, yi_id = jia["account"]["id"], yi["account"]["id"]
+    assert res["status"] == "ok" and res["account"]["id"] == jia_id
+    assert sorted(cross_flags(client)) == sorted([(jia_id, yi_id), (yi_id, jia_id)])
+
+
+def test_deactivate_clears_mp_key_unionid_and_flags(client: TestClient, sent: list):
+    """C3：注销连带清小程序两列、统一编号与跨端记号（记号双向命中都删）。"""
+    jia = mp_fast(client, "wxM_d|甲|a|UNI_D", device="d-jia-d", phone="13900006001")
+    wechat_fast(client, "wxH_d|乙|a|UNI_E", device="d-yi-d")
+    mp_login(client, "wxM_d|甲|a|UNI_E")  # 甲的统一编号这次指向乙 → 记号两行
+    assert len(cross_flags(client)) == 2
+    send_code(client, "13900006001", "deactivate")
+    r = client.post(
+        "/api/auth/deactivate",
+        json={
+            "phone": "13900006001",
+            "code": code_of(sent, "13900006001", "deactivate"),
+        },
+        headers=auth(jia["token"]),
+    )
+    assert r.status_code == 200, r.text
+    acc = account_row(client, id=jia["account"]["id"])
+    assert acc.wechat_mp_openid is None and acc.wechat_mp_bound_at is None
+    assert acc.wechat_unionid is None
+    assert cross_flags(client) == []
+
+
+def test_fake_code_unionid_segment_and_legacy_formats(client: TestClient):
+    """四段制第四段=统一编号；旧三段/两段/一段不带统一编号不炸，也不抹已有记录。"""
+    res = wechat_fast(client, "wx_f4|小四|http://wx/4.png|UNI_F4")
+    acc_id = res["account"]["id"]
+    assert account_row(client, id=acc_id).wechat_unionid == "UNI_F4"
+    assert wechat_login(client, "wx_f4|小四|http://wx/4.png")["status"] == "ok"
+    assert wechat_login(client, "wx_f4|小四")["status"] == "ok"
+    assert wechat_login(client, "wx_f4")["status"] == "ok"
+    assert account_row(client, id=acc_id).wechat_unionid == "UNI_F4"
+
+
+def test_real_mp_unconfigured_mp_off_h5_alive(tmp_path, fake, sent):
+    """B2/4.11：real 下小程序密钥未配只关死小程序通道（wechat_off），网页版
+    已配通道不受牵连。"""
+    from app.main import create_app
+
+    app = create_app(
+        Settings(
+            db_url=f"sqlite:///{tmp_path}/t.db",
+            pepper="p",
+            sms_provider="console",
+            sms_daily_budget=200,
+            wechat_provider="real",
+            wechat_app_id="wx-h5-id",
+            wechat_app_secret="h5-secret",
+        )
+    )
+    c = TestClient(app)
+    r = c.post(
+        "/api/auth/wechat/login",
+        json={"code": "x", "device_marker": "d", "source": "mp"},
+    )
+    assert r.status_code == 503 and r.json()["error"]["code"] == "wechat_off"
+    # 网页版已配照常（拼授权地址不走网络）
+    r = c.post(
+        "/api/auth/wechat/url", json={"redirect_uri": "https://h/x", "state": "s"}
+    )
+    assert r.status_code == 200 and "oauth2/authorize" in r.json()["url"]
+
+
+def test_login_without_source_defaults_h5(client: TestClient):
+    """契约零变化：请求体不带 source → 走网页版列族（老 H5 前端零改动）。"""
+    res = wechat_fast(client, "wx_h5def|阿默|a|UNI_DEF")
+    acc = account_row(client, id=res["account"]["id"])
+    assert acc.wechat_openid == "wx_h5def" and acc.wechat_verified is True
+    assert acc.wechat_mp_openid is None and acc.wechat_mp_bound_at is None
+    assert acc.wechat_unionid == "UNI_DEF"
+
+
+def test_mp_redeem_uses_mp_key_family(client: TestClient):
+    """占卡微信验证进入按端认钥匙族：小程序钥匙在册（恒正式绑）→ mp 端照常
+    进入；同一枚 openid 在网页版族查无（各记各的）→ wechat_unbound 指路短信。"""
+    old = signup(client, "13900007001", "d-same")
+    res = mp_fast(client, "wxM_rd|n|a|UNI_RD", device="d-same", phone="13900007001")
+    assert res["status"] == "ok"  # 同机续接 → 进老账号并绑小程序钥匙
+    assert res["account"]["id"] == old["account"]["id"]
+    acc = account_row(client, id=old["account"]["id"])
+    assert acc.wechat_mp_openid == "wxM_rd" and acc.wechat_openid is None
+    r = client.post(
+        "/api/auth/wechat/redeem",
+        json={"code": "wxM_rd", "phone": "13900007001", "device_marker": "d-n1"},
+    )
+    assert r.status_code == 404 and r.json()["error"]["code"] == "wechat_unbound"
+    r = client.post(
+        "/api/auth/wechat/redeem",
+        json={
+            "code": "wxM_rd",
+            "phone": "13900007001",
+            "device_marker": "d-n2",
+            "source": "mp",
+        },
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_replacement_rebind_fully_clears_replaced_account(
+    client: TestClient, sent: list
+):
+    """C3 换绑顶替=整个微信人搬家：被顶账号两族钥匙、统一编号、头像与跨端记号
+    全清释放（只族清本端会留另一端钥匙，这个微信换端登录又回旧号——4.13 要防
+    的分裂）。"""
+    a = mp_fast(client, "wxM_top|甲|a|UNI_TOP", device="d-top")
+    a_id = a["account"]["id"]
+    ok = wechat_login(client, "wxH_top|甲|a|UNI_TOP", device="d-top-h5")
+    assert ok["account"]["id"] == a_id  # 统一编号认亲，顺手绑上公众号钥匙
+    token = ok["bind_token"]
+    mp_fast(client, "wxM_cf|丙|a|UNI_CF", device="d-cf")
+    wechat_login(client, "wxH_top|甲|a|UNI_CF")  # 钥匙命中甲、编号指向丙 → 记号两行
+    assert len(cross_flags(client)) == 2
+    signup(client, "13900008001", "d-new")
+    send_code(client, "13900008001", "recovery")
+    r = client.post(
+        "/api/auth/redeem",
+        json={
+            "phone": "13900008001",
+            "code": code_of(sent, "13900008001", "recovery"),
+            "purpose": "recovery",
+            "device_marker": "d-new",
+            "bind_token": token,
+        },
+    )
+    assert r.status_code == 200 and r.json()["wechat_bound"] is True
+    acc = account_row(client, id=a_id)
+    assert acc.wechat_openid is None and acc.wechat_verified is False
+    assert acc.wechat_mp_openid is None and acc.wechat_mp_bound_at is None
+    assert acc.wechat_unionid is None and acc.wechat_avatar is None
+    assert cross_flags(client) == []
+
+
+def test_mp_unionid_adopt_keeps_phone_unverified(client: TestClient):
+    """B1 负例：无号快进号（phone_verified=False）被小程序凭统一编号认亲直进，
+    验证等级沿用原账号状态不凭空升级——手机号验旗仍 False、号仍无手机号
+    （小程序钥匙恒正式绑照绑，那是 B1 允许的那份）。"""
+    b = wechat_fast(client, "wxH_uv|小U|a|UNI_UV", device="d-uv")
+    b_id = b["account"]["id"]
+    assert account_row(client, id=b_id).phone_verified is False
+    res = mp_login(client, "wxM_uv|n|a|UNI_UV", device="d-mp-uv")
+    assert res["status"] == "ok" and res["account"]["id"] == b_id
+    acc = account_row(client, id=b_id)
+    assert acc.phone is None and acc.phone_verified is False
+    assert acc.wechat_mp_openid == "wxM_uv"
