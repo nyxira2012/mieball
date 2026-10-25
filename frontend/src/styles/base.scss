@@ -201,6 +201,12 @@ h1.brand em,
   overflow: hidden;
 }
 
+/* ---------- 素卡面（卡背没铺出图时的卡底兜底渐变——游客/无卡背/空档）：卡背
+   宿主与 .cbd-host 配挂，纯素卡（mine 记录双卡）单挂即可 ---------- */
+.cbd-plain {
+  background: linear-gradient(150deg, var(--ink3), var(--ink2));
+}
+
 /* ---------- 小操作按钮（alpha:339-343，meet 意向条 / DeadCard 恢复撤局 / bills 结算收款
    三处收源；变体 on-in=主行动、on-no=危险，.rec 等页面私变体留各页 scoped） ---------- */
 .tbtn {

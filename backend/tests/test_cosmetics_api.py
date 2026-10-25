@@ -13,17 +13,17 @@ from __future__ import annotations
 
 import json
 
-from fastapi.testclient import TestClient
-from sqlalchemy import select
-
 from app.core import clock
 from app.db.models import Account, DuprRating, Game, LiveMatch
 from app.services import cosmetics as cosmetics_service
+from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from .conftest import auth, code_of, redeem, send_code, signup
 from .test_bills_generate import db_of, end_live
 from .test_live_score import deal_one
 from .test_playlog import settle, stage
+from .test_stats import seed_rating
 
 
 def page_of(client: TestClient, token: str) -> dict:
@@ -34,17 +34,6 @@ def page_of(client: TestClient, token: str) -> dict:
 
 def dress_call(client: TestClient, token: str, **body):
     return client.post("/api/cosmetics/dress", headers=auth(token), json=body)
-
-
-def seed_rating(client: TestClient, uid: int, rating: float, games: int = 5) -> None:
-    """直插 DUPR 派生分行：台阶判定只吃当下分数+定级旗，重放链路不归本册。"""
-    with db_of(client) as db:
-        db.add(
-            DuprRating(
-                account_id=uid, rating=rating, games=games, updated_at=clock.now()
-            )
-        )
-        db.commit()
 
 
 def seed_organize_game(
@@ -181,7 +170,7 @@ def test_matches_threshold_unlocks_with_new_flag(client: TestClient):
 def test_rating_threshold_unlocks_and_no_takeback(client: TestClient):
     out = signup(client, "13920001003", "d")
     token, uid = out["token"], out["account"]["id"]
-    seed_rating(client, uid, rating=3.2)
+    seed_rating(client, uid, rating=3.2, games=5)
     page = page_of(client, token)
     assert page["progress"]["rating"] == 3.2
     assert page["progress"]["rating_provisional"] is False
@@ -287,7 +276,7 @@ def test_custom_items_hidden_until_granted(client: TestClient):
 def test_recount_failure_shows_last_state(client: TestClient, monkeypatch):
     out = signup(client, "13920001007", "d")
     token, uid = out["token"], out["account"]["id"]
-    seed_rating(client, uid, rating=3.1)
+    seed_rating(client, uid, rating=3.1, games=5)
     assert page_of(client, token)["unlocks"]["a-t30"]["unlocked"] is True
 
     def boom(db, account_id):

@@ -458,7 +458,13 @@ def postprocess_and_save(
         #    报假因，批量侧还照单换种子重烧 GPU。
         if preset.get("reframe"):
             image, info = process_asset.reframe_cardbg(image)
-            process_asset.print_reframe_report(preset["title"], info)
+            # 报表口径与 process_asset CLI 的 --reframe 同款：量测焦点要人工登记进册子
+            print(
+                f"[{preset['title']}] 裁切对位 · 主体({info['fx']:.2f},{info['fy']:.2f})"
+                f" → ({process_asset.CARD_CORE[0]:.2f},{process_asset.CARD_CORE[1]:.2f})"
+                f" · 裁切 {info['crop'][2]:.0f}x{info['crop'][3]:.0f}"
+                f" · 缩放 {info['zoom']:.2f}x"
+            )
 
         # 2. 接缝修复：整贯穿的竖缝用左右两缘窄带过渡（主体不动，见 repair_seams）
         if preset.get("seam_repair"):

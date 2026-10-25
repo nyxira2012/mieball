@@ -4,7 +4,7 @@
        段位徽章 / Elo 整数无段位 · 底部数据行带本月涨跌。
        完整铺我的卡背（f 档全幅+文字安全纱），无卡背（游客）素卡渐变兜底；
        四档渐变卡背（bg-neon/gold/cyber/aurora）随旧装扮退役。 -->
-  <view class="mycardp cbd-host" @click="emit('profile')">
+  <view class="mycardp cbd-host cbd-plain" @click="emit('profile')">
     <CardBackdrop :cid="me.back" mode="f" />
     <view class="top-row">
       <!-- rkbox：#N 或 —（未开局/未入榜参考区；Elo 视图名次跟 Elo 榜走） -->
@@ -100,13 +100,12 @@ const telemetry = computed(() =>
 
 <style lang="scss" scoped>
 /* 宿主契约三件套挂全局 .cbd-host（base.scss 收源），让负 z-index 的卡底层垫在
-   卡底渐变之上、文字之下。渐变即素卡兜底（游客/无卡背）；旧四档渐变 bg-* 已退役 */
+   卡底渐变之上、文字之下。素卡兜底渐变同收源 .cbd-plain；旧四档渐变 bg-* 已退役 */
 .mycardp {
   margin-top: 14px;
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   padding: 16px;
-  background: linear-gradient(150deg, var(--ink3), var(--ink2));
   cursor: pointer;
   transition:
     border-color 0.2s,

@@ -11,7 +11,7 @@
 
     <!-- 头部形象区（5.1 页面设计）：点形象即进装扮页。名片铺我的卡背（'f' 档全幅，
          无卡背/访客素卡渐变兜底）、头像换圆章（me.avatarUrl 后端解析直出） -->
-    <view class="mecard cbd-host">
+    <view class="mecard cbd-host cbd-plain">
       <CardBackdrop :cid="me.back" mode="f" />
       <view class="av" @click="go('/pages/mine/dress')">
         <AvatarBadge :url="me.avatarUrl" :size="88" />
@@ -53,14 +53,14 @@
     <!-- 记录双卡（5.1 页面设计）：登记局数/打完局数读真局 myGames（后端按角色裁好；
          mock 时代的「签到时刻」无后端读取面，随演示快照退役改「打完」口径） -->
     <view class="duo">
-      <view class="d-card" @click="go('/pages/mine/signup')">
+      <view class="d-card cbd-plain" @click="go('/pages/mine/signup')">
         <view class="d-t">参加登记</view>
         <view class="d-s"
           >共 {{ game.mySignups.length }} 局 · 打完
           {{ game.myDone.length }} 局</view
         >
       </view>
-      <view class="d-card" @click="go('/pages/mine/logs')">
+      <view class="d-card cbd-plain" @click="go('/pages/mine/logs')">
         <view class="d-t">打球记录</view>
         <view class="d-s">累计 {{ me.play }} 场</view>
       </view>
@@ -561,7 +561,7 @@ async function onBindConfirm(): Promise<void> {
 
 /* ---------- mecard ---------- */
 /* 宿主契约三件套挂全局 .cbd-host（base.scss 收源），负 z-index 卡底层垫在卡底
-   渐变之上、文字之下。渐变即素卡兜底（访客/无卡背） */
+   渐变之上、文字之下。素卡兜底渐变同收源 .cbd-plain（访客/无卡背） */
 .mecard {
   display: flex;
   gap: 16px;
@@ -569,7 +569,6 @@ async function onBindConfirm(): Promise<void> {
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   padding: 18px;
-  background: linear-gradient(150deg, var(--ink3), var(--ink2));
 }
 .mecard .av {
   width: 88px;
@@ -611,7 +610,8 @@ async function onBindConfirm(): Promise<void> {
   border-color: rgba(255, 212, 0, 0.4);
 }
 
-/* ---------- 记录双卡（5.1：参加登记 / 打球记录，mecard 简化版式） ---------- */
+/* ---------- 记录双卡（5.1：参加登记 / 打球记录，mecard 简化版式；素面借全局
+   .cbd-plain，与卡背兜底同一张脸） ---------- */
 .duo {
   display: flex;
   gap: 10px;
@@ -623,7 +623,6 @@ async function onBindConfirm(): Promise<void> {
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   padding: 14px 16px;
-  background: linear-gradient(150deg, var(--ink3), var(--ink2));
   cursor: pointer;
 }
 .d-card:active {

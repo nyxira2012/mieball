@@ -8,25 +8,22 @@ NULL→默认公共款（老账号零迁移）、穿了编号→原样透传、'
 
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
-
 from app.db.models import Account
 from app.services.accounts import person_view
+from fastapi.testclient import TestClient
 
 from .conftest import code_of, send_code, signup
+from .test_bills_generate import db_of
 from .test_live_score import live_get, open_live
 
 
 def set_dress(client: TestClient, account_id: int, **cols) -> None:
     """直插账号装扮列（保存端点批2 才有；读侧契约不等写入侧）。"""
-    db = client.app.state.session_factory()
-    try:
+    with db_of(client) as db:
         acc = db.get(Account, account_id)
         for k, v in cols.items():
             setattr(acc, k, v)
         db.commit()
-    finally:
-        db.close()
 
 
 def user_view(client: TestClient, uid: int) -> dict:
@@ -87,8 +84,7 @@ def test_deactivated_shows_default_dress_and_clears_columns(client: TestClient, 
     assert acc["avatar"] == "g-00" and acc["avatar_url"] == "/cosmetics/g-00.webp"
     assert acc["back"] == "b-c1"
 
-    db = client.app.state.session_factory()
-    try:
+    with db_of(client) as db:
         row = db.get(Account, uid)
         assert (
             row.dress_avatar
@@ -97,8 +93,6 @@ def test_deactivated_shows_default_dress_and_clears_columns(client: TestClient, 
             is row.wechat_avatar
             is None
         )  # 四列随注销清空：重新注册从零开始，历史名单由读侧兜默认
-    finally:
-        db.close()
 
 
 def test_person_view_shapes_for_missing_and_deactivated(client: TestClient):
@@ -108,8 +102,7 @@ def test_person_view_shapes_for_missing_and_deactivated(client: TestClient):
     out = signup(client, "13900001005", "d")
     uid = out["account"]["id"]
     set_dress(client, uid, dress_avatar="a-p6", dress_back="b-c4")
-    db = client.app.state.session_factory()
-    try:
+    with db_of(client) as db:
         acc = db.get(Account, uid)
         p = person_view(acc)
         assert (p["avatar"], p["avatar_url"], p["back"]) == (
@@ -124,8 +117,6 @@ def test_person_view_shapes_for_missing_and_deactivated(client: TestClient):
             "/cosmetics/g-00.webp",
             "b-c1",
         )
-    finally:
-        db.close()
 
 
 def test_leaderboard_rows_carry_dress_keys(client: TestClient):

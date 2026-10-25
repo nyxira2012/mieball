@@ -31,7 +31,7 @@
       <template v-else>
         <!-- 大试穿框：全站最大形象展示位（卡背 'd' 档试穿取景 + 140 圆章 +
              名片数据沿用——名字/战绩行与我的页同源 me） -->
-        <view class="tryon cbd-host">
+        <view class="tryon cbd-host cbd-plain">
           <CardBackdrop
             :cid="sel.back"
             mode="d"
@@ -70,7 +70,9 @@
                   <view
                     v-else
                     class="th-back"
-                    :style="{ backgroundImage: `url('${it.asset}')` }"
+                    :style="{
+                      backgroundImage: `url('${resolveAssetUrl(it.asset)}')`,
+                    }"
                   />
                   <view v-if="lockedOf(it)" class="tag">锁</view>
                   <view v-else-if="newOf(it)" class="tag isNew">新</view>
@@ -171,6 +173,7 @@ import {
   type CosmeticItemApi,
 } from "@/api/cosmetics";
 import { dressBlock, honorGap, isUnlocked } from "@/utils/dress";
+import { resolveAssetUrl } from "@/utils/cardbg";
 import { displayMeName, meRecordText } from "@/utils/format";
 
 const user = useUserStore();
@@ -365,12 +368,11 @@ const nameDraft = ref(me.value.name);
 }
 
 /* ---------- 大试穿框：卡背 'd' 档取景（宿主契约三件套挂全局 .cbd-host，负 z-index
-   取景层垫在卡底之上、文字之下）；素卡渐变兜底（没铺出图的空档） ---------- */
+   取景层垫在卡底之上、文字之下）；素卡渐变兜底收源全局 .cbd-plain（没铺出图的空档） ---------- */
 .tryon {
   margin-top: 14px;
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  background: linear-gradient(150deg, var(--ink3), var(--ink2));
   padding: 22px 18px;
 }
 .tryon-row {
@@ -430,7 +432,8 @@ const nameDraft = ref(me.value.name);
   border-color: var(--lemon);
   box-shadow: 0 0 0 1px var(--lemon);
 }
-/* 卡背缩略：横幅 12:5 取中一块（background-image 直吃 asset） */
+/* 卡背缩略：横幅 12:5 取中一块（background-image 吃 resolveAssetUrl 真地址，
+   与圆章同一解析口——基地址/版本号不漏） */
 .th-back {
   width: 52px;
   height: 30px;
