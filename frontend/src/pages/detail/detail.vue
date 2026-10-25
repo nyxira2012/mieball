@@ -94,10 +94,13 @@
              同一把尺）；散场后换柠檬主钮（这页此时的亮动作就是它），赛前描边安静不抢
              底部的加入/开始打球；有锁定 chip 时同行分享让位收窄 -->
         <view class="row act2">
+          <!-- 小程序端分享钮传 open-type=share：点它即拉微信转发面板（卡由页面
+               转发钩子出）；H5 不传照旧 onShare 复制/系统面板 -->
           <AppButton
             :variant="game.ended ? 'pri' : 'ghost'"
             size="sm"
             class="share-btn"
+            :open-type="IS_MP ? 'share' : undefined"
             @click="onShare"
             >{{ game.ended ? "分享战报详情" : "分享组局详情" }}</AppButton
           >
@@ -363,6 +366,11 @@ import { goLive, goRecap } from "@/utils/nav";
 import { gameShareUrl } from "@/utils/deeplink";
 import { shareLink } from "@/utils/share";
 import { buildShareCard, registerWechatShare } from "@/utils/wechatShare";
+import { IS_MP } from "@/utils/platform";
+// #ifdef MP-WEIXIN
+import { onShareAppMessage, onShareTimeline } from "@dcloudio/uni-app";
+import { SHARE_IMAGE, SHARE_PATH, shareTitle } from "@/utils/wechatShare";
+// #endif
 import { DEAD_LINK_MSG } from "@/utils/recap";
 import { useSlowHint } from "@/composables/useSlowHint";
 
@@ -520,6 +528,31 @@ watch(
   { immediate: true },
 );
 
+// #ifdef MP-WEIXIN
+/* 小程序转发卡（「···」菜单与页上分享钮 open-type=share 都吃这里）：标题
+   「局名 · 日期 钟点」与网页版分享卡的时间口吻同源，落点 SHARE_PATH 是
+   gameShareUrl 的端内 path 形态（同一条详情页路径）；朋友圈只带标题+图（微信
+   朋友圈本身没有描述行）。局没到手（加载中/死链态）回空对象走微信默认样 */
+onShareAppMessage(() => {
+  const g = game.value;
+  if (!g) return {};
+  return {
+    title: shareTitle(g.name, g.startAt),
+    path: SHARE_PATH(g.id),
+    imageUrl: SHARE_IMAGE,
+  };
+});
+onShareTimeline(() => {
+  const g = game.value;
+  if (!g) return {};
+  return {
+    title: shareTitle(g.name, g.startAt),
+    query: `id=${g.id}`,
+    imageUrl: SHARE_IMAGE,
+  };
+});
+// #endif
+
 /* 局名首个 ' · ' 断行 */
 const brandA = computed(() => {
   if (!game.value) return "";
@@ -531,7 +564,6 @@ const brandB = computed(() => {
   const i = game.value.name.indexOf(" · ");
   return i >= 0 ? game.value.name.slice(i + 3) : "";
 });
-
 /* 人均亮数（A4：预估与实摊要分得清）：未出账=按当前名单预估标「约」；
    已出账切 bill 块实摊定值（后端定格，界面不自算） */
 const perHeadTxt = computed(() => {

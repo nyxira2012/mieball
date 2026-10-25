@@ -332,7 +332,7 @@ export interface LiveCourt {
 
 /** 已完成场次（alpha:1710）。alpha 的 txt 为含高亮的 HTML 字符串，这里存纯文本胜者名，
     页面渲染时拼「names 胜」（v-html 例外出口：QrOverlay 与 H5 端的 TabBar /
-    BrawlStage——小程序端后两者已改走 svgDataUrl+image 替身，例外登记在各组件文件头）。 */
+    BrawlStage——小程序端三出口均已改走 svgDataUrl+image 替身，例外登记在各组件文件头）。 */
 export interface MatchHistory {
   names: string;
   sa: number;

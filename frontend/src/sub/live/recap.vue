@@ -79,6 +79,15 @@ import {
   registerWechatShare,
   resolveGameName,
 } from "@/utils/wechatShare";
+// #ifdef MP-WEIXIN
+import { onShareAppMessage, onShareTimeline } from "@dcloudio/uni-app";
+import {
+  SHARE_IMAGE,
+  SHARE_PATH,
+  resolveShareGame,
+  shareTitle,
+} from "@/utils/wechatShare";
+// #endif
 import { DEAD_LINK_MSG } from "@/utils/recap";
 import { goBackOrMeet, goMeet } from "@/utils/nav";
 
@@ -157,6 +166,38 @@ watch(
   },
   { immediate: true },
 );
+
+// #ifdef MP-WEIXIN
+/* 小程序转发卡：钩子须同步回话——战报视图里没有局名/开赛时间，门牌落位即
+   预结算进 ref（局簿现成取/冷链补拉/泛称兜底，与 H5 登记卡的取数同一条路）。
+   落点与网页版一致：卡片进群统一详情页，「查看战报」一跳即看 */
+const mpCard = ref<{ title: string; id: number } | null>(null);
+watch(
+  view,
+  (v) => {
+    if (!v || !gameId) {
+      mpCard.value = null;
+      return;
+    }
+    void resolveShareGame(gameStore, gameId).then((g) => {
+      mpCard.value = { title: shareTitle(g.name, g.startAt), id: gameId };
+    });
+  },
+  { immediate: true },
+);
+onShareAppMessage(() => {
+  const c = mpCard.value;
+  return c
+    ? { title: c.title, path: SHARE_PATH(c.id), imageUrl: SHARE_IMAGE }
+    : {};
+});
+onShareTimeline(() => {
+  const c = mpCard.value;
+  return c
+    ? { title: c.title, query: `id=${c.id}`, imageUrl: SHARE_IMAGE }
+    : {};
+});
+// #endif
 </script>
 
 <style lang="scss" scoped>

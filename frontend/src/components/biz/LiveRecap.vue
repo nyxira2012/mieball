@@ -29,7 +29,14 @@
           @click="emit('complete')"
           >完成</AppButton
         >
-        <AppButton variant="pri" size="sm" class="flex1" @click="emit('share')"
+        <!-- 小程序端分享钮传 open-type=share：点它即拉微信转发面板（并触发所在
+             页面的转发钩子，宿主 live/recap 两页各持钩）；H5 不传照旧 emit share -->
+        <AppButton
+          variant="pri"
+          size="sm"
+          class="flex1"
+          :open-type="IS_MP ? 'share' : undefined"
+          @click="emit('share')"
           >分享</AppButton
         >
       </view>
@@ -128,6 +135,7 @@ import AvatarBadge from "@/components/ui/AvatarBadge.vue";
 import EmptyBox from "@/components/ui/EmptyBox.vue";
 import MemeHeadline from "@/components/biz/MemeHeadline.vue";
 import { isoHm, isoHmOrDash } from "@/utils/time";
+import { IS_MP } from "@/utils/platform";
 import { RECAP_HINT, eloTotals } from "@/utils/recap";
 import type { LivePlayer, LiveView, MatchPerson } from "@/api/types";
 

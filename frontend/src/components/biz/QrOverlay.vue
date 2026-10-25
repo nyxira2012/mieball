@@ -3,7 +3,9 @@
        码芯 = 真码（qrcode-generator 编码现场深链，前端直接做）。
        【v-html 例外登记】码图 SVG 串（utils/qr.ts qrSvg 产出）经 v-html 注入——
        与 TabBar（导航图标）、BrawlStage（球拍）并列的 v-html 出口；
-       后续小程序化时集中替换为静态资源/canvas，调用方零改动。 -->
+       小程序端三出口均已改走 svgDataUrl+image 替身（本件 MP 分支：
+       小程序码直显后端 PNG、链接码退 image data URL），登记在各组件文件头。 -->
+
   <view class="qrwrap" :class="{ on: visible }" @click="emit('close')">
     <!-- 可见关闭钮（2026-10-11 替代说明书式「点一下关闭」）：整层本就点哪都关，这里给个看得见的把手 -->
     <view class="qr-close" @click.stop="emit('close')">✕</view>
@@ -15,7 +17,28 @@
         <view v-if="demo" class="qr-demo">
           <view class="qr-demo-slash" /><text class="qr-demo-t">示意</text>
         </view>
+        <!-- #ifdef MP-WEIXIN -->
+        <!-- 小程序端码芯：真局开浮层即向后台现取小程序码（在途占位不空窗），
+             取不到静默退网页链接码——现场永远有码可扫，全程不弹错 -->
+        <view v-else-if="mpStage === 'loading'" class="qr-fetch"
+          >正在取码…</view
+        >
+        <image
+          v-else-if="mpStage === 'mp' && mpB64"
+          class="qr-img"
+          :src="'data:image/png;base64,' + mpB64"
+          mode="aspectFit"
+        />
+        <image
+          v-else-if="linkQrSrc"
+          class="qr-img"
+          :src="linkQrSrc"
+          mode="aspectFit"
+        />
+        <!-- #endif -->
+        <!-- #ifndef MP-WEIXIN -->
         <view v-else-if="svg" class="qr-svg" v-html="svg" />
+        <!-- #endif -->
         <!-- stub 局（id<=0）不编废链接，占位等真局落地 -->
         <view v-else class="qr-empty">码未就绪</view>
       </view>
@@ -49,10 +72,14 @@
    前端直接做——推翻旧「后端接码」口径，2026-10-10 用户定稿）。
    demo（2.7）：教学沙盒示意模式——码位不编真码、外壳吃沙盒假数据 props；
    缺省 false 时一切照旧（真局调用方零改动）。 */
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { useLiveStore, isArrived } from "@/stores/live";
 import { qrSvg } from "@/utils/qr";
 import { liveShareUrl } from "@/utils/deeplink";
+// #ifdef MP-WEIXIN
+import { apiWxacode } from "@/api/wechat";
+import { svgDataUrl } from "@/utils/svgUrl";
+// #endif
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -88,14 +115,48 @@ const arrived = computed(() =>
     示意局没有散场面——恒 false 走 LIVE 文案 */
 const ended = computed(() => !props.demo && !!liveStore.live?.endedAt);
 
-/** 码芯内容：进现场的深链（id>0 才编——stub 局没有真 id，不编废链接）。
-    demo 恒空串=永不编真码 */
-const qrText = computed(() => {
-  if (props.demo) return "";
-  const id = liveStore.liveView?.gameId ?? liveStore.live?.g.id ?? 0;
-  return id > 0 ? liveShareUrl(id) : "";
+/** 码芯指向的局 id：真局才 >0（stub 局 0——不编废链接也不取小程序码）；
+    demo 恒 0=示例局永不编真码。qrText 与小程序取码共用这一个取数口 */
+const gameId = computed(() => {
+  if (props.demo) return 0;
+  return liveStore.liveView?.gameId ?? liveStore.live?.g.id ?? 0;
 });
+const qrText = computed(() =>
+  gameId.value > 0 ? liveShareUrl(gameId.value) : "",
+);
 const svg = computed(() => (qrText.value ? qrSvg(qrText.value) : ""));
+
+// #ifdef MP-WEIXIN
+/* 小程序码状态机：浮层翻真才向后台要（真局且非示意）；在途占位不空窗、
+   成败只走一次；任何失败（未配/超时/未登录）静默退链接码——二维码按钮永不
+   失灵。关层即清：下次打开重取（后台不连环重试的口径，等下一次点击再试） */
+const mpStage = ref<"idle" | "loading" | "mp" | "fallback">("idle");
+const mpB64 = ref("");
+/** 兜底链接码 data URL：H5 走 v-html + var(--ink)，image 进不去 CSS——墨色
+    以实色烤进 data URL（与 tokens --ink 同值） */
+const MP_QR_INK = "#0e0e12";
+const linkQrSrc = computed(() =>
+  qrText.value ? svgDataUrl(qrSvg(qrText.value), MP_QR_INK) : "",
+);
+watch(
+  () => props.visible,
+  (open) => {
+    mpB64.value = "";
+    mpStage.value = "idle";
+    if (!open || gameId.value <= 0) return; // demo/id<=0：不取码，走示意/链接码分支
+    mpStage.value = "loading";
+    apiWxacode(gameId.value)
+      .then((r) => {
+        mpB64.value = r.image_b64;
+        mpStage.value = "mp";
+      })
+      .catch(() => {
+        mpStage.value = "fallback";
+      });
+  },
+  { immediate: true },
+);
+// #endif
 </script>
 
 <style lang="scss" scoped>
@@ -182,6 +243,25 @@ const svg = computed(() => (qrText.value ? qrSvg(qrText.value) : ""));
   color: var(--dim);
   letter-spacing: 0.12em;
 }
+/* #ifdef MP-WEIXIN */
+/* 小程序码/链接码的 image 壳：尺寸同 v-html 码图（image 默认 320×240，不钉即撑破）；
+   取码在途占位与 .qr-empty 同口吻（取码等一眨眼，画面不空窗） */
+.qr-img {
+  width: 100%;
+  height: 100%;
+}
+.qr-fetch {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: 0.12em;
+}
+/* #endif */
 /* 示意占位码（demo）：虚线框+对角斜杠+「示意」——一眼是假的、扫无可扫 */
 .qr-demo {
   position: relative;

@@ -34,6 +34,11 @@ export interface WechatShareCard {
     所以换图内容时必须同步 bump 日期参数逼微信重抓，路径不动、只动 v。 */
 const SHARE_CARD_PATH = "/share-card.png?v=20261024";
 
+/** 「日期 钟点」段时间口吻单一源：网页版分享卡的收人句段与小程序转发卡标题
+    共用（两端卡面同款写法） */
+const dayHm = (startAt: string): string =>
+  `${isoDay(startAt)} ${isoHm(startAt)}`;
+
 /** 卡片描述句：未散场说收人要点、散场说场数、死局各说各的。
    pending（组织者眼里的待处置）与 terminated 同句——对非组织者它本就被 mask 成
    terminated，卡片不区分看客身份，一句到底。 */
@@ -48,7 +53,7 @@ export function cardDesc(src: ShareCardSrc): string {
   }
   // open/locked/live（满员/已开打也照说收人句——卡片是定格门面，真相进详情看）
   const segs: string[] = [];
-  if (src.startAt) segs.push(`${isoDay(src.startAt)} ${isoHm(src.startAt)}`);
+  if (src.startAt) segs.push(dayHm(src.startAt));
   if (src.venueName) segs.push(src.venueName);
   segs.push(`已报 ${src.heads ?? 0} 人`);
   return segs.join(" · ");
@@ -73,8 +78,24 @@ export function buildShareCard(
 /** 战报卡局名解析的 store 最小形状：只声明本 helper 用到的两件，
     store 作参数传入（utils 不碰框架，同 WxSdk 先例） */
 export interface GameNameSource {
-  findGame(id: number): { name: string } | null | undefined;
-  loadDetail(id: number): Promise<{ name: string }>;
+  findGame(id: number): { name: string; startAt?: string } | null | undefined;
+  loadDetail(id: number): Promise<{ name: string; startAt?: string }>;
+}
+
+/** 转发卡用的局（名+开赛时间）解析：局簿 findGame 现成取 → 冷链查无 loadDetail
+    补拉（name 与 startAt 同一次响应）→ 两处都拿不到退泛称「球局战报」不带时间
+    （标题仍成立，不拦卡）。resolveGameName 是它的只取名薄壳（H5 登记卡老消费方） */
+export async function resolveShareGame(
+  gameStore: GameNameSource,
+  gameId: number,
+): Promise<{ name: string; startAt?: string }> {
+  const g = gameStore.findGame(gameId);
+  if (g?.name) return g;
+  try {
+    return await gameStore.loadDetail(gameId);
+  } catch {
+    return { name: "球局战报" };
+  }
 }
 
 /** 战报卡局名解析（recap 子页与现场散场门牌两个消费方，收口单一源）：
@@ -84,14 +105,28 @@ export async function resolveGameName(
   gameStore: GameNameSource,
   gameId: number,
 ): Promise<string> {
-  const cached = gameStore.findGame(gameId)?.name;
-  if (cached) return cached;
-  try {
-    return (await gameStore.loadDetail(gameId)).name;
-  } catch {
-    return "球局战报";
-  }
+  return (await resolveShareGame(gameStore, gameId)).name;
 }
+
+/* ---- 小程序转发卡三件（onShareAppMessage/onShareTimeline 的原料单一源） ---- */
+
+/** 小程序转发卡标题：「局名 · 日期 钟点」（时间口吻与网页版分享卡同一段 dayHm）；
+    startAt 缺席（泛称兜底路）只落局名。超长交给微信省略，不自己截断 */
+export function shareTitle(name: string, startAt?: string): string {
+  return startAt ? `${name} · ${dayHm(startAt)}` : name;
+}
+
+/** 转发卡落点（小程序 path 形态）：与 gameShareUrl 是同一条详情页路径契约的两个
+    出口——后者拼 origin/# 的完整外发 URL（H5 卡/复制链接），这里不带 origin 供
+    小程序 onShareAppMessage 的 path 用。三处转发统一落详情页（散场局点「查看
+    战报」一跳即看）由此钉死 */
+export const SHARE_PATH = (gameId: number): string =>
+  `/pages/detail/detail?id=${gameId}`;
+
+/** 转发卡方图（MP 包根的静态资源，全站统一的夜球场品牌方图）：小程序端
+    imageUrl 按包内路径取图、不吃 query 版本参——网页版换图的 ?v 逼重抓规矩在
+    SHARE_CARD_PATH 那边，两端口径各自成立 */
+export const SHARE_IMAGE = "/share-card.png";
 
 /** wx 极简本地形状（jweixin-1.6.0 全局对象）：只声明本模块用到的几件，够 vue-tsc 过 */
 interface WxSdk {

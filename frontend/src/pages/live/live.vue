@@ -249,12 +249,21 @@ import { useUiStore } from "@/stores/ui";
 import { useSandboxStore } from "@/stores/sandbox";
 import { goMeet } from "@/utils/nav";
 import { shareLink } from "@/utils/share";
-import { gameShareUrl } from "@/utils/deeplink";
+import { gameShareUrl, sceneGameId } from "@/utils/deeplink";
 import {
   buildShareCard,
   registerWechatShare,
   resolveGameName,
 } from "@/utils/wechatShare";
+// #ifdef MP-WEIXIN
+import { onShareAppMessage, onShareTimeline } from "@dcloudio/uni-app";
+import {
+  SHARE_IMAGE,
+  SHARE_PATH,
+  resolveShareGame,
+  shareTitle,
+} from "@/utils/wechatShare";
+// #endif
 import { DEAD_LINK_MSG } from "@/utils/recap";
 import { CARD_TITLES, TEACH_OV_TITLE } from "@/sandbox/data";
 
@@ -535,12 +544,61 @@ watch(
   { immediate: true },
 );
 
+// #ifdef MP-WEIXIN
+/* 小程序转发卡原料预结算（钩子须同步回话）：与上面 H5 登记卡同一批触发源——
+   进行中随 L 重建/露面重申、散场门牌随 recap 落位。真局名时间在手（L.g 非
+   占位）直取；占位局名/局不在手走 resolveShareGame 补拉（泛称兜底不拦卡）。
+   落点与网页版一致：进行中/散场两态的卡都统一详情页 */
+const mpCard = ref<{ title: string; id: number } | null>(null);
+watch(
+  [() => shown.value, () => L.value, () => liveStore.recap],
+  ([, live, r]) => {
+    const g = live?.g;
+    const id = r?.gameId ?? g?.id;
+    if (id == null || id <= 0) {
+      mpCard.value = null; // 无局/占位窗口：回微信默认样
+      return;
+    }
+    if (g && g.id === id && g.organizer.id >= 0) {
+      mpCard.value = { title: shareTitle(g.name, g.startAt), id };
+      return;
+    }
+    void resolveShareGame(gameStore, id).then((src) => {
+      mpCard.value = { title: shareTitle(src.name, src.startAt), id };
+    });
+  },
+  { immediate: true },
+);
+onShareAppMessage(() => {
+  // 教学示例局不配转发卡（示例局全是假数据）：沙盒态回空对象走微信默认样
+  if (sandbox.mode !== "pick") return {};
+  const c = mpCard.value;
+  return c
+    ? { title: c.title, path: SHARE_PATH(c.id), imageUrl: SHARE_IMAGE }
+    : {};
+});
+onShareTimeline(() => {
+  if (sandbox.mode !== "pick") return {};
+  const c = mpCard.value;
+  return c
+    ? { title: c.title, query: `id=${c.id}`, imageUrl: SHARE_IMAGE }
+    : {};
+});
+// #endif
+
 /* ---------- 深链与生命周期 ---------- */
 const liveId = ref<number | null>(null);
 onLoad((options) => {
-  const raw = (options as Record<string, string | undefined> | undefined)?.id;
-  const n = raw != null ? Number(raw) : NaN;
-  liveId.value = Number.isFinite(n) ? n : null;
+  const opts =
+    (options as Record<string, string | undefined> | undefined) ?? {};
+  /* 扫现场小程序码进场：微信把码里的 scene（encode 形态 g=<id>）塞在启动参数里
+     ——解出球局 id 与手输/深链 ?id= 并入同一分发口；链接 id 在则链接优先 */
+  let fromScene: number | null = null;
+  // #ifdef MP-WEIXIN
+  fromScene = sceneGameId(opts.scene);
+  // #endif
+  const n = opts.id != null ? Number(opts.id) : NaN;
+  liveId.value = Number.isFinite(n) ? n : fromScene;
   /* 1.5 灵活首页·状态分发（冷启动仅一次；switchTab 不重跑 onLoad，用户主动点现场键回来不受影响）：
      无深链 id、store 未在打、也无 live 局 → 现场对当下无意义，落约球页过渡
      （组织者视角/预约卡/形象页等后续档位实现后再扩这条分发链）。

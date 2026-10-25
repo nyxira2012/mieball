@@ -12,6 +12,14 @@ vi.mock("@/api/auth", () => authApi);
 vi.mock("@/utils/blackbox", () => blackbox);
 
 import { buildShareCard, cardDesc } from "@/utils/wechatShare";
+import {
+  resolveShareGame,
+  SHARE_IMAGE,
+  SHARE_PATH,
+  shareTitle,
+} from "@/utils/wechatShare";
+import { gameShareUrl } from "@/utils/deeplink";
+import { isoDay, isoHm } from "@/utils/time";
 
 /* 远期日期：isoDay 走「M.DD 周X」支，不吃今天/明天相对支（那是 time.ts 自己的测试面） */
 const FAR_ISO = "2099-06-15T19:30:00+08:00";
@@ -99,6 +107,49 @@ describe("buildShareCard（卡片四件）", () => {
       desc: cardDesc(src),
       link: "https://x.y/#/pages/detail/detail?id=5",
       imgUrl: "https://x.y/share-card.png?v=20261024",
+    });
+  });
+});
+
+describe("shareTitle / SHARE_PATH / SHARE_IMAGE（小程序转发卡三件）", () => {
+  it("shareTitle：「局名 · 日期 钟点」——时间写法与 cardDesc 收人句段同源（time.ts 同输入对拍）", () => {
+    // FAR_ISO 走「M.DD 周X」支（远期日期不吃今天/明天相对支），格式逐段锁死
+    expect(shareTitle("夜球局", FAR_ISO)).toMatch(/^夜球局 · 6\.15 周. 19:30$/);
+    expect(shareTitle("夜球局", FAR_ISO)).toBe(
+      `夜球局 · ${isoDay(FAR_ISO)} ${isoHm(FAR_ISO)}`,
+    );
+  });
+  it("shareTitle 无 startAt（泛称兜底路）：只落局名，不出悬空隔点", () => {
+    expect(shareTitle("球局战报")).toBe("球局战报");
+    expect(shareTitle("球局战报", undefined)).toBe("球局战报");
+  });
+  it("SHARE_PATH：小程序 path 形态 /pages/detail/detail?id=N，与 gameShareUrl 同 id 同页", () => {
+    // node 测试环境无 location，gameShareUrl 正是裸 path——两出口落同一条页面路径
+    expect(SHARE_PATH(5)).toBe("/pages/detail/detail?id=5");
+    expect(SHARE_PATH(5)).toBe(gameShareUrl(5));
+    expect(SHARE_IMAGE).toBe("/share-card.png"); // MP 包根静态资源
+  });
+});
+
+describe("resolveShareGame（转发卡局名+时间解析）", () => {
+  it("局簿命中直回（含 startAt 透传——名与时间同一次取数）", async () => {
+    const store = {
+      findGame: () => ({ name: "周六夜球", startAt: FAR_ISO }),
+      loadDetail: vi.fn(),
+    };
+    await expect(resolveShareGame(store, 3)).resolves.toEqual({
+      name: "周六夜球",
+      startAt: FAR_ISO,
+    });
+    expect(store.loadDetail).not.toHaveBeenCalled();
+  });
+  it("冷链查无 loadDetail 也失败：退泛称「球局战报」不带时间（resolveGameName 同路）", async () => {
+    const store = {
+      findGame: () => null,
+      loadDetail: vi.fn().mockRejectedValue(new Error("net")),
+    };
+    await expect(resolveShareGame(store, 3)).resolves.toEqual({
+      name: "球局战报",
     });
   });
 });
