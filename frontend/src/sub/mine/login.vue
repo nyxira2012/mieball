@@ -194,6 +194,7 @@
         <WechatButton
           label="微信一键登录"
           note="微信里点两下进门"
+          :loading="wxBusy"
           @press="onWechat"
         />
       </view>
@@ -471,8 +472,15 @@ async function onForgotReset(): Promise<void> {
 
 /** 微信一键登录（1.7 §4.1/4.2）：入口只在微信内渲染（WechatButton 环境门），
     点了跳授权页；toast/整页跳/接短路全套在 goWechatAuth 单一源 */
-function onWechat(): void {
-  void goWechatAuth();
+const wxBusy = ref(false);
+/** 微信键识别中转圈（小程序静默认人要一两秒，无反馈会被当没点上再点） */
+async function onWechat(): Promise<void> {
+  wxBusy.value = true;
+  try {
+    await goWechatAuth();
+  } finally {
+    wxBusy.value = false;
+  }
 }
 
 /* —— 微信授权回跳收尾（1.7）：登录页是回跳落点，onLoad 收授权凭证。

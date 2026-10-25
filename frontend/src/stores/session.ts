@@ -144,13 +144,21 @@ export const useSessionStore = defineStore("session", () => {
   }
 
   /** 占卡「微信验证进入」（4.4/4.5）：正式绑才放行（接管级），指路文案后端给全；
-      转场包里存过名片草稿的重建（明确填过的才覆盖，D5 同规） */
+      转场包里存过名片草稿的重建（明确填过的才覆盖，D5 同规）。
+      source 只在 mp 传：小程序端查小程序钥匙，H5 调用方不传保持原请求体 */
   async function wechatRedeem(
     code: string,
     phone: string,
     card?: CardPayload,
+    source?: "h5" | "mp",
   ): Promise<AccountView> {
-    const res = await apiWechatRedeem(code, phone, deviceMarker(), card);
+    const res = await apiWechatRedeem(
+      code,
+      phone,
+      deviceMarker(),
+      card,
+      source,
+    );
     return admitSession(res, true);
   }
 

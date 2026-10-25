@@ -4,8 +4,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const authApi = vi.hoisted(() => ({ apiWechatUrl: vi.fn() }));
+const mpAuthMock = vi.hoisted(() => ({ mpLogin: vi.fn() }));
 
 vi.mock("@/api/auth", () => authApi);
+vi.mock("@/utils/mpAuth", () => mpAuthMock);
 
 import {
   backPathForAuth,
@@ -13,6 +15,7 @@ import {
   clearWechatCtx,
   ctxFresh,
   genState,
+  goWechatAuth,
   isWeChatBrowser,
   navToPath,
   readWechatCtx,
@@ -280,5 +283,46 @@ describe("beginWechatAuth（出发编排）", () => {
     const toast = vi.fn();
     await expect(beginWechatAuth({ toast })).rejects.toThrow();
     expect(readWechatCtx()).toBeNull();
+  });
+});
+
+describe("goWechatAuth 小程序分流（#ifdef 在 vitest 是惰性活码——顶部恒走 mpLogin 转译）", () => {
+  it("带手机号且非快进（占卡「微信验证进入」语义）→ 转译成 redeemPhone 形态进 mpLogin", async () => {
+    mpAuthMock.mpLogin.mockResolvedValue(undefined);
+    await goWechatAuth({
+      phone: "13800001234",
+      pending: { pendingJoin: { gameId: 9, bring: 0 } },
+    });
+    expect(mpAuthMock.mpLogin).toHaveBeenCalledWith({
+      redeemPhone: "13800001234",
+      pending: { pendingJoin: { gameId: 9, bring: 0 } },
+    });
+  });
+
+  it("快进/纯认人（不带手机号或带 fast）→ 全卡字段形态进 mpLogin，不碰 H5 授权路", async () => {
+    mpAuthMock.mpLogin.mockResolvedValue(undefined);
+    await goWechatAuth({
+      fast: true,
+      nickname: "阿强",
+      avatar: "a-p2",
+      phone: "13800001234",
+      pending: { pendingJoin: { gameId: 9, bring: 0 } },
+    });
+    expect(mpAuthMock.mpLogin).toHaveBeenCalledWith({
+      fast: true,
+      nickname: "阿强",
+      avatar: "a-p2",
+      phone: "13800001234",
+      pending: { pendingJoin: { gameId: 9, bring: 0 } },
+    });
+    await goWechatAuth({ fast: true });
+    expect(mpAuthMock.mpLogin).toHaveBeenLastCalledWith({
+      fast: true,
+      nickname: undefined,
+      phone: undefined,
+      avatar: undefined,
+      pending: undefined,
+    });
+    expect(authApi.apiWechatUrl).not.toHaveBeenCalled();
   });
 });

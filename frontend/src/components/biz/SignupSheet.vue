@@ -19,6 +19,7 @@
       <AppField>
         <AppInput
           v-model="nickname"
+          type="nickname"
           placeholder="常用球友名，如 海淀反手王（可跳过）"
           :maxlength="16"
         />
@@ -55,6 +56,7 @@
         <WechatButton
           variant="pri"
           label="微信授权登录"
+          :loading="wxBusy"
           @press="onWechatFast"
         />
       </view>
@@ -67,10 +69,6 @@
       >
         {{ busy ? "提交中…" : actionLabel }}
       </AppButton>
-      <!-- 微信内底部出路小字：给不用微信登录的人（去手机浏览器走手填路） -->
-      <view v-if="wxFastCard" class="wx-out"
-        >不使用微信登录？使用手机浏览器打开本程序</view
-      >
     </template>
 
     <!-- ===== 态二：手机号已被占用（1.6 §4.5 三证明出口） ===== -->
@@ -91,6 +89,7 @@
         <WechatButton
           label="微信验证进入"
           note="正式绑过的微信两下进门"
+          :loading="wxBusy"
           @press="onWechat"
         />
         <view class="relink" @click="mode = 'card'">不是我的号？返回重填</view>
@@ -184,6 +183,7 @@ import {
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
 import { phoneInputError, smsCodeError } from "@/utils/validate";
 import { isWeChatBrowser, goWechatAuth } from "@/utils/wechat";
+import { IS_MP } from "@/utils/platform";
 import { goLogin } from "@/utils/nav";
 import type { DirectOpenInput, PublishGameInput } from "@/api/types";
 
@@ -231,6 +231,9 @@ const pwdLocked = ref(false);
 /** 选中的公共头像下标；null=没选（跳过 → 服务端兜默认第一款） */
 const picked = ref<number | null>(null);
 const busy = ref(false);
+/** 微信键识别中（小程序静默认人要一两秒）：转圈防重复连点，与手填 busy 分开——
+    两把钥匙不在同一形态上同时出现，混用会让对方按钮误显「提交中…」 */
+const wxBusy = ref(false);
 const { countdown, start: startCountdown } = useSmsCountdown();
 
 const title = computed(() =>
@@ -259,9 +262,17 @@ const actionLabel = computed(() =>
 /* ---- 卡形态（2026-10-13 修订二，用户裁决）：表单两环境同貌、只换按钮——
      微信内+动作弹出 → 一颗微信授权登录（快进建号，吃全卡字段：昵称/头像/手机号
      填了就算、没填走各自兜底）；浏览器/微信找回面（4.7 护栏：找回卡不快进）→
-     名片表单+一颗确定（手填路）。微信键微信外不渲染（WechatButton 环境门） ---- */
+     名片表单+一颗确定（手填路）。微信键微信外不渲染（WechatButton 环境门）。
+     小程序端恒微信环境：环境门加 IS_MP；MP 下 from 只会是 action
+     （wechat-return 是 H5 回跳专属），护栏位保留零特判。
+     MP 微信通道未开（点了才知道）：ui.mpWechatOff 落位即撤快进钮落手填
+     确定——退建号老路，新球友照常能注册 ---- */
 const fromWechatReturn = computed(() => ui.signupCardFrom === "wechat-return");
-const wxFastCard = computed(() => isWeChatBrowser() && !fromWechatReturn.value);
+const wxFastCard = computed(
+  () =>
+    (isWeChatBrowser() || (IS_MP && !ui.mpWechatOff)) &&
+    !fromWechatReturn.value,
+);
 
 /* ---- 草稿：本机持久化（断网重进内容还在）。
      打字密集场景，300ms 防抖再落存储，卸载/提交前 flush 补一次，防丢语义不变 ---- */
@@ -338,7 +349,7 @@ function goLoginWithDraft(): void {
     手机号与手填路同一份 cardPayload 拼装（单一源）：号没人用直接建带号账号（微信
     同时正式绑）、被占由回跳收尾落占卡三出口（login.vue）。号填了但格式不对拦在
     出发前（toast），不静默丢——用户以为给了号。 */
-function onWechatFast(): void {
+async function onWechatFast(): Promise<void> {
   if (phone.value.trim()) {
     const perr = phoneInputError(phone.value);
     if (perr) {
@@ -348,13 +359,18 @@ function onWechatFast(): void {
   }
   const card = cardPayload();
   flushDraft();
-  void goWechatAuth({
-    fast: true,
-    nickname: card.nickname?.trim() || undefined,
-    avatar: card.avatar,
-    phone: card.phone || undefined,
-    pending: pendingSnapshot(),
-  });
+  wxBusy.value = true;
+  try {
+    await goWechatAuth({
+      fast: true,
+      nickname: card.nickname?.trim() || undefined,
+      avatar: card.avatar,
+      phone: card.phone || undefined,
+      pending: pendingSnapshot(),
+    });
+  } finally {
+    wxBusy.value = false;
+  }
 }
 
 /* ---- 提交名片 ---- */
@@ -412,12 +428,17 @@ async function onPwdRedeem(): Promise<void> {
 /** 占卡「微信验证进入」（1.7 §4.4/4.5）：与「登录」链接同款先存后跳——名片草稿
     flush 进本机（回来重建名片用）、挂起快照进转场包（回来接着办），整页跳微信。
     回来由登录页收尾：正式绑→接管进入；否则一句指路（后端文案），短信/密码出口照常。 */
-function onWechat(): void {
+async function onWechat(): Promise<void> {
   flushDraft();
-  void goWechatAuth({
-    phone: phone.value.trim(),
-    pending: pendingSnapshot(),
-  });
+  wxBusy.value = true;
+  try {
+    await goWechatAuth({
+      phone: phone.value.trim(),
+      pending: pendingSnapshot(),
+    });
+  } finally {
+    wxBusy.value = false;
+  }
 }
 
 /* ---- 占用 → 接管 ---- */
@@ -504,16 +525,9 @@ function afterSuccess(msg: string): void {
   gap: 10px;
   margin-top: 4px;
 }
-/* 微信内快进卡：授权钮紧跟标题行，底部出路小字给不用微信的人 */
+/* 微信内快进卡：授权钮紧跟标题行 */
 .wx-go {
   margin-top: 20px;
-}
-.wx-out {
-  font-size: 11px;
-  color: var(--dim);
-  text-align: center;
-  line-height: 1.5;
-  margin-top: 12px;
 }
 .relink {
   font-size: 12px;

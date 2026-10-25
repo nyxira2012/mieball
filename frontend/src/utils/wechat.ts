@@ -7,6 +7,9 @@ import { errText } from "@/api/http";
 import { useUiStore } from "@/stores/ui";
 import type { SignupPending } from "@/stores/ui";
 import { LOGIN_PATH, TAB_ROUTES } from "@/utils/nav";
+// #ifdef MP-WEIXIN
+import { mpLogin } from "@/utils/mpAuth";
+// #endif
 
 /** 出发去授权可带的字段（快进卡三件 + 挂起动作）——begin/go 两入口同形 */
 type WechatAuthOpts = WechatCardFields & { pending?: SignupPending };
@@ -164,6 +167,23 @@ export async function beginWechatAuth(
 /** 出发编排全套（宿主只管传参）：toast 接线 + 整页跳授权页 + 接住已说清的短路。
     与 beginWechatAuth 分层：后者留 toast 注入给测试，本函数是三处微信键共用的生产入口 */
 export async function goWechatAuth(opts: WechatAuthOpts = {}): Promise<void> {
+  // #ifdef MP-WEIXIN
+  // 小程序端无授权确认页：wx.login 静默就地走完认人，三态消费在 mpAuth；
+  // H5 构建本段与上面的 import 一并剔除，下方原路零扰动
+  return mpLogin(
+    // H5 占卡语义转译（handleWechatReturn「ctx.phone && !ctx.fast」同款分流）：
+    // 带手机号且非快进 = 占卡「微信验证进入」→ redeem 路；否则认人门带全卡字段
+    opts.phone && !opts.fast
+      ? { redeemPhone: opts.phone, pending: opts.pending }
+      : {
+          fast: opts.fast,
+          nickname: opts.nickname,
+          phone: opts.phone,
+          avatar: opts.avatar,
+          pending: opts.pending,
+        },
+  );
+  // #endif
   try {
     const url = await beginWechatAuth({
       ...opts,

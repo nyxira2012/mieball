@@ -36,9 +36,13 @@ import type { PropType } from "vue";
 
 const props = defineProps({
   modelValue: { type: String, default: "" },
-  /** text/number/digit 渲染 <input>（uni type 透传），textarea 渲染 <textarea> */
+  /** text/number/digit 渲染 <input>（uni type 透传），textarea 渲染 <textarea>；
+      nickname：MP 端键盘上方浮出微信昵称一键填入——uni-h5 对未知 type
+      退化 text（switch default 分支），两端同传不惊动网页版 */
   type: {
-    type: String as PropType<"text" | "textarea" | "number" | "digit">,
+    type: String as PropType<
+      "text" | "textarea" | "number" | "digit" | "nickname"
+    >,
     default: "text",
   },
   placeholder: { type: String, default: "" },

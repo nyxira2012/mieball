@@ -8,12 +8,22 @@
     v-if="inWx && variant === 'pri'"
     variant="pri"
     block
+    :disabled="loading"
     @click="emit('press')"
   >
-    {{ label }}
-  </AppButton>
-  <view v-else-if="inWx" class="wx-row" @click="emit('press')">
+    <view v-if="loading" class="wx-spin" />
     <text>{{ label }}</text>
+  </AppButton>
+  <view
+    v-else-if="inWx"
+    class="wx-row"
+    :class="{ 'wx-row-busy': loading }"
+    @click="emit('press')"
+  >
+    <view class="wx-l">
+      <view v-if="loading" class="wx-spin" />
+      <text>{{ label }}</text>
+    </view>
     <text v-if="note" class="wx-note">{{ note }}</text>
   </view>
 </template>
@@ -30,6 +40,8 @@ defineProps<{
   label: string;
   /** 行形态右侧小字（如「正式绑过的微信两下进门」） */
   note?: string;
+  /** 识别中（小程序静默认人要一两秒）：按钮禁用+转圈——无反馈会被当没点上再点 */
+  loading?: boolean;
 }>();
 
 const emit = defineEmits<{ press: [] }>();
@@ -54,9 +66,30 @@ const inWx = isWeChatBrowser() || IS_MP;
 .wx-row:active {
   border-color: rgba(255, 212, 0, 0.4);
 }
+/* 识别中：行形态禁用样（pointer-events 屏蔽连点，同 AppButton disabled 手法） */
+.wx-row-busy {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.wx-l {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
 .wx-note {
   font-family: var(--mono);
   font-size: 10px;
   color: var(--dim);
+}
+/* 转圈（spin keyframes 在全局 animations.scss，BizBackdrop 同款引用法）；
+   小程序端无组件库，纯 CSS 动画两端可用 */
+.wx-spin {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
 }
 </style>

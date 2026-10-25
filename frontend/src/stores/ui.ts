@@ -46,6 +46,7 @@ export const useUiStore = defineStore("ui", () => {
     if (p.type === "signup-card") {
       signupCardFrom.value = "action";
       signupOccupiedPhone.value = ""; // 开新卡即清占卡直达信号（一次性）
+      mpWechatOff.value = false; // 开新卡即重探微信通道：通道是服务端配置，中途点亮后下一张卡自动恢复快进钮
     }
   }
   function closeSheet(): void {
@@ -86,6 +87,12 @@ export const useUiStore = defineStore("ui", () => {
      卡直接开在占卡三出口、phone 复位为撞的号。内存非持久，消费/开新卡即清。 */
   const signupOccupiedPhone = ref("");
 
+  /* —— 小程序微信通道未开的一次性降级信号：mpLogin 吃到 wechat_off 落位（同时
+     toast 原句），名片卡据此撤快进钮、落回手填「确定」建号老路——不因通道未开
+     卡住新球友注册。会话级消费不清（这会话里别再弹死按钮）；开新卡在 openSheet
+     复位兜底（对齐 signupOccupiedPhone 的复位习惯）。 */
+  const mpWechatOff = ref(false);
+
   /* —— P3 纯增量：全局撒花触发器（alpha:839-845 confetti(n) 的状态层入口）——
      Confetti.vue（P1）是纯展示件，只接受 trigger 计数 + count 粒数两个 props，
      因此除 confettiKey 计数器外需附带 confettiN 携带本波粒数（14=开下一轮 / 56=收局，P8a/P8b 用）。
@@ -106,6 +113,7 @@ export const useUiStore = defineStore("ui", () => {
     pendingAfterLogin,
     signupCardFrom,
     signupOccupiedPhone,
+    mpWechatOff,
     openSheet,
     closeSheet,
     signupThen,

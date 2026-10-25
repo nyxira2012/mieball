@@ -250,6 +250,9 @@ export type WechatCardFields = {
   phone?: string;
   /** 卡上选的公共头像编号；不传=没挑（后端落默认第一款） */
   avatar?: string;
+  /** 端别：mp=小程序钥匙（wx.login 静默认人）；不传=公众号钥匙——H5 调用方
+      一律不传，请求体逐字节不变（后端 source 默认 h5） */
+  source?: "h5" | "mp";
 };
 
 export function apiWechatLogin(
@@ -264,17 +267,20 @@ export function apiWechatLogin(
   });
 }
 
-/** 占卡「微信验证进入」（只认正式绑，接管级——文案与放行全由后端裁定） */
+/** 占卡「微信验证进入」（只认正式绑，接管级——文案与放行全由后端裁定）。
+    source 只在 mp 传（H5 调用方不传，请求体不变；后端默认 h5 查公众号钥匙） */
 export function apiWechatRedeem(
   code: string,
   phone: string,
   device: string,
   card?: CardPayload,
+  source?: "h5" | "mp",
 ): Promise<SessionPayload> {
   return request("POST", "/auth/wechat/redeem", {
     code,
     phone,
     device_marker: device,
     card,
+    ...(source ? { source } : {}),
   });
 }

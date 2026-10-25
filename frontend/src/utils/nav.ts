@@ -60,12 +60,12 @@ export function goLive(id: number): void {
   uni.switchTab({ url: TAB_ROUTES.live });
 }
 
-/** 进战报子页（2.6 散场战报/打球记录入口共用）：分包页（批4 拆 sub），路径即跳转契约 */
+/** 进战报子页（2.6 散场战报/打球记录入口共用）：分包页，路径即跳转契约 */
 export function goRecap(id: number): void {
   uni.navigateTo({ url: `/sub/live/recap?id=${id}` });
 }
 
-/* 分包页路径契约（批4 七次要页拆 sub）：只收跨文件复用的——login 被 App.vue 回跳壳
+/* 分包页路径契约（七次要页拆 sub）：只收跨文件复用的——login 被 App.vue 回跳壳
    与 wechat.ts 回跳族消费、bills 被 mine.vue 与 AccountSheet 消费；
    单页内跳转（dress/signup/logs）仍按本文件章程留在各自页面 */
 export const LOGIN_PATH = "/sub/mine/login";

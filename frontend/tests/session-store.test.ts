@@ -500,4 +500,31 @@ describe("微信钥匙（1.7）", () => {
     expect(session.status).toBe("ready");
     expect(http.clearCardDraft).toHaveBeenCalled();
   });
+
+  it("端别透传（1.10 mp）：wechatLogin 随 opts、wechatRedeem 随尾参把 source 带到 API 层", async () => {
+    vi.spyOn(http, "deviceMarker").mockReturnValue("dev-9");
+    const session = useSessionStore();
+    vi.mocked(authApi.apiWechatLogin).mockResolvedValue({
+      status: "created",
+      token: "t",
+      account: view,
+      nickname_random: false,
+    });
+    await session.wechatLogin("wx_mp", { source: "mp" });
+    expect(authApi.apiWechatLogin).toHaveBeenCalledWith("wx_mp", "dev-9", {
+      source: "mp",
+    });
+    vi.mocked(authApi.apiWechatRedeem).mockResolvedValue({
+      token: "t",
+      account: view,
+    });
+    await session.wechatRedeem("wx_mp", "13800001111", undefined, "mp");
+    expect(authApi.apiWechatRedeem).toHaveBeenCalledWith(
+      "wx_mp",
+      "13800001111",
+      "dev-9",
+      undefined,
+      "mp",
+    );
+  });
 });
