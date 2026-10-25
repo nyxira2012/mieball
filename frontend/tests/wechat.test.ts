@@ -101,7 +101,7 @@ describe("落点（backPathForAuth / navToPath）", () => {
         [
           { route: "pages/meet/meet", options: {} },
           { route: "pages/detail/detail", options: { id: "7" } },
-          { route: "pages/mine/login", options: {} },
+          { route: "sub/mine/login", options: {} },
         ] as never[],
     );
     expect(backPathForAuth()).toBe("/pages/detail/detail?id=7");
@@ -127,7 +127,7 @@ describe("落点（backPathForAuth / navToPath）", () => {
   it("栈只有登录页 → 兜底回约球页", () => {
     vi.stubGlobal(
       "getCurrentPages",
-      () => [{ route: "pages/mine/login" }] as never[],
+      () => [{ route: "sub/mine/login" }] as never[],
     );
     expect(backPathForAuth()).toBe("/pages/meet/meet");
   });
@@ -166,7 +166,7 @@ describe("beginWechatAuth（出发编排）", () => {
     vi.stubGlobal("navigator", { userAgent: "MicroMessenger/8.0" });
     vi.stubGlobal(
       "getCurrentPages",
-      () => [{ route: "pages/mine/login" }] as never[],
+      () => [{ route: "sub/mine/login" }] as never[],
     );
     authApi.apiWechatUrl.mockResolvedValue({
       url: "https://open.weixin.qq.com/xxx",
@@ -174,7 +174,7 @@ describe("beginWechatAuth（出发编排）", () => {
     const url = await beginWechatAuth({ phone: "13800001234", toast: vi.fn() });
     expect(url).toBe("https://open.weixin.qq.com/xxx");
     expect(authApi.apiWechatUrl).toHaveBeenCalledWith(
-      expect.stringContaining("/pages/mine/login"),
+      expect.stringContaining("/sub/mine/login"),
       expect.any(String),
     );
     const ctx = readWechatCtx();
@@ -259,7 +259,7 @@ describe("beginWechatAuth（出发编排）", () => {
     vi.stubGlobal("navigator", { userAgent: "MicroMessenger/8.0" });
     vi.stubGlobal(
       "getCurrentPages",
-      () => [{ route: "pages/mine/login" }] as never[],
+      () => [{ route: "sub/mine/login" }] as never[],
     );
     authApi.apiWechatUrl.mockResolvedValue({
       url: "https://open.weixin.qq.com/xxx",

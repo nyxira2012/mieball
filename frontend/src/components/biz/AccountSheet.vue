@@ -134,6 +134,7 @@ import { useBillStore } from "@/stores/bill";
 import { useUiStore } from "@/stores/ui";
 import { errText } from "@/api/http";
 import { smsCodeError } from "@/utils/validate";
+import { BILLS_PATH } from "@/utils/nav";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
 
 defineProps({
@@ -184,7 +185,7 @@ const CONSEQ = [
 /** 去结清：关弹层 → 账单页（导航由组件层承担，同 ConfirmSheet.goMeet 先例） */
 function onGoSettle(): void {
   ui.closeSheet();
-  uni.navigateTo({ url: "/pages/mine/bills" });
+  uni.navigateTo({ url: BILLS_PATH });
 }
 
 function onEnterSms(): void {

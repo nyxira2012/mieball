@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onLaunch, onShow } from '@dcloudio/uni-app'
 import { useSessionStore } from '@/stores/session'
+import { LOGIN_PATH } from '@/utils/nav'
 import { readOauthReturn } from '@/utils/wechat'
 
 const session = useSessionStore()
@@ -15,7 +16,7 @@ onLaunch(() => {
   const { code, state } = readOauthReturn()
   if (code) {
       uni.reLaunch({
-        url: `/pages/mine/login?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state || '')}`
+        url: `${LOGIN_PATH}?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state || '')}`
       });
     }
 })

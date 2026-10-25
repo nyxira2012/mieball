@@ -15,34 +15,46 @@
     {
       "path": "pages/mine/mine",
       "style": { "navigationBarTitleText": "我的" }
+    }
+  ],
+  "subPackages": [
+    {
+      "root": "pages/detail",
+      "pages": [
+        {
+          "path": "detail",
+          "style": { "navigationBarTitleText": "球局详情" }
+        }
+      ]
     },
     {
-      "path": "pages/mine/bills",
-      "style": { "navigationBarTitleText": "账单" }
-    },
-    {
-      "path": "pages/mine/dress",
-      "style": { "navigationBarTitleText": "装扮形象" }
-    },
-    {
-      "path": "pages/mine/signup",
-      "style": { "navigationBarTitleText": "参加登记" }
-    },
-    {
-      "path": "pages/mine/logs",
-      "style": { "navigationBarTitleText": "打球记录" }
-    },
-    {
-      "path": "pages/mine/login",
-      "style": { "navigationBarTitleText": "我是老球友" }
-    },
-    {
-      "path": "pages/detail/detail",
-      "style": { "navigationBarTitleText": "球局详情" }
-    },
-    {
-      "path": "pages/live/recap",
-      "style": { "navigationBarTitleText": "战报" }
+      "root": "sub",
+      "pages": [
+        {
+          "path": "live/recap",
+          "style": { "navigationBarTitleText": "战报" }
+        },
+        {
+          "path": "mine/login",
+          "style": { "navigationBarTitleText": "我是老球友" }
+        },
+        {
+          "path": "mine/bills",
+          "style": { "navigationBarTitleText": "账单" }
+        },
+        {
+          "path": "mine/dress",
+          "style": { "navigationBarTitleText": "装扮形象" }
+        },
+        {
+          "path": "mine/signup",
+          "style": { "navigationBarTitleText": "参加登记" }
+        },
+        {
+          "path": "mine/logs",
+          "style": { "navigationBarTitleText": "打球记录" }
+        }
+      ]
     }
   ],
   "globalStyle": {

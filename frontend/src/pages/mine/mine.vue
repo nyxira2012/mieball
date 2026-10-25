@@ -13,7 +13,7 @@
          无卡背/访客素卡渐变兜底）、头像换圆章（me.avatarUrl 后端解析直出） -->
     <view class="mecard cbd-host cbd-plain">
       <CardBackdrop :cid="me.back" mode="f" />
-      <view class="av" @click="go('/pages/mine/dress')">
+      <view class="av" @click="go('/sub/mine/dress')">
         <AvatarBadge :url="me.avatarUrl" :size="88" />
       </view>
       <view class="minfo">
@@ -33,7 +33,7 @@
           <!-- 档案卡 = 别人看到的完整档案（与打球页名单点击同支弹层，userId 0 = 我） -->
           <AppChip @click="onProfileCard">档案卡 ▸</AppChip>
           <!-- 装扮入口（与点头像同页） -->
-          <AppChip @click="go('/pages/mine/dress')">装扮 ▸</AppChip>
+          <AppChip @click="go('/sub/mine/dress')">装扮 ▸</AppChip>
         </view>
       </view>
     </view>
@@ -41,26 +41,26 @@
     <!-- 账单卡（5.1）：totalSummary 是 store 的全量口径——period 单例跨页存活，
          账单页切过筛选后 summary 会带着漂，主页卡/注销守卫不能消费它；
          整卡可点进账单页看期间筛选与逐笔（class/@click 透传到 BillSummaryCard 根） -->
-    <SectionTitle title="账单" more="明细 ▸" @more="go('/pages/mine/bills')" />
+    <SectionTitle title="账单" more="明细 ▸" @more="go(BILLS_PATH)" />
     <BillSummaryCard
       class="bill-card"
       :due="bill.totalSummary.due"
       :paid="bill.totalSummary.paid"
       :receivable="bill.totalSummary.receivable"
-      @click="go('/pages/mine/bills')"
+      @click="go(BILLS_PATH)"
     />
 
     <!-- 记录双卡（5.1 页面设计）：登记局数/打完局数读真局 myGames（后端按角色裁好；
          mock 时代的「签到时刻」无后端读取面，随演示快照退役改「打完」口径） -->
     <view class="duo">
-      <view class="d-card cbd-plain" @click="go('/pages/mine/signup')">
+      <view class="d-card cbd-plain" @click="go('/sub/mine/signup')">
         <view class="d-t">参加登记</view>
         <view class="d-s"
           >共 {{ game.mySignups.length }} 局 · 打完
           {{ game.myDone.length }} 局</view
         >
       </view>
-      <view class="d-card cbd-plain" @click="go('/pages/mine/logs')">
+      <view class="d-card cbd-plain" @click="go('/sub/mine/logs')">
         <view class="d-t">打球记录</view>
         <view class="d-s">累计 {{ me.play }} 场</view>
       </view>
@@ -295,7 +295,7 @@ import { duprOf, duprTier } from "@/utils/elo";
 import { displayMeName, meRecordText } from "@/utils/format";
 import { useSmsCountdown } from "@/composables/useSmsCountdown";
 import { newPwdError, phoneInputError, smsCodeError } from "@/utils/validate";
-import { goLogin } from "@/utils/nav";
+import { BILLS_PATH, goLogin } from "@/utils/nav";
 
 const user = useUserStore();
 const game = useGameStore();

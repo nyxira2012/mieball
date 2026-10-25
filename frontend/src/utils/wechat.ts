@@ -6,7 +6,7 @@ import { apiWechatUrl, type WechatCardFields } from "@/api/auth";
 import { errText } from "@/api/http";
 import { useUiStore } from "@/stores/ui";
 import type { SignupPending } from "@/stores/ui";
-import { TAB_ROUTES } from "@/utils/nav";
+import { LOGIN_PATH, TAB_ROUTES } from "@/utils/nav";
 
 /** 出发去授权可带的字段（快进卡三件 + 挂起动作）——begin/go 两入口同形 */
 type WechatAuthOpts = WechatCardFields & { pending?: SignupPending };
@@ -87,7 +87,7 @@ export function backPathForAuth(): string {
     if (pages.length) {
       const top = pages[pages.length - 1] as { route?: string };
       const idx =
-        top.route === "pages/mine/login" ? pages.length - 2 : pages.length - 1;
+        top.route === LOGIN_PATH.slice(1) ? pages.length - 2 : pages.length - 1;
       if (idx >= 0) {
         const p = pages[idx];
         const opts = (p as { options?: Record<string, string> }).options ?? {};
@@ -152,10 +152,7 @@ export async function beginWechatAuth(
     ts: Date.now(),
   });
   try {
-    const { url } = await apiWechatUrl(
-      authRedirectUrl("/pages/mine/login"),
-      state,
-    );
+    const { url } = await apiWechatUrl(authRedirectUrl(LOGIN_PATH), state);
     return url;
   } catch (e) {
     clearWechatCtx();

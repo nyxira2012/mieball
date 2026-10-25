@@ -60,14 +60,19 @@ export function goLive(id: number): void {
   uni.switchTab({ url: TAB_ROUTES.live });
 }
 
-/** 进战报子页（2.6 散场战报/打球记录入口共用）：/pages/live/recap 是跨批协议键，
-    页面文件与 pages.json 注册在末批落地 */
+/** 进战报子页（2.6 散场战报/打球记录入口共用）：分包页（批4 拆 sub），路径即跳转契约 */
 export function goRecap(id: number): void {
-  uni.navigateTo({ url: `/pages/live/recap?id=${id}` });
+  uni.navigateTo({ url: `/sub/live/recap?id=${id}` });
 }
+
+/* 分包页路径契约（批4 七次要页拆 sub）：只收跨文件复用的——login 被 App.vue 回跳壳
+   与 wechat.ts 回跳族消费、bills 被 mine.vue 与 AccountSheet 消费；
+   单页内跳转（dress/signup/logs）仍按本文件章程留在各自页面 */
+export const LOGIN_PATH = "/sub/mine/login";
+export const BILLS_PATH = "/sub/mine/bills";
 
 /** 进登录页（SignupSheet 名片卡 / bills / mine 三处共用）：游客态的统一出路。
     带挂起动作的续办跳转（名片卡草稿等）由调用方先落 pendingAfterLogin 信号位再调这里 */
 export function goLogin(): void {
-  uni.navigateTo({ url: "/pages/mine/login" });
+  uni.navigateTo({ url: LOGIN_PATH });
 }
