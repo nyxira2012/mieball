@@ -1,12 +1,28 @@
 <template>
   <!--
     圆窗占位底色常显：出图前是素圆、onload 后 img 淡入（版面不跳）；
-    加载失败 img 永隐，素圆即兜底。正式素材按「半身填圆、圆外透明」直摆。
+    加载失败回落默认脸（@error 禁裂图守卫，两端同走），默认脸仍失败 img 永隐、
+    素圆即兜底。正式素材按「半身填圆、圆外透明」直摆。
   -->
   <view
     class="avatar-badge"
     :style="{ width: size + 'px', height: size + 'px' }"
   >
+    <!-- #ifdef MP-WEIXIN -->
+    <!-- 小程序 image 替身：mode=aspectFill 同 H5 object-fit:cover；
+         取景 transform 暂不挂——image 的 transform 行为待真机验后再对表 -->
+    <image
+      v-if="src"
+      :key="src"
+      :src="src"
+      mode="aspectFill"
+      class="ab-img"
+      :class="{ on: loaded }"
+      @load="loaded = true"
+      @error="onErr"
+    />
+    <!-- #endif -->
+    <!-- #ifndef MP-WEIXIN -->
     <img
       v-if="src"
       :key="src"
@@ -16,7 +32,9 @@
       :class="{ on: loaded }"
       :style="{ transform: fitStyle }"
       @load="loaded = true"
+      @error="onErr"
     />
+    <!-- #endif -->
   </view>
 </template>
 
@@ -49,7 +67,16 @@ const props = withDefaults(
   { size: 56 },
 );
 
-const src = computed(() => resolveAssetUrl(props.url || DEFAULT_AVATAR_URL));
+const rawUrl = computed(() => props.url || DEFAULT_AVATAR_URL);
+/* 禁裂图守卫（两端同走）：取图失败回落默认脸一次；默认脸仍失败则 loaded 永假，
+   img 停在 opacity:0、素圆兜底——任何端都不露破图 */
+const failed = ref(false);
+function onErr(): void {
+  failed.value = true;
+}
+const src = computed(() =>
+  resolveAssetUrl(failed.value ? DEFAULT_AVATAR_URL : rawUrl.value),
+);
 /* 取景两档按大小位分：大位（≥40px）吃素材 bust 档、小位吃 face 档 */
 const framing = computed<"bust" | "face">(() =>
   props.size >= 40 ? "bust" : "face",
@@ -63,15 +90,18 @@ const fitStyle = computed(() =>
   frameTransform((fit.value ?? FALLBACK_FIT)[framing.value]),
 );
 
-/* :key 换图即重建节点，loaded 随之归零重走淡入（试穿换头像不闪旧图） */
+/* :key 换图即重建节点，loaded 随之归零重走淡入（试穿换头像不闪旧图）。
+   watch 盯 rawUrl 而非 src：src 含失败回落位——盯它会在「原图失败→回落换
+   src→复位 failed→原图重试再失败」间打转，盯 rawUrl 则回落不触发复位 */
 const loaded = ref(false);
 watch(
-  src,
+  rawUrl,
   (url) => {
+    failed.value = false;
     loaded.value = false;
     fit.value = null;
-    void loadAvatarFit(url).then((f) => {
-      if (src.value === url) fit.value = f;
+    void loadAvatarFit(resolveAssetUrl(url)).then((f) => {
+      if (rawUrl.value === url) fit.value = f;
     });
   },
   { immediate: true },

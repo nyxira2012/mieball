@@ -4,7 +4,8 @@
        4 个 tab 走 uni.switchTab（pages.json 已注册），保留页面实例；
        FAB 不导航，点开全局组局抽屉 ui.openSheet({type:'launch'})（对应 alpha:686 openLaunch）。
        v-html 例外登记：tab 图标与 FAB 加号为静态 SVG 字符串（alpha:681-694 逐字抄录），
-       系全库 v-html 例外出口之一，出口清单见 src/api/types.ts——后续小程序化时集中替换为 image 静态资源。 -->
+       系全库 v-html 例外出口之一，出口清单见 src/api/types.ts——小程序端已换
+       svgDataUrl+image 替身（CSS 进不了 image 图内，线型/颜色烤进 data URL）。 -->
   <view class="nav">
     <view class="bar">
       <view
@@ -14,14 +15,24 @@
         :class="{ on: current === t.k }"
         @click="goTab(t.k)"
       >
+        <!-- #ifdef MP-WEIXIN -->
+        <image class="ico" :src="mpTabIcon(t.k, current === t.k)" />
+        <!-- #endif -->
+        <!-- #ifndef MP-WEIXIN -->
         <view class="ico" v-html="ICONS[t.k]" />
+        <!-- #endif -->
         <text class="lbl">{{ t.label }}</text>
         <!-- LIVE 红点：live store 有进行中球局时点亮现场键（alpha:150 .dot · alpha:681 #live-dot-nav） -->
         <view v-if="t.k === 'live' && live.hasLive" class="dot" />
       </view>
       <!-- 发局 FAB（alpha:686 button#fab）：开抽屉不跳页 -->
       <view class="fab" @click="openLaunch">
+        <!-- #ifdef MP-WEIXIN -->
+        <image class="fab-ico" :src="MP_FAB_ICON" />
+        <!-- #endif -->
+        <!-- #ifndef MP-WEIXIN -->
         <view class="fab-ico" v-html="ICONS.fab" />
+        <!-- #endif -->
       </view>
       <view
         v-for="t in TABS_R"
@@ -30,7 +41,12 @@
         :class="{ on: current === t.k }"
         @click="goTab(t.k)"
       >
+        <!-- #ifdef MP-WEIXIN -->
+        <image class="ico" :src="mpTabIcon(t.k, current === t.k)" />
+        <!-- #endif -->
+        <!-- #ifndef MP-WEIXIN -->
         <view class="ico" v-html="ICONS[t.k]" />
+        <!-- #endif -->
         <text class="lbl">{{ t.label }}</text>
       </view>
     </view>
@@ -43,6 +59,9 @@ import { useUiStore } from "@/stores/ui";
 import { useLiveStore } from "@/stores/live";
 import { goTab } from "@/utils/nav";
 import type { TabKey } from "@/utils/nav";
+// #ifdef MP-WEIXIN
+import { svgDataUrl } from "@/utils/svgUrl";
+// #endif
 
 /* 图标 SVG：alpha.html:681-694 逐字（stroke/fill 线型由下方 :deep(svg) 统一给）；
    live 球场图标为本轮新画（球场+中网，对齐 1.7 线型） */
@@ -53,6 +72,28 @@ const ICONS = {
   power: '<svg viewBox="0 0 24 24"><path d="M4 20V10M12 20V4M20 20v-7"/></svg>',
   mine: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6"/></svg>',
 } as const;
+
+// #ifdef MP-WEIXIN
+/* 小程序 image 替身：CSS 进不了图内，H5 由 :deep(svg) 统一给的线型与两态色
+   须烤进 svg 本体——currentColor 占位 + svgDataUrl 现换实色（两态色与
+   pages.json tabBar color/selectedColor 同值）。tab 串无 fill/stroke 属性、
+   fab 串自带 fill="none"，注入属性互不重样（data-URL 里 svg 按 XML 解析，
+   重属性即坏图） */
+const TAB_ICON_LINE =
+  'xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"';
+function mpTabIcon(k: TabKey, active: boolean): string {
+  return svgDataUrl(
+    ICONS[k].replace("<svg ", `<svg ${TAB_ICON_LINE} `),
+    active ? "#FFD400" : "#9b96a6",
+  );
+}
+const MP_FAB_ICON = svgDataUrl(
+  ICONS.fab.replace(
+    "<svg ",
+    '<svg xmlns="http://www.w3.org/2000/svg" stroke="#0e0e12" stroke-width="2.4" stroke-linecap="round" ',
+  ),
+);
+// #endif
 
 /** tab 配置（label/键单一来源；键与路径契约在 utils/nav 的 TabKey/TAB_ROUTES，
     FAB 夹在 meet 与 power 之间，故拆左右两组渲染） */
@@ -182,4 +223,16 @@ function openLaunch(): void {
   stroke-width: 2.4;
   stroke-linecap: round;
 }
+/* #ifdef MP-WEIXIN */
+/* 小程序图标 image（v-html 替身）：线型/颜色已烤进 data URL，此处只复刻
+   :deep(svg) 的尺寸（image 默认 320×240，不钉尺寸即撑破底栏） */
+.ico {
+  width: 22px;
+  height: 22px;
+}
+.fab-ico {
+  width: 24px;
+  height: 24px;
+}
+/* #endif */
 </style>

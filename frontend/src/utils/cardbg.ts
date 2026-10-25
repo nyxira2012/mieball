@@ -46,8 +46,15 @@ export const WIN: Record<CardMode, SliceSpec | CoverSpec> = {
      （AvatarBadge/CardBackdrop）各解析一次——后端下发的 avatar_url 入站地址
      与前端自拼地址同走这一口，微信头像等外链原样放行 */
 /** 素材基地址：H5 两环境（dev 中间件/生产 nginx）都同域直引，空串即根相对；
-    小程序无同源概念，编译期由 VITE_ASSET_BASE 注入线上域名 */
-const ASSET_BASE: string = import.meta.env.VITE_ASSET_BASE ?? "";
+    小程序无同源概念，编译期注入绝对域名。两分支各读各的键——MP 专属键带 MP
+    前缀（.env 建档不碰 H5 读法）；单声明双赋值是条件编译与 vue-tsc 共存所需 */
+let ASSET_BASE: string;
+// #ifdef MP-WEIXIN
+ASSET_BASE = import.meta.env.VITE_MP_ASSET_BASE ?? "";
+// #endif
+// #ifndef MP-WEIXIN
+ASSET_BASE = import.meta.env.VITE_ASSET_BASE ?? "";
+// #endif
 /** 素材修订号：/cosmetics/ 按 immutable 永久缓存，换新全靠它——同名替换
     （改图/改取景参数）批次 +1 并随 fe 发版；上新新编号不必动 */
 export const ASSET_REV = 1;
@@ -76,6 +83,10 @@ export function isCosmeticUrl(url: string): boolean {
    首个实例暖图、其余实例即点即显。失败也记账：坏编号整会话兜素卡不反复试 */
 const preloadCache = new Map<string, Promise<boolean>>();
 export function preloadAsset(url: string): Promise<boolean> {
+  /* 无 Image 构造器的端（小程序逻辑层——new 即 ReferenceError）预载退位：
+     CSS 背景由渲染层自载、失败不渲染（背景图没有裂图概念），直亮真值放行
+     shown 闸——素底先出、图到即覆盖 */
+  if (typeof Image === "undefined") return Promise.resolve(true);
   let p = preloadCache.get(url);
   if (!p) {
     p = new Promise<boolean>((resolve) => {

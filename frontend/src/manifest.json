@@ -48,13 +48,16 @@
     },
     /* 快应用特有相关 */
     "quickapp" : {},
-    /* 小程序特有相关 */
+    /* 小程序特有相关。__usePrivacyCheck__：走微信官方隐私同意弹窗（不自绘）；
+       lazyCodeLoading：按需注入组件，压主包体积；appid 留空待办手续后由用户填 */
     "mp-weixin" : {
         "appid" : "",
         "setting" : {
             "urlCheck" : false
         },
-        "usingComponents" : true
+        "usingComponents" : true,
+        "__usePrivacyCheck__" : true,
+        "lazyCodeLoading" : "requiredComponents"
     },
     "mp-alipay" : {
         "usingComponents" : true

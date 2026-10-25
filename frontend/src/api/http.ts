@@ -35,7 +35,16 @@ export function errText(e: unknown): string {
   return e instanceof ApiError ? e.message : "网络不给力，请稍后再试";
 }
 
-const BASE = "/api";
+/* BASE 两分支（条件编译）：H5 相对路径（开发期由 vite 代理到 16588）；小程序无
+   同源概念须绝对域名——由 .env 的 MP 专属键编译期注入。键名带 MP 前缀正是为
+   零扰动：.env 建档但 H5 分支不读 MP 键，H5 读法与行为分毫不改 */
+let BASE: string;
+// #ifdef MP-WEIXIN
+BASE = `${import.meta.env.VITE_MP_API_BASE ?? ""}/api`;
+// #endif
+// #ifndef MP-WEIXIN
+BASE = "/api";
+// #endif
 const TOKEN_KEY = "mieball.token";
 const DEVICE_KEY = "mieball.device";
 

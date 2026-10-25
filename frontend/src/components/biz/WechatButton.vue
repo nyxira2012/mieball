@@ -20,6 +20,7 @@
 
 <script setup lang="ts">
 import AppButton from "@/components/ui/AppButton.vue";
+import { IS_MP } from "@/utils/platform";
 import { isWeChatBrowser } from "@/utils/wechat";
 
 defineProps<{
@@ -33,8 +34,10 @@ defineProps<{
 
 const emit = defineEmits<{ press: [] }>();
 
-/* UA 一次定性（会话内不变、无响应式依赖），非微信环境两支模板都不落——组件整体不出现 */
-const inWx = isWeChatBrowser();
+/* UA 一次定性（会话内不变、无响应式依赖），非微信环境两支模板都不落——组件整体不出现。
+   小程序端恒微信环境：isWeChatBrowser 无 UA 可测恒 false（语义钉死「H5 微信内」，
+   JS-SDK 门靠它），小程序环境门改认编译期 IS_MP */
+const inWx = isWeChatBrowser() || IS_MP;
 </script>
 
 <style lang="scss" scoped>
